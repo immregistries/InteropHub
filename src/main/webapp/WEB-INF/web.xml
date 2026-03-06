@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_4_0.xsd"
+         version="4.0">
+
+  <display-name>InteropHub</display-name>
+
+  <servlet>
+    <servlet-name>HomeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.HomeServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>HomeServlet</servlet-name>
+    <url-pattern>/home</url-pattern>
+  </servlet-mapping>
+
+  <welcome-file-list>
+    <welcome-file>home</welcome-file>
+  </welcome-file-list>
+
+  <servlet>
+    <servlet-name>HelloServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.HelloServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>HelloServlet</servlet-name>
+    <url-pattern>/hello</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>SendWelcomeEmailServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.SendWelcomeEmailServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>SendWelcomeEmailServlet</servlet-name>
+    <url-pattern>/send-welcome-email</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>SettingsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.SettingsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>SettingsServlet</servlet-name>
+    <url-pattern>/settings</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>MagicLinkServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.MagicLinkServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>MagicLinkServlet</servlet-name>
+    <url-pattern>/magic-link</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>WelcomeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.WelcomeServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>WelcomeServlet</servlet-name>
+    <url-pattern>/welcome</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>WorkspaceCenterServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.WorkspaceCenterServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>WorkspaceCenterServlet</servlet-name>
+    <url-pattern>/workspace</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>LogoutServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.LogoutServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>LogoutServlet</servlet-name>
+    <url-pattern>/logout</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>AdminAppRegistryServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminAppRegistryServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminAppRegistryServlet</servlet-name>
+    <url-pattern>/admin/apps</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>AdminIgTopicServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminIgTopicServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminIgTopicServlet</servlet-name>
+    <url-pattern>/admin/topics</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>AdminWorkspaceServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminWorkspaceServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminWorkspaceServlet</servlet-name>
+    <url-pattern>/admin/workspaces</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>ApiAuthExchangeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.ApiAuthExchangeServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>ApiAuthExchangeServlet</servlet-name>
+    <url-pattern>/api/auth/exchange</url-pattern>
+  </servlet-mapping>
+</web-app>
