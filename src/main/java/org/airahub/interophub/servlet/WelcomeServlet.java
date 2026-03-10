@@ -2,6 +2,7 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +12,7 @@ import javax.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.AppRegistryDao;
 import org.airahub.interophub.dao.ConnectWorkspaceDao;
 import org.airahub.interophub.dao.IgTopicDao;
+import org.airahub.interophub.dao.WorkspaceEnrollmentDao;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
@@ -22,12 +24,14 @@ public class WelcomeServlet extends HttpServlet {
     private final AppRegistryDao appRegistryDao;
     private final ConnectWorkspaceDao connectWorkspaceDao;
     private final IgTopicDao igTopicDao;
+    private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
 
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
         this.appRegistryDao = new AppRegistryDao();
         this.connectWorkspaceDao = new ConnectWorkspaceDao();
         this.igTopicDao = new IgTopicDao();
+        this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
     }
 
     @Override
@@ -53,6 +57,13 @@ public class WelcomeServlet extends HttpServlet {
                 .filter(app -> app.getDefaultRedirectUrl() != null && !app.getDefaultRedirectUrl().isBlank())
                 .toList();
         List<ConnectWorkspace> activeWorkspaces = connectWorkspaceDao.findActiveOrderedByStartDate();
+        List<Long> activeWorkspaceIds = new ArrayList<>();
+        for (ConnectWorkspace workspace : activeWorkspaces) {
+            activeWorkspaceIds.add(workspace.getWorkspaceId());
+        }
+        long pendingRegistrationCount = adminUser
+                ? workspaceEnrollmentDao.countPendingForWorkspaceIds(activeWorkspaceIds)
+                : 0L;
         Map<Long, String> topicNameById = new HashMap<>();
         for (IgTopic topic : igTopicDao.findAllOrdered()) {
             topicNameById.put(topic.getTopicId(), topic.getTopicName());
@@ -74,6 +85,19 @@ public class WelcomeServlet extends HttpServlet {
                     + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
             out.println("    </section>");
             out.println("    <h1>Welcome " + escapeHtml(name) + "</h1>");
+            out.println(
+                    "    <p>You are signed in as <strong>" + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
+
+            if (adminUser && pendingRegistrationCount > 0) {
+                out.println("    <section class=\"panel\">");
+                out.println("      <h2>Pending Workspace Registrations</h2>");
+                out.println("      <p>There are currently <strong>" + pendingRegistrationCount
+                        + "</strong> pending registration request(s).</p>");
+                out.println("      <p><a href=\"" + contextPath
+                        + "/workspace?mode=admin-enrollments\">Review Pending Registrations</a></p>");
+                out.println("    </section>");
+            }
+
             out.println("    <h2>Applications</h2>");
             if (availableApps.isEmpty()) {
                 out.println("    <p>No applications are currently available.</p>");
@@ -134,5 +158,9 @@ public class WelcomeServlet extends HttpServlet {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private String orEmpty(String value) {
+        return value == null ? "" : value;
     }
 }
