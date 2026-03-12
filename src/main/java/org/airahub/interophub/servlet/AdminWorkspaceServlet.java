@@ -4,6 +4,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.servlet.http.HttpServlet;
@@ -12,9 +15,11 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.airahub.interophub.dao.ConnectWorkspaceDao;
 import org.airahub.interophub.dao.IgTopicDao;
+import org.airahub.interophub.dao.WorkspaceStepDao;
 import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.model.WorkspaceStep;
 import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminWorkspaceServlet extends HttpServlet {
@@ -24,11 +29,13 @@ public class AdminWorkspaceServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final ConnectWorkspaceDao connectWorkspaceDao;
     private final IgTopicDao igTopicDao;
+    private final WorkspaceStepDao workspaceStepDao;
 
     public AdminWorkspaceServlet() {
         this.authFlowService = new AuthFlowService();
         this.connectWorkspaceDao = new ConnectWorkspaceDao();
         this.igTopicDao = new IgTopicDao();
+        this.workspaceStepDao = new WorkspaceStepDao();
     }
 
     @Override
@@ -60,7 +67,7 @@ public class AdminWorkspaceServlet extends HttpServlet {
             newWorkspace.setTopicId(topicId);
             newWorkspace.setStatus(ConnectWorkspace.WorkspaceStatus.ACTIVE);
             newWorkspace.setRequiresApproval(Boolean.TRUE);
-            renderEditForm(response, contextPath, topic, newWorkspace, null, true);
+            renderEditForm(response, contextPath, topic, newWorkspace, List.of(), null, true);
             return;
         }
 
@@ -88,7 +95,9 @@ public class AdminWorkspaceServlet extends HttpServlet {
         }
 
         if ("edit".equalsIgnoreCase(mode)) {
-            renderEditForm(response, contextPath, topic, workspace, null, false);
+            String message = request.getParameter("saved") != null ? "Workspace settings saved." : null;
+            List<WorkspaceStep> steps = workspaceStepDao.findByWorkspaceOrdered(workspace.getWorkspaceId());
+            renderEditForm(response, contextPath, topic, workspace, steps, message, false);
             return;
         }
 
@@ -151,6 +160,12 @@ public class AdminWorkspaceServlet extends HttpServlet {
         String startDateRaw = trimToNull(request.getParameter("startDate"));
         String endDateRaw = trimToNull(request.getParameter("endDate"));
         String statusRaw = trimToNull(request.getParameter("status"));
+        String stepAction = trimToNull(request.getParameter("stepAction"));
+        String[] stepIdValues = request.getParameterValues("stepId");
+        String[] stepNameValues = request.getParameterValues("stepName");
+        String[] stepAppliesToValues = request.getParameterValues("stepAppliesTo");
+        String newStepName = trimToNull(request.getParameter("newStepName"));
+        String newStepAppliesToRaw = trimToNull(request.getParameter("newStepAppliesTo"));
 
         try {
             workspace.setWorkspaceName(required(workspaceName, "Workspace name"));
@@ -160,8 +175,11 @@ public class AdminWorkspaceServlet extends HttpServlet {
             workspace.setStatus(parseStatus(required(statusRaw, "Status")));
             validateDateOrder(workspace.getStartDate(), workspace.getEndDate());
 
-            connectWorkspaceDao.saveOrUpdate(workspace);
-            response.sendRedirect(contextPath + "/admin/topics?topicId=" + workspace.getTopicId());
+            workspace = connectWorkspaceDao.saveOrUpdate(workspace);
+            processWorkspaceStepUpdates(workspace.getWorkspaceId(), stepIdValues, stepNameValues, stepAppliesToValues,
+                    stepAction, newStepName, newStepAppliesToRaw);
+            response.sendRedirect(contextPath + "/admin/workspaces?workspaceId=" + workspace.getWorkspaceId()
+                    + "&mode=edit&saved=1");
         } catch (Exception ex) {
             workspace.setWorkspaceName(workspaceName);
             workspace.setDescription(description);
@@ -174,8 +192,92 @@ public class AdminWorkspaceServlet extends HttpServlet {
                     // Keep existing status for redisplay.
                 }
             }
-            renderEditForm(response, contextPath, topic, workspace, ex.getMessage(), createNew);
+            List<WorkspaceStep> steps = workspace.getWorkspaceId() == null
+                    ? List.of()
+                    : workspaceStepDao.findByWorkspaceOrdered(workspace.getWorkspaceId());
+            renderEditForm(response, contextPath, topic, workspace, steps,
+                    "Could not save: " + ex.getMessage(), createNew);
         }
+    }
+
+    private void processWorkspaceStepUpdates(Long workspaceId, String[] stepIdValues, String[] stepNameValues,
+            String[] stepAppliesToValues, String stepAction, String newStepName, String newStepAppliesToRaw) {
+        if (workspaceId == null) {
+            return;
+        }
+
+        List<WorkspaceStep> existingSteps = workspaceStepDao.findByWorkspaceOrdered(workspaceId);
+        Map<Long, WorkspaceStep> existingById = new HashMap<>();
+        int maxSortOrder = -1;
+        for (WorkspaceStep step : existingSteps) {
+            existingById.put(step.getStepId(), step);
+            if (step.getSortOrder() != null && step.getSortOrder() > maxSortOrder) {
+                maxSortOrder = step.getSortOrder();
+            }
+        }
+
+        if (stepIdValues != null) {
+            for (int i = 0; i < stepIdValues.length; i++) {
+                Long stepId = parseId(stepIdValues[i]);
+                if (stepId == null) {
+                    continue;
+                }
+                WorkspaceStep step = existingById.get(stepId);
+                if (step == null) {
+                    continue;
+                }
+
+                String nameAtIndex = trimToNull(paramAt(stepNameValues, i));
+                String appliesToAtIndex = trimToNull(paramAt(stepAppliesToValues, i));
+                step.setStepName(required(nameAtIndex, "Step name"));
+                step.setAppliesTo(parseAppliesTo(required(appliesToAtIndex, "Applies to")));
+                workspaceStepDao.saveOrUpdate(step);
+            }
+        }
+
+        if ("add".equalsIgnoreCase(stepAction)) {
+            WorkspaceStep newStep = new WorkspaceStep();
+            newStep.setWorkspaceId(workspaceId);
+            newStep.setStepName(required(newStepName, "New step name"));
+            newStep.setAppliesTo(parseAppliesTo(required(newStepAppliesToRaw, "New step applies to")));
+            newStep.setSortOrder(maxSortOrder + 1);
+            workspaceStepDao.save(newStep);
+            return;
+        }
+
+        if (stepAction != null && (stepAction.startsWith("move-up:") || stepAction.startsWith("move-down:"))) {
+            List<WorkspaceStep> ordered = workspaceStepDao.findByWorkspaceOrdered(workspaceId);
+            Long moveStepId = parseId(stepAction.substring(stepAction.indexOf(':') + 1));
+            if (moveStepId == null) {
+                return;
+            }
+
+            int index = -1;
+            for (int i = 0; i < ordered.size(); i++) {
+                if (moveStepId.equals(ordered.get(i).getStepId())) {
+                    index = i;
+                    break;
+                }
+            }
+            if (index < 0) {
+                return;
+            }
+
+            if (stepAction.startsWith("move-up:") && index > 0) {
+                swapStepOrder(ordered.get(index - 1), ordered.get(index));
+            } else if (stepAction.startsWith("move-down:") && index < ordered.size() - 1) {
+                swapStepOrder(ordered.get(index), ordered.get(index + 1));
+            }
+        }
+    }
+
+    private void swapStepOrder(WorkspaceStep first, WorkspaceStep second) {
+        int firstOrder = first.getSortOrder() == null ? 0 : first.getSortOrder();
+        int secondOrder = second.getSortOrder() == null ? 0 : second.getSortOrder();
+        first.setSortOrder(secondOrder);
+        second.setSortOrder(firstOrder);
+        workspaceStepDao.saveOrUpdate(first);
+        workspaceStepDao.saveOrUpdate(second);
     }
 
     private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -243,8 +345,8 @@ public class AdminWorkspaceServlet extends HttpServlet {
     }
 
     private void renderEditForm(HttpServletResponse response, String contextPath, IgTopic topic,
-            ConnectWorkspace workspace,
-            String errorMessage, boolean createNew) throws IOException {
+            ConnectWorkspace workspace, List<WorkspaceStep> workspaceSteps,
+            String message, boolean createNew) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
@@ -261,8 +363,8 @@ public class AdminWorkspaceServlet extends HttpServlet {
             out.println("    <h1>" + (createNew ? "Create Workspace" : "Edit Workspace") + "</h1>");
             out.println("    <p><strong>Topic:</strong> " + escapeHtml(orEmpty(topic.getTopicName())) + "</p>");
 
-            if (errorMessage != null && !errorMessage.isBlank()) {
-                out.println("    <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
+            if (message != null && !message.isBlank()) {
+                out.println("    <p><strong>" + escapeHtml(message) + "</strong></p>");
             }
 
             out.println(
@@ -300,6 +402,77 @@ public class AdminWorkspaceServlet extends HttpServlet {
             out.println("        <option value=\"ARCHIVED\""
                     + selectedStatus(workspace, ConnectWorkspace.WorkspaceStatus.ARCHIVED) + ">ARCHIVED</option>");
             out.println("      </select>");
+
+            if (!createNew && workspace.getWorkspaceId() != null) {
+                out.println("      <h2>Workspace Steps</h2>");
+                out.println("      <table class=\"data-table\">");
+                out.println("        <thead>");
+                out.println("          <tr>");
+                out.println("            <th>Step Name</th>");
+                out.println("            <th>Applies To</th>");
+                out.println("            <th>Order</th>");
+                out.println("          </tr>");
+                out.println("        </thead>");
+                out.println("        <tbody>");
+                for (int i = 0; i < workspaceSteps.size(); i++) {
+                    WorkspaceStep step = workspaceSteps.get(i);
+                    boolean canMoveUp = i > 0;
+                    boolean canMoveDown = i < workspaceSteps.size() - 1;
+
+                    out.println("          <tr>");
+                    out.println("            <td>");
+                    out.println("              <input type=\"hidden\" name=\"stepId\" value=\"" + step.getStepId()
+                            + "\" />");
+                    out.println("              <input name=\"stepName\" type=\"text\" required value=\""
+                            + escapeHtml(orEmpty(step.getStepName())) + "\" />");
+                    out.println("            </td>");
+                    out.println("            <td>");
+                    out.println("              <select name=\"stepAppliesTo\" required>");
+                    out.println(appliesToOption(step.getAppliesTo(), WorkspaceStep.AppliesTo.CLIENT_TO_SERVER));
+                    out.println(appliesToOption(step.getAppliesTo(), WorkspaceStep.AppliesTo.CLIENT_ONLY));
+                    out.println(appliesToOption(step.getAppliesTo(), WorkspaceStep.AppliesTo.SERVER_ONLY));
+                    out.println(appliesToOption(step.getAppliesTo(), WorkspaceStep.AppliesTo.BOTH));
+                    out.println("              </select>");
+                    out.println("            </td>");
+                    out.println("            <td>");
+                    out.println("              <button type=\"submit\" name=\"stepAction\" value=\"move-up:"
+                            + step.getStepId() + "\"" + (canMoveUp ? "" : " disabled") + ">↑</button>");
+                    out.println("              <button type=\"submit\" name=\"stepAction\" value=\"move-down:"
+                            + step.getStepId() + "\"" + (canMoveDown ? "" : " disabled") + ">↓</button>");
+                    out.println("            </td>");
+                    out.println("          </tr>");
+                }
+                if (workspaceSteps.isEmpty()) {
+                    out.println("          <tr>");
+                    out.println("            <td colspan=\"3\">No steps yet.</td>");
+                    out.println("          </tr>");
+                }
+
+                out.println("          <tr>");
+                out.println(
+                        "            <td><input name=\"newStepName\" type=\"text\" placeholder=\"New step name\" /></td>");
+                out.println("            <td>");
+                out.println("              <select name=\"newStepAppliesTo\">");
+                out.println(appliesToOption(WorkspaceStep.AppliesTo.CLIENT_TO_SERVER,
+                        WorkspaceStep.AppliesTo.CLIENT_TO_SERVER));
+                out.println(
+                        appliesToOption(WorkspaceStep.AppliesTo.CLIENT_TO_SERVER, WorkspaceStep.AppliesTo.CLIENT_ONLY));
+                out.println(
+                        appliesToOption(WorkspaceStep.AppliesTo.CLIENT_TO_SERVER, WorkspaceStep.AppliesTo.SERVER_ONLY));
+                out.println(appliesToOption(WorkspaceStep.AppliesTo.CLIENT_TO_SERVER, WorkspaceStep.AppliesTo.BOTH));
+                out.println("              </select>");
+                out.println("            </td>");
+                out.println("            <td>");
+                out.println(
+                        "              <button type=\"submit\" name=\"stepAction\" value=\"add\">Add Step</button>");
+                out.println("            </td>");
+                out.println("          </tr>");
+                out.println("        </tbody>");
+                out.println("      </table>");
+                out.println("      <p>Existing steps can be renamed and reordered. Steps cannot be deleted.</p>");
+            } else {
+                out.println("      <p>Save the workspace first, then add and manage workspace steps.</p>");
+            }
 
             out.println("      <button type=\"submit\">Save</button>");
             out.println("    </form>");
@@ -399,6 +572,15 @@ public class AdminWorkspaceServlet extends HttpServlet {
         }
     }
 
+    private WorkspaceStep.AppliesTo parseAppliesTo(String value) {
+        try {
+            return WorkspaceStep.AppliesTo.valueOf(value);
+        } catch (Exception ex) {
+            throw new IllegalArgumentException(
+                    "Applies to must be CLIENT_TO_SERVER, CLIENT_ONLY, SERVER_ONLY, or BOTH.");
+        }
+    }
+
     private Long parseId(String value) {
         try {
             return Long.valueOf(value);
@@ -421,6 +603,19 @@ public class AdminWorkspaceServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String paramAt(String[] values, int index) {
+        if (values == null || index < 0 || index >= values.length) {
+            return null;
+        }
+        return values[index];
+    }
+
+    private String appliesToOption(WorkspaceStep.AppliesTo selected, WorkspaceStep.AppliesTo option) {
+        String isSelected = selected == option ? " selected" : "";
+        return "                <option value=\"" + option.name() + "\"" + isSelected + ">"
+                + option.name() + "</option>";
     }
 
     private String formatDate(LocalDate value) {
