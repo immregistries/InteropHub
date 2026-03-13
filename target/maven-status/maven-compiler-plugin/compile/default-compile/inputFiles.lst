@@ -55,3 +55,5 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\Sen
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\SettingsServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\WelcomeServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\WorkspaceCenterServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\WorkspaceEndpointServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\WorkspaceSystemServlet.java

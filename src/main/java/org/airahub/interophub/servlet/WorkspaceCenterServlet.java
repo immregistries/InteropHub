@@ -18,10 +18,12 @@ import org.airahub.interophub.dao.ConnectWorkspaceDao;
 import org.airahub.interophub.dao.IgTopicDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.dao.WorkspaceEnrollmentDao;
+import org.airahub.interophub.dao.WorkspaceSystemDao;
 import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.model.WorkspaceEnrollment;
+import org.airahub.interophub.model.WorkspaceSystem;
 import org.airahub.interophub.service.AuthFlowService;
 
 public class WorkspaceCenterServlet extends HttpServlet {
@@ -30,6 +32,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
     private final IgTopicDao igTopicDao;
     private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
     private final UserDao userDao;
+    private final WorkspaceSystemDao workspaceSystemDao;
 
     public WorkspaceCenterServlet() {
         this.authFlowService = new AuthFlowService();
@@ -37,6 +40,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
         this.igTopicDao = new IgTopicDao();
         this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
         this.userDao = new UserDao();
+        this.workspaceSystemDao = new WorkspaceSystemDao();
     }
 
     @Override
@@ -337,6 +341,46 @@ public class WorkspaceCenterServlet extends HttpServlet {
                         + escapeHtml(orEmpty(topic.getTopicName()) + ": " + orEmpty(workspace.getWorkspaceName()))
                         + "</h2>");
                 out.println("    <p>" + escapeHtml(orEmpty(workspace.getDescription())) + "</p>");
+
+                List<WorkspaceSystem> systems = workspaceSystemDao
+                        .findByWorkspaceIdAndContactUserId(workspaceId, user.getUserId());
+
+                out.println("    <h3>Your Registered Systems</h3>");
+                if (systems.isEmpty()) {
+                    out.println("    <p>You have no systems registered in this workspace yet.</p>");
+                } else {
+                    out.println("    <table class=\"data-table\">");
+                    out.println("      <thead>");
+                    out.println("        <tr>");
+                    out.println("          <th>System Name</th>");
+                    out.println("          <th>Capability</th>");
+                    out.println("          <th>Availability</th>");
+                    out.println("          <th>Actions</th>");
+                    out.println("        </tr>");
+                    out.println("      </thead>");
+                    out.println("      <tbody>");
+                    for (WorkspaceSystem sys : systems) {
+                        String sysName = orEmpty(sys.getSystemName());
+                        String cap = sys.getCapability() == null ? "" : sys.getCapability().name();
+                        String avail = sys.getAvailability() == null ? "" : sys.getAvailability().name();
+                        out.println("        <tr>");
+                        out.println("          <td>" + escapeHtml(sysName) + "</td>");
+                        out.println("          <td>" + escapeHtml(cap) + "</td>");
+                        out.println("          <td>" + escapeHtml(avail) + "</td>");
+                        out.println("          <td>");
+                        out.println("            <a href=\"" + contextPath + "/workspace/system?systemId="
+                                + sys.getSystemId() + "\">View</a>");
+                        out.println("            &nbsp;|&nbsp;");
+                        out.println("            <a href=\"" + contextPath + "/workspace/system?systemId="
+                                + sys.getSystemId() + "&amp;mode=edit\">Edit</a>");
+                        out.println("          </td>");
+                        out.println("        </tr>");
+                    }
+                    out.println("      </tbody>");
+                    out.println("    </table>");
+                }
+                out.println("    <p><a href=\"" + contextPath + "/workspace/system?workspaceId="
+                        + workspaceId + "\">+ Add New System</a></p>");
             } else if (enrollment.getState() == WorkspaceEnrollment.EnrollmentState.PENDING) {
                 out.println("    <p>Your enrollment status is <strong>PENDING</strong>. Please wait for approval.</p>");
             } else if (enrollment.getState() == WorkspaceEnrollment.EnrollmentState.REJECTED) {

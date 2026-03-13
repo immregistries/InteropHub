@@ -129,4 +129,24 @@
     <servlet-name>ApiAuthExchangeServlet</servlet-name>
     <url-pattern>/api/auth/exchange</url-pattern>
   </servlet-mapping>
+
+  <servlet>
+    <servlet-name>WorkspaceSystemServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.WorkspaceSystemServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>WorkspaceSystemServlet</servlet-name>
+    <url-pattern>/workspace/system</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>WorkspaceEndpointServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.WorkspaceEndpointServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>WorkspaceEndpointServlet</servlet-name>
+    <url-pattern>/workspace/endpoint</url-pattern>
+  </servlet-mapping>
 </web-app>
