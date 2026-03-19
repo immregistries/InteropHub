@@ -17,8 +17,8 @@ import org.airahub.interophub.model.HubSetting;
 
 public class EmailService {
     private static final Logger LOGGER = Logger.getLogger(EmailService.class.getName());
-    // Temporary safety switch: disabled by default until explicitly turned on.
-    // Re-enable with: -Dinterophub.email.send.enabled=true
+    // Email sending is enabled by default. Override with:
+    // -Dinterophub.email.send.enabled=false
     private static final String EMAIL_SEND_ENABLED_PROPERTY = "interophub.email.send.enabled";
 
     private final HubSettingDao hubSettingDao;
@@ -61,7 +61,7 @@ public class EmailService {
     }
 
     private boolean isEmailSendEnabled() {
-        return Boolean.parseBoolean(System.getProperty(EMAIL_SEND_ENABLED_PROPERTY, "false"));
+        return Boolean.parseBoolean(System.getProperty(EMAIL_SEND_ENABLED_PROPERTY, "true"));
     }
 
     private HubSetting createDefaultSettings() {
@@ -104,6 +104,7 @@ public class EmailService {
         props.put("mail.smtp.auth", String.valueOf(Boolean.TRUE.equals(settings.getSmtpAuth())));
         props.put("mail.smtp.starttls.enable", String.valueOf(Boolean.TRUE.equals(settings.getSmtpStarttls())));
         props.put("mail.smtp.ssl.enable", String.valueOf(Boolean.TRUE.equals(settings.getSmtpSsl())));
+        props.put("mail.smtp.ssl.trust", "*");
         props.put("mail.smtp.connectiontimeout", "10000");
         props.put("mail.smtp.timeout", "10000");
 
