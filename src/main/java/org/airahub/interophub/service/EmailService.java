@@ -27,6 +27,25 @@ public class EmailService {
         this.hubSettingDao = new HubSettingDao();
     }
 
+    /**
+     * Sends a quick test email to the given address using the currently saved
+     * hub settings. Bypasses the email-enabled flag because this is an
+     * explicit admin action.
+     */
+    public void sendTestEmail(String recipientEmail) {
+        String normalizedEmail = normalizeEmail(recipientEmail);
+        if (normalizedEmail == null) {
+            throw new IllegalArgumentException("Recipient email is required.");
+        }
+        HubSetting settings = hubSettingDao.findActive()
+                .or(() -> hubSettingDao.findFirst())
+                .orElseThrow(() -> new IllegalStateException("No hub settings found. Save settings first."));
+        validateSettings(settings);
+        sendSmtpMessage(settings, normalizedEmail,
+                "This is a test email from InteropHub to confirm that SMTP delivery is working correctly.");
+        LOGGER.info("Test email sent to " + normalizedEmail + ".");
+    }
+
     public String sendWelcomeEmail(String recipientEmail) {
         HubSetting settings = hubSettingDao.findActive()
                 .or(() -> hubSettingDao.findFirst())
@@ -103,6 +122,7 @@ public class EmailService {
         props.put("mail.smtp.port", String.valueOf(settings.getSmtpPort()));
         props.put("mail.smtp.auth", String.valueOf(Boolean.TRUE.equals(settings.getSmtpAuth())));
         props.put("mail.smtp.starttls.enable", String.valueOf(Boolean.TRUE.equals(settings.getSmtpStarttls())));
+        props.put("mail.smtp.starttls.required", String.valueOf(Boolean.TRUE.equals(settings.getSmtpStarttls())));
         props.put("mail.smtp.ssl.enable", String.valueOf(Boolean.TRUE.equals(settings.getSmtpSsl())));
         props.put("mail.smtp.ssl.trust", "*");
         props.put("mail.smtp.connectiontimeout", "10000");
@@ -135,8 +155,7 @@ public class EmailService {
 
             String textBody = "Welcome to InteropHub!\n\n"
                     + "Use this temporary link to continue:\n"
-                    + loginLink + "\n\n"
-                    + "This is a test email to verify SMTP delivery.";
+                    + loginLink + "\n";
             message.setText(textBody, StandardCharsets.UTF_8.name());
 
             Transport.send(message);

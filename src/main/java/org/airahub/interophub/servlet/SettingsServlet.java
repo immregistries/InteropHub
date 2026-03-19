@@ -11,14 +11,17 @@ import org.airahub.interophub.dao.HubSettingDao;
 import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EmailService;
 
 public class SettingsServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final HubSettingDao hubSettingDao;
+    private final EmailService emailService;
 
     public SettingsServlet() {
         this.authFlowService = new AuthFlowService();
         this.hubSettingDao = new HubSettingDao();
+        this.emailService = new EmailService();
     }
 
     @Override
@@ -28,7 +31,7 @@ public class SettingsServlet extends HttpServlet {
         }
 
         HubSetting settings = loadSettings();
-        renderForm(response, request.getContextPath(), settings, null, false);
+        renderForm(response, request.getContextPath(), settings, null, false, null);
     }
 
     @Override
@@ -38,9 +41,12 @@ public class SettingsServlet extends HttpServlet {
             return;
         }
 
+        User currentUser = authFlowService.findAuthenticatedUser(request).orElseThrow();
+
         HubSetting settings = loadSettings();
         String errorMessage = null;
         boolean saved = false;
+        String testEmailMessage = null;
 
         try {
             populateFromRequest(settings, request);
@@ -53,7 +59,19 @@ public class SettingsServlet extends HttpServlet {
             }
         }
 
-        renderForm(response, request.getContextPath(), settings, errorMessage, saved);
+        if (saved && isChecked(request, "sendTestEmail")) {
+            String targetEmail = currentUser.getEmailNormalized() != null
+                    ? currentUser.getEmailNormalized()
+                    : currentUser.getEmail();
+            try {
+                emailService.sendTestEmail(targetEmail);
+                testEmailMessage = "Test email sent successfully to " + targetEmail + ".";
+            } catch (Exception ex) {
+                testEmailMessage = "Settings saved, but test email failed: " + ex.getMessage();
+            }
+        }
+
+        renderForm(response, request.getContextPath(), settings, errorMessage, saved, testEmailMessage);
     }
 
     private boolean ensureAdminAccess(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -161,7 +179,7 @@ public class SettingsServlet extends HttpServlet {
     }
 
     private void renderForm(HttpServletResponse response, String contextPath, HubSetting settings, String errorMessage,
-            boolean saved) throws IOException {
+            boolean saved, String testEmailMessage) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
@@ -183,6 +201,9 @@ public class SettingsServlet extends HttpServlet {
             }
             if (errorMessage != null) {
                 out.println("    <p><strong>Save failed:</strong> " + escapeHtml(errorMessage) + "</p>");
+            }
+            if (testEmailMessage != null) {
+                out.println("    <p><strong>Test email:</strong> " + escapeHtml(testEmailMessage) + "</p>");
             }
 
             out.println("    <form class=\"login-form\" action=\"" + contextPath + "/settings\" method=\"post\">");
@@ -225,6 +246,8 @@ public class SettingsServlet extends HttpServlet {
             out.println("      <input id=\"smtpFromName\" name=\"smtpFromName\" type=\"text\" value=\""
                     + escapeHtml(orEmpty(settings.getSmtpFromName())) + "\" />");
 
+            out.println("      <label><input type=\"checkbox\" name=\"sendTestEmail\" />"
+                    + " Send test email to my address after saving</label>");
             out.println("      <button type=\"submit\">Save Settings</button>");
             out.println("    </form>");
             out.println("  </main>");
