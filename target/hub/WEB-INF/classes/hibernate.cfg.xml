@@ -33,5 +33,7 @@
     <mapping class="org.airahub.interophub.model.UsageDailyAgg"/>
     <mapping class="org.airahub.interophub.model.AdminNote"/>
     <mapping class="org.airahub.interophub.model.HubSetting"/>
+    <mapping class="org.airahub.interophub.model.LegalTerm"/>
+    <mapping class="org.airahub.interophub.model.LegalTermAcceptance"/>
   </session-factory>
 </hibernate-configuration>

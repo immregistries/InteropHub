@@ -31,6 +31,8 @@ public class HomeServlet extends HttpServlet {
                 String rawReturnTo = trimToNull(request.getParameter(AuthFlowService.PARAM_RETURN_TO));
                 String rawState = trimToNull(request.getParameter(AuthFlowService.PARAM_STATE));
                 String rawRequestedUrl = trimToNull(request.getParameter(AuthFlowService.PARAM_REQUESTED_URL));
+                String emailValidationError = request.getParameter("emailError");
+                String submittedEmail = trimToNull(request.getParameter("email"));
                 boolean debugExternalParamsPresent = rawAppCode != null || rawReturnTo != null || rawState != null
                                 || rawRequestedUrl != null;
                 Optional<AuthFlowService.ExternalAuthRequest> externalAuthRequest = Optional.empty();
@@ -69,7 +71,7 @@ public class HomeServlet extends HttpServlet {
                         out.println("    <section class=\"panel\">");
                         out.println("      <img class=\"banner\" src=\"" + contextPath
                                         + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
-                        out.println("      <h1>InteropHub</h1>");
+                        out.println("      <h1>Immunization InteropHub</h1>");
                         out.println(
                                         "      <p class=\"tagline\">Connect with other developers working on immunization interoperability</p>");
                         out.println("    </section>");
@@ -105,8 +107,14 @@ public class HomeServlet extends HttpServlet {
                         out.println("      <form class=\"login-form\" action=\"" + contextPath
                                         + "/send-welcome-email\" method=\"post\">");
                         out.println("        <label for=\"email\">Email Address</label>");
+                        if (emailValidationError != null) {
+                                out.println(
+                                                "        <div class=\"field-error field-error-block\">Enter a valid email address using standard format (for example, you@example.org).</div>");
+                        }
                         out.println(
-                                        "        <input id=\"email\" name=\"email\" type=\"email\" placeholder=\"you@example.org\" autocomplete=\"email\" />");
+                                        "        <input id=\"email\" name=\"email\" type=\"email\" placeholder=\"you@example.org\" autocomplete=\"email\" required maxlength=\"254\" value=\""
+                                                        + escapeHtml(orEmpty(submittedEmail))
+                                                        + "\" pattern=\"[A-Za-z0-9.!#$%&amp;'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+\" title=\"Enter a valid email address like you@example.org\" />");
                         if (externalAuthRequest.isPresent()) {
                                 renderExternalAuthHiddenInputs(out, externalAuthRequest.get());
                         }
@@ -176,5 +184,9 @@ public class HomeServlet extends HttpServlet {
 
         private String orMissing(String value) {
                 return value == null ? "(missing)" : value;
+        }
+
+        private String orEmpty(String value) {
+                return value == null ? "" : value;
         }
 }

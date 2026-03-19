@@ -5,6 +5,7 @@ import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -16,23 +17,33 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.ConnectWorkspaceDao;
 import org.airahub.interophub.dao.IgTopicDao;
+import org.airahub.interophub.dao.LegalTermAcceptanceDao;
+import org.airahub.interophub.dao.LegalTermDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.dao.WorkspaceEnrollmentDao;
 import org.airahub.interophub.dao.WorkspaceSystemDao;
 import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
+import org.airahub.interophub.model.LegalTerm;
+import org.airahub.interophub.model.LegalTermAcceptance;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.model.WorkspaceEnrollment;
 import org.airahub.interophub.model.WorkspaceSystem;
 import org.airahub.interophub.service.AuthFlowService;
 
 public class WorkspaceCenterServlet extends HttpServlet {
+    private static final int MAX_DISPLAY_NAME_LENGTH = 60;
+    private static final int MAX_ORGANIZATION_LENGTH = 120;
+    private static final int MAX_ROLE_TITLE_LENGTH = 120;
+
     private final AuthFlowService authFlowService;
     private final ConnectWorkspaceDao connectWorkspaceDao;
     private final IgTopicDao igTopicDao;
     private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
     private final UserDao userDao;
     private final WorkspaceSystemDao workspaceSystemDao;
+    private final LegalTermDao legalTermDao;
+    private final LegalTermAcceptanceDao legalTermAcceptanceDao;
 
     public WorkspaceCenterServlet() {
         this.authFlowService = new AuthFlowService();
@@ -41,6 +52,8 @@ public class WorkspaceCenterServlet extends HttpServlet {
         this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
         this.userDao = new UserDao();
         this.workspaceSystemDao = new WorkspaceSystemDao();
+        this.legalTermDao = new LegalTermDao();
+        this.legalTermAcceptanceDao = new LegalTermAcceptanceDao();
     }
 
     @Override
@@ -62,11 +75,16 @@ public class WorkspaceCenterServlet extends HttpServlet {
         }
 
         renderWorkspaceCenter(response, request.getContextPath(), authenticatedUser.get(),
-                trimToNull(request.getParameter("workspaceId")), null);
+            trimToNull(request.getParameter("workspaceId")), null, Set.of(), Map.of(),
+            trimToNull(authenticatedUser.get().getDisplayName()),
+            trimToNull(authenticatedUser.get().getOrganization()),
+            trimToNull(authenticatedUser.get().getRoleTitle()));
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        request.setCharacterEncoding("UTF-8");
+
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         if (authenticatedUser.isEmpty()) {
             response.sendRedirect(request.getContextPath() + "/home");
@@ -86,6 +104,21 @@ public class WorkspaceCenterServlet extends HttpServlet {
         String workspaceIdRaw = trimToNull(request.getParameter("workspaceId"));
         String action = trimToNull(request.getParameter("action"));
         String message = null;
+        Map<String, String> fieldErrors = Map.of();
+        Set<Long> selectedWorkspaceTermIds = parseSelectedWorkspaceTermIds(request);
+        String displayName = trimToNull(request.getParameter("displayName"));
+        String organization = trimToNull(request.getParameter("organization"));
+        String roleTitle = trimToNull(request.getParameter("roleTitle"));
+
+        if (displayName == null) {
+            displayName = trimToNull(authenticatedUser.get().getDisplayName());
+        }
+        if (organization == null) {
+            organization = trimToNull(authenticatedUser.get().getOrganization());
+        }
+        if (roleTitle == null) {
+            roleTitle = trimToNull(authenticatedUser.get().getRoleTitle());
+        }
 
         Long workspaceId = parseId(workspaceIdRaw);
         if (workspaceId != null && "join".equalsIgnoreCase(action)) {
@@ -93,17 +126,30 @@ public class WorkspaceCenterServlet extends HttpServlet {
                     .findByWorkspaceAndUser(workspaceId, authenticatedUser.get().getUserId())
                     .orElse(null);
             if (existing == null) {
-                WorkspaceEnrollment enrollment = new WorkspaceEnrollment();
-                enrollment.setWorkspaceId(workspaceId);
-                enrollment.setUserId(authenticatedUser.get().getUserId());
-                enrollment.setState(WorkspaceEnrollment.EnrollmentState.PENDING);
-                enrollment.setConsentAt(LocalDateTime.now());
-                workspaceEnrollmentDao.save(enrollment);
-                message = "Your join request has been submitted and is pending approval.";
+                fieldErrors = validateProfileFields(displayName, organization, roleTitle);
+                List<LegalTerm> workspaceTerms = loadWorkspaceJoinTerms();
+                selectedWorkspaceTermIds = applyPreviouslyAcceptedBothTerms(authenticatedUser.get(), workspaceTerms,
+                        selectedWorkspaceTermIds);
+                if (!fieldErrors.isEmpty()) {
+                    message = "Please correct the highlighted profile fields.";
+                } else if (!workspaceTerms.isEmpty() && !allRequiredTermsAccepted(workspaceTerms, selectedWorkspaceTermIds)) {
+                    message = "Please accept all required workspace legal terms before requesting to join.";
+                } else {
+                    applyUserProfileUpdates(authenticatedUser.get(), displayName, organization, roleTitle);
+                    WorkspaceEnrollment enrollment = new WorkspaceEnrollment();
+                    enrollment.setWorkspaceId(workspaceId);
+                    enrollment.setUserId(authenticatedUser.get().getUserId());
+                    enrollment.setState(WorkspaceEnrollment.EnrollmentState.PENDING);
+                    enrollment.setConsentAt(LocalDateTime.now());
+                    workspaceEnrollmentDao.save(enrollment);
+                    saveTermAcceptancesForWorkspace(authenticatedUser.get(), workspaceId, workspaceTerms, request);
+                    message = "Your join request has been submitted and is pending approval.";
+                }
             }
         }
 
-        renderWorkspaceCenter(response, request.getContextPath(), authenticatedUser.get(), workspaceIdRaw, message);
+        renderWorkspaceCenter(response, request.getContextPath(), authenticatedUser.get(), workspaceIdRaw, message,
+            selectedWorkspaceTermIds, fieldErrors, displayName, organization, roleTitle);
     }
 
     private void handleAdminEnrollmentAction(HttpServletRequest request, HttpServletResponse response,
@@ -286,7 +332,8 @@ public class WorkspaceCenterServlet extends HttpServlet {
 
     private void renderWorkspaceCenter(HttpServletResponse response, String contextPath, User user,
             String workspaceIdRaw,
-            String submittedMessage) throws IOException {
+            String submittedMessage, Set<Long> selectedWorkspaceTermIds, Map<String, String> fieldErrors,
+            String displayName, String organization, String roleTitle) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         Long workspaceId = parseId(workspaceIdRaw);
@@ -330,12 +377,49 @@ public class WorkspaceCenterServlet extends HttpServlet {
 
             if (enrollment == null) {
                 out.println("    <p>You are not currently enrolled in this workspace.</p>");
-                out.println("    <form action=\"" + contextPath + "/workspace\" method=\"post\">");
+                out.println("    <form class=\"login-form\" action=\"" + contextPath + "/workspace\" method=\"post\">");
                 out.println("      <input type=\"hidden\" name=\"workspaceId\" value=\"" + workspace.getWorkspaceId()
                         + "\" />");
                 out.println("      <input type=\"hidden\" name=\"action\" value=\"join\" />");
-                out.println("      <button type=\"submit\">Request To Join</button>");
+                List<LegalTerm> workspaceTerms = loadWorkspaceJoinTerms();
+
+                Set<Long> resolvedSelectedWorkspaceTermIds = applyPreviouslyAcceptedBothTerms(user, workspaceTerms,
+                    selectedWorkspaceTermIds);
+
+                out.println("      <section>");
+                out.println("        <h3>Your Profile</h3>");
+                out.println("      </section>");
+
+                out.println("      <label for=\"displayName\">Display Name" + renderFieldError(fieldErrors, "displayName")
+                    + "</label>");
+                out.println("      <div class=\"field-hint\">Your first and last name for others to see</div>");
+                out.println("      <input id=\"displayName\" name=\"displayName\" type=\"text\" required maxlength=\""
+                    + MAX_DISPLAY_NAME_LENGTH + "\" value=\"" + escapeHtml(orEmpty(displayName)) + "\" />");
+
+                out.println("      <label for=\"organization\">Organization" + renderFieldError(fieldErrors, "organization")
+                    + "</label>");
+                out.println("      <div class=\"field-hint\">Full name of organization you are associated with</div>");
+                out.println("      <input id=\"organization\" name=\"organization\" type=\"text\" required maxlength=\""
+                    + MAX_ORGANIZATION_LENGTH + "\" value=\"" + escapeHtml(orEmpty(organization)) + "\" />");
+
+                out.println("      <label for=\"roleTitle\">Role Title" + renderFieldError(fieldErrors, "roleTitle")
+                    + "</label>");
+                out.println("      <input id=\"roleTitle\" name=\"roleTitle\" type=\"text\" required maxlength=\""
+                    + MAX_ROLE_TITLE_LENGTH + "\" value=\"" + escapeHtml(orEmpty(roleTitle)) + "\" />");
+
+                if (!workspaceTerms.isEmpty()) {
+                    out.println("      <section>");
+                    out.println("        <h3>Request To Join Terms</h3>");
+                    LegalTermsUiRenderer.renderTermsSection(out, workspaceTerms, resolvedSelectedWorkspaceTermIds,
+                            "Workspace Terms", "workspaceLegalTerm_");
+                    out.println("      </section>");
+                }
+                out.println("      <div class=\"form-actions\">");
+                out.println("        <button type=\"submit\">Request To Join</button>");
+                out.println("        <a class=\"button-link\" href=\"" + contextPath + "/welcome\">Cancel</a>");
+                out.println("      </div>");
                 out.println("    </form>");
+                LegalTermsUiRenderer.renderTermsScript(out);
             } else if (enrollment.getState() == WorkspaceEnrollment.EnrollmentState.APPROVED) {
                 out.println("    <h2>"
                         + escapeHtml(orEmpty(topic.getTopicName()) + ": " + orEmpty(workspace.getWorkspaceName()))
@@ -398,6 +482,175 @@ public class WorkspaceCenterServlet extends HttpServlet {
             out.println("</body>");
             out.println("</html>");
         }
+    }
+
+    private void applyUserProfileUpdates(User user, String displayName, String organization, String roleTitle) {
+        if (user == null) {
+            return;
+        }
+        user.setDisplayName(displayName);
+        user.setOrganization(organization);
+        user.setRoleTitle(roleTitle);
+        userDao.saveOrUpdate(user);
+    }
+
+    private Map<String, String> validateProfileFields(String displayName, String organization, String roleTitle) {
+        Map<String, String> fieldErrors = new HashMap<>();
+
+        if (!isValidDisplayName(displayName)) {
+            fieldErrors.put("displayName",
+                    "Enter your full first and last name (2+ letters each, max " + MAX_DISPLAY_NAME_LENGTH + ").");
+        }
+        if (!isValidOrganization(organization)) {
+            fieldErrors.put("organization",
+                    "Use 3-" + MAX_ORGANIZATION_LENGTH
+                            + " characters with letters, numbers, spaces, and common punctuation.");
+        }
+        if (!isValidRoleTitle(roleTitle)) {
+            fieldErrors.put("roleTitle",
+                    "Use 3-" + MAX_ROLE_TITLE_LENGTH
+                            + " characters with letters, numbers, spaces, and common punctuation.");
+        }
+
+        return fieldErrors;
+    }
+
+    private boolean isValidDisplayName(String displayName) {
+        if (displayName == null || displayName.length() < 5 || displayName.length() > MAX_DISPLAY_NAME_LENGTH) {
+            return false;
+        }
+        if (!containsOnlySafeDisplayNameChars(displayName)) {
+            return false;
+        }
+
+        String[] nameParts = displayName.split("\\s+");
+        if (nameParts.length < 2) {
+            return false;
+        }
+
+        String firstName = nameParts[0];
+        String lastName = nameParts[nameParts.length - 1];
+        return countLetters(firstName) >= 2 && countLetters(lastName) >= 2;
+    }
+
+    private boolean isValidOrganization(String organization) {
+        return organization != null
+                && organization.length() >= 3
+                && organization.length() <= MAX_ORGANIZATION_LENGTH
+                && containsOnlySafeTextChars(organization, false);
+    }
+
+    private boolean isValidRoleTitle(String roleTitle) {
+        return roleTitle != null
+                && roleTitle.length() >= 3
+                && roleTitle.length() <= MAX_ROLE_TITLE_LENGTH
+                && containsOnlySafeTextChars(roleTitle, false);
+    }
+
+    private boolean containsOnlySafeTextChars(String value, boolean requireLetter) {
+        boolean hasLetter = false;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isISOControl(ch)) {
+                return false;
+            }
+            if (Character.isLetter(ch)) {
+                hasLetter = true;
+            }
+            boolean allowed = Character.isLetterOrDigit(ch)
+                    || Character.isWhitespace(ch)
+                    || ch == '.'
+                    || ch == ','
+                    || ch == '\''
+                    || ch == '-'
+                    || ch == '&'
+                    || ch == '/'
+                    || ch == '(' || ch == ')';
+            if (!allowed) {
+                return false;
+            }
+        }
+        return !requireLetter || hasLetter;
+    }
+
+    private boolean containsOnlySafeDisplayNameChars(String value) {
+        boolean hasLetter = false;
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (Character.isISOControl(ch)) {
+                return false;
+            }
+
+            int type = Character.getType(ch);
+            boolean isUnicodeNamePunctuation = type == Character.DASH_PUNCTUATION
+                    || type == Character.CONNECTOR_PUNCTUATION
+                    || type == Character.NON_SPACING_MARK
+                    || type == Character.COMBINING_SPACING_MARK;
+
+            if (Character.isLetter(ch)) {
+                hasLetter = true;
+            }
+
+            boolean allowed = Character.isLetterOrDigit(ch)
+                    || Character.isWhitespace(ch)
+                    || ch == '\''
+                    || ch == '’'
+                    || ch == '.'
+                    || isUnicodeNamePunctuation;
+            if (!allowed) {
+                return false;
+            }
+        }
+        return hasLetter;
+    }
+
+    private int countLetters(String value) {
+        if (value == null || value.isEmpty()) {
+            return 0;
+        }
+        int letterCount = 0;
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isLetter(value.charAt(i))) {
+                letterCount++;
+            }
+        }
+        return letterCount;
+    }
+
+    private Set<Long> applyPreviouslyAcceptedBothTerms(User user, List<LegalTerm> terms, Set<Long> selectedIds) {
+        Set<Long> resolved = new HashSet<>();
+        if (selectedIds != null) {
+            resolved.addAll(selectedIds);
+        }
+        if (user == null || user.getUserId() == null || terms == null || terms.isEmpty()) {
+            return resolved;
+        }
+
+        for (LegalTerm term : terms) {
+            if (term.getTermId() == null || term.getScopeType() != LegalTerm.ScopeType.BOTH) {
+                continue;
+            }
+
+            boolean alreadyAcceptedGlobally = legalTermAcceptanceDao
+                    .findByTermUserWorkspace(term.getTermId(), user.getUserId(), null)
+                    .isPresent();
+            if (alreadyAcceptedGlobally) {
+                resolved.add(term.getTermId());
+            }
+        }
+
+        return resolved;
+    }
+
+    private String renderFieldError(Map<String, String> fieldErrors, String fieldName) {
+        if (fieldErrors == null) {
+            return "";
+        }
+        String message = fieldErrors.get(fieldName);
+        if (message == null || message.isBlank()) {
+            return "";
+        }
+        return " <span class=\"field-error\">" + escapeHtml(message) + "</span>";
     }
 
     private void renderError(HttpServletResponse response, String contextPath, String message) throws IOException {
@@ -466,6 +719,72 @@ public class WorkspaceCenterServlet extends HttpServlet {
             return Long.valueOf(value);
         } catch (Exception ex) {
             return null;
+        }
+    }
+
+    private List<LegalTerm> loadWorkspaceJoinTerms() {
+        try {
+            return legalTermDao.findActiveForScope(LegalTerm.ScopeType.WORKSPACE);
+        } catch (Exception ex) {
+            return List.of();
+        }
+    }
+
+    private Set<Long> parseSelectedWorkspaceTermIds(HttpServletRequest request) {
+        Set<Long> selectedIds = new HashSet<>();
+        Enumeration<String> parameterNames = request.getParameterNames();
+        while (parameterNames.hasMoreElements()) {
+            String paramName = parameterNames.nextElement();
+            if (paramName == null || !paramName.startsWith("workspaceLegalTerm_")) {
+                continue;
+            }
+            if (request.getParameter(paramName) == null) {
+                continue;
+            }
+            String suffix = paramName.substring("workspaceLegalTerm_".length());
+            try {
+                selectedIds.add(Long.valueOf(suffix));
+            } catch (Exception ignored) {
+                // Ignore malformed term id suffixes.
+            }
+        }
+        return selectedIds;
+    }
+
+    private boolean allRequiredTermsAccepted(List<LegalTerm> terms, Set<Long> selectedIds) {
+        for (LegalTerm term : terms) {
+            if (term.getTermId() == null) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(term.getRequired()) && !selectedIds.contains(term.getTermId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void saveTermAcceptancesForWorkspace(User user, Long workspaceId, List<LegalTerm> terms,
+            HttpServletRequest request) {
+        if (user == null || user.getUserId() == null || workspaceId == null || terms == null || terms.isEmpty()) {
+            return;
+        }
+        String ipAddress = trimToNull(request.getRemoteAddr());
+        String userAgent = trimToNull(request.getHeader("User-Agent"));
+        for (LegalTerm term : terms) {
+            if (term.getTermId() == null) {
+                continue;
+            }
+            LegalTermAcceptance acceptance = legalTermAcceptanceDao
+                    .findByTermUserWorkspace(term.getTermId(), user.getUserId(), workspaceId)
+                    .orElseGet(LegalTermAcceptance::new);
+            acceptance.setTermId(term.getTermId());
+            acceptance.setUserId(user.getUserId());
+            acceptance.setWorkspaceId(workspaceId);
+            acceptance.setAcceptedValue(Boolean.TRUE);
+            acceptance.setAcceptedAt(LocalDateTime.now());
+            acceptance.setIpAddress(ipAddress);
+            acceptance.setUserAgent(userAgent);
+            legalTermAcceptanceDao.saveOrUpdate(acceptance);
         }
     }
 

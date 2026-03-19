@@ -85,12 +85,40 @@ p {
   font-weight: 600;
 }
 
+.login-form .field-error {
+  color: #b42318;
+  font-weight: 600;
+  margin-left: 0.35rem;
+}
+
+.login-form .field-error-block {
+  display: block;
+  margin-left: 0;
+  margin-top: -0.2rem;
+}
+
+.login-form .field-hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: -0.35rem;
+}
+
 .login-form input {
   width: 100%;
   padding: 0.75rem 0.85rem;
   border: 1px solid #bac6db;
   border-radius: 8px;
   font-size: 1rem;
+}
+
+.login-form input[type="checkbox"],
+.login-form input[type="radio"] {
+  width: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  margin: 0 0.45rem 0 0;
+  vertical-align: middle;
 }
 
 .login-form select,
@@ -116,6 +144,29 @@ p {
 
 .login-form button:hover {
   filter: brightness(0.95);
+}
+
+.login-form .form-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.login-form .button-link {
+  display: inline-block;
+  width: fit-content;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-form .button-link:hover {
+  background: #f8fafc;
 }
 
 h2 {
@@ -179,6 +230,134 @@ li {
 
 .login-page + .legal-footer {
   width: min(860px, 94vw);
+}
+
+.doc-page {
+  width: min(920px, 94vw);
+  display: grid;
+  gap: 1rem;
+}
+
+.doc-page + .legal-footer {
+  width: min(920px, 94vw);
+}
+
+.doc-section h2,
+.doc-section h3 {
+  margin-top: 0;
+}
+
+.doc-section p + p,
+.doc-section p + ul,
+.doc-section p + ol,
+.doc-section ul + p,
+.doc-section ol + p,
+.doc-section ul + ul,
+.doc-section ol + ol,
+.doc-section ul + ol,
+.doc-section ol + ul,
+.doc-section .doc-code + p,
+.doc-section .doc-code + ul,
+.doc-section .doc-code + ol {
+  margin-top: 0.85rem;
+}
+
+.doc-section ol,
+.doc-section ul {
+  margin: 0.75rem 0 0;
+  padding-left: 1.4rem;
+}
+
+.doc-section li {
+  margin: 0.45rem 0;
+  line-height: 1.55;
+}
+
+.doc-kicker {
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.doc-code {
+  margin: 0.85rem 0 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #0f172a;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.94rem;
+  line-height: 1.5;
+}
+
+.doc-code code,
+.doc-section code {
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.checklist {
+  list-style: square;
+}
+
+/* Docs index landing page */
+.doc-index-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1.25rem;
+}
+
+a.doc-card {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+a.doc-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.07);
+}
+
+a.doc-card .doc-kicker {
+  margin-top: 0;
+}
+
+a.doc-card h2 {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+a.doc-card p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+/* Doc section tables */
+.doc-section table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+}
+
+.doc-section th,
+.doc-section td {
+  text-align: left;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+}
+
+.doc-section th {
+  background: var(--panel);
+  font-weight: 600;
 }
 
 .legal-footer p {

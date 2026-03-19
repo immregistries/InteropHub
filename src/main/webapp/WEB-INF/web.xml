@@ -149,4 +149,34 @@
     <servlet-name>WorkspaceEndpointServlet</servlet-name>
     <url-pattern>/workspace/endpoint</url-pattern>
   </servlet-mapping>
+
+  <servlet>
+    <servlet-name>ExternalApplicationLoginFlowServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.ExternalApplicationLoginFlowServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>ExternalApplicationLoginFlowServlet</servlet-name>
+    <url-pattern>/docs/external-application-login-flow.html</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>DocsIndexServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.DocsIndexServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>DocsIndexServlet</servlet-name>
+    <url-pattern>/docs/</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>OAuthArchitectureServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.OAuthArchitectureServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>OAuthArchitectureServlet</servlet-name>
+    <url-pattern>/docs/oauth-architecture.html</url-pattern>
+  </servlet-mapping>
 </web-app>

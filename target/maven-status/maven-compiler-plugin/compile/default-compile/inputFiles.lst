@@ -7,6 +7,8 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\Connect
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\GenericDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\HubSettingDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\IgTopicDao.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\LegalTermAcceptanceDao.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\LegalTermDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\MagicLinkDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\SessionDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\UsageDailyAggDao.java
@@ -26,6 +28,8 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AuthL
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\ConnectWorkspace.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\HubSetting.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\IgTopic.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\LegalTerm.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\LegalTermAcceptance.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\MagicLink.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\Session.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\UsageDailyAgg.java
@@ -46,10 +50,14 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\Adm
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\AdminIgTopicServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\AdminWorkspaceServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\ApiAuthExchangeServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\DocsIndexServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\ExternalApplicationLoginFlowServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\HelloServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\HomeServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\LegalTermsUiRenderer.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\LogoutServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\MagicLinkServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\OAuthArchitectureServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\PageFooterRenderer.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\SendWelcomeEmailServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\SettingsServlet.java
