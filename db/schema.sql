@@ -224,6 +224,39 @@ CREATE TABLE app_user_token (
   CONSTRAINT fk_app_token_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- API definitions per registered app (distinct endpoints/operations the app exposes for testing)
+CREATE TABLE app_api (
+  api_id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  app_id             BIGINT UNSIGNED NOT NULL,
+  api_code           VARCHAR(80) NOT NULL,    -- stable identifier, e.g. 'query', 'submit'
+  purpose_label      VARCHAR(160) NOT NULL,   -- human-readable label shown to users
+  description        TEXT NULL,
+  is_enabled         TINYINT(1) NOT NULL DEFAULT 1,
+  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (api_id),
+  UNIQUE KEY uq_app_api_code (app_id, api_code),
+  KEY ix_app_api_enabled (app_id, is_enabled),
+  CONSTRAINT fk_app_api_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Per-user API secrets for test system access
+-- NOTE: secret_value stored plain-text by design — these are test-only keys with minimal security.
+--       Revoke by nulling secret_value; update by replacing it.
+CREATE TABLE app_api_secret (
+  secret_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  api_id             BIGINT UNSIGNED NOT NULL,
+  user_id            BIGINT NOT NULL,
+  secret_value       VARCHAR(255) NULL,       -- NULL = revoked; replace value to rotate
+  label              VARCHAR(120) NULL,       -- optional: "Postman", "My test client"
+  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (secret_id),
+  UNIQUE KEY uq_api_secret_user (api_id, user_id),
+  KEY ix_api_secret_user (user_id),
+  CONSTRAINT fk_api_secret_api FOREIGN KEY (api_id) REFERENCES app_api(api_id),
+  CONSTRAINT fk_api_secret_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- -------------------------
 -- CONNECTATHON TOPICS / WORKSPACES
 -- -------------------------
