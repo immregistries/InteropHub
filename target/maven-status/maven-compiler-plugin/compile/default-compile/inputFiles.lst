@@ -1,5 +1,7 @@
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\config\HibernateUtil.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AdminNoteDao.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AppApiDao.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AppApiSecretDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AppRedirectAllowlistDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AppRegistryDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\AuthLoginCodeDao.java
@@ -22,6 +24,8 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\Workspa
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\WorkspaceSystemContactDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\dao\WorkspaceSystemDao.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AdminNote.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AppApi.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AppApiSecret.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AppRedirectAllowlist.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AppRegistry.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\model\AuthLoginCode.java
@@ -50,6 +54,7 @@ C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\Adm
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\AdminIgTopicServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\AdminWorkspaceServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\ApiAuthExchangeServlet.java
+C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\AppAccessServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\DocsIndexServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\ExternalApplicationLoginFlowServlet.java
 C:\dev\immregistries\InteropHub\src\main\java\org\airahub\interophub\servlet\HelloServlet.java

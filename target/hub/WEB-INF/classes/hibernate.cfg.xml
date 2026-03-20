@@ -20,6 +20,8 @@
     <mapping class="org.airahub.interophub.model.UserToken"/>
     <mapping class="org.airahub.interophub.model.AuthLoginCode"/>
     <mapping class="org.airahub.interophub.model.AppRegistry"/>
+    <mapping class="org.airahub.interophub.model.AppApi"/>
+    <mapping class="org.airahub.interophub.model.AppApiToken"/>
     <mapping class="org.airahub.interophub.model.AppRedirectAllowlist"/>
     <mapping class="org.airahub.interophub.model.IgTopic"/>
     <mapping class="org.airahub.interophub.model.ConnectWorkspace"/>

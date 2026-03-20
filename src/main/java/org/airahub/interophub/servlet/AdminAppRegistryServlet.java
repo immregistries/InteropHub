@@ -9,8 +9,10 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.AppApiDao;
 import org.airahub.interophub.dao.AppRedirectAllowlistDao;
 import org.airahub.interophub.dao.AppRegistryDao;
+import org.airahub.interophub.model.AppApi;
 import org.airahub.interophub.model.AppRedirectAllowlist;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.User;
@@ -18,11 +20,13 @@ import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminAppRegistryServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
+    private final AppApiDao appApiDao;
     private final AppRedirectAllowlistDao appRedirectAllowlistDao;
     private final AppRegistryDao appRegistryDao;
 
     public AdminAppRegistryServlet() {
         this.authFlowService = new AuthFlowService();
+        this.appApiDao = new AppApiDao();
         this.appRedirectAllowlistDao = new AppRedirectAllowlistDao();
         this.appRegistryDao = new AppRegistryDao();
     }
@@ -38,7 +42,9 @@ public class AdminAppRegistryServlet extends HttpServlet {
         boolean createNew = "new".equalsIgnoreCase(request.getParameter("mode"));
 
         if (createNew) {
-            renderForm(response, request.getContextPath(), new AppRegistry(), new ArrayList<>(), null, true, null);
+            renderForm(response, request.getContextPath(), new AppRegistry(), new ArrayList<>(), new ArrayList<>(),
+                    null,
+                    true, null, null, true);
             return;
         }
 
@@ -60,9 +66,12 @@ public class AdminAppRegistryServlet extends HttpServlet {
                     request.getContextPath(),
                     appRegistry,
                     appRedirectAllowlistDao.findByAppId(appRegistry.getAppId()),
+                    appApiDao.findByAppId(appRegistry.getAppId()),
                     null,
                     false,
-                    null);
+                    null,
+                    null,
+                    true);
             return;
         }
 
@@ -105,6 +114,8 @@ public class AdminAppRegistryServlet extends HttpServlet {
         String defaultRedirectUrl = trimToNull(request.getParameter("defaultRedirectUrl"));
         String appDescription = trimToNull(request.getParameter("appDescription"));
         String newAllowBaseUrl = trimToNull(request.getParameter("newAllowBaseUrl"));
+        String newPurposeLabel = trimToNull(request.getParameter("newPurposeLabel"));
+        boolean newPurposeEnabled = request.getParameter("newPurposeEnabled") != null;
         boolean enabled = request.getParameter("enabled") != null;
 
         try {
@@ -117,6 +128,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
 
             appRegistry = appRegistryDao.saveOrUpdate(appRegistry);
             upsertAllowlistEntries(request, appRegistry.getAppId());
+            upsertAppApiEntries(request, appRegistry.getAppId());
 
             if (newAllowBaseUrl != null) {
                 AppRedirectAllowlist newEntry = new AppRedirectAllowlist();
@@ -124,6 +136,15 @@ public class AdminAppRegistryServlet extends HttpServlet {
                 newEntry.setBaseUrl(newAllowBaseUrl);
                 newEntry.setEnabled(Boolean.TRUE);
                 appRedirectAllowlistDao.save(newEntry);
+            }
+
+            if (newPurposeLabel != null) {
+                AppApi newPurpose = new AppApi();
+                newPurpose.setAppId(appRegistry.getAppId());
+                newPurpose.setPurposeLabel(newPurposeLabel);
+                newPurpose.setApiCode(generateUniqueApiCode(appRegistry.getAppId(), newPurposeLabel));
+                newPurpose.setEnabled(newPurposeEnabled);
+                appApiDao.save(newPurpose);
             }
 
             response.sendRedirect(contextPath + "/admin/apps?saved=1");
@@ -134,9 +155,12 @@ public class AdminAppRegistryServlet extends HttpServlet {
                     appRegistry,
                     appRegistry.getAppId() == null ? new ArrayList<>()
                             : appRedirectAllowlistDao.findByAppId(appRegistry.getAppId()),
+                    appRegistry.getAppId() == null ? new ArrayList<>() : appApiDao.findByAppId(appRegistry.getAppId()),
                     ex.getMessage(),
                     createNew,
-                    newAllowBaseUrl);
+                    newAllowBaseUrl,
+                    newPurposeLabel,
+                    newPurposeEnabled);
         }
     }
 
@@ -164,6 +188,33 @@ public class AdminAppRegistryServlet extends HttpServlet {
             existing.setBaseUrl(baseUrl);
             existing.setEnabled(entryEnabled);
             appRedirectAllowlistDao.saveOrUpdate(existing);
+        }
+    }
+
+    private void upsertAppApiEntries(HttpServletRequest request, Long appId) {
+        String[] apiIds = request.getParameterValues("apiId");
+        if (apiIds == null) {
+            return;
+        }
+
+        for (String apiIdRaw : apiIds) {
+            Long apiId = parseId(apiIdRaw);
+            if (apiId == null) {
+                throw new IllegalArgumentException("Invalid API purpose identifier.");
+            }
+
+            AppApi existing = appApiDao.findById(apiId)
+                    .orElseThrow(() -> new IllegalArgumentException("API purpose entry not found."));
+            if (!appId.equals(existing.getAppId())) {
+                throw new IllegalArgumentException("API purpose entry does not match the selected app.");
+            }
+
+            String purposeLabel = required(trimToNull(request.getParameter("purposeLabel_" + apiId)), "Purpose");
+            boolean entryEnabled = request.getParameter("purposeEnabled_" + apiId) != null;
+
+            existing.setPurposeLabel(purposeLabel);
+            existing.setEnabled(entryEnabled);
+            appApiDao.saveOrUpdate(existing);
         }
     }
 
@@ -246,7 +297,8 @@ public class AdminAppRegistryServlet extends HttpServlet {
     }
 
     private void renderForm(HttpServletResponse response, String contextPath, AppRegistry appRegistry,
-            List<AppRedirectAllowlist> allowlistEntries, String errorMessage, boolean createNew, String newAllowBaseUrl)
+            List<AppRedirectAllowlist> allowlistEntries, List<AppApi> apiEntries, String errorMessage,
+            boolean createNew, String newAllowBaseUrl, String newPurposeLabel, boolean newPurposeEnabled)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
@@ -329,6 +381,33 @@ public class AdminAppRegistryServlet extends HttpServlet {
                     + escapeHtml(orEmpty(newAllowBaseUrl)) + "\" />");
             out.println("      <p>Any new URL is added as enabled by default.</p>");
 
+            out.println("      <h2>API Access</h2>");
+            out.println("      <p>Edit existing purposes or disable them. Deletion is not supported.</p>");
+
+            if (apiEntries.isEmpty()) {
+                out.println("      <p>No API purposes yet.</p>");
+            } else {
+                for (AppApi entry : apiEntries) {
+                    out.println("      <input type=\"hidden\" name=\"apiId\" value=\"" + entry.getApiId() + "\" />");
+
+                    out.println("      <label for=\"purposeLabel_" + entry.getApiId() + "\">Purpose</label>");
+                    out.println("      <input id=\"purposeLabel_" + entry.getApiId() + "\" name=\"purposeLabel_"
+                            + entry.getApiId() + "\" type=\"text\" required value=\""
+                            + escapeHtml(orEmpty(entry.getPurposeLabel())) + "\" />");
+
+                    out.println("      <label><input type=\"checkbox\" name=\"purposeEnabled_" + entry.getApiId()
+                            + "\"" + (Boolean.TRUE.equals(entry.getEnabled()) ? " checked" : "")
+                            + " /> Enabled</label>");
+                }
+            }
+
+            out.println("      <label for=\"newPurposeLabel\">Purpose</label>");
+            out.println("      <input id=\"newPurposeLabel\" name=\"newPurposeLabel\" type=\"text\" value=\""
+                    + escapeHtml(orEmpty(newPurposeLabel)) + "\" />");
+            out.println("      <label><input type=\"checkbox\" name=\"newPurposeEnabled\""
+                    + (newPurposeEnabled ? " checked" : "") + " /> Enabled</label>");
+            out.println("      <p>If Purpose is blank, no new API purpose is added.</p>");
+
             out.println("      <button type=\"submit\">Save</button>");
             out.println("    </form>");
             out.println("    <p><a href=\"" + contextPath + "/admin/apps\">Back to App Registry</a></p>");
@@ -369,6 +448,49 @@ public class AdminAppRegistryServlet extends HttpServlet {
             return "<span class=\"status-icon status-enabled\" title=\"Enabled\">&#10004; Enabled</span>";
         }
         return "<span class=\"status-icon status-disabled\" title=\"Disabled\">&#10008; Disabled</span>";
+    }
+
+    private String generateUniqueApiCode(Long appId, String purposeLabel) {
+        String baseCode = slugifyPurposeLabel(purposeLabel);
+        String candidate = baseCode;
+        int suffix = 2;
+
+        while (appApiDao.findByAppIdAndApiCode(appId, candidate).isPresent()) {
+            candidate = baseCode + "-" + suffix;
+            suffix++;
+        }
+
+        return candidate;
+    }
+
+    private String slugifyPurposeLabel(String purposeLabel) {
+        if (purposeLabel == null) {
+            return "purpose";
+        }
+
+        String lower = purposeLabel.trim().toLowerCase();
+        StringBuilder out = new StringBuilder();
+        boolean previousDash = false;
+        for (int i = 0; i < lower.length(); i++) {
+            char ch = lower.charAt(i);
+            boolean alphaNum = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+            if (alphaNum) {
+                out.append(ch);
+                previousDash = false;
+            } else if (!previousDash) {
+                out.append('-');
+                previousDash = true;
+            }
+        }
+
+        String normalized = out.toString().replaceAll("^-+", "").replaceAll("-+$", "");
+        if (normalized.isEmpty()) {
+            return "purpose";
+        }
+        if (normalized.length() > 80) {
+            return normalized.substring(0, 80);
+        }
+        return normalized;
     }
 
     private String selectedManagedBy(AppRegistry appRegistry, AppRegistry.ManagedBy managedBy) {

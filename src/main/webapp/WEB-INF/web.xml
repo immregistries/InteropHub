@@ -71,6 +71,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AppAccessServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AppAccessServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AppAccessServlet</servlet-name>
+    <url-pattern>/app-access</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>WorkspaceCenterServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.WorkspaceCenterServlet</servlet-class>
   </servlet>

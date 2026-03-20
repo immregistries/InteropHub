@@ -136,7 +136,7 @@ public class HomeServlet extends HttpServlet {
                         out.println("      <p>By registering you can:</p>");
                         out.println("      <ul>");
                         out.println("        <li>Access demonstration systems</li>");
-                        out.println("        <li>Generate API tokens</li>");
+                        out.println("        <li>Generate API secrets</li>");
                         out.println("        <li>Connect with other developers</li>");
                         out.println("        <li>Participate in connectathon workspaces</li>");
                         out.println("      </ul>");

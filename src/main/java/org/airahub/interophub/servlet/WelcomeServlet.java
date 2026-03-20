@@ -104,8 +104,8 @@ public class WelcomeServlet extends HttpServlet {
             } else {
                 out.println("    <ul>");
                 for (AppRegistry app : availableApps) {
-                    out.println("      <li><a href=\"" + escapeHtml(app.getDefaultRedirectUrl()) + "\">"
-                            + escapeHtml(app.getAppName()) + "</a></li>");
+                    out.println("      <li><a href=\"" + contextPath + "/app-access?appId=" + app.getAppId()
+                            + "\">" + escapeHtml(app.getAppName()) + "</a></li>");
                 }
                 out.println("    </ul>");
             }
