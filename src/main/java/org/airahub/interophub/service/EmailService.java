@@ -17,9 +17,6 @@ import org.airahub.interophub.model.HubSetting;
 
 public class EmailService {
     private static final Logger LOGGER = Logger.getLogger(EmailService.class.getName());
-    // Email sending is enabled by default. Override with:
-    // -Dinterophub.email.send.enabled=false
-    private static final String EMAIL_SEND_ENABLED_PROPERTY = "interophub.email.send.enabled";
 
     private final HubSettingDao hubSettingDao;
 
@@ -46,15 +43,15 @@ public class EmailService {
         LOGGER.info("Test email sent to " + normalizedEmail + ".");
     }
 
-    public String sendWelcomeEmail(String recipientEmail) {
+    public void sendWelcomeEmail(String recipientEmail) {
         HubSetting settings = hubSettingDao.findActive()
                 .or(() -> hubSettingDao.findFirst())
                 .orElseGet(this::createDefaultSettings);
         String loginLink = buildHomeLink(settings.getExternalBaseUrl());
-        return sendWelcomeEmail(recipientEmail, loginLink);
+        sendWelcomeEmail(recipientEmail, loginLink);
     }
 
-    public String sendWelcomeEmail(String recipientEmail, String loginLink) {
+    public void sendWelcomeEmail(String recipientEmail, String loginLink) {
         String normalizedEmail = normalizeEmail(recipientEmail);
         if (normalizedEmail == null) {
             throw new IllegalArgumentException("Recipient email is required.");
@@ -70,17 +67,7 @@ public class EmailService {
         validateSettings(settings);
 
         String trimmedLink = loginLink.trim();
-        if (!isEmailSendEnabled()) {
-            LOGGER.info("Welcome email send is disabled via property '" + EMAIL_SEND_ENABLED_PROPERTY
-                    + "'. Returning login link without SMTP send.");
-            return trimmedLink;
-        }
         sendSmtpMessage(settings, normalizedEmail, trimmedLink);
-        return trimmedLink;
-    }
-
-    private boolean isEmailSendEnabled() {
-        return Boolean.parseBoolean(System.getProperty(EMAIL_SEND_ENABLED_PROPERTY, "true"));
     }
 
     private HubSetting createDefaultSettings() {
@@ -154,7 +141,7 @@ public class EmailService {
             message.setSubject("Welcome to InteropHub", StandardCharsets.UTF_8.name());
 
             String textBody = "Welcome to InteropHub!\n\n"
-                    + "Use this temporary link to continue:\n"
+                    + "Use this sign-in link to continue:\n"
                     + loginLink + "\n";
             message.setText(textBody, StandardCharsets.UTF_8.name());
 

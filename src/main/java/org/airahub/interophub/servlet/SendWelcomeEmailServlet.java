@@ -155,7 +155,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 }
 
                 String magicLinkUrl = authFlowService.issueMagicLink(user, request, externalAuthRequest.orElse(null));
-                renderEmailSent(out, contextPath, email, emailService.sendWelcomeEmail(normalizedEmail, magicLinkUrl));
+                emailService.sendWelcomeEmail(normalizedEmail, magicLinkUrl);
+                renderEmailSent(out, contextPath, email);
             } catch (IllegalArgumentException ex) {
                 LOGGER.log(Level.INFO, "Could not complete registration request: {0}", ex.getMessage());
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
@@ -195,11 +196,10 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         }
     }
 
-    private void renderEmailSent(PrintWriter out, String contextPath, String email, String loginLink) {
+    private void renderEmailSent(PrintWriter out, String contextPath, String email) {
         out.println("    <h1>Email Sent</h1>");
         out.println("    <p>We sent a welcome email to <strong>" + escapeHtml(email) + "</strong>.</p>");
-        out.println("    <p>The message includes this temporary link:</p>");
-        out.println("    <p><a href=\"" + escapeHtml(loginLink) + "\">" + escapeHtml(loginLink) + "</a></p>");
+        out.println("    <p>Check your inbox and use the sign-in link in that message to continue.</p>");
         out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
     }
 
