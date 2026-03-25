@@ -76,22 +76,6 @@ public class HomeServlet extends HttpServlet {
                                         "      <p class=\"tagline\">Connect with other developers working on immunization interoperability</p>");
                         out.println("    </section>");
 
-                        if (debugExternalParamsPresent) {
-                                out.println("    <section class=\"panel\">");
-                                out.println("      <h2>Debug: External Auth Parameters</h2>");
-                                out.println("      <ul>");
-                                out.println("        <li>app_code: <code>" + escapeHtml(orMissing(rawAppCode))
-                                                + "</code></li>");
-                                out.println("        <li>return_to: <code>" + escapeHtml(orMissing(rawReturnTo))
-                                                + "</code></li>");
-                                out.println("        <li>state: <code>" + escapeHtml(orMissing(rawState))
-                                                + "</code></li>");
-                                out.println("        <li>requested_url: <code>" + escapeHtml(orMissing(rawRequestedUrl))
-                                                + "</code></li>");
-                                out.println("      </ul>");
-                                out.println("    </section>");
-                        }
-
                         out.println("    <section class=\"panel\">");
                         out.println("      <p class=\"section-title\">Enter your email to continue</p>");
                         if (externalAuthRequest.isPresent()) {
