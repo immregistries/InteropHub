@@ -35,5 +35,6 @@
     <mapping class="org.airahub.interophub.model.HubSetting"/>
     <mapping class="org.airahub.interophub.model.LegalTerm"/>
     <mapping class="org.airahub.interophub.model.LegalTermAcceptance"/>
+    <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
   </session-factory>
 </hibernate-configuration>

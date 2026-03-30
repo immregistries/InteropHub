@@ -18,7 +18,14 @@ public class MagicLinkSendEventDao {
             return event;
         } catch (Exception ex) {
             if (tx != null) {
-                tx.rollback();
+                try {
+                    tx.rollback();
+                } catch (Exception rollbackEx) {
+                    LOGGER.log(Level.WARNING,
+                            "Rollback failed while saving magic link send event for userId=" + event.getUserId()
+                                    + " magicId=" + event.getMagicId() + " type=" + event.getEventType(),
+                            rollbackEx);
+                }
             }
             LOGGER.log(Level.SEVERE,
                     "Failed to save magic link send event for userId=" + event.getUserId()
