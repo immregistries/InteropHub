@@ -2,6 +2,7 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jakarta.servlet.ServletException;
@@ -21,8 +23,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.LegalTermAcceptanceDao;
 import org.airahub.interophub.dao.LegalTermDao;
+import org.airahub.interophub.dao.MagicLinkSendEventDao;
 import org.airahub.interophub.model.LegalTerm;
 import org.airahub.interophub.model.LegalTermAcceptance;
+import org.airahub.interophub.model.MagicLinkSendEvent;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.AuthService;
@@ -41,6 +45,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
     private final EmailService emailService;
     private final LegalTermDao legalTermDao;
     private final LegalTermAcceptanceDao legalTermAcceptanceDao;
+    private final MagicLinkSendEventDao magicLinkSendEventDao;
 
     public SendWelcomeEmailServlet() {
         this.authFlowService = new AuthFlowService();
@@ -48,6 +53,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         this.emailService = new EmailService();
         this.legalTermDao = new LegalTermDao();
         this.legalTermAcceptanceDao = new LegalTermAcceptanceDao();
+        this.magicLinkSendEventDao = new MagicLinkSendEventDao();
     }
 
     @Override
@@ -76,6 +82,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         }
 
         boolean profileSubmission = request.getParameter("profileSubmission") != null;
+        String requestId = UUID.randomUUID().toString();
 
         if (!profileSubmission && normalizedEmail == null) {
             redirectToHomeWithEmailError(request, response, email);
@@ -83,6 +90,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         }
 
         response.setContentType("text/html;charset=UTF-8");
+        User auditUser = null;
+        Long issuedMagicId = null;
 
         try (PrintWriter out = response.getWriter()) {
             String pageTitle = profileSubmission ? "Register - InteropHub" : "Register - InteropHub";
@@ -109,6 +118,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 User user;
                 if (existingUser.isPresent()) {
                     user = existingUser.get();
+                    auditUser = user;
                 } else if (!profileSubmission) {
                     renderProfileForm(out, contextPath, email, displayName, organization, roleTitle,
                             selectedLegalTermIds,
@@ -150,12 +160,63 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                             displayName,
                             organization,
                             roleTitle);
+                    auditUser = user;
 
                     saveTermAcceptancesForRegistration(user, registrationTerms, request);
                 }
 
-                String magicLinkUrl = authFlowService.issueMagicLink(user, request, externalAuthRequest.orElse(null));
-                emailService.sendWelcomeEmail(normalizedEmail, magicLinkUrl);
+                AuthFlowService.IssuedMagicLink issuedMagicLink = authFlowService.issueMagicLinkWithMetadata(
+                        user,
+                        request,
+                        externalAuthRequest.orElse(null));
+                issuedMagicId = issuedMagicLink.getMagicId();
+
+                logMagicLinkSendEvent(
+                        MagicLinkSendEvent.EventType.SEND_REQUESTED,
+                        requestId,
+                        issuedMagicLink.getMagicId(),
+                        user,
+                        normalizedEmail,
+                        request,
+                        externalAuthRequest.orElse(null),
+                        null,
+                        null,
+                        null,
+                        null);
+
+                logMagicLinkSendEvent(
+                        MagicLinkSendEvent.EventType.SMTP_SEND_STARTED,
+                        requestId,
+                        issuedMagicLink.getMagicId(),
+                        user,
+                        normalizedEmail,
+                        request,
+                        externalAuthRequest.orElse(null),
+                        null,
+                        null,
+                        null,
+                        null);
+
+                EmailService.SendWelcomeEmailResult sendResult = emailService.sendWelcomeEmailWithResult(
+                        normalizedEmail,
+                        issuedMagicLink.getMagicLinkUrl());
+
+                logMagicLinkSendEvent(
+                        MagicLinkSendEvent.EventType.SMTP_SEND_SUCCEEDED,
+                        requestId,
+                        issuedMagicLink.getMagicId(),
+                        user,
+                        normalizedEmail,
+                        request,
+                        externalAuthRequest.orElse(null),
+                        sendResult.getSmtpMessageId(),
+                        sendResult.getSmtpProvider(),
+                        null,
+                        null);
+
+                LOGGER.info("requestId=" + requestId + " sent welcome email for userId=" + user.getUserId()
+                        + " magicId=" + issuedMagicLink.getMagicId()
+                        + " email=" + normalizedEmail);
                 renderEmailSent(out, contextPath, email);
             } catch (IllegalArgumentException ex) {
                 LOGGER.log(Level.INFO, "Could not complete registration request: {0}", ex.getMessage());
@@ -173,6 +234,26 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                     out.println("    <p><a href=\"" + contextPath + "/home\">Return to Home</a></p>");
                 }
             } catch (Exception ex) {
+                if (normalizedEmail != null && issuedMagicId != null) {
+                    String smtpReplyCode = null;
+                    String smtpProvider = null;
+                    if (ex instanceof EmailService.EmailSendException emailSendException) {
+                        smtpReplyCode = emailSendException.getSmtpReplyCode();
+                        smtpProvider = emailSendException.getSmtpProvider();
+                    }
+                    logMagicLinkSendEvent(
+                            MagicLinkSendEvent.EventType.SMTP_SEND_FAILED,
+                            requestId,
+                            issuedMagicId,
+                            auditUser,
+                            normalizedEmail,
+                            request,
+                            externalAuthRequest.orElse(null),
+                            null,
+                            smtpProvider,
+                            smtpReplyCode,
+                            ex);
+                }
                 LOGGER.log(Level.SEVERE, "Failed to issue magic link or send welcome email.", ex);
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 if (profileSubmission && normalizedEmail != null) {
@@ -489,6 +570,82 @@ public class SendWelcomeEmailServlet extends HttpServlet {
             acceptance.setUserAgent(userAgent);
             legalTermAcceptanceDao.saveOrUpdate(acceptance);
         }
+    }
+
+    private void logMagicLinkSendEvent(
+            MagicLinkSendEvent.EventType eventType,
+            String requestId,
+            Long magicId,
+            User user,
+            String normalizedEmail,
+            HttpServletRequest request,
+            AuthFlowService.ExternalAuthRequest externalAuthRequest,
+            String smtpMessageId,
+            String smtpProvider,
+            String smtpReplyCode,
+            Exception error) {
+        if (normalizedEmail == null || normalizedEmail.isBlank()) {
+            return;
+        }
+        if (user == null || user.getUserId() == null) {
+            return;
+        }
+
+        MagicLinkSendEvent event = new MagicLinkSendEvent();
+        event.setEventType(eventType);
+        event.setRequestId(trimToNull(requestId));
+        event.setMagicId(magicId);
+        event.setUserId(user.getUserId());
+        event.setAppId(externalAuthRequest == null ? null : externalAuthRequest.getAppId());
+        event.setEmailNormalized(normalizedEmail);
+        event.setRequestIp(resolveIp(request.getRemoteAddr()));
+        event.setUserAgent(trimToMax(request.getHeader("User-Agent"), 300));
+        event.setSmtpMessageId(trimToMax(trimToNull(smtpMessageId), 255));
+        event.setSmtpProvider(trimToMax(trimToNull(smtpProvider), 80));
+        event.setSmtpReplyCode(trimToMax(trimToNull(smtpReplyCode), 32));
+        event.setServerNode(trimToMax(resolveServerNode(), 120));
+
+        if (error != null) {
+            event.setErrorClass(trimToMax(error.getClass().getName(), 120));
+            event.setErrorMessage(trimToMax(trimToNull(error.getMessage()), 1000));
+        }
+
+        MagicLinkSendEvent persisted = magicLinkSendEventDao.log(event);
+        LOGGER.info("magicLinkSendEventId=" + persisted.getSendEventId()
+                + " requestId=" + orEmpty(requestId)
+                + " type=" + eventType.name()
+                + " userId=" + (event.getUserId() == null ? "" : event.getUserId())
+                + " magicId=" + (event.getMagicId() == null ? "" : event.getMagicId())
+                + " email=" + normalizedEmail);
+    }
+
+    private byte[] resolveIp(String rawIp) {
+        if (rawIp == null || rawIp.isBlank()) {
+            return null;
+        }
+        try {
+            return InetAddress.getByName(rawIp).getAddress();
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String resolveServerNode() {
+        try {
+            return trimToNull(InetAddress.getLocalHost().getHostName());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String trimToMax(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private String normalizeEmail(String rawEmail) {

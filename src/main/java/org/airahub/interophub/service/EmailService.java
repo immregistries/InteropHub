@@ -3,6 +3,7 @@ package org.airahub.interophub.service;
 import jakarta.mail.Authenticator;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import jakarta.mail.SendFailedException;
 import jakarta.mail.PasswordAuthentication;
 import jakarta.mail.Transport;
 import jakarta.mail.internet.InternetAddress;
@@ -48,10 +49,14 @@ public class EmailService {
                 .or(() -> hubSettingDao.findFirst())
                 .orElseGet(this::createDefaultSettings);
         String loginLink = buildHomeLink(settings.getExternalBaseUrl());
-        sendWelcomeEmail(recipientEmail, loginLink);
+        sendWelcomeEmailWithResult(recipientEmail, loginLink);
     }
 
     public void sendWelcomeEmail(String recipientEmail, String loginLink) {
+        sendWelcomeEmailWithResult(recipientEmail, loginLink);
+    }
+
+    public SendWelcomeEmailResult sendWelcomeEmailWithResult(String recipientEmail, String loginLink) {
         String normalizedEmail = normalizeEmail(recipientEmail);
         if (normalizedEmail == null) {
             throw new IllegalArgumentException("Recipient email is required.");
@@ -67,7 +72,7 @@ public class EmailService {
         validateSettings(settings);
 
         String trimmedLink = loginLink.trim();
-        sendSmtpMessage(settings, normalizedEmail, trimmedLink);
+        return sendSmtpMessage(settings, normalizedEmail, trimmedLink);
     }
 
     private HubSetting createDefaultSettings() {
@@ -103,7 +108,7 @@ public class EmailService {
         }
     }
 
-    private void sendSmtpMessage(HubSetting settings, String recipientEmail, String loginLink) {
+    private SendWelcomeEmailResult sendSmtpMessage(HubSetting settings, String recipientEmail, String loginLink) {
         Properties props = new Properties();
         props.put("mail.smtp.host", settings.getSmtpHost());
         props.put("mail.smtp.port", String.valueOf(settings.getSmtpPort()));
@@ -147,8 +152,17 @@ public class EmailService {
 
             Transport.send(message);
             LOGGER.info("Welcome email sent to " + recipientEmail + ".");
+
+            SendWelcomeEmailResult result = new SendWelcomeEmailResult();
+            result.setSmtpMessageId(trimToNull(message.getMessageID()));
+            result.setSmtpProvider(trimToNull(settings.getSmtpHost()));
+            return result;
         } catch (Exception ex) {
             LOGGER.log(Level.SEVERE, "Failed to send welcome email.", ex);
+            if (ex instanceof MessagingException messagingException) {
+                throw new EmailSendException("SMTP send failed: " + ex.getMessage(), ex,
+                        resolveSmtpReplyCode(messagingException), trimToNull(settings.getSmtpHost()));
+            }
             if (ex instanceof MessagingException) {
                 throw new IllegalStateException("SMTP send failed: " + ex.getMessage(), ex);
             }
@@ -180,5 +194,81 @@ public class EmailService {
             return null;
         }
         return normalized;
+    }
+
+    private String resolveSmtpReplyCode(MessagingException ex) {
+        Exception next = ex;
+        while (next != null) {
+            if (next instanceof SendFailedException sendFailedException) {
+                String message = sendFailedException.getMessage();
+                if (message != null && !message.isBlank()) {
+                    return trimToMax(message, 32);
+                }
+            }
+            if (next instanceof MessagingException messagingException) {
+                next = messagingException.getNextException();
+            } else {
+                break;
+            }
+        }
+        return null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String trimToMax(String value, int maxLength) {
+        if (value == null) {
+            return null;
+        }
+        if (value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
+    }
+
+    public static class SendWelcomeEmailResult {
+        private String smtpMessageId;
+        private String smtpProvider;
+
+        public String getSmtpMessageId() {
+            return smtpMessageId;
+        }
+
+        public void setSmtpMessageId(String smtpMessageId) {
+            this.smtpMessageId = smtpMessageId;
+        }
+
+        public String getSmtpProvider() {
+            return smtpProvider;
+        }
+
+        public void setSmtpProvider(String smtpProvider) {
+            this.smtpProvider = smtpProvider;
+        }
+    }
+
+    public static class EmailSendException extends IllegalStateException {
+        private final String smtpReplyCode;
+        private final String smtpProvider;
+
+        public EmailSendException(String message, Throwable cause, String smtpReplyCode, String smtpProvider) {
+            super(message, cause);
+            this.smtpReplyCode = smtpReplyCode;
+            this.smtpProvider = smtpProvider;
+        }
+
+        public String getSmtpReplyCode() {
+            return smtpReplyCode;
+        }
+
+        public String getSmtpProvider() {
+            return smtpProvider;
+        }
     }
 }

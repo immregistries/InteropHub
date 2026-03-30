@@ -141,6 +141,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminUserDetailServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminUserDetailServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminUserDetailServlet</servlet-name>
+    <url-pattern>/admin/users/detail</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AdminAppLoginStatsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminAppLoginStatsServlet</servlet-class>
   </servlet>

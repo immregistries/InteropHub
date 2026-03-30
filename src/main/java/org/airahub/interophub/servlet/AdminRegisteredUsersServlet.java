@@ -95,9 +95,16 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                 out.println("      </thead>");
                 out.println("      <tbody>");
                 for (User user : users) {
+                    String userDetailLink = contextPath + "/admin/users/detail?userId=" + user.getUserId();
+                    String displayText = trimToNull(user.getDisplayName());
+                    if (displayText == null) {
+                        displayText = orEmpty(user.getEmail());
+                    }
                     out.println("        <tr>");
                     out.println("          <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(user.getDisplayName())) + "</td>");
+                    out.println("          <td><a href=\"" + userDetailLink + "\">"
+                            + escapeHtml(displayText)
+                            + "</a></td>");
                     out.println("          <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
                     out.println("          <td>" + escapeHtml(user.getStatus() == null ? "" : user.getStatus().name())
                             + "</td>");

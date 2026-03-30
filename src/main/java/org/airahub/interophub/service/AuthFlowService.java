@@ -68,6 +68,11 @@ public class AuthFlowService {
     }
 
     public String issueMagicLink(User user, HttpServletRequest request, ExternalAuthRequest externalAuthRequest) {
+        return issueMagicLinkWithMetadata(user, request, externalAuthRequest).getMagicLinkUrl();
+    }
+
+    public IssuedMagicLink issueMagicLinkWithMetadata(User user, HttpServletRequest request,
+            ExternalAuthRequest externalAuthRequest) {
         if (user == null || user.getUserId() == null) {
             throw new IllegalArgumentException("User is required before issuing a magic link.");
         }
@@ -87,7 +92,7 @@ public class AuthFlowService {
         }
         magicLinkDao.save(link);
 
-        return buildMagicLinkUrl(rawToken);
+        return new IssuedMagicLink(link.getMagicId(), buildMagicLinkUrl(rawToken));
     }
 
     public AuthenticatedSession consumeMagicLink(String rawToken, HttpServletRequest request) {
@@ -541,6 +546,24 @@ public class AuthFlowService {
 
         public String getRequestedUrl() {
             return requestedUrl;
+        }
+    }
+
+    public static class IssuedMagicLink {
+        private final Long magicId;
+        private final String magicLinkUrl;
+
+        public IssuedMagicLink(Long magicId, String magicLinkUrl) {
+            this.magicId = magicId;
+            this.magicLinkUrl = magicLinkUrl;
+        }
+
+        public Long getMagicId() {
+            return magicId;
+        }
+
+        public String getMagicLinkUrl() {
+            return magicLinkUrl;
         }
     }
 }
