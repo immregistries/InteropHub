@@ -44,4 +44,11 @@ That guide covers:
 - WAR output: `target/hub.war`
 - Typical local URL after deployment: `http://localhost:8080/hub/`
 
-Database and environment settings are configured in `src/main/resources/hibernate.cfg.xml` and app settings tables.
+Database defaults remain in `src/main/resources/hibernate.cfg.xml`, and the app now supports runtime overrides through these environment variables:
+
+- `INTEROPHUB_DB_URL`
+- `INTEROPHUB_DB_USER` or `INTEROPHUB_USER`
+- `INTEROPHUB_DB_PASSWORD` or `INTEROPHUB_PASSWORD`
+- `INTEROPHUB_DB_DRIVER` or `INTEROPHUB_DRIVER`
+
+If those variables are not set, InteropHub falls back to the values configured in Hibernate and logs a warning.
