@@ -99,7 +99,8 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                     out.println("          <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
                     out.println("          <td>" + escapeHtml(orEmpty(user.getDisplayName())) + "</td>");
                     out.println("          <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
-                    out.println("          <td>" + escapeHtml(user.getStatus() == null ? "" : user.getStatus().name()) + "</td>");
+                    out.println("          <td>" + escapeHtml(user.getStatus() == null ? "" : user.getStatus().name())
+                            + "</td>");
                     out.println("          <td>" + formatDateTime(user) + "</td>");
                     out.println("        </tr>");
                 }
