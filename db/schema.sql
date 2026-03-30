@@ -455,6 +455,28 @@ CREATE TABLE usage_daily_agg (
   CONSTRAINT fk_usage_token FOREIGN KEY (token_id) REFERENCES app_user_token(token_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- -------------------------
+-- APP LOGIN EVENTS
+-- -------------------------
+-- Append-only log of every successful user authentication to an external app
+-- via the one-time code exchange (ApiAuthExchangeServlet).
+-- One row per login. Use for usage statistics and audit purposes.
+CREATE TABLE app_login_event (
+  event_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id            BIGINT NOT NULL,
+  app_id             BIGINT UNSIGNED NOT NULL,
+  login_code_id      BIGINT UNSIGNED NULL,     -- originating one-time code; nullable for purge safety (no FK)
+  logged_in_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  server_ip          VARCHAR(45) NULL,         -- IP of the app server making the exchange API call
+  user_ip            VARCHAR(45) NULL,         -- IP of the end user as reported by the app (future; passed via API)
+  PRIMARY KEY (event_id),
+  KEY ix_app_login_user_time (user_id, logged_in_at),
+  KEY ix_app_login_app_time  (app_id, logged_in_at),
+  KEY ix_app_login_day       (app_id, (DATE(logged_in_at))),
+  CONSTRAINT fk_app_login_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
+  CONSTRAINT fk_app_login_app  FOREIGN KEY (app_id)  REFERENCES app_registry(app_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- Optional: store a lightweight administrative note log (generic, as you requested)
 CREATE TABLE admin_note (
   note_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

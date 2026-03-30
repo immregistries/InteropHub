@@ -141,6 +141,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminAppLoginStatsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminAppLoginStatsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminAppLoginStatsServlet</servlet-name>
+    <url-pattern>/admin/app-login-stats</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>ApiAuthExchangeServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.ApiAuthExchangeServlet</servlet-class>
   </servlet>

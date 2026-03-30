@@ -14,9 +14,11 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.airahub.interophub.dao.AppLoginEventDao;
 import org.airahub.interophub.dao.AppRegistryDao;
 import org.airahub.interophub.dao.AuthLoginCodeDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.AppLoginEvent;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.AuthLoginCode;
 import org.airahub.interophub.model.User;
@@ -24,11 +26,13 @@ import org.airahub.interophub.model.User;
 public class ApiAuthExchangeServlet extends HttpServlet {
     private static final long RESPONSE_EXPIRES_IN_SECONDS = 3600L;
 
+    private final AppLoginEventDao appLoginEventDao;
     private final AppRegistryDao appRegistryDao;
     private final AuthLoginCodeDao authLoginCodeDao;
     private final UserDao userDao;
 
     public ApiAuthExchangeServlet() {
+        this.appLoginEventDao = new AppLoginEventDao();
         this.appRegistryDao = new AppRegistryDao();
         this.authLoginCodeDao = new AuthLoginCodeDao();
         this.userDao = new UserDao();
@@ -80,6 +84,14 @@ public class ApiAuthExchangeServlet extends HttpServlet {
 
         String issuedAtIso = formatUtc(loginCode.getIssuedAt() == null ? LocalDateTime.now() : loginCode.getIssuedAt());
 
+        AppLoginEvent loginEvent = new AppLoginEvent();
+        loginEvent.setUserId(user.getUserId());
+        loginEvent.setAppId(app.getAppId());
+        loginEvent.setLoginCodeId(loginCode.getLoginCodeId());
+        loginEvent.setServerIp(trimToNull(request.getRemoteAddr()));
+        loginEvent.setUserIp(exchangeRequest.userIp);
+        appLoginEventDao.log(loginEvent);
+
         response.setStatus(HttpServletResponse.SC_OK);
         response.getWriter().write("{"
                 + "\"hub_user_id\":" + user.getUserId() + ","
@@ -97,6 +109,7 @@ public class ApiAuthExchangeServlet extends HttpServlet {
         String body = request.getReader().lines().collect(Collectors.joining("\n"));
         String appCode = extractJsonString(body, "app_code");
         String code = extractJsonString(body, "code");
+        String userIp = extractJsonString(body, "user_ip");
 
         if (appCode == null || appCode.isBlank()) {
             throw new IllegalArgumentException("app_code is required.");
@@ -105,7 +118,20 @@ public class ApiAuthExchangeServlet extends HttpServlet {
             throw new IllegalArgumentException("code is required.");
         }
 
-        return new ExchangeRequest(appCode.trim(), code.trim());
+        // Validate user_ip if provided: allow only characters valid in IPv4/IPv6
+        // addresses.
+        // Reject anything that doesn't look like an IP to avoid storing garbage.
+        if (userIp != null && !userIp.isBlank()) {
+            String trimmedIp = userIp.trim();
+            if (!trimmedIp.matches("[0-9a-fA-F.:]+") || trimmedIp.length() > 45) {
+                throw new IllegalArgumentException("user_ip must be a valid IPv4 or IPv6 address.");
+            }
+            userIp = trimmedIp;
+        } else {
+            userIp = null;
+        }
+
+        return new ExchangeRequest(appCode.trim(), code.trim(), userIp);
     }
 
     private String extractJsonString(String body, String key) {
@@ -183,6 +209,14 @@ public class ApiAuthExchangeServlet extends HttpServlet {
         return value == null ? "" : value;
     }
 
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     private String escapeJson(String value) {
         return value
                 .replace("\\", "\\\\")
@@ -195,10 +229,12 @@ public class ApiAuthExchangeServlet extends HttpServlet {
     private static class ExchangeRequest {
         private final String appCode;
         private final String code;
+        private final String userIp;
 
-        private ExchangeRequest(String appCode, String code) {
+        private ExchangeRequest(String appCode, String code, String userIp) {
             this.appCode = appCode;
             this.code = code;
+            this.userIp = userIp;
         }
     }
 }
