@@ -33,8 +33,13 @@ public class HomeServlet extends HttpServlet {
                 String externalAuthError = null;
                 try {
                         externalAuthRequest = authFlowService.parseExternalAuthRequest(request);
+                        externalAuthRequest.ifPresent(
+                                        value -> authFlowService.rememberExternalAuthRequest(request, value));
                 } catch (IllegalArgumentException ex) {
-                        externalAuthError = ex.getMessage();
+                        externalAuthRequest = authFlowService.recallExternalAuthRequest(request);
+                        if (externalAuthRequest.isEmpty()) {
+                                externalAuthError = ex.getMessage();
+                        }
                 }
 
                 if (authenticatedUser.isPresent()) {
@@ -42,6 +47,7 @@ public class HomeServlet extends HttpServlet {
                                 String redirectTarget = authFlowService.issueExternalLoginCodeRedirect(
                                                 authenticatedUser.get(),
                                                 externalAuthRequest.get());
+                                authFlowService.clearRememberedExternalAuthRequest(request);
                                 response.sendRedirect(redirectTarget);
                                 return;
                         }

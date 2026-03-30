@@ -77,8 +77,12 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         String externalAuthError = null;
         try {
             externalAuthRequest = authFlowService.parseExternalAuthRequest(request);
+            externalAuthRequest.ifPresent(value -> authFlowService.rememberExternalAuthRequest(request, value));
         } catch (IllegalArgumentException ex) {
-            externalAuthError = ex.getMessage();
+            externalAuthRequest = authFlowService.recallExternalAuthRequest(request);
+            if (externalAuthRequest.isEmpty()) {
+                externalAuthError = ex.getMessage();
+            }
         }
 
         boolean profileSubmission = request.getParameter("profileSubmission") != null;
@@ -170,6 +174,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                         request,
                         externalAuthRequest.orElse(null));
                 issuedMagicId = issuedMagicLink.getMagicId();
+                authFlowService.clearRememberedExternalAuthRequest(request);
 
                 logMagicLinkSendEvent(
                         MagicLinkSendEvent.EventType.SEND_REQUESTED,

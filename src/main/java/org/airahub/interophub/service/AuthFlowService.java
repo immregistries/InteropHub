@@ -34,6 +34,10 @@ public class AuthFlowService {
     public static final String PARAM_RETURN_TO = "return_to";
     public static final String PARAM_STATE = "state";
     public static final String PARAM_REQUESTED_URL = "requested_url";
+    private static final String ATTR_EXTERNAL_APP_CODE = "interophub.externalAuth.appCode";
+    private static final String ATTR_EXTERNAL_RETURN_TO = "interophub.externalAuth.returnTo";
+    private static final String ATTR_EXTERNAL_STATE = "interophub.externalAuth.state";
+    private static final String ATTR_EXTERNAL_REQUESTED_URL = "interophub.externalAuth.requestedUrl";
 
     private static final int MAGIC_LINK_DAYS = 7;
     private static final int SESSION_DAYS = 30;
@@ -184,6 +188,66 @@ public class AuthFlowService {
                 required(returnTo, "return_to"),
                 required(state, "state"),
                 required(requestedUrl, "requested_url")));
+    }
+
+    public void rememberExternalAuthRequest(HttpServletRequest request, ExternalAuthRequest externalAuthRequest) {
+        if (request == null || externalAuthRequest == null) {
+            return;
+        }
+
+        request.getSession(true).setAttribute(ATTR_EXTERNAL_APP_CODE, externalAuthRequest.getAppCode());
+        request.getSession(true).setAttribute(ATTR_EXTERNAL_RETURN_TO, externalAuthRequest.getReturnTo());
+        request.getSession(true).setAttribute(ATTR_EXTERNAL_STATE, externalAuthRequest.getState());
+        request.getSession(true).setAttribute(ATTR_EXTERNAL_REQUESTED_URL, externalAuthRequest.getRequestedUrl());
+    }
+
+    public Optional<ExternalAuthRequest> recallExternalAuthRequest(HttpServletRequest request) {
+        if (request == null) {
+            return Optional.empty();
+        }
+
+        var session = request.getSession(false);
+        if (session == null) {
+            return Optional.empty();
+        }
+
+        String appCode = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_APP_CODE));
+        String returnTo = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_RETURN_TO));
+        String state = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_STATE));
+        String requestedUrl = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_REQUESTED_URL));
+
+        if (appCode == null || returnTo == null || state == null || requestedUrl == null) {
+            return Optional.empty();
+        }
+
+        Optional<AppRegistry> appRegistry = appRegistryDao.findByAppCode(appCode);
+        if (appRegistry.isEmpty()) {
+            clearRememberedExternalAuthRequest(request);
+            return Optional.empty();
+        }
+
+        try {
+            return Optional.of(validateExternalAuthRequest(appRegistry.get(), returnTo, state, requestedUrl));
+        } catch (IllegalArgumentException ex) {
+            clearRememberedExternalAuthRequest(request);
+            return Optional.empty();
+        }
+    }
+
+    public void clearRememberedExternalAuthRequest(HttpServletRequest request) {
+        if (request == null) {
+            return;
+        }
+
+        var session = request.getSession(false);
+        if (session == null) {
+            return;
+        }
+
+        session.removeAttribute(ATTR_EXTERNAL_APP_CODE);
+        session.removeAttribute(ATTR_EXTERNAL_RETURN_TO);
+        session.removeAttribute(ATTR_EXTERNAL_STATE);
+        session.removeAttribute(ATTR_EXTERNAL_REQUESTED_URL);
     }
 
     private ExternalAuthRequest validateExternalAuthRequest(AppRegistry appRegistry, String returnTo, String state,
