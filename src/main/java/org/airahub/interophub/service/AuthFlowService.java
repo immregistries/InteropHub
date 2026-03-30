@@ -132,6 +132,15 @@ public class AuthFlowService {
         return new AuthenticatedSession(user, rawSessionToken, externalRedirectUrl);
     }
 
+    public boolean isMagicLinkTokenValid(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return false;
+        }
+
+        byte[] tokenHash = sha256(rawToken.trim());
+        return magicLinkDao.findValidUnconsumedByTokenHash(tokenHash).isPresent();
+    }
+
     public String issueExternalLoginCodeRedirect(User user, ExternalAuthRequest externalAuthRequest) {
         if (user == null || user.getUserId() == null) {
             throw new IllegalArgumentException("Authenticated user is required.");
