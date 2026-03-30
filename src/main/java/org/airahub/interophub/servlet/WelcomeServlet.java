@@ -136,6 +136,7 @@ public class WelcomeServlet extends HttpServlet {
                 out.println("      <p><a href=\"" + contextPath + "/settings\">Hub Settings</a></p>");
                 out.println("      <p><a href=\"" + contextPath + "/admin/apps\">App Registry</a></p>");
                 out.println("      <p><a href=\"" + contextPath + "/admin/topics\">IG Topics</a></p>");
+                out.println("      <p><a href=\"" + contextPath + "/admin/users\">Registered Users</a></p>");
             }
 
             out.println("    <form action=\"" + contextPath + "/logout\" method=\"post\">");

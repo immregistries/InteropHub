@@ -131,6 +131,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminRegisteredUsersServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminRegisteredUsersServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminRegisteredUsersServlet</servlet-name>
+    <url-pattern>/admin/users</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>ApiAuthExchangeServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.ApiAuthExchangeServlet</servlet-class>
   </servlet>

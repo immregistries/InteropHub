@@ -48,4 +48,23 @@ public class UserDao extends GenericDao<User, Long> {
                     .getResultList();
         }
     }
+
+    public List<User> findRecentRegistrations(int limit) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("from User u order by u.createdAt desc", User.class)
+                    .setMaxResults(limit)
+                    .getResultList();
+        }
+    }
+
+    public List<User> searchUsers(String query) {
+        String pattern = "%" + query.trim().toLowerCase() + "%";
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from User u where lower(u.email) like :p or lower(u.displayName) like :p or lower(u.organization) like :p order by u.createdAt desc",
+                    User.class)
+                    .setParameter("p", pattern)
+                    .getResultList();
+        }
+    }
 }
