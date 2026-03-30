@@ -49,9 +49,11 @@ public class IpGeoLookupService {
                 return ip;
             }
 
-            String body = new BufferedReader(
-                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))
-                    .lines().collect(Collectors.joining());
+            String body;
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                body = reader.lines().collect(Collectors.joining());
+            }
 
             // ip-api returns {"status":"fail"} for private ranges, reserved addresses, etc.
             if (body.contains("\"status\":\"fail\"")) {

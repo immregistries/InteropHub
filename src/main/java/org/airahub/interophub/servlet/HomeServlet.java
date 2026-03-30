@@ -27,14 +27,8 @@ public class HomeServlet extends HttpServlet {
                 Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
 
                 String contextPath = request.getContextPath();
-                String rawAppCode = trimToNull(request.getParameter(AuthFlowService.PARAM_APP_CODE));
-                String rawReturnTo = trimToNull(request.getParameter(AuthFlowService.PARAM_RETURN_TO));
-                String rawState = trimToNull(request.getParameter(AuthFlowService.PARAM_STATE));
-                String rawRequestedUrl = trimToNull(request.getParameter(AuthFlowService.PARAM_REQUESTED_URL));
                 String emailValidationError = request.getParameter("emailError");
                 String submittedEmail = trimToNull(request.getParameter("email"));
-                boolean debugExternalParamsPresent = rawAppCode != null || rawReturnTo != null || rawState != null
-                                || rawRequestedUrl != null;
                 Optional<AuthFlowService.ExternalAuthRequest> externalAuthRequest = Optional.empty();
                 String externalAuthError = null;
                 try {
@@ -164,10 +158,6 @@ public class HomeServlet extends HttpServlet {
                 }
                 String trimmed = value.trim();
                 return trimmed.isEmpty() ? null : trimmed;
-        }
-
-        private String orMissing(String value) {
-                return value == null ? "(missing)" : value;
         }
 
         private String orEmpty(String value) {
