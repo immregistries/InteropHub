@@ -618,16 +618,16 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         try {
             MagicLinkSendEvent persisted = magicLinkSendEventDao.log(event);
             LOGGER.info("magicLinkSendEventId=" + persisted.getSendEventId()
-                + " requestId=" + orEmpty(requestId)
-                + " type=" + eventType.name()
-                + " userId=" + (event.getUserId() == null ? "" : event.getUserId())
-                + " magicId=" + (event.getMagicId() == null ? "" : event.getMagicId())
-                + " email=" + normalizedEmail);
+                    + " requestId=" + orEmpty(requestId)
+                    + " type=" + eventType.name()
+                    + " userId=" + (event.getUserId() == null ? "" : event.getUserId())
+                    + " magicId=" + (event.getMagicId() == null ? "" : event.getMagicId())
+                    + " email=" + normalizedEmail);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING,
-                "Audit logging failed for requestId=" + orEmpty(requestId)
-                    + " type=" + eventType.name() + " email=" + normalizedEmail,
-                ex);
+                    "Audit logging failed for requestId=" + orEmpty(requestId)
+                            + " type=" + eventType.name() + " email=" + normalizedEmail,
+                    ex);
         }
     }
 
