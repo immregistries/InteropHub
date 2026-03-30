@@ -11,10 +11,14 @@
   <name>InteropHub</name>
   <description>Central authentication and connectathon coordination service foundation.</description>
 
+  <!-- mvn package -Plocal-tomcat-deploy "-Dtomcat.webapps.dir=C:\Program Files\Apache Software Foundation\Tomcat 10.1\webapps" -->
+
   <properties>
     <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <software.version>${project.version}</software.version>
+    <!-- Default deployed context matches the generated WAR name. -->
+    <deploy.context.name>${project.build.finalName}</deploy.context.name>
   </properties>
 
   <dependencies>
@@ -80,4 +84,47 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>local-tomcat-deploy</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>copy-war-to-local-tomcat</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <!-- Require an explicit Tomcat webapps directory when this profile is enabled. -->
+                    <fail message="Property 'tomcat.webapps.dir' is required when using profile 'local-tomcat-deploy'.">
+                      <condition>
+                        <or>
+                          <not>
+                            <isset property="tomcat.webapps.dir" />
+                          </not>
+                          <equals arg1="${tomcat.webapps.dir}" arg2="" trim="true" />
+                        </or>
+                      </condition>
+                    </fail>
+                    <copy
+                        file="${project.build.directory}/${project.build.finalName}.war"
+                        tofile="${tomcat.webapps.dir}/${deploy.context.name}.war"
+                        overwrite="true" />
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
