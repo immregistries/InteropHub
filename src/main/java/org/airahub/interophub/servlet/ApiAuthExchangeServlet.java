@@ -92,6 +92,10 @@ public class ApiAuthExchangeServlet extends HttpServlet {
         loginEvent.setUserIp(exchangeRequest.userIp);
         appLoginEventDao.log(loginEvent);
 
+        // Update user's last login timestamp
+        user.setLastLoginAt(LocalDateTime.now());
+        userDao.saveOrUpdate(user);
+
         response.setStatus(HttpServletResponse.SC_OK);
         response.getWriter().write("{"
                 + "\"hub_user_id\":" + user.getUserId() + ","
