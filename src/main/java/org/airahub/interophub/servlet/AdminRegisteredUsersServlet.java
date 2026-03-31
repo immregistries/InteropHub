@@ -86,7 +86,6 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                 out.println("    <table class=\"data-table\">");
                 out.println("      <thead>");
                 out.println("        <tr>");
-                out.println("          <th>Email</th>");
                 out.println("          <th>Display Name</th>");
                 out.println("          <th>Organization</th>");
                 out.println("          <th>Status</th>");
@@ -101,7 +100,6 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                         displayText = orEmpty(user.getEmail());
                     }
                     out.println("        <tr>");
-                    out.println("          <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
                     out.println("          <td><a href=\"" + userDetailLink + "\">"
                             + escapeHtml(displayText)
                             + "</a></td>");
