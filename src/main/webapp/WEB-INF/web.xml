@@ -221,6 +221,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminEsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsServlet</servlet-name>
+    <url-pattern>/admin/es</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AdminEsTopicImportServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsTopicImportServlet</servlet-class>
   </servlet>

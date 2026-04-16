@@ -123,7 +123,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
 
             out.println("      <button type=\"submit\">Import</button>");
             out.println("    </form>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
+            out.println("    <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
             out.println("  </main>");
             PageFooterRenderer.render(out);
             out.println("</body>");
@@ -167,7 +167,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             }
 
             out.println("    <p><a href=\"" + contextPath + "/admin/es-topic-import\">Import Another Batch</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
+            out.println("    <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
             out.println("  </main>");
             PageFooterRenderer.render(out);
             out.println("</body>");
