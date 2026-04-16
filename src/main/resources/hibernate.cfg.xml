@@ -36,5 +36,11 @@
     <mapping class="org.airahub.interophub.model.LegalTerm"/>
     <mapping class="org.airahub.interophub.model.LegalTermAcceptance"/>
     <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
+    <mapping class="org.airahub.interophub.model.EsTopic"/>
+    <mapping class="org.airahub.interophub.model.EsCampaign"/>
+    <mapping class="org.airahub.interophub.model.EsCampaignTopic"/>
+    <mapping class="org.airahub.interophub.model.EsInterest"/>
+    <mapping class="org.airahub.interophub.model.EsComment"/>
+    <mapping class="org.airahub.interophub.model.EsSubscription"/>
   </session-factory>
 </hibernate-configuration>

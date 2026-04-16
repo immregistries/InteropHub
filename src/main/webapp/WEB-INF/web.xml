@@ -219,4 +219,14 @@
     <servlet-name>OAuthArchitectureServlet</servlet-name>
     <url-pattern>/docs/oauth-architecture.html</url-pattern>
   </servlet-mapping>
+
+  <servlet>
+    <servlet-name>AdminEsTopicImportServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicImportServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsTopicImportServlet</servlet-name>
+    <url-pattern>/admin/es-topic-import</url-pattern>
+  </servlet-mapping>
 </web-app>
