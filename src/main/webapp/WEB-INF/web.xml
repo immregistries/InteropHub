@@ -235,8 +235,38 @@
     <servlet-class>org.airahub.interophub.servlet.AdminEsTopicImportServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>EsCampaignRegistrationServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCampaignRegistrationServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsCampaignRegistrationThankYouServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCampaignRegistrationThankYouServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignRegistrationDisplayServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AdminEsTopicImportServlet</servlet-name>
     <url-pattern>/admin/es-topic-import</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCampaignRegistrationServlet</servlet-name>
+    <url-pattern>/register/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCampaignRegistrationThankYouServlet</servlet-name>
+    <url-pattern>/es/thank-you/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
+    <url-pattern>/admin/es/registrations</url-pattern>
   </servlet-mapping>
 </web-app>

@@ -39,6 +39,8 @@ public class AdminEsServlet extends HttpServlet {
             out.println("  <main class=\"container\">");
             out.println("    <h1>Emerging Standards</h1>");
             out.println("    <p><a href=\"" + contextPath + "/admin/es-topic-import\">ES Topic Import</a></p>");
+            out.println("    <p><a href=\"" + contextPath
+                    + "/admin/es/registrations\">Campaign Registration Display</a></p>");
             out.println("    <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
             out.println("  </main>");
             PageFooterRenderer.render(out);
