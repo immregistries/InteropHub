@@ -2,6 +2,8 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -13,6 +15,7 @@ import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.PublicUrlService;
 
 /**
  * Admin detail page for a single ES campaign: shows campaign info and a table
@@ -25,12 +28,14 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsCampaignRegistrationDao registrationDao;
+    private final PublicUrlService publicUrlService;
 
     public AdminEsCampaignDetailServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.registrationDao = new EsCampaignRegistrationDao();
+        this.publicUrlService = new PublicUrlService();
     }
 
     @Override
@@ -70,6 +75,12 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
         long topicCount = campaignTopicDao.countByCampaignId(campaignId);
         long regCount = registrationDao.countByCampaignId(campaignId);
         List<Integer> tableNos = campaignTopicDao.findDistinctTableNosByCampaignId(campaignId);
+        String encodedCampaignCode = encodePathSegment(campaign.getCampaignCode());
+        String detailPath = "/admin/es/campaigns/detail?campaignCode="
+                + encodeQueryComponent(campaign.getCampaignCode());
+        String registrationPath = "/register/" + encodedCampaignCode;
+        String registrationAbsoluteUrl = publicUrlService.resolveExternalUrl(registrationPath);
+        String registrationQrUrl = buildQrPageUrl(contextPath, registrationPath, "Registration page", detailPath);
 
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
@@ -101,6 +112,10 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
             out.println("      </tbody>");
             out.println("    </table>");
 
+            out.println("    <p><strong>Registration URL:</strong> <a href=\"" + escapeHtml(registrationAbsoluteUrl)
+                    + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a href=\""
+                    + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
+
             // Registration display link
             out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
                     + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
@@ -124,15 +139,21 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
                 out.println("      <tbody>");
                 for (Integer tableNo : tableNos) {
                     long tableTopicCount = campaignTopicDao.countByCampaignIdAndTableNo(campaignId, tableNo);
-                    String voteUrl = contextPath + "/table/" + escapeHtml(campaign.getCampaignCode())
-                            + "/" + tableNo + "?view=vote";
-                    String resultsUrl = contextPath + "/table/" + escapeHtml(campaign.getCampaignCode())
-                            + "/" + tableNo + "?view=results";
+                    String votePath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=vote";
+                    String resultsPath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=results";
+                    String voteUrl = contextPath + votePath;
+                    String resultsUrl = contextPath + resultsPath;
+                    String voteQrUrl = buildQrPageUrl(contextPath, votePath, "Table " + tableNo + " Vote",
+                            detailPath);
+                    String resultsQrUrl = buildQrPageUrl(contextPath, resultsPath, "Table " + tableNo + " Results",
+                            detailPath);
                     out.println("        <tr>");
                     out.println("          <td>Table " + tableNo + "</td>");
                     out.println("          <td>" + tableTopicCount + "</td>");
-                    out.println("          <td><a href=\"" + voteUrl + "\">Vote</a></td>");
-                    out.println("          <td><a href=\"" + resultsUrl + "\">Results</a></td>");
+                    out.println("          <td><a href=\"" + escapeHtml(voteUrl) + "\">Vote</a> (<a href=\""
+                            + escapeHtml(voteQrUrl) + "\">qr code</a>)</td>");
+                    out.println("          <td><a href=\"" + escapeHtml(resultsUrl) + "\">Results</a> (<a href=\""
+                            + escapeHtml(resultsQrUrl) + "\">qr code</a>)</td>");
                     out.println("        </tr>");
                 }
                 out.println("      </tbody>");
@@ -178,6 +199,20 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String buildQrPageUrl(String contextPath, String targetPath, String label, String backPath) {
+        return contextPath + "/admin/qr?target=" + encodeQueryComponent(targetPath)
+                + "&label=" + encodeQueryComponent(label)
+                + "&back=" + encodeQueryComponent(backPath);
+    }
+
+    private String encodePathSegment(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String encodeQueryComponent(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String escapeHtml(String value) {

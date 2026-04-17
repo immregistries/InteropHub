@@ -266,6 +266,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminQrCodeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminQrCodeServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignEditServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignEditServlet</servlet-class>
   </servlet>
@@ -308,6 +313,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
     <url-pattern>/admin/es/campaigns/detail</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminQrCodeServlet</servlet-name>
+    <url-pattern>/admin/qr</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
