@@ -2,6 +2,8 @@ package org.airahub.interophub.dao;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsInterest;
 
@@ -11,94 +13,156 @@ public class EsInterestDao extends GenericDao<EsInterest, Long> {
         super(EsInterest.class);
     }
 
-    /**
-     * Returns true if a duplicate interest exists for this campaign+topic
-     * combination.
-     * Priority order: user_id first (if non-null), then email_normalized (if
-     * non-blank).
-     * Blank-email anonymous voters are not checked here by design.
-     */
-    public boolean existsByUserOrEmail(Long campaignId, Long topicId, Long userId, String emailNormalized) {
-        if (campaignId == null || topicId == null) {
-            return false;
-        }
-        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            if (userId != null) {
-                Long count = session.createQuery(
-                        "select count(i.esInterestId) from EsInterest i"
-                                + " where i.esCampaignId = :cid and i.esTopicId = :tid and i.userId = :uid",
-                        Long.class)
-                        .setParameter("cid", campaignId)
-                        .setParameter("tid", topicId)
-                        .setParameter("uid", userId)
-                        .uniqueResult();
-                if (count != null && count > 0) {
-                    return true;
-                }
-            }
-            if (emailNormalized != null && !emailNormalized.isBlank()) {
-                Long count = session.createQuery(
-                        "select count(i.esInterestId) from EsInterest i"
-                                + " where i.esCampaignId = :cid and i.esTopicId = :tid"
-                                + " and i.emailNormalized = :email",
-                        Long.class)
-                        .setParameter("cid", campaignId)
-                        .setParameter("tid", topicId)
-                        .setParameter("email", emailNormalized)
-                        .uniqueResult();
-                if (count != null && count > 0) {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
-
-    public List<EsInterest> findByCampaignAndTopic(Long campaignId, Long topicId) {
-        if (campaignId == null || topicId == null) {
+    public List<EsInterest> findByCampaignAndTableAndRoundAndSession(Long campaignId, Integer tableNo, Integer roundNo,
+            String sessionKey) {
+        if (campaignId == null || tableNo == null || roundNo == null || sessionKey == null || sessionKey.isBlank()) {
             return List.of();
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from EsInterest i where i.esCampaignId = :cid and i.esTopicId = :tid"
-                            + " order by i.createdAt asc",
+                    "from EsInterest i where i.esCampaignId = :cid"
+                            + " and i.tableNo = :tableNo and i.roundNo = :roundNo"
+                            + " and i.sessionKey = :sessionKey"
+                            + " order by i.createdAt asc, i.esInterestId asc",
                     EsInterest.class)
                     .setParameter("cid", campaignId)
-                    .setParameter("tid", topicId)
+                    .setParameter("tableNo", tableNo)
+                    .setParameter("roundNo", roundNo)
+                    .setParameter("sessionKey", sessionKey)
                     .getResultList();
         }
     }
 
-    public Optional<EsInterest> findByUserAndCampaignAndTopic(Long userId, Long campaignId, Long topicId) {
-        if (userId == null || campaignId == null || topicId == null) {
+    public Set<Long> findTopicIdsByCampaignAndTableAndRoundAndSession(Long campaignId, Integer tableNo, Integer roundNo,
+            String sessionKey) {
+        return findByCampaignAndTableAndRoundAndSession(campaignId, tableNo, roundNo, sessionKey).stream()
+                .map(EsInterest::getEsTopicId)
+                .collect(Collectors.toSet());
+    }
+
+    public int deleteByCampaignAndTableAndRoundAndSession(Long campaignId, Integer tableNo, Integer roundNo,
+            String sessionKey) {
+        if (campaignId == null || tableNo == null || roundNo == null || sessionKey == null || sessionKey.isBlank()) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsInterest i where i.esCampaignId = :cid"
+                            + " and i.tableNo = :tableNo and i.roundNo = :roundNo"
+                            + " and i.sessionKey = :sessionKey")
+                    .setParameter("cid", campaignId)
+                    .setParameter("tableNo", tableNo)
+                    .setParameter("roundNo", roundNo)
+                    .setParameter("sessionKey", sessionKey)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
+    public int deleteByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsInterest i where i.esCampaignId = :cid")
+                    .setParameter("cid", campaignId)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
+    public List<VoteTotalRow> findVoteTotalsByCampaignAndTableAndRound(Long campaignId, Integer tableNo,
+            Integer roundNo) {
+        if (campaignId == null || tableNo == null || roundNo == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsInterestDao$VoteTotalRow(i.esTopicId, count(i.esInterestId))"
+                            + " from EsInterest i where i.esCampaignId = :cid"
+                            + " and i.tableNo = :tableNo and i.roundNo = :roundNo"
+                            + " group by i.esTopicId",
+                    VoteTotalRow.class)
+                    .setParameter("cid", campaignId)
+                    .setParameter("tableNo", tableNo)
+                    .setParameter("roundNo", roundNo)
+                    .getResultList();
+        }
+    }
+
+    public List<CampaignTopicRoundVoteRow> findVoteTotalsByCampaignTopicAndRound(Long campaignId) {
+        if (campaignId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsInterestDao$CampaignTopicRoundVoteRow("
+                            + " i.esTopicId, i.roundNo, count(i.esInterestId))"
+                            + " from EsInterest i"
+                            + " where i.esCampaignId = :cid"
+                            + " group by i.esTopicId, i.roundNo",
+                    CampaignTopicRoundVoteRow.class)
+                    .setParameter("cid", campaignId)
+                    .getResultList();
+        }
+    }
+
+    public List<TableVoterCountRow> findDistinctVoterCountsByCampaignAndRound(Long campaignId, Integer roundNo) {
+        if (campaignId == null || roundNo == null || roundNo < 1) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsInterestDao$TableVoterCountRow("
+                            + " i.tableNo, count(distinct i.sessionKey))"
+                            + " from EsInterest i"
+                            + " where i.esCampaignId = :cid"
+                            + " and i.roundNo = :roundNo"
+                            + " and i.tableNo is not null"
+                            + " and i.sessionKey is not null"
+                            + " and i.sessionKey <> ''"
+                            + " group by i.tableNo",
+                    TableVoterCountRow.class)
+                    .setParameter("cid", campaignId)
+                    .setParameter("roundNo", roundNo)
+                    .getResultList();
+        }
+    }
+
+    public Optional<EsInterest> findAnyByCampaignAndTableAndRoundAndSession(Long campaignId, Integer tableNo,
+            Integer roundNo, String sessionKey) {
+        if (campaignId == null || tableNo == null || roundNo == null || sessionKey == null || sessionKey.isBlank()) {
             return Optional.empty();
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from EsInterest i where i.userId = :uid and i.esCampaignId = :cid"
-                            + " and i.esTopicId = :tid",
+                    "from EsInterest i where i.esCampaignId = :cid"
+                            + " and i.tableNo = :tableNo and i.roundNo = :roundNo"
+                            + " and i.sessionKey = :sessionKey",
                     EsInterest.class)
-                    .setParameter("uid", userId)
                     .setParameter("cid", campaignId)
-                    .setParameter("tid", topicId)
+                    .setParameter("tableNo", tableNo)
+                    .setParameter("roundNo", roundNo)
+                    .setParameter("sessionKey", sessionKey)
                     .setMaxResults(1)
                     .uniqueResultOptional();
-        }
-    }
-
-    public long countByCampaignAndTopic(Long campaignId, Long topicId) {
-        if (campaignId == null || topicId == null) {
-            return 0L;
-        }
-        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            Long count = session.createQuery(
-                    "select count(i.esInterestId) from EsInterest i"
-                            + " where i.esCampaignId = :cid and i.esTopicId = :tid",
-                    Long.class)
-                    .setParameter("cid", campaignId)
-                    .setParameter("tid", topicId)
-                    .uniqueResult();
-            return count == null ? 0L : count;
         }
     }
 
@@ -114,6 +178,66 @@ public class EsInterestDao extends GenericDao<EsInterest, Long> {
                 tx.rollback();
             }
             throw ex;
+        }
+    }
+
+    public static final class VoteTotalRow {
+        private final Long esTopicId;
+        private final Long voteCount;
+
+        public VoteTotalRow(Long esTopicId, Long voteCount) {
+            this.esTopicId = esTopicId;
+            this.voteCount = voteCount == null ? 0L : voteCount;
+        }
+
+        public Long getEsTopicId() {
+            return esTopicId;
+        }
+
+        public Long getVoteCount() {
+            return voteCount;
+        }
+    }
+
+    public static final class CampaignTopicRoundVoteRow {
+        private final Long esTopicId;
+        private final Integer roundNo;
+        private final Long voteCount;
+
+        public CampaignTopicRoundVoteRow(Long esTopicId, Integer roundNo, Long voteCount) {
+            this.esTopicId = esTopicId;
+            this.roundNo = roundNo;
+            this.voteCount = voteCount == null ? 0L : voteCount;
+        }
+
+        public Long getEsTopicId() {
+            return esTopicId;
+        }
+
+        public Integer getRoundNo() {
+            return roundNo;
+        }
+
+        public Long getVoteCount() {
+            return voteCount;
+        }
+    }
+
+    public static final class TableVoterCountRow {
+        private final Integer tableNo;
+        private final Long voterCount;
+
+        public TableVoterCountRow(Integer tableNo, Long voterCount) {
+            this.tableNo = tableNo;
+            this.voterCount = voterCount == null ? 0L : voterCount;
+        }
+
+        public Integer getTableNo() {
+            return tableNo;
+        }
+
+        public Long getVoterCount() {
+            return voterCount;
         }
     }
 }

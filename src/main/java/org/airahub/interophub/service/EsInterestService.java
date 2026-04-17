@@ -17,12 +17,8 @@ import org.airahub.interophub.model.EsSubscription;
 /**
  * Orchestrates ES interest, comment, and subscription operations.
  *
- * Vote dedup policy (enforced here, not at DB layer):
- * 1. If user_id present → reject duplicate for same campaign+topic+user_id.
- * 2. Else if email present → reject duplicate for same
- * campaign+topic+email_normalized.
- * 3. Else (blank email) → no enforcement; multiple anonymous votes are allowed
- * by design.
+ * Table voting uses overwrite semantics per campaign+table+round+session and is
+ * coordinated by the table vote flow.
  *
  * Subscription dedup: locate existing record by email_normalized + type (+
  * topicId for TOPIC),
@@ -47,28 +43,17 @@ public class EsInterestService {
     // -------------------------------------------------------------------------
 
     /**
-     * Records a campaign-specific expression of interest in a topic.
-     * Normalizes email before storing. Enforces one-vote rule by user_id
-     * and email_normalized (best-effort). Throws IllegalStateException on
-     * duplicate.
+     * Persists a single interest vote record.
      *
      * @param interest populated EsInterest; esInterestId must be null (new record).
      * @return the persisted EsInterest with its generated ID.
      */
     public EsInterest recordInterest(EsInterest interest) {
-        String emailNorm = EsNormalizer.normalizeEmail(interest.getEmail());
-        interest.setEmailNormalized(emailNorm);
-
-        if (interestDao.existsByUserOrEmail(
-                interest.getEsCampaignId(),
-                interest.getEsTopicId(),
-                interest.getUserId(),
-                emailNorm)) {
-            throw new IllegalStateException(
-                    "Duplicate interest: this person has already expressed interest"
-                            + " in this topic for this campaign.");
+        if (interest == null || interest.getEsCampaignId() == null || interest.getEsTopicId() == null
+                || interest.getTableNo() == null || interest.getRoundNo() == null
+                || interest.getTableNo() < 1 || interest.getRoundNo() < 1) {
+            throw new IllegalArgumentException("Interest vote requires campaign, topic, table, and round.");
         }
-
         return interestDao.saveOrUpdate(interest);
     }
 

@@ -141,6 +141,53 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    public List<CampaignTopicSubscriptionCountRow> findTopicSubscriptionCountsBySourceCampaignId(
+            Long sourceCampaignId, int limit) {
+        if (sourceCampaignId == null) {
+            return List.of();
+        }
+        int maxRows = limit > 0 ? limit : 25;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsSubscriptionDao$CampaignTopicSubscriptionCountRow("
+                            + " t.topicName, count(s.esSubscriptionId))"
+                            + " from EsSubscription s, EsTopic t"
+                            + " where s.sourceCampaignId = :campaignId"
+                            + " and s.esTopicId = t.esTopicId"
+                            + " and s.subscriptionType = :subscriptionType"
+                            + " and s.status = :status"
+                            + " group by t.esTopicId, t.topicName"
+                            + " order by count(s.esSubscriptionId) desc, lower(t.topicName) asc",
+                    CampaignTopicSubscriptionCountRow.class)
+                    .setParameter("campaignId", sourceCampaignId)
+                    .setParameter("subscriptionType", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setMaxResults(maxRows)
+                    .getResultList();
+        }
+    }
+
+    public int deleteBySourceCampaignId(Long sourceCampaignId) {
+        if (sourceCampaignId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsSubscription s where s.sourceCampaignId = :campaignId")
+                    .setParameter("campaignId", sourceCampaignId)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public EsSubscription saveOrUpdate(EsSubscription subscription) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
@@ -153,6 +200,24 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                 tx.rollback();
             }
             throw ex;
+        }
+    }
+
+    public static final class CampaignTopicSubscriptionCountRow {
+        private final String topicName;
+        private final Long subscriptionCount;
+
+        public CampaignTopicSubscriptionCountRow(String topicName, Long subscriptionCount) {
+            this.topicName = topicName;
+            this.subscriptionCount = subscriptionCount == null ? 0L : subscriptionCount;
+        }
+
+        public String getTopicName() {
+            return topicName;
+        }
+
+        public Long getSubscriptionCount() {
+            return subscriptionCount;
         }
     }
 }

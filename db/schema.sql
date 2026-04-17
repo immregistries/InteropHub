@@ -555,6 +555,7 @@ CREATE TABLE es_campaign (
   description         TEXT NULL,
   campaign_type       VARCHAR(80) NOT NULL DEFAULT 'DEEP_DIVE',
   status              ENUM('DRAFT','ACTIVE','CLOSED','ARCHIVED') NOT NULL DEFAULT 'DRAFT',
+  current_round_no    TINYINT UNSIGNED NOT NULL DEFAULT 1,
   allow_topic_comments    TINYINT(1) NOT NULL DEFAULT 1,
   allow_general_comments  TINYINT(1) NOT NULL DEFAULT 1,
   start_at            DATETIME NULL,
@@ -578,43 +579,56 @@ CREATE TABLE es_campaign_topic (
   display_order         INT NOT NULL DEFAULT 0,
   created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (es_campaign_topic_id),
-  UNIQUE KEY uq_es_campaign_topic (es_campaign_id, es_topic_id),
+  UNIQUE KEY uq_es_campaign_topic (es_campaign_id, es_topic_id, table_no),
   KEY ix_es_ct_set   (es_campaign_id, topic_set_no, display_order),
   KEY ix_es_ct_table (es_campaign_id, table_no, display_order),
   CONSTRAINT fk_es_ct_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
   CONSTRAINT fk_es_ct_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Campaign registration check-in records used by table-round vote linkage.
+CREATE TABLE es_campaign_registration (
+  es_campaign_registration_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_campaign_id              BIGINT UNSIGNED NOT NULL,
+  first_name                  VARCHAR(100) NOT NULL,
+  last_name                   VARCHAR(100) NULL,
+  email                       VARCHAR(254) NULL,
+  email_normalized            VARCHAR(254) NULL,
+  general_updates_opt_in      TINYINT(1) NOT NULL DEFAULT 0,
+  session_key                 VARCHAR(128) NULL,
+  created_at                  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_campaign_registration_id),
+  KEY ix_es_reg_campaign_time (es_campaign_id, created_at),
+  KEY ix_es_reg_campaign_email (es_campaign_id, email_normalized),
+  KEY ix_es_reg_session_campaign (session_key, es_campaign_id),
+  CONSTRAINT fk_es_campaign_registration_campaign
+    FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- -------------------------
 -- EXPRESSIONS OF INTEREST (VOTES)
 -- -------------------------
--- One record per person per topic per campaign.
--- Dedup enforced at app layer (EsInterestService):
---   1. user_id match if logged in
---   2. email_normalized match if email provided
---   3. no dedup for blank-email anonymous voters (allow_multiple by design)
--- NOTE: nullable unique columns are not enforced by MySQL unique indexes;
---       app-layer checks in EsInterestService are the primary safeguard.
+-- One record per session per selected topic per campaign+table+round.
+-- Overwrite behavior is enforced at app layer by deleting the current
+-- campaign+table+round+session selection set before insert.
 CREATE TABLE es_interest (
   es_interest_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   es_campaign_id      BIGINT UNSIGNED NOT NULL,
   es_topic_id         BIGINT UNSIGNED NOT NULL,
-  user_id             BIGINT NULL,              -- populated for logged-in users
-  session_key         VARCHAR(128) NULL,        -- browser session; recorded, not enforced
-  first_name          VARCHAR(100) NOT NULL,
-  last_name           VARCHAR(100) NULL,
-  email               VARCHAR(254) NULL,
-  email_normalized    VARCHAR(254) NULL,
-  opt_in_topic_updates TINYINT(1) NOT NULL DEFAULT 0,
+  es_campaign_registration_id BIGINT UNSIGNED NULL,
+  session_key         VARCHAR(128) NULL,
+  table_no            TINYINT UNSIGNED NOT NULL,
+  round_no            TINYINT UNSIGNED NOT NULL,
   created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (es_interest_id),
-  KEY ix_es_interest_campaign_topic (es_campaign_id, es_topic_id),
-  KEY ix_es_interest_user    (user_id, es_campaign_id),
-  KEY ix_es_interest_email   (email_normalized, es_campaign_id),
-  KEY ix_es_interest_session (session_key, es_campaign_id),
+  KEY ix_es_interest_campaign_table_round_topic (es_campaign_id, table_no, round_no, es_topic_id),
+  KEY ix_es_interest_campaign_table_round_session (es_campaign_id, table_no, round_no, session_key),
+  KEY ix_es_interest_campaign_registration (es_campaign_registration_id),
   CONSTRAINT fk_es_interest_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
   CONSTRAINT fk_es_interest_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_interest_user     FOREIGN KEY (user_id)        REFERENCES auth_user(user_id)
+  CONSTRAINT fk_es_interest_campaign_registration
+    FOREIGN KEY (es_campaign_registration_id)
+    REFERENCES es_campaign_registration(es_campaign_registration_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- -------------------------

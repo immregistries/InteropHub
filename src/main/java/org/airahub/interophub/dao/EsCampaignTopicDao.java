@@ -57,6 +57,50 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         }
     }
 
+    public List<EsCampaignTopicBrowseRow> findDistinctTopicBrowseRowsByCampaignIdOrdered(Long campaignId) {
+        if (campaignId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
+                            + " t.esTopicId, t.topicName, t.description, t.stage, max(ct.displayOrder))"
+                            + " from EsCampaignTopic ct, EsTopic t"
+                            + " where ct.esCampaignId = :campaignId"
+                            + " and ct.esTopicId = t.esTopicId"
+                            + " and t.status = :activeStatus"
+                            + " group by t.esTopicId, t.topicName, t.description, t.stage"
+                            + " order by max(ct.displayOrder) desc, lower(t.topicName) asc",
+                    EsCampaignTopicBrowseRow.class)
+                    .setParameter("campaignId", campaignId)
+                    .setParameter("activeStatus", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
+    public List<EsCampaignTopicBrowseRow> findBrowseRowsByCampaignIdAndTableNoOrdered(Long campaignId,
+            Integer tableNo) {
+        if (campaignId == null || tableNo == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
+                            + " ct.esTopicId, t.topicName, t.description, t.stage, ct.displayOrder)"
+                            + " from EsCampaignTopic ct, EsTopic t"
+                            + " where ct.esCampaignId = :campaignId"
+                            + " and ct.tableNo = :tableNo"
+                            + " and ct.esTopicId = t.esTopicId"
+                            + " and t.status = :activeStatus"
+                            + " order by ct.displayOrder asc, lower(t.topicName) asc, ct.esCampaignTopicId asc",
+                    EsCampaignTopicBrowseRow.class)
+                    .setParameter("campaignId", campaignId)
+                    .setParameter("tableNo", tableNo)
+                    .setParameter("activeStatus", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
     public List<EsCampaignTopic> findByCampaignIdAndSetNo(Long campaignId, Integer setNo) {
         if (campaignId == null || setNo == null) {
             return List.of();
@@ -100,6 +144,123 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
                     .setParameter("topicId", topicId)
                     .setMaxResults(1)
                     .uniqueResultOptional();
+        }
+    }
+
+    public Optional<EsCampaignTopic> findByCampaignIdAndTopicIdAndTableNo(
+            Long campaignId, Long topicId, Integer tableNo) {
+        if (campaignId == null || topicId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "from EsCampaignTopic ct where ct.esCampaignId = :campaignId"
+                    + " and ct.esTopicId = :topicId"
+                    + (tableNo != null ? " and ct.tableNo = :tableNo" : " and ct.tableNo is null");
+            var query = session.createQuery(hql, EsCampaignTopic.class)
+                    .setParameter("campaignId", campaignId)
+                    .setParameter("topicId", topicId)
+                    .setMaxResults(1);
+            if (tableNo != null) {
+                query.setParameter("tableNo", tableNo);
+            }
+            return query.uniqueResultOptional();
+        }
+    }
+
+    public long countByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return 0L;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(distinct ct.esTopicId) from EsCampaignTopic ct"
+                            + " where ct.esCampaignId = :campaignId",
+                    Long.class)
+                    .setParameter("campaignId", campaignId)
+                    .uniqueResult();
+            return count == null ? 0L : count;
+        }
+    }
+
+    public List<Integer> findDistinctTableNosByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select distinct ct.tableNo from EsCampaignTopic ct"
+                            + " where ct.esCampaignId = :campaignId"
+                            + " and ct.tableNo is not null"
+                            + " order by ct.tableNo asc",
+                    Integer.class)
+                    .setParameter("campaignId", campaignId)
+                    .getResultList();
+        }
+    }
+
+    public long countByCampaignIdAndTableNo(Long campaignId, Integer tableNo) {
+        if (campaignId == null) {
+            return 0L;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "select count(ct.esCampaignTopicId) from EsCampaignTopic ct"
+                    + " where ct.esCampaignId = :campaignId"
+                    + (tableNo != null ? " and ct.tableNo = :tableNo" : " and ct.tableNo is null");
+            var query = session.createQuery(hql, Long.class)
+                    .setParameter("campaignId", campaignId);
+            if (tableNo != null) {
+                query.setParameter("tableNo", tableNo);
+            }
+            Long count = query.uniqueResult();
+            return count == null ? 0L : count;
+        }
+    }
+
+    public int deleteByCampaignIdAndTopicIdAndTableNoNotIn(
+            Long campaignId, Long topicId, List<Integer> allowedTableNos) {
+        if (campaignId == null || topicId == null || allowedTableNos == null || allowedTableNos.isEmpty()) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsCampaignTopic ct"
+                            + " where ct.esCampaignId = :campaignId"
+                            + " and ct.esTopicId = :topicId"
+                            + " and (ct.tableNo is null or ct.tableNo not in (:allowedTableNos))")
+                    .setParameter("campaignId", campaignId)
+                    .setParameter("topicId", topicId)
+                    .setParameterList("allowedTableNos", allowedTableNos)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
+    public int deleteByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsCampaignTopic ct where ct.esCampaignId = :campaignId")
+                    .setParameter("campaignId", campaignId)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
         }
     }
 

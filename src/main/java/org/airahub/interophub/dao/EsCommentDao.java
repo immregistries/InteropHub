@@ -52,4 +52,25 @@ public class EsCommentDao extends GenericDao<EsComment, Long> {
                     .getResultList();
         }
     }
+
+    public int deleteByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsComment c where c.esCampaignId = :cid")
+                    .setParameter("cid", campaignId)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
 }

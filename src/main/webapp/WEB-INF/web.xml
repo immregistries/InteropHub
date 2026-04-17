@@ -255,6 +255,26 @@
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignRegistrationDisplayServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>AdminEsCampaignsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignsServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignDetailServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsCampaignEditServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignEditServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>TableVoteServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.TableVoteServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AdminEsTopicImportServlet</servlet-name>
     <url-pattern>/admin/es-topic-import</url-pattern>
@@ -278,5 +298,25 @@
   <servlet-mapping>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <url-pattern>/admin/es/registrations</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsCampaignsServlet</servlet-name>
+    <url-pattern>/admin/es/campaigns</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
+    <url-pattern>/admin/es/campaigns/detail</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsCampaignEditServlet</servlet-name>
+    <url-pattern>/admin/es/campaigns/edit</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TableVoteServlet</servlet-name>
+    <url-pattern>/table/*</url-pattern>
   </servlet-mapping>
 </web-app>

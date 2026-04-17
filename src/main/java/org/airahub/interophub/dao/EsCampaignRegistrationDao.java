@@ -1,6 +1,7 @@
 package org.airahub.interophub.dao;
 
 import java.util.List;
+import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsCampaignRegistration;
 
@@ -54,6 +55,23 @@ public class EsCampaignRegistrationDao extends GenericDao<EsCampaignRegistration
                     .setParameter("campaignId", esCampaignId)
                     .setMaxResults(limit)
                     .getResultList();
+        }
+    }
+
+    public Optional<Long> findLatestIdByCampaignAndSessionKey(Long esCampaignId, String sessionKey) {
+        if (esCampaignId == null || sessionKey == null || sessionKey.isBlank()) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select r.esCampaignRegistrationId from EsCampaignRegistration r"
+                            + " where r.esCampaignId = :campaignId and r.sessionKey = :sessionKey"
+                            + " order by r.createdAt desc, r.esCampaignRegistrationId desc",
+                    Long.class)
+                    .setParameter("campaignId", esCampaignId)
+                    .setParameter("sessionKey", sessionKey)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
         }
     }
 }

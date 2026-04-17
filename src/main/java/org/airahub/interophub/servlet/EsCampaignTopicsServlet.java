@@ -20,6 +20,7 @@ import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.service.EsInterestService;
@@ -38,12 +39,14 @@ public class EsCampaignTopicsServlet extends HttpServlet {
 
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
+    private final EsTopicDao topicDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsInterestService esInterestService;
 
     public EsCampaignTopicsServlet() {
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
+        this.topicDao = new EsTopicDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.esInterestService = new EsInterestService();
     }
@@ -213,8 +216,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
     }
 
     private BrowseState loadBrowseState(EsCampaign campaign, HttpSession session) {
-        List<EsCampaignTopicBrowseRow> rows = campaignTopicDao
-                .findBrowseRowsByCampaignIdOrdered(campaign.getEsCampaignId());
+        List<EsCampaignTopicBrowseRow> rows = topicDao.findAllActiveBrowseRowsOrdered();
         List<Long> topicIds = rows.stream()
                 .map(EsCampaignTopicBrowseRow::getEsTopicId)
                 .collect(Collectors.toList());

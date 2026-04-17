@@ -43,6 +43,9 @@ public class EsCampaign {
     @Column(name = "status", nullable = false, length = 16)
     private CampaignStatus status;
 
+    @Column(name = "current_round_no", nullable = false)
+    private Integer currentRoundNo;
+
     @Column(name = "allow_topic_comments", nullable = false)
     private Boolean allowTopicComments;
 
@@ -71,6 +74,9 @@ public class EsCampaign {
         }
         if (campaignType == null) {
             campaignType = "DEEP_DIVE";
+        }
+        if (currentRoundNo == null || currentRoundNo < 1) {
+            currentRoundNo = 1;
         }
         if (allowTopicComments == null) {
             allowTopicComments = Boolean.TRUE;
@@ -126,6 +132,14 @@ public class EsCampaign {
 
     public void setStatus(CampaignStatus status) {
         this.status = status;
+    }
+
+    public Integer getCurrentRoundNo() {
+        return currentRoundNo;
+    }
+
+    public void setCurrentRoundNo(Integer currentRoundNo) {
+        this.currentRoundNo = currentRoundNo;
     }
 
     public Boolean getAllowTopicComments() {

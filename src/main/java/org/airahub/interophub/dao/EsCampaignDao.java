@@ -57,4 +57,35 @@ public class EsCampaignDao extends GenericDao<EsCampaign, Long> {
             throw ex;
         }
     }
+
+    public int changeRoundByDelta(Long campaignId, int delta) {
+        if (campaignId == null || delta == 0) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated;
+            if (delta > 0) {
+                updated = session.createMutationQuery(
+                        "update EsCampaign c set c.currentRoundNo = c.currentRoundNo + 1"
+                                + " where c.esCampaignId = :campaignId")
+                        .setParameter("campaignId", campaignId)
+                        .executeUpdate();
+            } else {
+                updated = session.createMutationQuery(
+                        "update EsCampaign c set c.currentRoundNo = c.currentRoundNo - 1"
+                                + " where c.esCampaignId = :campaignId and c.currentRoundNo > 1")
+                        .setParameter("campaignId", campaignId)
+                        .executeUpdate();
+            }
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
 }

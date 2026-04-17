@@ -24,26 +24,17 @@ public class EsInterest {
     @Column(name = "es_topic_id", nullable = false)
     private Long esTopicId;
 
-    @Column(name = "user_id")
-    private Long userId;
+    @Column(name = "es_campaign_registration_id")
+    private Long esCampaignRegistrationId;
 
     @Column(name = "session_key", length = 128)
     private String sessionKey;
 
-    @Column(name = "first_name", nullable = false, length = 100)
-    private String firstName;
+    @Column(name = "table_no", nullable = false)
+    private Integer tableNo;
 
-    @Column(name = "last_name", length = 100)
-    private String lastName;
-
-    @Column(name = "email", length = 254)
-    private String email;
-
-    @Column(name = "email_normalized", length = 254)
-    private String emailNormalized;
-
-    @Column(name = "opt_in_topic_updates", nullable = false)
-    private Boolean optInTopicUpdates;
+    @Column(name = "round_no", nullable = false)
+    private Integer roundNo;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -52,9 +43,6 @@ public class EsInterest {
     protected void onCreate() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
-        }
-        if (optInTopicUpdates == null) {
-            optInTopicUpdates = Boolean.FALSE;
         }
     }
 
@@ -82,12 +70,12 @@ public class EsInterest {
         this.esTopicId = esTopicId;
     }
 
-    public Long getUserId() {
-        return userId;
+    public Long getEsCampaignRegistrationId() {
+        return esCampaignRegistrationId;
     }
 
-    public void setUserId(Long userId) {
-        this.userId = userId;
+    public void setEsCampaignRegistrationId(Long esCampaignRegistrationId) {
+        this.esCampaignRegistrationId = esCampaignRegistrationId;
     }
 
     public String getSessionKey() {
@@ -98,44 +86,20 @@ public class EsInterest {
         this.sessionKey = sessionKey;
     }
 
-    public String getFirstName() {
-        return firstName;
+    public Integer getTableNo() {
+        return tableNo;
     }
 
-    public void setFirstName(String firstName) {
-        this.firstName = firstName;
+    public void setTableNo(Integer tableNo) {
+        this.tableNo = tableNo;
     }
 
-    public String getLastName() {
-        return lastName;
+    public Integer getRoundNo() {
+        return roundNo;
     }
 
-    public void setLastName(String lastName) {
-        this.lastName = lastName;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public void setEmail(String email) {
-        this.email = email;
-    }
-
-    public String getEmailNormalized() {
-        return emailNormalized;
-    }
-
-    public void setEmailNormalized(String emailNormalized) {
-        this.emailNormalized = emailNormalized;
-    }
-
-    public Boolean getOptInTopicUpdates() {
-        return optInTopicUpdates;
-    }
-
-    public void setOptInTopicUpdates(Boolean optInTopicUpdates) {
-        this.optInTopicUpdates = optInTopicUpdates;
+    public void setRoundNo(Integer roundNo) {
+        this.roundNo = roundNo;
     }
 
     public LocalDateTime getCreatedAt() {

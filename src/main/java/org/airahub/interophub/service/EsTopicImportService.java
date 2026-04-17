@@ -1,10 +1,16 @@
 package org.airahub.interophub.service;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.airahub.interophub.dao.EsCampaignDao;
+import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
+import org.airahub.interophub.dao.EsInterestDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
@@ -22,11 +28,17 @@ public class EsTopicImportService {
     private final EsTopicDao topicDao;
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
+    private final EsInterestDao interestDao;
+    private final EsCommentDao commentDao;
+    private final EsSubscriptionDao subscriptionDao;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
+        this.interestDao = new EsInterestDao();
+        this.commentDao = new EsCommentDao();
+        this.subscriptionDao = new EsSubscriptionDao();
     }
 
     /**
@@ -62,10 +74,22 @@ public class EsTopicImportService {
      * </pre>
      */
     public ImportResult importLines(String rawLines, Long selectedCampaignId,
-            String newCampaignCode, String newCampaignName, Long adminUserId) {
+            String newCampaignCode, String newCampaignName, Long adminUserId, int tablesPerSet) {
 
         EsCampaign campaign = resolveCampaign(
                 selectedCampaignId, newCampaignCode, newCampaignName, adminUserId);
+
+        boolean allowCampaignReset = campaign.getStatus() == null
+                || campaign.getStatus() == EsCampaign.CampaignStatus.DRAFT;
+
+        if (allowCampaignReset) {
+            Long campaignId = campaign.getEsCampaignId();
+            // Draft campaigns are reset to a clean slate before rebuilding assignments.
+            interestDao.deleteByCampaignId(campaignId);
+            commentDao.deleteByCampaignId(campaignId);
+            subscriptionDao.deleteBySourceCampaignId(campaignId);
+            campaignTopicDao.deleteByCampaignId(campaignId);
+        }
 
         String[] lines = rawLines.split("\r?\n");
         int linesProcessed = 0;
@@ -95,6 +119,8 @@ public class EsTopicImportService {
             }
 
             try {
+                Integer topicSetNo = !json.has("set") || json.isNull("set") ? null : json.getInt("set");
+
                 // ── Upsert es_topic ──────────────────────────────────────────────────
                 String topicCode = json.getString("topicCode");
 
@@ -119,12 +145,14 @@ public class EsTopicImportService {
                 topic.setTopicName(json.getString("topicName"));
                 topic.setDescription(
                         json.isNull("description") ? null : json.optString("description", null));
-                topic.setNeighborhood(
-                        json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
-                topic.setPriorityIis(json.optInt("priorityIis", 0));
-                topic.setPriorityEhr(json.optInt("priorityEhr", 0));
-                topic.setPriorityCdc(json.optInt("priorityCdc", 0));
-                topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
+                if (allowCampaignReset) {
+                    topic.setNeighborhood(
+                            json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
+                    topic.setPriorityIis(json.optInt("priorityIis", 0));
+                    topic.setPriorityEhr(json.optInt("priorityEhr", 0));
+                    topic.setPriorityCdc(json.optInt("priorityCdc", 0));
+                    topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
+                }
 
                 topic = topicDao.saveOrUpdate(topic);
 
@@ -134,32 +162,58 @@ public class EsTopicImportService {
                     topicsUpdated++;
                 }
 
-                // ── Upsert es_campaign_topic ─────────────────────────────────────────
-                Long campaignId = campaign.getEsCampaignId();
-                Long topicId = topic.getEsTopicId();
+                if (allowCampaignReset) {
+                    // ── Rebuild es_campaign_topic rows only while campaign is DRAFT ───────────
+                    // Topics without a valid set are intentionally not assigned to any campaign
+                    // table.
+                    if (topicSetNo == null || topicSetNo < 1) {
+                        linesProcessed++;
+                        continue;
+                    }
 
-                Optional<EsCampaignTopic> existingCt = campaignTopicDao.findByCampaignIdAndTopicId(campaignId, topicId);
-                EsCampaignTopic ct;
-                boolean isNewCt;
-                if (existingCt.isPresent()) {
-                    ct = existingCt.get();
-                    isNewCt = false;
-                } else {
-                    ct = new EsCampaignTopic();
-                    ct.setEsCampaignId(campaignId);
-                    ct.setEsTopicId(topicId);
-                    isNewCt = true;
-                }
+                    Long campaignId = campaign.getEsCampaignId();
+                    Long topicId = topic.getEsTopicId();
+                    int displayOrder = json.optInt("displayOrder", 0);
+                    // With tablesPerSet=N and set S: tables (S-1)*N+1 .. S*N.
+                    int startTable = (topicSetNo - 1) * tablesPerSet + 1;
+                    int endTable = topicSetNo * tablesPerSet;
 
-                ct.setDisplayOrder(json.optInt("displayOrder", 0));
-                ct.setTopicSetNo(!json.has("set") || json.isNull("set") ? null : json.getInt("set"));
+                    List<Integer> expectedTableNos = IntStream.rangeClosed(startTable, endTable)
+                            .boxed()
+                            .collect(Collectors.toList());
 
-                campaignTopicDao.saveOrUpdate(ct);
+                    // Defensive cleanup if duplicates/stale rows already exist during this import
+                    // run.
+                    campaignTopicDao.deleteByCampaignIdAndTopicIdAndTableNoNotIn(
+                            campaignId, topicId, expectedTableNos);
 
-                if (isNewCt) {
-                    campaignTopicsInserted++;
-                } else {
-                    campaignTopicsUpdated++;
+                    for (int tableNo = startTable; tableNo <= endTable; tableNo++) {
+                        Optional<EsCampaignTopic> existingCt = campaignTopicDao
+                                .findByCampaignIdAndTopicIdAndTableNo(campaignId, topicId, tableNo);
+                        EsCampaignTopic ct;
+                        boolean isNewCt;
+                        if (existingCt.isPresent()) {
+                            ct = existingCt.get();
+                            isNewCt = false;
+                        } else {
+                            ct = new EsCampaignTopic();
+                            ct.setEsCampaignId(campaignId);
+                            ct.setEsTopicId(topicId);
+                            ct.setTableNo(tableNo);
+                            isNewCt = true;
+                        }
+
+                        ct.setDisplayOrder(displayOrder);
+                        ct.setTopicSetNo(topicSetNo);
+
+                        campaignTopicDao.saveOrUpdate(ct);
+
+                        if (isNewCt) {
+                            campaignTopicsInserted++;
+                        } else {
+                            campaignTopicsUpdated++;
+                        }
+                    }
                 }
 
             } catch (JSONException ex) {

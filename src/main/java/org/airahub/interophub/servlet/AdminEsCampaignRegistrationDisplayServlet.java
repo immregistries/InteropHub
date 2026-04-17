@@ -4,15 +4,24 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.IntStream;
 import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignRegistrationDao;
+import org.airahub.interophub.dao.EsCampaignTopicDao;
+import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
+import org.airahub.interophub.dao.EsInterestDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.model.EsCampaign;
+import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 
@@ -20,17 +29,24 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
 
     private static final int DEFAULT_NAME_LIMIT = 200;
     private static final int MAX_NAME_LIMIT = 1000;
-    private static final long AUTO_REFRESH_DURATION_MS = 20L * 60L * 1000L;
-    private static final int AUTO_REFRESH_SECONDS = 20;
+    private static final long AUTO_REFRESH_DURATION_MS = 60L * 60L * 1000L;
+    private static final int AUTO_REFRESH_SECONDS = 10;
+    private static final int DISPLAY_TABLE_CAPACITY = 9;
 
     private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
     private final EsCampaignRegistrationDao registrationDao;
+    private final EsCampaignTopicDao campaignTopicDao;
+    private final EsInterestDao interestDao;
+    private final EsSubscriptionDao subscriptionDao;
 
     public AdminEsCampaignRegistrationDisplayServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.registrationDao = new EsCampaignRegistrationDao();
+        this.campaignTopicDao = new EsCampaignTopicDao();
+        this.interestDao = new EsInterestDao();
+        this.subscriptionDao = new EsSubscriptionDao();
     }
 
     @Override
@@ -76,8 +92,87 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
         long remaining = Math.max(0L, AUTO_REFRESH_DURATION_MS - elapsed);
         boolean autoRefreshActive = autoRefreshRequested && remaining > 0L;
 
+        List<EsCampaignTopicBrowseRow> topicRows = campaignTopicDao
+                .findDistinctTopicBrowseRowsByCampaignIdOrdered(campaign.get().getEsCampaignId());
+        List<EsCampaignTopic> campaignTopics = campaignTopicDao.findByCampaignId(campaign.get().getEsCampaignId());
+
+        int maxSetNo = campaignTopics.stream()
+                .map(EsCampaignTopic::getTopicSetNo)
+                .filter(v -> v != null && v > 0)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+        int maxTableNo = campaignTopics.stream()
+                .map(EsCampaignTopic::getTableNo)
+                .filter(v -> v != null && v > 0)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
+
+        int inferredSetCount = Math.max(1, maxSetNo);
+        int inferredTablesPerSet;
+        if (maxSetNo > 0 && maxTableNo > 0) {
+            inferredTablesPerSet = Math.max(1, (int) Math.ceil((double) maxTableNo / (double) maxSetNo));
+        } else if (maxTableNo > 0) {
+            inferredTablesPerSet = maxTableNo;
+        } else {
+            inferredTablesPerSet = 1;
+        }
+
+        List<EsInterestDao.CampaignTopicRoundVoteRow> voteRows = interestDao
+                .findVoteTotalsByCampaignTopicAndRound(campaign.get().getEsCampaignId());
+        List<EsSubscriptionDao.CampaignTopicSubscriptionCountRow> subscriptionRows = subscriptionDao
+                .findTopicSubscriptionCountsBySourceCampaignId(campaign.get().getEsCampaignId(), 25);
+
         renderDisplay(response, contextPath, campaign.get(), count, firstNames, autoRefreshActive, startedAt, remaining,
-                nameLimit);
+                nameLimit, topicRows, voteRows, subscriptionRows, inferredSetCount, inferredTablesPerSet);
+    }
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Optional<User> adminUser = requireAdmin(request, response);
+        if (adminUser.isEmpty()) {
+            return;
+        }
+
+        String contextPath = request.getContextPath();
+        String campaignCode = trimToNull(request.getParameter("campaignCode"));
+        if (campaignCode == null) {
+            response.sendRedirect(contextPath + "/admin/es/registrations");
+            return;
+        }
+
+        Optional<EsCampaign> campaign = campaignDao.findByCampaignCode(campaignCode);
+        if (campaign.isEmpty()) {
+            renderCampaignNotFound(response, contextPath, campaignCode);
+            return;
+        }
+
+        String action = trimToNull(request.getParameter("roundAction"));
+        if ("next".equalsIgnoreCase(action)) {
+            campaignDao.changeRoundByDelta(campaign.get().getEsCampaignId(), 1);
+        } else if ("previous".equalsIgnoreCase(action)) {
+            campaignDao.changeRoundByDelta(campaign.get().getEsCampaignId(), -1);
+        }
+
+        boolean autoRefreshRequested = "1".equals(request.getParameter("auto"));
+        int nameLimit = parsePositiveInt(request.getParameter("nameLimit"), DEFAULT_NAME_LIMIT, MAX_NAME_LIMIT);
+        String startedAt = trimToNull(request.getParameter("startedAt"));
+
+        StringBuilder redirect = new StringBuilder();
+        redirect.append(contextPath)
+                .append("/admin/es/registrations?campaignCode=")
+                .append(URLEncoder.encode(campaignCode, StandardCharsets.UTF_8))
+                .append("&nameLimit=")
+                .append(nameLimit);
+        if (autoRefreshRequested) {
+            redirect.append("&auto=1");
+            if (startedAt != null) {
+                redirect.append("&startedAt=")
+                        .append(URLEncoder.encode(startedAt, StandardCharsets.UTF_8));
+            }
+        }
+        response.sendRedirect(redirect.toString());
     }
 
     private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -120,8 +215,6 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
                         + escapeHtml(orEmpty(campaign.getCampaignName())) + "</option>");
             }
             out.println("      </select>");
-            out.println(
-                    "      <label><input type=\"checkbox\" name=\"auto\" value=\"1\" /> Auto-refresh for 20 minutes</label>");
             out.println("      <label for=\"nameLimit\">Name list limit</label>");
             out.println(
                     "      <input id=\"nameLimit\" name=\"nameLimit\" type=\"number\" min=\"1\" max=\"1000\" value=\""
@@ -164,7 +257,12 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
     }
 
     private void renderDisplay(HttpServletResponse response, String contextPath, EsCampaign campaign, long count,
-            List<String> firstNames, boolean autoRefreshActive, long startedAt, long remainingMs, int nameLimit)
+            List<String> firstNames, boolean autoRefreshActive, long startedAt, long remainingMs, int nameLimit,
+            List<EsCampaignTopicBrowseRow> topicRows,
+            List<EsInterestDao.CampaignTopicRoundVoteRow> voteRows,
+            List<EsSubscriptionDao.CampaignTopicSubscriptionCountRow> subscriptionRows,
+            int setCount,
+            int tablesPerSet)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
@@ -176,21 +274,18 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
             if (autoRefreshActive) {
                 out.println("  <meta http-equiv=\"refresh\" content=\"" + AUTO_REFRESH_SECONDS + "\" />");
             }
-            out.println("  <title>Registration Display - InteropHub</title>");
+            out.println("  <title>" + escapeHtml(orEmpty(campaign.getCampaignName())) + " - InteropHub</title>");
             out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("  <style>");
-            out.println("    .room-count { font-size: 5rem; font-weight: 700; margin: 0.25rem 0 1rem; }");
-            out.println("    .room-names { font-size: 1.4rem; line-height: 1.4; }");
-            out.println("    .room-wrap { max-width: 1400px; margin: 0 auto; padding: 1rem; }");
-            out.println("  </style>");
             out.println("</head>");
             out.println("<body>");
-            out.println("  <main class=\"room-wrap\">");
-            out.println("    <h1>Campaign Registration Display</h1>");
-            out.println("    <p><strong>Campaign:</strong> " + escapeHtml(orEmpty(campaign.getCampaignName())) + " ("
-                    + escapeHtml(orEmpty(campaign.getCampaignCode())) + ")</p>");
-            out.println("    <p>Raw registrations</p>");
-            out.println("    <p class=\"room-count\">" + count + "</p>");
+            out.println("  <main class=\"es-reg-wrap\">");
+            out.println("    <h1>" + escapeHtml(orEmpty(campaign.getCampaignName())) + "</h1>");
+            int currentRoundNo = (campaign.getCurrentRoundNo() == null || campaign.getCurrentRoundNo() < 1)
+                    ? 1
+                    : campaign.getCurrentRoundNo();
+            out.println("    <div class=\"es-reg-grid\">");
+            out.println("      <section class=\"es-reg-left\">");
+            out.println("        <p class=\"es-reg-count\">" + count + "</p>");
 
             String namesCsv = firstNames.stream()
                     .map(this::trimToNull)
@@ -198,31 +293,205 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
                     .map(this::escapeHtml)
                     .collect(Collectors.joining(", "));
 
-            out.println("    <h2>Recent First Names</h2>");
+            out.println("        <h2>Registered</h2>");
             if (namesCsv.isEmpty()) {
-                out.println("    <p class=\"room-names\">No names yet.</p>");
+                out.println("        <p class=\"es-reg-names\">No names yet.</p>");
             } else {
-                out.println("    <p class=\"room-names\">" + namesCsv + "</p>");
+                out.println("        <p class=\"es-reg-names\">" + namesCsv + "</p>");
             }
 
+            out.println("        <h2>Subscriptions</h2>");
+            out.println("        <table class=\"admin-table\">");
+            out.println("          <thead><tr><th>Topic</th><th>Count</th></tr></thead>");
+            out.println("          <tbody>");
+            if (subscriptionRows == null || subscriptionRows.isEmpty()) {
+                out.println("            <tr><td colspan=\"2\">none</td></tr>");
+            } else {
+                for (EsSubscriptionDao.CampaignTopicSubscriptionCountRow row : subscriptionRows) {
+                    out.println("            <tr><td>" + escapeHtml(orEmpty(row.getTopicName())) + "</td><td>"
+                            + row.getSubscriptionCount() + "</td></tr>");
+                }
+            }
+            out.println("          </tbody>");
+            out.println("        </table>");
+            out.println("      </section>");
+
+            long toggleStartedAt = System.currentTimeMillis();
+            out.println("      <section class=\"es-reg-right\">");
+            out.println("        <div class=\"es-round-header\">");
+            out.println("          <p class=\"es-round-current\"><strong>Current round:</strong> " + currentRoundNo
+                    + "</p>");
+            out.println("          <form class=\"es-round-controls\" method=\"post\" action=\"" + contextPath
+                    + "/admin/es/registrations\">");
+            out.println("            <input type=\"hidden\" name=\"campaignCode\" value=\""
+                    + escapeHtml(orEmpty(campaign.getCampaignCode())) + "\" />");
+            out.println("            <input type=\"hidden\" name=\"nameLimit\" value=\"" + nameLimit + "\" />");
             if (autoRefreshActive) {
-                out.println("    <p>Auto-refresh is active every " + AUTO_REFRESH_SECONDS
-                        + " seconds. Remaining: " + (remainingMs / 1000L) + " seconds.</p>");
-            } else {
-                out.println("    <p>Auto-refresh is off or completed.</p>");
+                out.println("            <input type=\"hidden\" name=\"auto\" value=\"1\" />");
+                out.println("            <input type=\"hidden\" name=\"startedAt\" value=\"" + startedAt + "\" />");
+            }
+            if (currentRoundNo > 1) {
+                out.println(
+                        "            <button type=\"submit\" name=\"roundAction\" value=\"previous\">Previous Round</button>");
+            }
+            out.println("            <button type=\"submit\" name=\"roundAction\" value=\"next\">Next Round</button>");
+            out.println("          </form>");
+            out.println("        </div>");
+
+            Map<Integer, Long> tableVoterCounts = new HashMap<>();
+            for (EsInterestDao.TableVoterCountRow row : interestDao
+                    .findDistinctVoterCountsByCampaignAndRound(campaign.getEsCampaignId(), currentRoundNo)) {
+                if (row.getTableNo() != null) {
+                    tableVoterCounts.put(row.getTableNo(), row.getVoterCount());
+                }
             }
 
-            String codeEncoded = URLEncoder.encode(orEmpty(campaign.getCampaignCode()), StandardCharsets.UTF_8);
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode=" + codeEncoded
-                    + "&nameLimit=" + nameLimit + "\">Manual refresh</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode=" + codeEncoded
-                    + "&auto=1&startedAt=" + startedAt + "&nameLimit=" + nameLimit + "\">Start auto-refresh</a></p>");
-            out.println(
-                    "    <p><a href=\"" + contextPath + "/admin/es/registrations\">Choose another campaign</a></p>");
+            out.println("        <div class=\"es-table-health-wrap\">");
+            out.println("          <table class=\"admin-table es-table-health-table\">");
+            out.println("            <thead><tr><th>Table</th>");
+            for (int setNo = 1; setNo <= setCount; setNo++) {
+                out.println("              <th>Set " + setNo + "</th>");
+            }
+            out.println("            </tr></thead>");
+            out.println("            <tbody>");
+            for (int tableSlot = 1; tableSlot <= tablesPerSet; tableSlot++) {
+                out.println("              <tr>");
+                out.println("                <th>Table " + tableSlot + "</th>");
+                for (int setNo = 1; setNo <= setCount; setNo++) {
+                    int concreteTableNo = (setNo - 1) * tablesPerSet + tableSlot;
+                    long voters = tableVoterCounts.getOrDefault(concreteTableNo, 0L);
+                    int pct = (int) Math.min(100L, Math.round((voters * 100.0) / DISPLAY_TABLE_CAPACITY));
+                    out.println("                <td>");
+                    out.println("                  <div class=\"es-table-health-cell\">");
+                    out.println("                    <span class=\"es-table-health-dot\" style=\"--fill:" + pct
+                            + "%\"></span>");
+                    out.println("                    <span class=\"es-table-health-value\">" + voters + "/"
+                            + DISPLAY_TABLE_CAPACITY
+                            + "</span>");
+                    out.println("                  </div>");
+                    out.println("                </td>");
+                }
+                out.println("              </tr>");
+            }
+            out.println("            </tbody>");
+            out.println("          </table>");
+            out.println("        </div>");
+
+            Map<Long, String> topicNameById = new HashMap<>();
+            for (EsCampaignTopicBrowseRow topic : topicRows) {
+                topicNameById.put(topic.getEsTopicId(), topic.getTopicName());
+            }
+
+            Map<Long, Map<Integer, Long>> votesByTopicByRound = new HashMap<>();
+            int maxDataRound = 0;
+            for (EsInterestDao.CampaignTopicRoundVoteRow row : voteRows) {
+                if (row.getEsTopicId() == null || row.getRoundNo() == null || row.getRoundNo() < 1) {
+                    continue;
+                }
+                maxDataRound = Math.max(maxDataRound, row.getRoundNo());
+                votesByTopicByRound
+                        .computeIfAbsent(row.getEsTopicId(), ignored -> new HashMap<>())
+                        .merge(row.getRoundNo(), row.getVoteCount(), Long::sum);
+            }
+
+            int maxRoundToShow = Math.max(3, Math.max(currentRoundNo, maxDataRound));
+            List<Integer> rounds = IntStream.rangeClosed(1, maxRoundToShow).boxed().collect(Collectors.toList());
+
+            List<TopicVoteMatrixRow> matrixRows = new ArrayList<>();
+            for (EsCampaignTopicBrowseRow topic : topicRows) {
+                Long topicId = topic.getEsTopicId();
+                Map<Integer, Long> roundVotes = votesByTopicByRound.getOrDefault(topicId, Map.of());
+                long totalVotes = roundVotes.values().stream().mapToLong(Long::longValue).sum();
+                matrixRows.add(new TopicVoteMatrixRow(topic.getTopicName(), roundVotes, totalVotes));
+            }
+            matrixRows.sort((a, b) -> {
+                int byVotes = Long.compare(b.totalVotes, a.totalVotes);
+                if (byVotes != 0) {
+                    return byVotes;
+                }
+                return String.CASE_INSENSITIVE_ORDER.compare(a.topicName, b.topicName);
+            });
+
+            List<TopicVoteMatrixRow> visibleRows = matrixRows.size() > 10 ? matrixRows.subList(0, 10) : matrixRows;
+
+            out.println("        <div class=\"es-round-table-wrap\">");
+            out.println("          <table class=\"admin-table es-round-table\">");
+            out.println("            <thead>");
+            out.println("              <tr>");
+            out.println("                <th>Topic</th>");
+            for (Integer round : rounds) {
+                boolean selected = round == currentRoundNo;
+                out.println("                <th" + (selected ? " class=\"es-current-round\"" : "") + ">Round "
+                        + round + "</th>");
+            }
+            out.println("                <th>Total</th>");
+            out.println("              </tr>");
+            out.println("            </thead>");
+            out.println("            <tbody>");
+            for (TopicVoteMatrixRow row : visibleRows) {
+                out.println("              <tr>");
+                out.println("                <td>" + escapeHtml(orEmpty(row.topicName)) + "</td>");
+                for (Integer round : rounds) {
+                    long voteCount = row.roundVotes.getOrDefault(round, 0L);
+                    boolean selected = round == currentRoundNo;
+                    out.println("                <td" + (selected ? " class=\"es-current-round\"" : "") + ">"
+                            + voteCount + "</td>");
+                }
+                out.println("                <td><strong>" + row.totalVotes + "</strong></td>");
+                out.println("              </tr>");
+            }
+            if (visibleRows.isEmpty()) {
+                out.println("              <tr><td colspan=\"" + (rounds.size() + 2)
+                        + "\">No campaign topics assigned.</td></tr>");
+            }
+            out.println("            </tbody>");
+            out.println("          </table>");
+            if (matrixRows.size() > 10) {
+                out.println("          <p class=\"es-refresh-hint\">Showing top 10 topics by total votes.</p>");
+            }
+            out.println("        </div>");
+            out.println("      </section>");
+            out.println("    </div>");
+
+            out.println("    <form id=\"es-refresh-form\" class=\"es-refresh-floating\" method=\"get\" action=\""
+                    + contextPath + "/admin/es/registrations\">");
+            out.println("      <input type=\"hidden\" name=\"campaignCode\" value=\""
+                    + escapeHtml(orEmpty(campaign.getCampaignCode())) + "\" />");
+            out.println("      <input type=\"hidden\" name=\"nameLimit\" value=\"" + nameLimit + "\" />");
+            out.println("      <input type=\"hidden\" name=\"startedAt\" value=\"" + toggleStartedAt + "\" />");
+            out.println("      <label class=\"es-refresh-switch\">Refresh");
+            out.println("        <input id=\"es-refresh-input\" type=\"checkbox\" name=\"auto\" value=\"1\""
+                    + (autoRefreshActive ? " checked" : "") + " />");
+            out.println("        <span class=\"es-refresh-slider\"></span>");
+            out.println("      </label>");
+            out.println("    </form>");
+            out.println("    <script>");
+            out.println("      (function(){");
+            out.println("        var input = document.getElementById('es-refresh-input');");
+            out.println("        if (input) {");
+            out.println("          input.addEventListener('change', function(){");
+            out.println("            document.getElementById('es-refresh-form').submit();");
+            out.println("          });");
+            out.println("        }");
+            out.println("      })();");
+            out.println("    </script>");
+
             out.println("  </main>");
             PageFooterRenderer.render(out);
             out.println("</body>");
             out.println("</html>");
+        }
+    }
+
+    private static final class TopicVoteMatrixRow {
+        private final String topicName;
+        private final Map<Integer, Long> roundVotes;
+        private final long totalVotes;
+
+        private TopicVoteMatrixRow(String topicName, Map<Integer, Long> roundVotes, long totalVotes) {
+            this.topicName = topicName;
+            this.roundVotes = roundVotes;
+            this.totalVotes = totalVotes;
         }
     }
 

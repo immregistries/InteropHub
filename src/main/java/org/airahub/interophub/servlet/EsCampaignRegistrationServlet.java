@@ -25,6 +25,7 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
     private static final String ATTR_EMAIL_NORMALIZED = "interophub.es.registration.emailNormalized";
     private static final String ATTR_CAMPAIGN_CODE = "interophub.es.registration.campaignCode";
     private static final String ATTR_SESSION_KEY = "interophub.es.registration.sessionKey";
+    private static final String ATTR_CAMPAIGN_REGISTRATION_ID = "interophub.es.registration.campaignRegistrationId";
 
     private final EsCampaignDao campaignDao;
     private final EsCampaignRegistrationDao registrationDao;
@@ -112,6 +113,7 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
         setSessionValue(session, ATTR_EMAIL_NORMALIZED, emailNormalized);
         setSessionValue(session, ATTR_CAMPAIGN_CODE, campaignCode);
         setSessionValue(session, ATTR_SESSION_KEY, sessionKey);
+        session.setAttribute(ATTR_CAMPAIGN_REGISTRATION_ID, registration.getEsCampaignRegistrationId());
 
         response.sendRedirect(request.getContextPath() + "/es/thank-you/"
                 + URLEncoder.encode(campaignCode, StandardCharsets.UTF_8));

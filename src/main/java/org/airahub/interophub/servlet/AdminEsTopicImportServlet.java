@@ -2,6 +2,8 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -50,6 +52,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
         Long selectedCampaignId = parseId(trimToNull(request.getParameter("campaignId")));
         String newCampaignCode = trimToNull(request.getParameter("newCampaignCode"));
         String newCampaignName = trimToNull(request.getParameter("newCampaignName"));
+        int tablesPerSet = parsePositiveIntOrDefault(trimToNull(request.getParameter("tablesPerSet")), 1);
         String jsonLines = request.getParameter("jsonLines");
 
         if (jsonLines == null || jsonLines.isBlank()) {
@@ -60,7 +63,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
         try {
             ImportResult result = importService.importLines(
                     jsonLines, selectedCampaignId, newCampaignCode, newCampaignName,
-                    adminUser.get().getUserId());
+                    adminUser.get().getUserId(), tablesPerSet);
             renderResult(response, contextPath, result);
         } catch (IllegalArgumentException ex) {
             renderForm(response, contextPath, ex.getMessage(), campaignDao.findAllOrdered());
@@ -111,6 +114,12 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             out.println("      <input id=\"newCampaignCode\" name=\"newCampaignCode\" type=\"text\" />");
             out.println("      <label for=\"newCampaignName\">New Campaign Name</label>");
             out.println("      <input id=\"newCampaignName\" name=\"newCampaignName\" type=\"text\" />");
+
+            out.println("      <label for=\"tablesPerSet\">Tables per Set</label>");
+            out.println(
+                    "      <input id=\"tablesPerSet\" name=\"tablesPerSet\" type=\"number\" min=\"1\" value=\"1\" style=\"width:6em\" />");
+            out.println(
+                    "      <p style=\"margin-top:0;font-size:.85em;color:#555\">One <code>es_campaign_topic</code> row is created per table (1 through this number). Default 1.</p>");
 
             out.println("      <h2>JSON Lines</h2>");
             out.println("      <p>Required fields per line: <code>topicCode</code>, <code>topicName</code>. "
@@ -164,6 +173,12 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             if (result.getDuplicateTopicCodes() > 0) {
                 out.println("    <p>Duplicate topic codes in paste (last write wins): <strong>"
                         + result.getDuplicateTopicCodes() + "</strong></p>");
+            }
+
+            if (result.getCampaignCode() != null && !result.getCampaignCode().isBlank()) {
+                String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
+                        + URLEncoder.encode(result.getCampaignCode(), StandardCharsets.UTF_8);
+                out.println("    <p><a href=\"" + detailUrl + "\">View Campaign Details</a></p>");
             }
 
             out.println("    <p><a href=\"" + contextPath + "/admin/es-topic-import\">Import Another Batch</a></p>");
@@ -226,6 +241,18 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             return Long.valueOf(value);
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    private int parsePositiveIntOrDefault(String value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed >= 1 ? parsed : defaultValue;
+        } catch (NumberFormatException ex) {
+            return defaultValue;
         }
     }
 
