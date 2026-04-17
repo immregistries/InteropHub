@@ -246,6 +246,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsCampaignTopicsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCampaignTopicsServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignRegistrationDisplayServlet</servlet-class>
   </servlet>
@@ -263,6 +268,11 @@
   <servlet-mapping>
     <servlet-name>EsCampaignRegistrationThankYouServlet</servlet-name>
     <url-pattern>/es/thank-you/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCampaignTopicsServlet</servlet-name>
+    <url-pattern>/topics/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

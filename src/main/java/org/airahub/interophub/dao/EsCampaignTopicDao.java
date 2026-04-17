@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsCampaignTopic;
+import org.airahub.interophub.model.EsTopic;
 
 public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
 
@@ -21,6 +22,37 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
                             + " order by ct.displayOrder asc, ct.esCampaignTopicId asc",
                     EsCampaignTopic.class)
                     .setParameter("campaignId", campaignId)
+                    .getResultList();
+        }
+    }
+
+    public List<EsCampaignTopicBrowseRow> findBrowseRowsByCampaignIdOrdered(Long campaignId) {
+        if (campaignId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
+                            + " ct.esTopicId, t.topicName, t.description, t.stage, ct.displayOrder)"
+                            + " from EsCampaignTopic ct, EsTopic t"
+                            + " where ct.esCampaignId = :campaignId"
+                            + " and ct.esTopicId = t.esTopicId"
+                            + " and t.status = :activeStatus"
+                            + " order by"
+                            + " case"
+                            + " when lower(coalesce(t.stage, '')) = 'draft' then 1"
+                            + " when lower(coalesce(t.stage, '')) = 'gather' then 2"
+                            + " when lower(coalesce(t.stage, '')) = 'monitor' then 3"
+                            + " when lower(coalesce(t.stage, '')) = 'parked' then 4"
+                            + " when lower(coalesce(t.stage, '')) = 'pilot' then 5"
+                            + " when lower(coalesce(t.stage, '')) = 'rollout' then 6"
+                            + " else 99 end asc,"
+                            + " ct.displayOrder desc,"
+                            + " lower(t.topicName) asc,"
+                            + " ct.esCampaignTopicId asc",
+                    EsCampaignTopicBrowseRow.class)
+                    .setParameter("campaignId", campaignId)
+                    .setParameter("activeStatus", EsTopic.EsTopicStatus.ACTIVE)
                     .getResultList();
         }
     }

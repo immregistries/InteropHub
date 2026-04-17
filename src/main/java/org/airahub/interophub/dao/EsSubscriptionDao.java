@@ -2,6 +2,7 @@ package org.airahub.interophub.dao;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsSubscription;
 
@@ -116,6 +117,27 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     .setParameter("hash", tokenHash)
                     .setMaxResults(1)
                     .uniqueResultOptional();
+        }
+    }
+
+    public Set<Long> findActiveTopicIdsByEmailAndTopicIds(String emailNormalized, List<Long> topicIds) {
+        if (emailNormalized == null || emailNormalized.isBlank() || topicIds == null || topicIds.isEmpty()) {
+            return Set.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Long> result = session.createQuery(
+                    "select s.esTopicId from EsSubscription s"
+                            + " where s.emailNormalized = :email"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status = :status"
+                            + " and s.esTopicId in :topicIds",
+                    Long.class)
+                    .setParameter("email", emailNormalized)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameterList("topicIds", topicIds)
+                    .getResultList();
+            return Set.copyOf(result);
         }
     }
 

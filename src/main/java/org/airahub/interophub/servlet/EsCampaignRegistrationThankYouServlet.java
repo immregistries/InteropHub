@@ -5,13 +5,32 @@ import java.io.PrintWriter;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsCampaignDao;
+import org.airahub.interophub.model.EsCampaign;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 public class EsCampaignRegistrationThankYouServlet extends HttpServlet {
+
+    private final EsCampaignDao campaignDao;
+
+    public EsCampaignRegistrationThankYouServlet() {
+        this.campaignDao = new EsCampaignDao();
+    }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         String campaignCode = parseCampaignCode(request);
         String contextPath = request.getContextPath();
+        Optional<EsCampaign> campaign = campaignCode == null
+                ? Optional.empty()
+                : campaignDao.findByCampaignCode(campaignCode);
+        String campaignName = campaign.map(EsCampaign::getCampaignName).orElse(null);
+        String browseHref = campaignCode == null
+                ? contextPath + "/topics"
+                : contextPath + "/topics/" + URLEncoder.encode(campaignCode, StandardCharsets.UTF_8);
 
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
@@ -26,11 +45,14 @@ public class EsCampaignRegistrationThankYouServlet extends HttpServlet {
             out.println("<body>");
             out.println("  <main class=\"container\">");
             out.println("    <h1>Thank You</h1>");
-            out.println("    <p>Your campaign registration was recorded.</p>");
-            if (campaignCode != null) {
-                out.println("    <p><strong>Campaign code:</strong> " + escapeHtml(campaignCode) + "</p>");
+            out.println("    <p>Your registration was successfully recorded.</p>");
+            if (campaignName != null && !campaignName.isBlank()) {
+                out.println("    <p><strong>Event:</strong> " + escapeHtml(campaignName) + "</p>");
             }
-            out.println("    <p>This is a placeholder page and will be updated in a later step.</p>");
+            out.println(
+                    "    <p>While you are here, if you would like to look at Emerging Standard topics and select ones you are interested in getting updates on, use the link below.</p>");
+            out.println("    <p><a class=\"button-link\" href=\"" + browseHref
+                    + "\">Browse Emerging Standard Topics</a></p>");
             out.println("  </main>");
             PageFooterRenderer.render(out);
             out.println("</body>");
