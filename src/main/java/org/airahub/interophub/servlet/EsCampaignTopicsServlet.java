@@ -332,6 +332,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("      <p id=\"es-detail-stage\" class=\"es-detail-stage\"></p>");
             out.println("      <p id=\"es-detail-state\" class=\"es-detail-state\"></p>");
             out.println("      <p id=\"es-detail-description\" class=\"es-detail-description\"></p>");
+            out.println("      <p id=\"es-detail-topic-type\" class=\"es-detail-stage\" hidden></p>");
+            out.println("      <p id=\"es-detail-policy-status\" class=\"es-detail-stage\" hidden></p>");
             out.println("      <div class=\"es-detail-actions\">\n"
                     + "        <button type=\"button\" id=\"es-detail-select\">Interested</button>\n"
                     + "        <button type=\"button\" id=\"es-detail-close\" class=\"es-secondary-button\">Close</button>\n"
@@ -410,6 +412,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                             + "      var detailStage = document.getElementById('es-detail-stage');\n"
                             + "      var detailState = document.getElementById('es-detail-state');\n"
                             + "      var detailDescription = document.getElementById('es-detail-description');\n"
+                            + "      var detailTopicType = document.getElementById('es-detail-topic-type');\n"
+                            + "      var detailPolicyStatus = document.getElementById('es-detail-policy-status');\n"
                             + "      var detailSelect = document.getElementById('es-detail-select');\n"
                             + "      var detailClose = document.getElementById('es-detail-close');");
             out.println("      var scrollKey = 'es-topics-scroll-' + " + quoteJs(campaign.getCampaignCode()) + ";");
@@ -478,6 +482,22 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + "        detailTitle.textContent = row.getAttribute('data-topic-name') || '';\n"
                     + "        detailStage.textContent = 'Stage: ' + (row.getAttribute('data-topic-stage') || 'Unknown');\n"
                     + "        detailDescription.textContent = row.getAttribute('data-topic-description') || 'No description available.';\n"
+                    + "        var topicType = (row.getAttribute('data-topic-type') || '').trim();\n"
+                    + "        var policyStatus = (row.getAttribute('data-policy-status') || '').trim();\n"
+                    + "        if (topicType) {\n"
+                    + "          detailTopicType.textContent = 'Topic type: ' + topicType;\n"
+                    + "          detailTopicType.hidden = false;\n"
+                    + "        } else {\n"
+                    + "          detailTopicType.textContent = '';\n"
+                    + "          detailTopicType.hidden = true;\n"
+                    + "        }\n"
+                    + "        if (policyStatus) {\n"
+                    + "          detailPolicyStatus.textContent = 'Policy status: ' + policyStatus;\n"
+                    + "          detailPolicyStatus.hidden = false;\n"
+                    + "        } else {\n"
+                    + "          detailPolicyStatus.textContent = '';\n"
+                    + "          detailPolicyStatus.hidden = true;\n"
+                    + "        }\n"
                     + "        if (isSubscribed) {\n"
                     + "          detailState.textContent = 'Current state: Subscribed';\n"
                     + "          detailSelect.hidden = true;\n"
@@ -581,6 +601,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + " data-topic-id=\"" + row.getEsTopicId() + "\""
                     + " data-topic-name=\"" + escapeHtml(topicName) + "\""
                     + " data-topic-description=\"" + escapeHtml(description) + "\""
+                    + " data-topic-type=\"" + escapeHtml(orEmpty(row.getTopicType())) + "\""
+                    + " data-policy-status=\"" + escapeHtml(orEmpty(row.getPolicyStatus())) + "\""
                     + " data-topic-stage=\"" + escapeHtml(orEmpty(normalizeStage(row.getStage()))) + "\""
                     + " data-search=\"" + escapeHtml((topicName + " " + description).toLowerCase()) + "\">");
 

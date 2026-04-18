@@ -68,6 +68,8 @@ public class EsTopicImportService {
      *   "priorityEhr": 1,          // integer, defaults 0
      *   "priorityCdc": 3,          // integer, defaults 0
      *   "stage": "...",            // nullable
+    *   "policyStatus": "...",     // nullable
+    *   "topicType": "...",        // nullable
      *   "displayOrder": 10,        // integer, defaults 0
      *   "set": 1                   // nullable integer for topic_set_no
      * }
@@ -152,6 +154,8 @@ public class EsTopicImportService {
                     topic.setPriorityEhr(json.optInt("priorityEhr", 0));
                     topic.setPriorityCdc(json.optInt("priorityCdc", 0));
                     topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
+                    topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
+                    topic.setTopicType(readNullableTrimmedString(json, "topicType"));
                 }
 
                 topic = topicDao.saveOrUpdate(topic);
@@ -252,6 +256,18 @@ public class EsTopicImportService {
         }
         throw new IllegalArgumentException(
                 "A campaign is required. Select an existing campaign or enter a new campaign code and name.");
+    }
+
+    private String readNullableTrimmedString(JSONObject json, String fieldName) {
+        if (json.isNull(fieldName)) {
+            return null;
+        }
+        String raw = json.optString(fieldName, null);
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     // ── Result DTO

@@ -251,6 +251,21 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicReviewServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicReviewServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicReviewSaveServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicReviewSaveServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicReviewCommentServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicReviewCommentServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignRegistrationDisplayServlet</servlet-class>
   </servlet>
@@ -273,6 +288,11 @@
   <servlet>
     <servlet-name>AdminEsCampaignEditServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignEditServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsTopicReviewResultsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicReviewResultsServlet</servlet-class>
   </servlet>
 
   <servlet>
@@ -301,6 +321,21 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>EsTopicReviewServlet</servlet-name>
+    <url-pattern>/es/review/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicReviewSaveServlet</servlet-name>
+    <url-pattern>/es/review/save</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicReviewCommentServlet</servlet-name>
+    <url-pattern>/es/review/comment</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <url-pattern>/admin/es/registrations</url-pattern>
   </servlet-mapping>
@@ -323,6 +358,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsCampaignEditServlet</servlet-name>
     <url-pattern>/admin/es/campaigns/edit</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsTopicReviewResultsServlet</servlet-name>
+    <url-pattern>/admin/es/review-results</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

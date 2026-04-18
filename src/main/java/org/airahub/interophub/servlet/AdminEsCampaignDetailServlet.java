@@ -119,6 +119,10 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
             // Registration display link
             out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
                     + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
+            out.println("    <p><a href=\"" + contextPath + "/es/review/"
+                    + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a></p>");
+            out.println("    <p><a href=\"" + contextPath + "/admin/es/review-results?campaignCode="
+                    + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a></p>");
             out.println("    <p><a href=\"" + contextPath + "/admin/es/campaigns/edit?campaignCode="
                     + escapeHtml(campaign.getCampaignCode()) + "\">Edit Campaign</a></p>");
 

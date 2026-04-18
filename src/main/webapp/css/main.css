@@ -446,7 +446,133 @@ a.doc-card {
   box-shadow: 0 8px 18px rgba(63, 122, 114, 0.18);
 }
 
+.es-review-topic-row.is-reviewed {
+  border-color: #8f99aa;
+  background: linear-gradient(180deg, #e5e9f0 0%, #dbe2ec 100%);
+  box-shadow: 0 8px 18px rgba(71, 85, 105, 0.24);
+}
+
+.es-review-topic-row {
+  grid-template-columns: 118px 1fr;
+}
+
+.es-review-topic-row:not(.is-reviewed) {
+  border-color: #5f779a;
+  box-shadow: 0 10px 20px rgba(46, 78, 116, 0.2);
+}
+
+.es-review-topic-row.is-reviewed h3,
+.es-review-topic-row.is-reviewed .es-topic-preview {
+  color: #4b5563;
+}
+
 .es-topic-row.is-filtered-out {
+  display: none !important;
+}
+
+.es-review-scale-hint {
+  margin: 0 0 0.55rem;
+  color: #475569;
+  font-size: 0.86rem;
+}
+
+.es-review-score-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.62rem 0.5rem;
+  background: #e8eef8;
+  border-right: 1px solid #c9d7ea;
+  min-height: 84px;
+}
+
+.es-review-selected-wrap {
+  width: 100%;
+  text-align: center;
+}
+
+.es-review-selected-value {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 2px solid #334155;
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 1.06rem;
+  cursor: pointer;
+}
+
+.es-review-edit-wrap {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.3rem;
+  width: 100%;
+}
+
+.es-review-score-btn {
+  border: 1px solid #7891b2;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 0.35rem 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+  cursor: pointer;
+}
+
+.es-review-score-btn:hover {
+  border-color: #0f766e;
+  color: #0f766e;
+}
+
+.es-review-topic-row.is-reviewed .es-topic-state {
+  border-color: #7f8a99;
+  color: #475569;
+  background: #eef2f7;
+}
+
+.es-review-progress-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 205;
+  padding: 0.72rem 0.95rem max(0.72rem, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, rgba(247, 249, 252, 0.94), #eef3f9);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -8px 18px rgba(15, 23, 42, 0.12);
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.es-review-comment-label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.es-review-comment-input {
+  width: 100%;
+  min-height: 120px;
+  border: 1px solid #bac6db;
+  border-radius: 9px;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.42;
+  resize: vertical;
+  margin-bottom: 0.55rem;
+}
+
+.es-review-comment-status {
+  margin: 0 0 0.55rem;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.es-review-edit-wrap[hidden],
+.es-review-selected-wrap[hidden],
+.es-topic-state[hidden] {
   display: none !important;
 }
 

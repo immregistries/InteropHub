@@ -4,14 +4,18 @@ public class EsCampaignTopicBrowseRow {
     private final Long esTopicId;
     private final String topicName;
     private final String description;
+    private final String topicType;
+    private final String policyStatus;
     private final String stage;
     private final Integer displayOrder;
 
-    public EsCampaignTopicBrowseRow(Long esTopicId, String topicName, String description, String stage,
-            Integer displayOrder) {
+    public EsCampaignTopicBrowseRow(Long esTopicId, String topicName, String description,
+            String topicType, String policyStatus, String stage, Integer displayOrder) {
         this.esTopicId = esTopicId;
         this.topicName = topicName;
         this.description = description;
+        this.topicType = topicType;
+        this.policyStatus = policyStatus;
         this.stage = stage;
         this.displayOrder = displayOrder;
     }
@@ -26,6 +30,14 @@ public class EsCampaignTopicBrowseRow {
 
     public String getDescription() {
         return description;
+    }
+
+    public String getTopicType() {
+        return topicType;
+    }
+
+    public String getPolicyStatus() {
+        return policyStatus;
     }
 
     public String getStage() {

@@ -67,6 +67,8 @@ public class AdminEsCampaignsServlet extends HttpServlet {
                 out.println("          <th>Status</th>");
                 out.println("          <th>Topics</th>");
                 out.println("          <th>Registrations</th>");
+                out.println("          <th>Review</th>");
+                out.println("          <th>Results</th>");
                 out.println("        </tr>");
                 out.println("      </thead>");
                 out.println("      <tbody>");
@@ -75,6 +77,9 @@ public class AdminEsCampaignsServlet extends HttpServlet {
                     long regCount = registrationDao.countByCampaignId(c.getEsCampaignId());
                     String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
                             + escapeHtml(c.getCampaignCode());
+                    String reviewUrl = contextPath + "/es/review/" + escapeHtml(c.getCampaignCode());
+                    String resultsUrl = contextPath + "/admin/es/review-results?campaignCode="
+                            + escapeHtml(c.getCampaignCode());
                     out.println("        <tr>");
                     out.println("          <td>" + escapeHtml(c.getCampaignCode()) + "</td>");
                     out.println("          <td><a href=\"" + detailUrl + "\">"
@@ -82,6 +87,8 @@ public class AdminEsCampaignsServlet extends HttpServlet {
                     out.println("          <td>" + escapeHtml(String.valueOf(c.getStatus())) + "</td>");
                     out.println("          <td>" + topicCount + "</td>");
                     out.println("          <td>" + regCount + "</td>");
+                    out.println("          <td><a href=\"" + reviewUrl + "\">Open Review</a></td>");
+                    out.println("          <td><a href=\"" + resultsUrl + "\">View Results</a></td>");
                     out.println("        </tr>");
                 }
                 out.println("      </tbody>");

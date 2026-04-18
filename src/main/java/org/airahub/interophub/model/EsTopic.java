@@ -51,6 +51,12 @@ public class EsTopic {
     @Column(name = "stage", length = 80)
     private String stage;
 
+    @Column(name = "policy_status", length = 120)
+    private String policyStatus;
+
+    @Column(name = "topic_type", length = 120)
+    private String topicType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private EsTopicStatus status;
@@ -160,6 +166,22 @@ public class EsTopic {
 
     public void setStage(String stage) {
         this.stage = stage;
+    }
+
+    public String getPolicyStatus() {
+        return policyStatus;
+    }
+
+    public void setPolicyStatus(String policyStatus) {
+        this.policyStatus = policyStatus;
+    }
+
+    public String getTopicType() {
+        return topicType;
+    }
+
+    public void setTopicType(String topicType) {
+        this.topicType = topicType;
     }
 
     public EsTopicStatus getStatus() {

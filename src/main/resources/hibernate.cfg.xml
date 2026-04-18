@@ -41,6 +41,7 @@
     <mapping class="org.airahub.interophub.model.EsCampaignTopic"/>
     <mapping class="org.airahub.interophub.model.EsInterest"/>
     <mapping class="org.airahub.interophub.model.EsComment"/>
+    <mapping class="org.airahub.interophub.model.EsTopicReview"/>
     <mapping class="org.airahub.interophub.model.EsSubscription"/>
     <mapping class="org.airahub.interophub.model.EsCampaignRegistration"/>
   </session-factory>

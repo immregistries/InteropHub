@@ -125,7 +125,8 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             out.println("      <p>Required fields per line: <code>topicCode</code>, <code>topicName</code>. "
                     + "Optional: <code>description</code>, <code>neighborhood</code>, "
                     + "<code>priorityIis</code>, <code>priorityEhr</code>, <code>priorityCdc</code>, "
-                    + "<code>stage</code>, <code>displayOrder</code>, <code>set</code>.</p>");
+                    + "<code>stage</code>, <code>policyStatus</code>, <code>topicType</code>, "
+                    + "<code>displayOrder</code>, <code>set</code>.</p>");
             out.println("      <label for=\"jsonLines\">One JSON object per line</label>");
             out.println("      <textarea id=\"jsonLines\" name=\"jsonLines\" rows=\"20\""
                     + " style=\"width:100%;font-family:monospace\"></textarea>");

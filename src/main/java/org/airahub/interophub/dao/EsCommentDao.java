@@ -53,6 +53,25 @@ public class EsCommentDao extends GenericDao<EsComment, Long> {
         }
     }
 
+    public List<TopicCommentCountRow> findTopicCommentCountsByCampaignId(Long campaignId) {
+        if (campaignId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCommentDao$TopicCommentCountRow(c.esTopicId, count(c.esCommentId))"
+                            + " from EsComment c"
+                            + " where c.esCampaignId = :cid"
+                            + " and c.commentType = :topicType"
+                            + " and c.esTopicId is not null"
+                            + " group by c.esTopicId",
+                    TopicCommentCountRow.class)
+                    .setParameter("cid", campaignId)
+                    .setParameter("topicType", EsComment.CommentType.TOPIC)
+                    .getResultList();
+        }
+    }
+
     public int deleteByCampaignId(Long campaignId) {
         if (campaignId == null) {
             return 0;
@@ -71,6 +90,24 @@ public class EsCommentDao extends GenericDao<EsComment, Long> {
                 tx.rollback();
             }
             throw ex;
+        }
+    }
+
+    public static final class TopicCommentCountRow {
+        private final Long esTopicId;
+        private final Long commentCount;
+
+        public TopicCommentCountRow(Long esTopicId, Long commentCount) {
+            this.esTopicId = esTopicId;
+            this.commentCount = commentCount == null ? 0L : commentCount;
+        }
+
+        public Long getEsTopicId() {
+            return esTopicId;
+        }
+
+        public Long getCommentCount() {
+            return commentCount;
         }
     }
 }

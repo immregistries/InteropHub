@@ -175,7 +175,9 @@ public class TableVoteServlet extends HttpServlet {
                 out.println("          <article class=\"es-topic-row" + (selectedBySession ? " is-selected" : "") + "\""
                         + " data-topic-id=\"" + row.getEsTopicId() + "\""
                         + " data-topic-name=\"" + escapeHtml(orEmpty(row.getTopicName())) + "\""
-                        + " data-topic-description=\"" + escapeHtml(description) + "\">");
+                        + " data-topic-description=\"" + escapeHtml(description) + "\""
+                        + " data-topic-type=\"" + escapeHtml(orEmpty(row.getTopicType())) + "\""
+                        + " data-policy-status=\"" + escapeHtml(orEmpty(row.getPolicyStatus())) + "\">");
 
                 out.println("            <div class=\"es-topic-checkbox-wrap\">");
                 if (voteMode) {
@@ -208,6 +210,8 @@ public class TableVoteServlet extends HttpServlet {
             out.println("    <aside id=\"es-detail-sheet\" class=\"es-detail-sheet\" hidden>");
             out.println("      <h2 id=\"es-detail-title\"></h2>");
             out.println("      <p id=\"es-detail-description\" class=\"es-detail-description\"></p>");
+            out.println("      <p id=\"es-detail-topic-type\" class=\"es-detail-stage\" hidden></p>");
+            out.println("      <p id=\"es-detail-policy-status\" class=\"es-detail-stage\" hidden></p>");
             out.println("      <div class=\"es-detail-actions\">");
             out.println(
                     "        <button type=\"button\" id=\"es-detail-close\" class=\"es-secondary-button\">Close</button>");
@@ -242,12 +246,30 @@ public class TableVoteServlet extends HttpServlet {
                             + "      var sheet = document.getElementById('es-detail-sheet');\n"
                             + "      var title = document.getElementById('es-detail-title');\n"
                             + "      var description = document.getElementById('es-detail-description');\n"
+                            + "      var topicType = document.getElementById('es-detail-topic-type');\n"
+                            + "      var policyStatus = document.getElementById('es-detail-policy-status');\n"
                             + "      var close = document.getElementById('es-detail-close');");
 
             out.println("      function openDetail(row) {");
             out.println("        title.textContent = row.getAttribute('data-topic-name') || ''; ");
             out.println(
                     "        description.textContent = row.getAttribute('data-topic-description') || 'No description available.';");
+            out.println("        var topicTypeValue = (row.getAttribute('data-topic-type') || '').trim();");
+            out.println("        var policyStatusValue = (row.getAttribute('data-policy-status') || '').trim();");
+            out.println("        if (topicTypeValue) {");
+            out.println("          topicType.textContent = 'Topic type: ' + topicTypeValue;");
+            out.println("          topicType.hidden = false;");
+            out.println("        } else {");
+            out.println("          topicType.textContent = '';");
+            out.println("          topicType.hidden = true;");
+            out.println("        }");
+            out.println("        if (policyStatusValue) {");
+            out.println("          policyStatus.textContent = 'Policy status: ' + policyStatusValue;");
+            out.println("          policyStatus.hidden = false;");
+            out.println("        } else {");
+            out.println("          policyStatus.textContent = '';");
+            out.println("          policyStatus.hidden = true;");
+            out.println("        }");
             out.println("        overlay.hidden = false;");
             out.println("        sheet.hidden = false;");
             out.println("        document.body.classList.add('es-sheet-open');");
