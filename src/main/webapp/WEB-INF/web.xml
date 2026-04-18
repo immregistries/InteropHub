@@ -276,6 +276,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsTopicServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignDetailServlet</servlet-class>
   </servlet>
@@ -300,6 +305,16 @@
     <servlet-class>org.airahub.interophub.servlet.TableVoteServlet</servlet-class>
   </servlet>
 
+  <servlet>
+    <servlet-name>EsRegisterForMeetingServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsRegisterForMeetingServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsRegistrationCompleteServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsRegistrationCompleteServlet</servlet-class>
+  </servlet>
+
   <servlet-mapping>
     <servlet-name>AdminEsTopicImportServlet</servlet-name>
     <url-pattern>/admin/es-topic-import</url-pattern>
@@ -308,6 +323,16 @@
   <servlet-mapping>
     <servlet-name>EsCampaignRegistrationServlet</servlet-name>
     <url-pattern>/register/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsRegisterForMeetingServlet</servlet-name>
+    <url-pattern>/registerForMeeting/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsRegistrationCompleteServlet</servlet-name>
+    <url-pattern>/register/complete/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
@@ -343,6 +368,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsCampaignsServlet</servlet-name>
     <url-pattern>/admin/es/campaigns</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsTopicServlet</servlet-name>
+    <url-pattern>/admin/es/topics</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

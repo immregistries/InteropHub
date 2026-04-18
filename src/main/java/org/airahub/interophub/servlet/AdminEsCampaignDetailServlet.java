@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCampaignDao;
+import org.airahub.interophub.dao.EsCampaignMeetingBrowseRow;
 import org.airahub.interophub.dao.EsCampaignRegistrationDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.model.EsCampaign;
@@ -79,8 +80,13 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
         String detailPath = "/admin/es/campaigns/detail?campaignCode="
                 + encodeQueryComponent(campaign.getCampaignCode());
         String registrationPath = "/register/" + encodedCampaignCode;
+        String hubPath = "/register/complete/" + encodedCampaignCode;
         String registrationAbsoluteUrl = publicUrlService.resolveExternalUrl(registrationPath);
+        String hubAbsoluteUrl = publicUrlService.resolveExternalUrl(hubPath);
         String registrationQrUrl = buildQrPageUrl(contextPath, registrationPath, "Registration page", detailPath);
+        String hubQrUrl = buildQrPageUrl(contextPath, hubPath, "Registration complete hub", detailPath);
+        List<EsCampaignMeetingBrowseRow> meetingRows = campaignTopicDao
+                .findActiveMeetingRowsByCampaignIdOrdered(campaignId);
 
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
@@ -115,6 +121,9 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
             out.println("    <p><strong>Registration URL:</strong> <a href=\"" + escapeHtml(registrationAbsoluteUrl)
                     + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a href=\""
                     + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
+            out.println("    <p><strong>Engagement Hub URL:</strong> <a href=\"" + escapeHtml(hubAbsoluteUrl)
+                    + "\">" + escapeHtml(hubAbsoluteUrl) + "</a> (<a href=\""
+                    + escapeHtml(hubQrUrl) + "\">qr code</a>)</p>");
 
             // Registration display link
             out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
@@ -158,6 +167,42 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
                             + escapeHtml(voteQrUrl) + "\">qr code</a>)</td>");
                     out.println("          <td><a href=\"" + escapeHtml(resultsUrl) + "\">Results</a> (<a href=\""
                             + escapeHtml(resultsQrUrl) + "\">qr code</a>)</td>");
+                    out.println("        </tr>");
+                }
+                out.println("      </tbody>");
+                out.println("    </table>");
+            }
+
+            out.println("    <h2 style=\"margin-top:1.5rem\">Meeting Registration Links</h2>");
+            if (meetingRows.isEmpty()) {
+                out.println("    <p>No active meetings are configured for this campaign.</p>");
+            } else {
+                out.println("    <table class=\"admin-table\">");
+                out.println("      <thead>");
+                out.println("        <tr>");
+                out.println("          <th>Meeting</th>");
+                out.println("          <th>Register for Meeting</th>");
+                out.println("        </tr>");
+                out.println("      </thead>");
+                out.println("      <tbody>");
+                for (EsCampaignMeetingBrowseRow row : meetingRows) {
+                    if (row.getTopicCode() == null || row.getTopicCode().isBlank()) {
+                        continue;
+                    }
+                    String meetingPath = "/registerForMeeting/" + encodedCampaignCode + "/"
+                            + encodePathSegment(row.getTopicCode());
+                    String meetingAbsoluteUrl = publicUrlService.resolveExternalUrl(meetingPath);
+                    String meetingLabel = row.getMeetingName() == null || row.getMeetingName().isBlank()
+                            ? row.getTopicName()
+                            : row.getMeetingName();
+                    String meetingQrUrl = buildQrPageUrl(contextPath, meetingPath,
+                            "Meeting registration: " + meetingLabel, detailPath);
+
+                    out.println("        <tr>");
+                    out.println("          <td>" + escapeHtml(meetingLabel) + "</td>");
+                    out.println("          <td><a href=\"" + escapeHtml(meetingAbsoluteUrl)
+                            + "\">Register for Meeting</a> (<a href=\""
+                            + escapeHtml(meetingQrUrl) + "\">qr code</a>)</td>");
                     out.println("        </tr>");
                 }
                 out.println("      </tbody>");
@@ -230,4 +275,5 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
     }
+
 }

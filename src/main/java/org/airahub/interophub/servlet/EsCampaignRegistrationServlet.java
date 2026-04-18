@@ -115,7 +115,7 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
         setSessionValue(session, ATTR_SESSION_KEY, sessionKey);
         session.setAttribute(ATTR_CAMPAIGN_REGISTRATION_ID, registration.getEsCampaignRegistrationId());
 
-        response.sendRedirect(request.getContextPath() + "/es/thank-you/"
+        response.sendRedirect(request.getContextPath() + "/register/complete/"
                 + URLEncoder.encode(campaignCode, StandardCharsets.UTF_8));
     }
 
@@ -129,14 +129,13 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
             out.println("<head>");
             out.println("  <meta charset=\"UTF-8\" />");
             out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Campaign Registration - InteropHub</title>");
+            out.println("  <title>Register - InteropHub</title>");
             out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
             out.println("</head>");
             out.println("<body>");
             out.println("  <main class=\"container\">");
-            out.println("    <h1>Campaign Registration</h1>");
-            out.println(
-                    "    <p><strong>Campaign:</strong> " + escapeHtml(orEmpty(campaign.getCampaignName())) + "</p>");
+            out.println("    <h1>" + escapeHtml(orEmpty(campaign.getCampaignName())) + "</h1>");
+            out.println("    <p>Register to participate and share your input.</p>");
             if (errorMessage != null) {
                 out.println("    <p><strong>Could not submit:</strong> " + escapeHtml(errorMessage) + "</p>");
             }

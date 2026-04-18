@@ -63,6 +63,13 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public List<EsTopic> findAllOrderByTopicName() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("from EsTopic t order by lower(t.topicName) asc, t.esTopicId asc", EsTopic.class)
+                    .getResultList();
+        }
+    }
+
     public EsTopic saveOrUpdate(EsTopic topic) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

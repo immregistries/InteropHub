@@ -40,6 +40,9 @@ public class AdminEsServlet extends HttpServlet {
             out.println("    <h1>Emerging Standards</h1>");
             out.println("    <p><a href=\"" + contextPath + "/admin/es/campaigns\">Campaigns</a></p>");
             out.println("    <p><a href=\"" + contextPath
+                    + "/admin/es/campaigns\">Campaign Registration and Engagement Links</a></p>");
+            out.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">ES Topics</a></p>");
+            out.println("    <p><a href=\"" + contextPath
                     + "/admin/es/registrations\">Campaign Registration Display</a></p>");
             out.println("    <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
             out.println("  </main>");

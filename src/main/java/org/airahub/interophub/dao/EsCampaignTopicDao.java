@@ -57,6 +57,25 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         }
     }
 
+    public List<EsCampaignMeetingBrowseRow> findActiveMeetingRowsByCampaignIdOrdered(Long campaignId) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCampaignMeetingBrowseRow("
+                            + " t.esTopicId, t.topicCode, t.topicName, t.stage, 0,"
+                            + " m.esTopicMeetingId, m.meetingName, m.meetingDescription, m.joinRequiresApproval)"
+                            + " from EsTopicMeeting m, EsTopic t"
+                            + " where m.esTopicId = t.esTopicId"
+                            + " and t.status = :activeTopicStatus"
+                            + " and m.disabledAt is null"
+                            + " order by"
+                            + " lower(coalesce(m.meetingName, t.topicName)) asc,"
+                            + " t.esTopicId asc",
+                    EsCampaignMeetingBrowseRow.class)
+                    .setParameter("activeTopicStatus", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
     public List<EsCampaignTopicBrowseRow> findDistinctTopicBrowseRowsByCampaignIdOrdered(Long campaignId) {
         if (campaignId == null) {
             return List.of();
