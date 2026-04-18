@@ -83,7 +83,7 @@ public class EsTopicReviewServlet extends HttpServlet {
             out.println("  <main class=\"es-topics-page es-review-page\">");
             out.println("    <section class=\"es-topics-header\">");
             out.println("      <h1>Emerging Standards Topic Review</h1>");
-            out.println("      <p>Indicate whether each topic is worth discussing as a the community,</p>");
+            out.println("      <p>Indicate whether each topic is worth discussing as a community,</p>");
             out.println(
                     "      <p class=\"es-review-scale-hint\">Score guide: 0 no value, 1 very low, 2 low, 3 worth discussing, 4 high, 5 critical.</p>");
             out.println("      <label for=\"topic-search\" class=\"es-topics-search-label\">Search topics</label>");
