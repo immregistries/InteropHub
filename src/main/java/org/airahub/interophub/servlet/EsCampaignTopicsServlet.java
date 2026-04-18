@@ -18,7 +18,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
-import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.model.EsCampaign;
@@ -38,14 +37,12 @@ public class EsCampaignTopicsServlet extends HttpServlet {
     private static final String ATTR_SELECTION_PREFIX = "interophub.es.topicSelection.";
 
     private final EsCampaignDao campaignDao;
-    private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicDao topicDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsInterestService esInterestService;
 
     public EsCampaignTopicsServlet() {
         this.campaignDao = new EsCampaignDao();
-        this.campaignTopicDao = new EsCampaignTopicDao();
         this.topicDao = new EsTopicDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.esInterestService = new EsInterestService();
