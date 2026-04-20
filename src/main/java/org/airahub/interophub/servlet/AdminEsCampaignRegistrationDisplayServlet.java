@@ -300,7 +300,7 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
                 out.println("        <p class=\"es-reg-names\">" + namesCsv + "</p>");
             }
 
-            out.println("        <h2>Subscriptions</h2>");
+            out.println("        <h2>Topics Followed</h2>");
             out.println("        <table class=\"admin-table\">");
             out.println("          <thead><tr><th>Topic</th><th>Count</th></tr></thead>");
             out.println("          <tbody>");

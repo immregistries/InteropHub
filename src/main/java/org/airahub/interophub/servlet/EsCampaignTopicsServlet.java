@@ -144,7 +144,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         if (effectiveEmailNormalized == null) {
             renderBrowsePage(response, request.getContextPath(), campaign, search, browseState.rows,
                     selectedTopicIds, browseState.subscribedTopicIds, true,
-                    "Email is required to save subscriptions.", null, false,
+                    "Email is required to save followed topics.", null, false,
                     effectiveFirstName, effectiveLastName, effectiveEmail, effectiveEmailNormalized,
                     browseState.generalAlreadySubscribed);
             return;
@@ -285,7 +285,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("    <section class=\"es-topics-header\">");
             out.println("      <h1>Emerging Standards Topics</h1>");
             out.println(
-                    "      <p class=\"es-topics-campaign\">Review and select topics you are interested in then click subscribe to receive updates for those topics.</p>");
+                    "      <p class=\"es-topics-campaign\">Review and select topics you are interested in then click follow to indicate you would like to receive updates on these topics in the future.</p>");
             out.println("      <label for=\"topic-search\" class=\"es-topics-search-label\">Search topics</label>");
             out.println("      <input id=\"topic-search\" class=\"es-topics-search\" type=\"search\""
                     + " placeholder=\"Search by topic name or description\""
@@ -294,7 +294,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("    </section>");
 
             if (subscribedCount != null) {
-                out.println("    <p class=\"es-status-message\">Subscribed to " + subscribedCount + " topic"
+                out.println("    <p class=\"es-status-message\">Following " + subscribedCount + " topic"
                         + (subscribedCount == 1 ? "" : "s") + ".</p>");
             }
             if (generalSubscribedNow) {
@@ -327,7 +327,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("      <input type=\"hidden\" name=\"selectedTopicIds\" id=\"es-selected-topic-ids\" value=\""
                     + escapeHtml(selectedCsv) + "\" />");
             out.println("      <div class=\"es-sticky-action\">\n"
-                    + "        <button id=\"es-subscribe-button\" type=\"submit\" disabled>Subscribe (0)</button>\n"
+                    + "        <button id=\"es-subscribe-button\" type=\"submit\" disabled>Follow (0)</button>\n"
                     + "      </div>");
             out.println("    </form>");
 
@@ -349,7 +349,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                 out.println("    <a id=\"es-confirm-overlay\" class=\"es-confirm-overlay\" href=\"" + browseHref
                         + "\" aria-label=\"Close confirmation\"></a>");
                 out.println("    <section id=\"es-confirm-sheet\" class=\"es-confirm-sheet\">");
-                out.println("      <h2>Confirm Subscriptions</h2>");
+                out.println("      <h2>Confirm Following</h2>");
                 if (confirmationError != null) {
                     out.println("      <p class=\"es-confirm-error\">" + escapeHtml(confirmationError) + "</p>");
                 }
@@ -373,7 +373,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                 if (canOfferGeneral) {
                     out.println("        <label class=\"es-checkbox-row\">\n"
                             + "          <input type=\"checkbox\" name=\"generalEsOptIn\" value=\"1\" />\n"
-                            + "          Also subscribe me to general Emerging Standards updates\n"
+                            + "          Also follow me for general Emerging Standards updates\n"
                             + "        </label>");
                 }
 
@@ -394,7 +394,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                         + escapeHtml(campaign.getCampaignCode())
                         + (search == null ? "" : "?q=" + URLEncoder.encode(search, StandardCharsets.UTF_8))
                         + "\">Keep Browsing</a>\n"
-                        + "          <button id=\"es-confirm-submit\" type=\"submit\">Confirm Subscription</button>\n"
+                        + "          <button id=\"es-confirm-submit\" type=\"submit\">Confirm Follow</button>\n"
                         + "        </div>");
                 out.println("      </form>");
                 out.println("    </section>");
@@ -435,7 +435,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("      function syncSelectedInputs() {\n"
                     + "        selectedInput.value = selectedCsv();\n"
                     + "        var count = selected.size;\n"
-                    + "        subscribeButton.textContent = 'Subscribe (' + count + ')';\n"
+                    + "        subscribeButton.textContent = 'Follow (' + count + ')';\n"
                     + "        subscribeButton.disabled = count === 0;\n"
                     + "      }");
 
@@ -462,7 +462,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + "        var state = row.querySelector('.es-topic-state');\n"
                     + "        if (!state) { return; }\n"
                     + "        if (row.classList.contains('is-subscribed')) {\n"
-                    + "          state.textContent = 'Subscribed';\n"
+                    + "          state.textContent = 'Following';\n"
                     + "          state.hidden = false;\n"
                     + "          return;\n"
                     + "        }\n"
@@ -509,7 +509,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + "          detailPolicyStatus.hidden = true;\n"
                     + "        }\n"
                     + "        if (isSubscribed) {\n"
-                    + "          detailState.textContent = 'Current state: Subscribed';\n"
+                    + "          detailState.textContent = 'Current state: Following';\n"
                     + "          detailSelect.hidden = true;\n"
                     + "        } else if (isSelected) {\n"
                     + "          detailState.textContent = 'Current state: Selected (pending)';\n"
@@ -604,7 +604,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             boolean subscribed = subscribedTopicIds.contains(row.getEsTopicId());
             boolean selected = !subscribed && selectedTopicIds.contains(row.getEsTopicId());
 
-            String stateText = subscribed ? "Subscribed" : (selected ? "Selected" : "");
+            String stateText = subscribed ? "Following" : (selected ? "Selected" : "");
             out.println("          <article class=\"es-topic-row" + (subscribed ? " is-subscribed" : "")
                     + (selected ? " is-selected" : "") + "\""
                     + " data-topic-id=\"" + row.getEsTopicId() + "\""
