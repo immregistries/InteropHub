@@ -48,8 +48,8 @@ public class EsTopicReviewService {
         if (userId == null || userId <= 0L) {
             throw new IllegalArgumentException("Authenticated user is required.");
         }
-        if (score == null || score < 1 || score > 5) {
-            throw new IllegalArgumentException("Score must be between 1 and 5.");
+        if (score == null || score < 0 || score > 5) {
+            throw new IllegalArgumentException("Score must be between 0 and 5.");
         }
 
         EsTopic topic = requireActiveTopic(topicId);
