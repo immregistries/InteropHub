@@ -33,7 +33,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.stage, ct.displayOrder)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
@@ -83,12 +83,12 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.stage, max(ct.displayOrder))"
+                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, max(ct.displayOrder))"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
                             + " and t.status = :activeStatus"
-                            + " group by t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.stage"
+                            + " group by t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage"
                             + " order by max(ct.displayOrder) desc, lower(t.topicName) asc",
                     EsCampaignTopicBrowseRow.class)
                     .setParameter("campaignId", campaignId)
@@ -105,7 +105,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.stage, ct.displayOrder)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.tableNo = :tableNo"

@@ -27,8 +27,9 @@ import org.airahub.interophub.service.EsNormalizer;
 
 public class EsCampaignTopicsServlet extends HttpServlet {
 
-    private static final List<String> STAGE_ORDER = List.of("Draft", "Gather", "Monitor", "Parked", "Pilot",
-            "Rollout");
+    private static final List<String> STAGE_ORDER = List.of("Start", "Draft", "Gather", "Monitor", "Parked",
+            "Pilot", "Rollout");
+    private static final String OTHER_LABEL = "Other";
 
     private static final String ATTR_FIRST_NAME = "interophub.es.registration.firstName";
     private static final String ATTR_LAST_NAME = "interophub.es.registration.lastName";
@@ -267,7 +268,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                 .collect(Collectors.toMap(EsCampaignTopicBrowseRow::getEsTopicId, row -> row, (a, b) -> a,
                         LinkedHashMap::new));
 
-        Map<String, List<EsCampaignTopicBrowseRow>> grouped = groupByStage(rows);
+        Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = groupByNeighborhoodThenStage(rows);
         boolean canOfferGeneral = emailNormalized != null && !generalAlreadySubscribed;
 
         try (PrintWriter out = response.getWriter()) {
@@ -301,13 +302,20 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             }
 
             out.println("    <section id=\"topic-groups\" class=\"es-topic-groups\">");
-            for (String stage : STAGE_ORDER) {
-                List<EsCampaignTopicBrowseRow> stageRows = grouped.getOrDefault(stage, List.of());
-                renderStage(out, stage, stageRows, selectedTopicIds, subscribedTopicIds);
-            }
-            List<EsCampaignTopicBrowseRow> otherRows = grouped.getOrDefault("Other", List.of());
-            if (!otherRows.isEmpty()) {
-                renderStage(out, "Other", otherRows, selectedTopicIds, subscribedTopicIds);
+            for (Map.Entry<String, Map<String, List<EsCampaignTopicBrowseRow>>> neighborhoodEntry : grouped
+                    .entrySet()) {
+                String neighborhood = neighborhoodEntry.getKey();
+                Map<String, List<EsCampaignTopicBrowseRow>> stageGroups = neighborhoodEntry.getValue();
+                out.println("      <section class=\"es-neighborhood-group\" data-neighborhood-name=\""
+                        + escapeHtml(neighborhood) + "\">");
+                out.println("        <h2 class=\"es-stage-title\">" + escapeHtml(neighborhood) + "</h2>");
+                for (String stage : orderedStageLabels()) {
+                    List<EsCampaignTopicBrowseRow> stageRows = stageGroups.getOrDefault(stage, List.of());
+                    if (!stageRows.isEmpty()) {
+                        renderStage(out, stage, stageRows, selectedTopicIds, subscribedTopicIds);
+                    }
+                }
+                out.println("      </section>");
             }
             out.println("    </section>");
 
@@ -398,6 +406,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             out.println("    (function() {");
             out.println(
                     "      var stageGroups = Array.prototype.slice.call(document.querySelectorAll('.es-stage-group'));\n"
+                            + "      var neighborhoodGroups = Array.prototype.slice.call(document.querySelectorAll('.es-neighborhood-group'));\n"
                             + "      var rows = Array.prototype.slice.call(document.querySelectorAll('.es-topic-row'));\n"
                             + "      var searchInput = document.getElementById('topic-search');\n"
                             + "      var searchHidden = document.getElementById('es-search-hidden');\n"
@@ -439,6 +448,10 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + "          row.classList.toggle('is-filtered-out', isFilteredOut);\n"
                     + "        });\n"
                     + "        stageGroups.forEach(function(group) {\n"
+                    + "          var visible = group.querySelector('.es-topic-row:not(.is-filtered-out)');\n"
+                    + "          group.style.display = visible ? '' : 'none';\n"
+                    + "        });\n"
+                    + "        neighborhoodGroups.forEach(function(group) {\n"
                     + "          var visible = group.querySelector('.es-topic-row:not(.is-filtered-out)');\n"
                     + "          group.style.display = visible ? '' : 'none';\n"
                     + "        });\n"
@@ -583,7 +596,6 @@ public class EsCampaignTopicsServlet extends HttpServlet {
     private void renderStage(PrintWriter out, String stageName, List<EsCampaignTopicBrowseRow> rows,
             Set<Long> selectedTopicIds, Set<Long> subscribedTopicIds) {
         out.println("      <section class=\"es-stage-group\" data-stage-name=\"" + escapeHtml(stageName) + "\">");
-        out.println("        <h2 class=\"es-stage-title\">" + escapeHtml(stageName) + " Topics</h2>");
         out.println("        <div class=\"es-topic-list\">");
         for (EsCampaignTopicBrowseRow row : rows) {
             String topicName = orEmpty(row.getTopicName());
@@ -600,6 +612,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                     + " data-topic-description=\"" + escapeHtml(description) + "\""
                     + " data-topic-type=\"" + escapeHtml(orEmpty(row.getTopicType())) + "\""
                     + " data-policy-status=\"" + escapeHtml(orEmpty(row.getPolicyStatus())) + "\""
+                    + " data-topic-neighborhood=\"" + escapeHtml(normalizeNeighborhood(row.getNeighborhood())) + "\""
                     + " data-topic-stage=\"" + escapeHtml(orEmpty(normalizeStage(row.getStage()))) + "\""
                     + " data-search=\"" + escapeHtml((topicName + " " + description).toLowerCase()) + "\">");
 
@@ -625,23 +638,61 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         out.println("      </section>");
     }
 
-    private Map<String, List<EsCampaignTopicBrowseRow>> groupByStage(List<EsCampaignTopicBrowseRow> rows) {
+    private Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> groupByNeighborhoodThenStage(
+            List<EsCampaignTopicBrowseRow> rows) {
+        Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = new LinkedHashMap<>();
+        for (EsCampaignTopicBrowseRow row : rows) {
+            String neighborhood = normalizeNeighborhood(row.getNeighborhood());
+            String stage = normalizeStage(row.getStage());
+            grouped
+                    .computeIfAbsent(neighborhood, ignored -> createOrderedStageMap())
+                    .computeIfAbsent(stage, ignored -> new ArrayList<>())
+                    .add(row);
+        }
+
+        List<String> neighborhoodNames = new ArrayList<>(grouped.keySet());
+        neighborhoodNames.sort((left, right) -> {
+            boolean leftOther = OTHER_LABEL.equalsIgnoreCase(left);
+            boolean rightOther = OTHER_LABEL.equalsIgnoreCase(right);
+            if (leftOther != rightOther) {
+                return leftOther ? 1 : -1;
+            }
+            return left.compareToIgnoreCase(right);
+        });
+
+        Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> ordered = new LinkedHashMap<>();
+        for (String neighborhood : neighborhoodNames) {
+            ordered.put(neighborhood, grouped.get(neighborhood));
+        }
+        return ordered;
+    }
+
+    private Map<String, List<EsCampaignTopicBrowseRow>> createOrderedStageMap() {
         Map<String, List<EsCampaignTopicBrowseRow>> grouped = new LinkedHashMap<>();
         for (String stage : STAGE_ORDER) {
             grouped.put(stage, new ArrayList<>());
         }
-        grouped.put("Other", new ArrayList<>());
-
-        for (EsCampaignTopicBrowseRow row : rows) {
-            String normalized = normalizeStage(row.getStage());
-            grouped.computeIfAbsent(normalized, ignored -> new ArrayList<>()).add(row);
-        }
+        grouped.put(OTHER_LABEL, new ArrayList<>());
         return grouped;
+    }
+
+    private List<String> orderedStageLabels() {
+        List<String> labels = new ArrayList<>(STAGE_ORDER);
+        labels.add(OTHER_LABEL);
+        return labels;
+    }
+
+    private String normalizeNeighborhood(String neighborhood) {
+        if (neighborhood == null) {
+            return OTHER_LABEL;
+        }
+        String trimmed = neighborhood.trim();
+        return trimmed.isEmpty() ? OTHER_LABEL : trimmed;
     }
 
     private String normalizeStage(String stage) {
         if (stage == null) {
-            return "Other";
+            return OTHER_LABEL;
         }
         String trimmed = stage.trim();
         for (String candidate : STAGE_ORDER) {
@@ -649,7 +700,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                 return candidate;
             }
         }
-        return "Other";
+        return OTHER_LABEL;
     }
 
     private Set<Long> sanitizeSelectedIds(Set<Long> candidate, Set<Long> allowedTopicIds,
