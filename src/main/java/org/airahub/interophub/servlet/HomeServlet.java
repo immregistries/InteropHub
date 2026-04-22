@@ -51,6 +51,12 @@ public class HomeServlet extends HttpServlet {
                                 response.sendRedirect(redirectTarget);
                                 return;
                         }
+                        Optional<String> internalRedirect = authFlowService.recallInternalRequestedUrl(request);
+                        if (internalRedirect.isPresent()) {
+                                authFlowService.clearRememberedInternalRequestedUrl(request);
+                                response.sendRedirect(request.getContextPath() + internalRedirect.get());
+                                return;
+                        }
                         response.sendRedirect(request.getContextPath() + "/welcome");
                         return;
                 }

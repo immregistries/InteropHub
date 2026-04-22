@@ -43,7 +43,10 @@ public class MagicLinkServlet extends HttpServlet {
                     request);
             response.addCookie(authFlowService.buildSessionCookie(authenticatedSession.getRawSessionToken(), request));
             String redirectTarget = authenticatedSession.getExternalRedirectUrl()
-                    .orElse(request.getContextPath() + "/welcome");
+                .or(() -> authenticatedSession.getInternalRedirectUrl()
+                    .map(value -> request.getContextPath() + value))
+                .orElse(request.getContextPath() + "/welcome");
+            authFlowService.clearRememberedInternalRequestedUrl(request);
             response.sendRedirect(redirectTarget);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Magic link sign-in failed.", ex);

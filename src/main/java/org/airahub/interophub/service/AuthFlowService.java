@@ -38,6 +38,7 @@ public class AuthFlowService {
     private static final String ATTR_EXTERNAL_RETURN_TO = "interophub.externalAuth.returnTo";
     private static final String ATTR_EXTERNAL_STATE = "interophub.externalAuth.state";
     private static final String ATTR_EXTERNAL_REQUESTED_URL = "interophub.externalAuth.requestedUrl";
+    private static final String ATTR_INTERNAL_REQUESTED_URL = "interophub.internalAuth.requestedUrl";
 
     private static final int MAGIC_LINK_DAYS = 7;
     private static final int SESSION_DAYS = 30;
@@ -93,6 +94,9 @@ public class AuthFlowService {
             link.setReturnTo(externalAuthRequest.getReturnTo());
             link.setStateNonce(externalAuthRequest.getState());
             link.setRequestedUrl(externalAuthRequest.getRequestedUrl());
+        } else {
+            recallInternalRequestedUrl(request)
+                    .ifPresent(link::setRequestedUrl);
         }
         magicLinkDao.save(link);
 
@@ -128,12 +132,15 @@ public class AuthFlowService {
         sessionDao.save(session);
 
         String externalRedirectUrl = null;
+        String internalRedirectUrl = null;
         ExternalAuthRequest externalAuthRequest = resolveExternalAuthRequestForMagicLink(magicLink);
         if (externalAuthRequest != null) {
             externalRedirectUrl = issueExternalLoginCodeRedirect(user, externalAuthRequest);
+        } else {
+            internalRedirectUrl = resolveInternalRedirectForMagicLink(magicLink);
         }
 
-        return new AuthenticatedSession(user, rawSessionToken, externalRedirectUrl);
+        return new AuthenticatedSession(user, rawSessionToken, externalRedirectUrl, internalRedirectUrl);
     }
 
     public boolean isMagicLinkTokenValid(String rawToken) {
@@ -282,9 +289,92 @@ public class AuthFlowService {
     }
 
     public Optional<User> findAuthenticatedUser(HttpServletRequest request) {
-        return extractSessionToken(request)
-                .flatMap(token -> sessionDao.findValidByTokenHash(sha256(token)))
-                .flatMap(session -> userDao.findById(session.getUserId()));
+        Optional<String> token = extractSessionToken(request);
+        if (token.isEmpty()) {
+            rememberInternalRequestedUrl(request);
+            return Optional.empty();
+        }
+
+        Optional<Session> session = sessionDao.findValidByTokenHash(sha256(token.get()));
+        if (session.isEmpty()) {
+            rememberInternalRequestedUrl(request);
+            return Optional.empty();
+        }
+
+        Optional<User> user = userDao.findById(session.get().getUserId());
+        if (user.isEmpty()) {
+            rememberInternalRequestedUrl(request);
+            return Optional.empty();
+        }
+
+        return user;
+    }
+
+    public void rememberInternalRequestedUrl(HttpServletRequest request) {
+        if (request == null || !"GET".equalsIgnoreCase(request.getMethod())) {
+            return;
+        }
+
+        String path = request.getRequestURI();
+        String query = trimToNull(request.getQueryString());
+        if (path == null || path.isBlank()) {
+            return;
+        }
+
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isBlank() && path.startsWith(contextPath)) {
+            path = path.substring(contextPath.length());
+        }
+        if (path.isBlank()) {
+            path = "/";
+        }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+
+        String candidate = query == null ? path : (path + "?" + query);
+        String normalized = validateInternalRequestedUrl(candidate).orElse(null);
+        if (normalized == null) {
+            return;
+        }
+
+        request.getSession(true).setAttribute(ATTR_INTERNAL_REQUESTED_URL, normalized);
+    }
+
+    public Optional<String> recallInternalRequestedUrl(HttpServletRequest request) {
+        if (request == null) {
+            return Optional.empty();
+        }
+
+        var session = request.getSession(false);
+        if (session == null) {
+            return Optional.empty();
+        }
+
+        String requestedUrl = trimToNull((String) session.getAttribute(ATTR_INTERNAL_REQUESTED_URL));
+        if (requestedUrl == null) {
+            return Optional.empty();
+        }
+
+        Optional<String> normalized = validateInternalRequestedUrl(requestedUrl);
+        if (normalized.isEmpty()) {
+            clearRememberedInternalRequestedUrl(request);
+            return Optional.empty();
+        }
+        return normalized;
+    }
+
+    public void clearRememberedInternalRequestedUrl(HttpServletRequest request) {
+        if (request == null) {
+            return;
+        }
+
+        var session = request.getSession(false);
+        if (session == null) {
+            return;
+        }
+
+        session.removeAttribute(ATTR_INTERNAL_REQUESTED_URL);
     }
 
     public Optional<User> findAuthenticatedAdminUser(HttpServletRequest request) {
@@ -503,6 +593,37 @@ public class AuthFlowService {
         return path;
     }
 
+    private Optional<String> validateInternalRequestedUrl(String value) {
+        String original = trimToNull(value);
+        String normalized = trimToMax(original, MAX_URL_LENGTH);
+        if (normalized == null || normalized.length() != original.length()) {
+            return Optional.empty();
+        }
+        if (!normalized.startsWith("/") || normalized.startsWith("//")) {
+            return Optional.empty();
+        }
+
+        String path = normalized;
+        int queryStart = normalized.indexOf('?');
+        if (queryStart >= 0) {
+            path = normalized.substring(0, queryStart);
+        }
+        if (path.equals("/home") || path.equals("/magic-link")) {
+            return Optional.empty();
+        }
+
+        try {
+            URI uri = new URI(normalized);
+            if (uri.isAbsolute() || uri.getHost() != null || uri.getScheme() != null) {
+                return Optional.empty();
+            }
+        } catch (URISyntaxException ex) {
+            return Optional.empty();
+        }
+
+        return Optional.of(normalized);
+    }
+
     private String buildExternalRedirectUrl(String returnTo, String code, String state) {
         String encodedCode = URLEncoder.encode(code, java.nio.charset.StandardCharsets.UTF_8);
         String encodedState = URLEncoder.encode(state, java.nio.charset.StandardCharsets.UTF_8);
@@ -541,6 +662,11 @@ public class AuthFlowService {
         return validateExternalAuthRequest(resolvedApp.get(), returnTo, state, requestedUrl);
     }
 
+    private String resolveInternalRedirectForMagicLink(MagicLink magicLink) {
+        return validateInternalRequestedUrl(trimToNull(magicLink.getRequestedUrl()))
+                .orElse(null);
+    }
+
     private Optional<AppRegistry> findEnabledAppByReturnTo(String returnTo) {
         List<AppRegistry> candidateApps = appRegistryDao.findAllOrdered().stream()
                 .filter(app -> app.getAppId() != null)
@@ -566,11 +692,14 @@ public class AuthFlowService {
         private final User user;
         private final String rawSessionToken;
         private final String externalRedirectUrl;
+        private final String internalRedirectUrl;
 
-        public AuthenticatedSession(User user, String rawSessionToken, String externalRedirectUrl) {
+        public AuthenticatedSession(User user, String rawSessionToken, String externalRedirectUrl,
+                String internalRedirectUrl) {
             this.user = user;
             this.rawSessionToken = rawSessionToken;
             this.externalRedirectUrl = externalRedirectUrl;
+            this.internalRedirectUrl = internalRedirectUrl;
         }
 
         public User getUser() {
@@ -583,6 +712,10 @@ public class AuthFlowService {
 
         public Optional<String> getExternalRedirectUrl() {
             return Optional.ofNullable(externalRedirectUrl);
+        }
+
+        public Optional<String> getInternalRedirectUrl() {
+            return Optional.ofNullable(internalRedirectUrl);
         }
     }
 
