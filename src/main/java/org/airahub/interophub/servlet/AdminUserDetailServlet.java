@@ -58,83 +58,78 @@ public class AdminUserDetailServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>User Detail - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>User Detail</h1>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/users\">&larr; Back to Registered Users</a></p>");
+            AdminShellRenderer.render(out, "User Detail - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>User Detail</h2>");
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/users\">&larr; Back to Registered Users</a></p>");
 
-            out.println("    <h2>Profile</h2>");
-            out.println("    <table class=\"data-table\">");
-            out.println("      <tbody>");
-            row(out, "User ID", String.valueOf(user.getUserId()));
-            row(out, "Email", user.getEmail());
-            row(out, "Email (normalized)", user.getEmailNormalized());
-            row(out, "Display Name", user.getDisplayName());
-            row(out, "Organization", user.getOrganization());
-            row(out, "Role Title", user.getRoleTitle());
-            row(out, "Email Verified", String.valueOf(Boolean.TRUE.equals(user.getEmailVerified())));
-            row(out, "Status", user.getStatus() == null ? "" : user.getStatus().name());
-            row(out, "Created At", formatDateTime(user.getCreatedAt()));
-            row(out, "Last Login", formatDateTime(user.getLastLoginAt()));
-            row(out, "Last Seen", formatDateTime(user.getLastSeenAt()));
-            row(out, "Delete After", formatDateTime(user.getDeleteAfterAt()));
-            out.println("      </tbody>");
-            out.println("    </table>");
+                panelOut.println("        <h2>Profile</h2>");
+                panelOut.println("        <table class=\"data-table\">");
+                panelOut.println("          <tbody>");
+                row(out, "User ID", String.valueOf(user.getUserId()));
+                row(out, "Email", user.getEmail());
+                row(out, "Email (normalized)", user.getEmailNormalized());
+                row(out, "Display Name", user.getDisplayName());
+                row(out, "Organization", user.getOrganization());
+                row(out, "Role Title", user.getRoleTitle());
+                row(out, "Email Verified", String.valueOf(Boolean.TRUE.equals(user.getEmailVerified())));
+                row(out, "Status", user.getStatus() == null ? "" : user.getStatus().name());
+                row(out, "Created At", formatDateTime(user.getCreatedAt()));
+                row(out, "Last Login", formatDateTime(user.getLastLoginAt()));
+                row(out, "Last Seen", formatDateTime(user.getLastSeenAt()));
+                row(out, "Delete After", formatDateTime(user.getDeleteAfterAt()));
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
 
-            out.println("    <h2>Magic Link Email Send Events (Last 50)</h2>");
-            if (sendEvents.isEmpty()) {
-                out.println("    <p>No send events found for this user.</p>");
-            } else {
-                out.println("    <table class=\"data-table\">");
-                out.println("      <thead>");
-                out.println("        <tr>");
-                out.println("          <th>Event Time</th>");
-                out.println("          <th>Type</th>");
-                out.println("          <th>Magic ID</th>");
-                out.println("          <th>Email</th>");
-                out.println("          <th>Request ID</th>");
-                out.println("          <th>Request IP</th>");
-                out.println("          <th>SMTP Provider</th>");
-                out.println("          <th>SMTP Message ID</th>");
-                out.println("          <th>SMTP Reply</th>");
-                out.println("          <th>Error</th>");
-                out.println("        </tr>");
-                out.println("      </thead>");
-                out.println("      <tbody>");
-                for (MagicLinkSendEvent event : sendEvents) {
-                    out.println("        <tr>");
-                    out.println("          <td>" + escapeHtml(formatDateTime(event.getEventAt())) + "</td>");
-                    out.println("          <td>"
-                            + escapeHtml(event.getEventType() == null ? "" : event.getEventType().name())
-                            + "</td>");
-                    out.println("          <td>"
-                            + escapeHtml(event.getMagicId() == null ? "" : String.valueOf(event.getMagicId()))
-                            + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(event.getEmailNormalized())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(event.getRequestId())) + "</td>");
-                    out.println("          <td>" + escapeHtml(formatIp(event.getRequestIp())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(event.getSmtpProvider())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(event.getSmtpMessageId())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(event.getSmtpReplyCode())) + "</td>");
-                    out.println("          <td>" + escapeHtml(renderError(event)) + "</td>");
-                    out.println("        </tr>");
+                panelOut.println("        <h2>Magic Link Email Send Events (Last 50)</h2>");
+                if (sendEvents.isEmpty()) {
+                    panelOut.println("        <p>No send events found for this user.</p>");
+                } else {
+                    panelOut.println("        <table class=\"data-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Event Time</th>");
+                    panelOut.println("              <th>Type</th>");
+                    panelOut.println("              <th>Magic ID</th>");
+                    panelOut.println("              <th>Email</th>");
+                    panelOut.println("              <th>Request ID</th>");
+                    panelOut.println("              <th>Request IP</th>");
+                    panelOut.println("              <th>SMTP Provider</th>");
+                    panelOut.println("              <th>SMTP Message ID</th>");
+                    panelOut.println("              <th>SMTP Reply</th>");
+                    panelOut.println("              <th>Error</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (MagicLinkSendEvent event : sendEvents) {
+                        panelOut.println("            <tr>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(formatDateTime(event.getEventAt())) + "</td>");
+                        panelOut.println("              <td>"
+                                + escapeHtml(event.getEventType() == null ? "" : event.getEventType().name())
+                                + "</td>");
+                        panelOut.println("              <td>"
+                                + escapeHtml(event.getMagicId() == null ? "" : String.valueOf(event.getMagicId()))
+                                + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(event.getEmailNormalized())) + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(orEmpty(event.getRequestId())) + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(formatIp(event.getRequestIp())) + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(orEmpty(event.getSmtpProvider())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(event.getSmtpMessageId())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(event.getSmtpReplyCode())) + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(renderError(event)) + "</td>");
+                        panelOut.println("            </tr>");
+                    }
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
                 }
-                out.println("      </tbody>");
-                out.println("    </table>");
-            }
 
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -207,23 +202,13 @@ public class AdminUserDetailServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Access Denied - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Access Denied</h1>");
-            out.println("    <p>You must be an InteropHub admin to view this page.</p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Access Denied</h2>");
+                panelOut.println("        <p>You must be an InteropHub admin to view this page.</p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -231,23 +216,14 @@ public class AdminUserDetailServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>User Detail Error - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Could Not Load User</h1>");
-            out.println("    <p>" + escapeHtml(orEmpty(message)) + "</p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/users\">Back to Registered Users</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "User Detail Error - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Could Not Load User</h2>");
+                panelOut.println("        <p>" + escapeHtml(orEmpty(message)) + "</p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/users\">Back to Registered Users</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

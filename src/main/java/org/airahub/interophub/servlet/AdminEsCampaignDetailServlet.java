@@ -90,131 +90,124 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>" + escapeHtml(campaign.getCampaignName()) + " - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>" + escapeHtml(campaign.getCampaignName()) + "</h1>");
-            if (saved) {
-                out.println("    <p><strong>Campaign changes saved.</strong></p>");
-            }
-
-            // Campaign summary
-            out.println("    <table class=\"admin-table\" style=\"margin-bottom:1.5rem\">");
-            out.println("      <tbody>");
-            out.println(
-                    "        <tr><th>Campaign Code</th><td>" + escapeHtml(campaign.getCampaignCode()) + "</td></tr>");
-            out.println("        <tr><th>Status</th><td>" + escapeHtml(String.valueOf(campaign.getStatus()))
-                    + "</td></tr>");
-            out.println("        <tr><th>Current Round</th><td>" + campaign.getCurrentRoundNo() + "</td></tr>");
-            out.println("        <tr><th>Total Topics</th><td>" + topicCount + "</td></tr>");
-            out.println("        <tr><th>Registrations</th><td>" + regCount + "</td></tr>");
-            out.println("      </tbody>");
-            out.println("    </table>");
-
-            out.println("    <p><strong>Registration URL:</strong> <a href=\"" + escapeHtml(registrationAbsoluteUrl)
-                    + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a href=\""
-                    + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
-            out.println("    <p><strong>Engagement Hub URL:</strong> <a href=\"" + escapeHtml(hubAbsoluteUrl)
-                    + "\">" + escapeHtml(hubAbsoluteUrl) + "</a> (<a href=\""
-                    + escapeHtml(hubQrUrl) + "\">qr code</a>)</p>");
-
-            // Registration display link
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
-                    + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/es/review/"
-                    + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/review-results?campaignCode="
-                    + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/campaigns/edit?campaignCode="
-                    + escapeHtml(campaign.getCampaignCode()) + "\">Edit Campaign</a></p>");
-
-            // Tables
-            if (tableNos.isEmpty()) {
-                out.println("    <p>No tables assigned yet. Import topics with a Tables per Set value &gt; 0.</p>");
-            } else {
-                out.println("    <h2>Tables</h2>");
-                out.println("    <table class=\"admin-table\">");
-                out.println("      <thead>");
-                out.println("        <tr>");
-                out.println("          <th>Table</th>");
-                out.println("          <th>Topics</th>");
-                out.println("          <th>Vote</th>");
-                out.println("          <th>Results</th>");
-                out.println("        </tr>");
-                out.println("      </thead>");
-                out.println("      <tbody>");
-                for (Integer tableNo : tableNos) {
-                    long tableTopicCount = campaignTopicDao.countByCampaignIdAndTableNo(campaignId, tableNo);
-                    String votePath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=vote";
-                    String resultsPath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=results";
-                    String voteUrl = contextPath + votePath;
-                    String resultsUrl = contextPath + resultsPath;
-                    String voteQrUrl = buildQrPageUrl(contextPath, votePath, "Table " + tableNo + " Vote",
-                            detailPath);
-                    String resultsQrUrl = buildQrPageUrl(contextPath, resultsPath, "Table " + tableNo + " Results",
-                            detailPath);
-                    out.println("        <tr>");
-                    out.println("          <td>Table " + tableNo + "</td>");
-                    out.println("          <td>" + tableTopicCount + "</td>");
-                    out.println("          <td><a href=\"" + escapeHtml(voteUrl) + "\">Vote</a> (<a href=\""
-                            + escapeHtml(voteQrUrl) + "\">qr code</a>)</td>");
-                    out.println("          <td><a href=\"" + escapeHtml(resultsUrl) + "\">Results</a> (<a href=\""
-                            + escapeHtml(resultsQrUrl) + "\">qr code</a>)</td>");
-                    out.println("        </tr>");
+            AdminShellRenderer.render(out, campaign.getCampaignName() + " - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                if (saved) {
+                    panelOut.println("        <p><strong>Campaign changes saved.</strong></p>");
                 }
-                out.println("      </tbody>");
-                out.println("    </table>");
-            }
+                panelOut.println("        <table class=\"admin-table\" style=\"margin-bottom:1.5rem\">");
+                panelOut.println("          <tbody>");
+                panelOut.println(
+                        "            <tr><th>Campaign Code</th><td>" + escapeHtml(campaign.getCampaignCode())
+                                + "</td></tr>");
+                panelOut.println(
+                        "            <tr><th>Status</th><td>" + escapeHtml(String.valueOf(campaign.getStatus()))
+                                + "</td></tr>");
+                panelOut.println(
+                        "            <tr><th>Current Round</th><td>" + campaign.getCurrentRoundNo() + "</td></tr>");
+                panelOut.println("            <tr><th>Total Topics</th><td>" + topicCount + "</td></tr>");
+                panelOut.println("            <tr><th>Registrations</th><td>" + regCount + "</td></tr>");
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
 
-            out.println("    <h2 style=\"margin-top:1.5rem\">Meeting Registration Links</h2>");
-            if (meetingRows.isEmpty()) {
-                out.println("    <p>No active meetings are configured for this campaign.</p>");
-            } else {
-                out.println("    <table class=\"admin-table\">");
-                out.println("      <thead>");
-                out.println("        <tr>");
-                out.println("          <th>Meeting</th>");
-                out.println("          <th>Register for Meeting</th>");
-                out.println("        </tr>");
-                out.println("      </thead>");
-                out.println("      <tbody>");
-                for (EsCampaignMeetingBrowseRow row : meetingRows) {
-                    if (row.getTopicCode() == null || row.getTopicCode().isBlank()) {
-                        continue;
+                panelOut.println(
+                        "        <p><strong>Registration URL:</strong> <a href=\"" + escapeHtml(registrationAbsoluteUrl)
+                                + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a href=\""
+                                + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
+                panelOut.println(
+                        "        <p><strong>Engagement Hub URL:</strong> <a href=\"" + escapeHtml(hubAbsoluteUrl)
+                                + "\">" + escapeHtml(hubAbsoluteUrl) + "</a> (<a href=\""
+                                + escapeHtml(hubQrUrl) + "\">qr code</a>)</p>");
+
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
+                        + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/es/review/"
+                        + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/review-results?campaignCode="
+                        + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns/edit?campaignCode="
+                        + escapeHtml(campaign.getCampaignCode()) + "\">Edit Campaign</a></p>");
+
+                if (tableNos.isEmpty()) {
+                    panelOut.println(
+                            "        <p>No tables assigned yet. Import topics with a Tables per Set value &gt; 0.</p>");
+                } else {
+                    panelOut.println("        <h2>Tables</h2>");
+                    panelOut.println("        <table class=\"admin-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Table</th>");
+                    panelOut.println("              <th>Topics</th>");
+                    panelOut.println("              <th>Vote</th>");
+                    panelOut.println("              <th>Results</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (Integer tableNo : tableNos) {
+                        long tableTopicCount = campaignTopicDao.countByCampaignIdAndTableNo(campaignId, tableNo);
+                        String votePath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=vote";
+                        String resultsPath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=results";
+                        String voteUrl = contextPath + votePath;
+                        String resultsUrl = contextPath + resultsPath;
+                        String voteQrUrl = buildQrPageUrl(contextPath, votePath, "Table " + tableNo + " Vote",
+                                detailPath);
+                        String resultsQrUrl = buildQrPageUrl(contextPath, resultsPath,
+                                "Table " + tableNo + " Results", detailPath);
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td>Table " + tableNo + "</td>");
+                        panelOut.println("              <td>" + tableTopicCount + "</td>");
+                        panelOut.println("              <td><a href=\"" + escapeHtml(voteUrl)
+                                + "\">Vote</a> (<a href=\"" + escapeHtml(voteQrUrl)
+                                + "\">qr code</a>)</td>");
+                        panelOut.println("              <td><a href=\"" + escapeHtml(resultsUrl)
+                                + "\">Results</a> (<a href=\"" + escapeHtml(resultsQrUrl)
+                                + "\">qr code</a>)</td>");
+                        panelOut.println("            </tr>");
                     }
-                    String meetingPath = "/registerForMeeting/" + encodedCampaignCode + "/"
-                            + encodePathSegment(row.getTopicCode());
-                    String meetingAbsoluteUrl = publicUrlService.resolveExternalUrl(meetingPath);
-                    String meetingLabel = row.getMeetingName() == null || row.getMeetingName().isBlank()
-                            ? row.getTopicName()
-                            : row.getMeetingName();
-                    String meetingQrUrl = buildQrPageUrl(contextPath, meetingPath,
-                            "Meeting registration: " + meetingLabel, detailPath);
-
-                    out.println("        <tr>");
-                    out.println("          <td>" + escapeHtml(meetingLabel) + "</td>");
-                    out.println("          <td><a href=\"" + escapeHtml(meetingAbsoluteUrl)
-                            + "\">Register for Meeting</a> (<a href=\""
-                            + escapeHtml(meetingQrUrl) + "\">qr code</a>)</td>");
-                    out.println("        </tr>");
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
                 }
-                out.println("      </tbody>");
-                out.println("    </table>");
-            }
 
-            out.println("    <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
-                    + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("        <h2 style=\"margin-top:1.5rem\">Meeting Registration Links</h2>");
+                if (meetingRows.isEmpty()) {
+                    panelOut.println("        <p>No active meetings are configured for this campaign.</p>");
+                } else {
+                    panelOut.println("        <table class=\"admin-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Meeting</th>");
+                    panelOut.println("              <th>Register for Meeting</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (EsCampaignMeetingBrowseRow row : meetingRows) {
+                        if (row.getTopicCode() == null || row.getTopicCode().isBlank()) {
+                            continue;
+                        }
+                        String meetingPath = "/registerForMeeting/" + encodedCampaignCode + "/"
+                                + encodePathSegment(row.getTopicCode());
+                        String meetingAbsoluteUrl = publicUrlService.resolveExternalUrl(meetingPath);
+                        String meetingLabel = row.getMeetingName() == null || row.getMeetingName().isBlank()
+                                ? row.getTopicName()
+                                : row.getMeetingName();
+                        String meetingQrUrl = buildQrPageUrl(contextPath, meetingPath,
+                                "Meeting registration: " + meetingLabel, detailPath);
+
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td>" + escapeHtml(meetingLabel) + "</td>");
+                        panelOut.println("              <td><a href=\"" + escapeHtml(meetingAbsoluteUrl)
+                                + "\">Register for Meeting</a> (<a href=\"" + escapeHtml(meetingQrUrl)
+                                + "\">qr code</a>)</td>");
+                        panelOut.println("            </tr>");
+                    }
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
+                }
+
+                panelOut.println("        <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
+                        + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

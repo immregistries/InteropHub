@@ -27,28 +27,18 @@ public class AdminEsServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Emerging Standards Admin - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Emerging Standards</h1>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/campaigns\">Campaigns</a></p>");
-            out.println("    <p><a href=\"" + contextPath
-                    + "/admin/es/campaigns\">Campaign Registration and Engagement Links</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">ES Topics</a></p>");
-            out.println("    <p><a href=\"" + contextPath
-                    + "/admin/es/registrations\">Campaign Registration Display</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Emerging Standards Admin - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Emerging Standards</h2>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Campaigns</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">ES Topics</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/es/registrations\">Campaign Registration Display</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/es/review-results\">Review Results</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Back to Admin Home</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -69,23 +59,13 @@ public class AdminEsServlet extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Access Denied - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Access Denied</h1>");
-            out.println("    <p>You must be an InteropHub admin to access this page.</p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Access Denied</h2>");
+                panelOut.println("        <p>You must be an InteropHub admin to access this page.</p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Return to Admin Home</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 }

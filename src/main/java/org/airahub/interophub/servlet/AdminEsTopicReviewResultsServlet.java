@@ -75,83 +75,76 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
         DecimalFormat scoreFormat = new DecimalFormat("0.00");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>ES Topic Review Results - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>ES Topic Review Results</h1>");
-            out.println("    <p><strong>Campaign:</strong> " + escapeHtml(orEmpty(campaign.getCampaignName()))
-                    + " (" + escapeHtml(orEmpty(campaign.getCampaignCode())) + ")</p>");
-            out.println(
-                    "    <p><a href=\"" + contextPath + "/es/review/" + escapeHtml(orEmpty(campaign.getCampaignCode()))
-                            + "\">Open Review Instrument</a></p>");
+            AdminShellRenderer.render(out, "ES Topic Review Results - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>ES Topic Review Results</h2>");
+                panelOut.println(
+                        "        <p><strong>Campaign:</strong> " + escapeHtml(orEmpty(campaign.getCampaignName()))
+                                + " (" + escapeHtml(orEmpty(campaign.getCampaignCode())) + ")</p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/es/review/"
+                                + escapeHtml(orEmpty(campaign.getCampaignCode()))
+                                + "\">Open Review Instrument</a></p>");
 
-            out.println("    <h2>Summary</h2>");
-            out.println("    <table class=\"admin-table\">");
-            out.println("      <tbody>");
-            out.println("        <tr><th>Responders</th><td>" + responders.size() + "</td></tr>");
-            out.println("        <tr><th>Topics Considered</th><td>" + summaryRows.size() + "</td></tr>");
-            out.println("      </tbody>");
-            out.println("    </table>");
+                panelOut.println("        <h2>Summary</h2>");
+                panelOut.println("        <table class=\"admin-table\">");
+                panelOut.println("          <tbody>");
+                panelOut.println("            <tr><th>Responders</th><td>" + responders.size() + "</td></tr>");
+                panelOut.println("            <tr><th>Topics Considered</th><td>" + summaryRows.size() + "</td></tr>");
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
 
-            out.println("    <h3>Who Has Responded</h3>");
-            if (responders.isEmpty()) {
-                out.println("    <p>No responses yet.</p>");
-            } else {
-                String responderText = responders.stream()
-                        .map(this::responderLabel)
-                        .collect(Collectors.joining(", "));
-                out.println("    <p>" + escapeHtml(responderText) + "</p>");
-            }
-
-            out.println("    <h2>Ranked Topics</h2>");
-            out.println("    <table class=\"admin-table\">");
-            out.println("      <thead>");
-            out.println("        <tr>");
-            out.println("          <th>Rank</th>");
-            out.println("          <th>Topic</th>");
-            out.println("          <th>Average Score</th>");
-            out.println("          <th>Reviews</th>");
-            out.println("          <th>3+</th>");
-            out.println("          <th>4+</th>");
-            out.println("          <th>Comments</th>");
-            out.println("        </tr>");
-            out.println("      </thead>");
-            out.println("      <tbody>");
-            if (summaryRows.isEmpty()) {
-                out.println("        <tr><td colspan=\"7\">No topics available.</td></tr>");
-            } else {
-                int rank = 1;
-                for (EsTopicReviewDao.TopicSummaryRow row : summaryRows) {
-                    String avgText = row.getAverageScore() == null ? "--" : scoreFormat.format(row.getAverageScore());
-                    long commentCount = commentCountByTopicId.getOrDefault(row.getEsTopicId(), 0L);
-                    out.println("        <tr>");
-                    out.println("          <td>" + rank + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(row.getTopicName())) + "</td>");
-                    out.println("          <td>" + avgText + "</td>");
-                    out.println("          <td>" + row.getReviewCount() + "</td>");
-                    out.println("          <td>" + row.getCountScore3Plus() + "</td>");
-                    out.println("          <td>" + row.getCountScore4Plus() + "</td>");
-                    out.println("          <td>" + commentCount + "</td>");
-                    out.println("        </tr>");
-                    rank++;
+                panelOut.println("        <h3>Who Has Responded</h3>");
+                if (responders.isEmpty()) {
+                    panelOut.println("        <p>No responses yet.</p>");
+                } else {
+                    String responderText = responders.stream()
+                            .map(this::responderLabel)
+                            .collect(Collectors.joining(", "));
+                    panelOut.println("        <p>" + escapeHtml(responderText) + "</p>");
                 }
-            }
-            out.println("      </tbody>");
-            out.println("    </table>");
 
-            out.println("    <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
-                    + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("        <h2>Ranked Topics</h2>");
+                panelOut.println("        <table class=\"admin-table\">");
+                panelOut.println("          <thead>");
+                panelOut.println("            <tr>");
+                panelOut.println("              <th>Rank</th>");
+                panelOut.println("              <th>Topic</th>");
+                panelOut.println("              <th>Average Score</th>");
+                panelOut.println("              <th>Reviews</th>");
+                panelOut.println("              <th>3+</th>");
+                panelOut.println("              <th>4+</th>");
+                panelOut.println("              <th>Comments</th>");
+                panelOut.println("            </tr>");
+                panelOut.println("          </thead>");
+                panelOut.println("          <tbody>");
+                if (summaryRows.isEmpty()) {
+                    panelOut.println("            <tr><td colspan=\"7\">No topics available.</td></tr>");
+                } else {
+                    int rank = 1;
+                    for (EsTopicReviewDao.TopicSummaryRow row : summaryRows) {
+                        String avgText = row.getAverageScore() == null ? "--"
+                                : scoreFormat.format(row.getAverageScore());
+                        long commentCount = commentCountByTopicId.getOrDefault(row.getEsTopicId(), 0L);
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td>" + rank + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(orEmpty(row.getTopicName())) + "</td>");
+                        panelOut.println("              <td>" + avgText + "</td>");
+                        panelOut.println("              <td>" + row.getReviewCount() + "</td>");
+                        panelOut.println("              <td>" + row.getCountScore3Plus() + "</td>");
+                        panelOut.println("              <td>" + row.getCountScore4Plus() + "</td>");
+                        panelOut.println("              <td>" + commentCount + "</td>");
+                        panelOut.println("            </tr>");
+                        rank++;
+                    }
+                }
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
+
+                panelOut.println("        <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
+                        + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

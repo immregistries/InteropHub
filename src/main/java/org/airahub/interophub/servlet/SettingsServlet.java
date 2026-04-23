@@ -94,23 +94,13 @@ public class SettingsServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Access Denied - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Access Denied</h1>");
-            out.println("    <p>You must be an InteropHub admin to access settings.</p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Access Denied</h2>");
+                panelOut.println("        <p>You must be an InteropHub admin to access settings.</p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -183,77 +173,70 @@ public class SettingsServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>InteropHub Settings</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Hub Settings</h1>");
-            out.println("    <p>Edit SMTP and external URL values for email sending.</p>");
+            AdminShellRenderer.render(out, "InteropHub Settings", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Hub Settings</h2>");
+                panelOut.println("        <p>Edit SMTP and external URL values for email sending.</p>");
 
-            if (saved) {
-                out.println("    <p><strong>Settings saved.</strong></p>");
-            }
-            if (errorMessage != null) {
-                out.println("    <p><strong>Save failed:</strong> " + escapeHtml(errorMessage) + "</p>");
-            }
-            if (testEmailMessage != null) {
-                out.println("    <p><strong>Test email:</strong> " + escapeHtml(testEmailMessage) + "</p>");
-            }
+                if (saved) {
+                    panelOut.println("        <p><strong>Settings saved.</strong></p>");
+                }
+                if (errorMessage != null) {
+                    panelOut.println("        <p><strong>Save failed:</strong> " + escapeHtml(errorMessage) + "</p>");
+                }
+                if (testEmailMessage != null) {
+                    panelOut.println(
+                            "        <p><strong>Test email:</strong> " + escapeHtml(testEmailMessage) + "</p>");
+                }
 
-            out.println("    <form class=\"login-form\" action=\"" + contextPath + "/settings\" method=\"post\">");
-            out.println("      <label><input type=\"checkbox\" name=\"active\""
-                    + checked(settings.getActive()) + " /> Active</label>");
-            out.println("      <label for=\"externalBaseUrl\">External Base URL</label>");
-            out.println("      <input id=\"externalBaseUrl\" name=\"externalBaseUrl\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(settings.getExternalBaseUrl())) + "\" />");
+                panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
+                        + "/admin/settings\" method=\"post\">");
+                out.println("      <label><input type=\"checkbox\" name=\"active\""
+                        + checked(settings.getActive()) + " /> Active</label>");
+                out.println("      <label for=\"externalBaseUrl\">External Base URL</label>");
+                out.println("      <input id=\"externalBaseUrl\" name=\"externalBaseUrl\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(settings.getExternalBaseUrl())) + "\" />");
 
-            out.println("      <label for=\"smtpHost\">SMTP Host</label>");
-            out.println("      <input id=\"smtpHost\" name=\"smtpHost\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(settings.getSmtpHost())) + "\" />");
+                out.println("      <label for=\"smtpHost\">SMTP Host</label>");
+                out.println("      <input id=\"smtpHost\" name=\"smtpHost\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(settings.getSmtpHost())) + "\" />");
 
-            out.println("      <label for=\"smtpPort\">SMTP Port</label>");
-            out.println(
-                    "      <input id=\"smtpPort\" name=\"smtpPort\" type=\"number\" min=\"1\" max=\"65535\" value=\""
-                            + escapeHtml(String.valueOf(settings.getSmtpPort() == null ? 2525 : settings.getSmtpPort()))
-                            + "\" />");
+                out.println("      <label for=\"smtpPort\">SMTP Port</label>");
+                out.println(
+                        "      <input id=\"smtpPort\" name=\"smtpPort\" type=\"number\" min=\"1\" max=\"65535\" value=\""
+                                + escapeHtml(
+                                        String.valueOf(settings.getSmtpPort() == null ? 2525 : settings.getSmtpPort()))
+                                + "\" />");
 
-            out.println("      <label for=\"smtpUsername\">SMTP Username</label>");
-            out.println("      <input id=\"smtpUsername\" name=\"smtpUsername\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(settings.getSmtpUsername())) + "\" />");
+                out.println("      <label for=\"smtpUsername\">SMTP Username</label>");
+                out.println("      <input id=\"smtpUsername\" name=\"smtpUsername\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(settings.getSmtpUsername())) + "\" />");
 
-            out.println("      <label for=\"smtpPassword\">SMTP Password</label>");
-            out.println("      <input id=\"smtpPassword\" name=\"smtpPassword\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(settings.getSmtpPassword())) + "\" />");
+                out.println("      <label for=\"smtpPassword\">SMTP Password</label>");
+                out.println("      <input id=\"smtpPassword\" name=\"smtpPassword\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(settings.getSmtpPassword())) + "\" />");
 
-            out.println("      <label><input type=\"checkbox\" name=\"smtpAuth\""
-                    + checked(settings.getSmtpAuth()) + " /> SMTP Auth</label>");
-            out.println("      <label><input type=\"checkbox\" name=\"smtpStarttls\""
-                    + checked(settings.getSmtpStarttls()) + " /> SMTP STARTTLS</label>");
-            out.println("      <label><input type=\"checkbox\" name=\"smtpSsl\""
-                    + checked(settings.getSmtpSsl()) + " /> SMTP SSL</label>");
+                out.println("      <label><input type=\"checkbox\" name=\"smtpAuth\""
+                        + checked(settings.getSmtpAuth()) + " /> SMTP Auth</label>");
+                out.println("      <label><input type=\"checkbox\" name=\"smtpStarttls\""
+                        + checked(settings.getSmtpStarttls()) + " /> SMTP STARTTLS</label>");
+                out.println("      <label><input type=\"checkbox\" name=\"smtpSsl\""
+                        + checked(settings.getSmtpSsl()) + " /> SMTP SSL</label>");
 
-            out.println("      <label for=\"smtpFromEmail\">From Email</label>");
-            out.println("      <input id=\"smtpFromEmail\" name=\"smtpFromEmail\" type=\"email\" value=\""
-                    + escapeHtml(orEmpty(settings.getSmtpFromEmail())) + "\" />");
+                out.println("      <label for=\"smtpFromEmail\">From Email</label>");
+                out.println("      <input id=\"smtpFromEmail\" name=\"smtpFromEmail\" type=\"email\" value=\""
+                        + escapeHtml(orEmpty(settings.getSmtpFromEmail())) + "\" />");
 
-            out.println("      <label for=\"smtpFromName\">From Name</label>");
-            out.println("      <input id=\"smtpFromName\" name=\"smtpFromName\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(settings.getSmtpFromName())) + "\" />");
+                out.println("      <label for=\"smtpFromName\">From Name</label>");
+                out.println("      <input id=\"smtpFromName\" name=\"smtpFromName\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(settings.getSmtpFromName())) + "\" />");
 
-            out.println("      <label><input type=\"checkbox\" name=\"sendTestEmail\" />"
-                    + " Send test email to my address after saving</label>");
-            out.println("      <button type=\"submit\">Save Settings</button>");
-            out.println("    </form>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                out.println("      <label><input type=\"checkbox\" name=\"sendTestEmail\" />"
+                        + " Send test email to my address after saving</label>");
+                panelOut.println("      <button type=\"submit\">Save Settings</button>");
+                panelOut.println("    </form>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

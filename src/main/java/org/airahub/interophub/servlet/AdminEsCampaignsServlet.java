@@ -44,65 +44,56 @@ public class AdminEsCampaignsServlet extends HttpServlet {
 
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>ES Campaigns - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>ES Campaigns</h1>");
+            AdminShellRenderer.render(out, "ES Campaigns - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>ES Campaigns</h2>");
 
-            if (campaigns.isEmpty()) {
-                out.println("    <p>No campaigns found.</p>");
-            } else {
-                out.println("    <table class=\"admin-table\">");
-                out.println("      <thead>");
-                out.println("        <tr>");
-                out.println("          <th>Campaign Code</th>");
-                out.println("          <th>Campaign Name</th>");
-                out.println("          <th>Status</th>");
-                out.println("          <th>Topics</th>");
-                out.println("          <th>Registrations</th>");
-                out.println("          <th>Review</th>");
-                out.println("          <th>Results</th>");
-                out.println("        </tr>");
-                out.println("      </thead>");
-                out.println("      <tbody>");
-                for (EsCampaign c : campaigns) {
-                    long topicCount = campaignTopicDao.countByCampaignId(c.getEsCampaignId());
-                    long regCount = registrationDao.countByCampaignId(c.getEsCampaignId());
-                    String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
-                            + escapeHtml(c.getCampaignCode());
-                    String reviewUrl = contextPath + "/es/review/" + escapeHtml(c.getCampaignCode());
-                    String resultsUrl = contextPath + "/admin/es/review-results?campaignCode="
-                            + escapeHtml(c.getCampaignCode());
-                    out.println("        <tr>");
-                    out.println("          <td>" + escapeHtml(c.getCampaignCode()) + "</td>");
-                    out.println("          <td><a href=\"" + detailUrl + "\">"
-                            + escapeHtml(c.getCampaignName()) + "</a></td>");
-                    out.println("          <td>" + escapeHtml(String.valueOf(c.getStatus())) + "</td>");
-                    out.println("          <td>" + topicCount + "</td>");
-                    out.println("          <td>" + regCount + "</td>");
-                    out.println("          <td><a href=\"" + reviewUrl + "\">Open Review</a></td>");
-                    out.println("          <td><a href=\"" + resultsUrl + "\">View Results</a></td>");
-                    out.println("        </tr>");
+                if (campaigns.isEmpty()) {
+                    panelOut.println("        <p>No campaigns found.</p>");
+                } else {
+                    panelOut.println("        <table class=\"admin-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Campaign Code</th>");
+                    panelOut.println("              <th>Campaign Name</th>");
+                    panelOut.println("              <th>Status</th>");
+                    panelOut.println("              <th>Topics</th>");
+                    panelOut.println("              <th>Registrations</th>");
+                    panelOut.println("              <th>Review</th>");
+                    panelOut.println("              <th>Results</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (EsCampaign c : campaigns) {
+                        long topicCount = campaignTopicDao.countByCampaignId(c.getEsCampaignId());
+                        long regCount = registrationDao.countByCampaignId(c.getEsCampaignId());
+                        String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
+                                + escapeHtml(c.getCampaignCode());
+                        String reviewUrl = contextPath + "/es/review/" + escapeHtml(c.getCampaignCode());
+                        String resultsUrl = contextPath + "/admin/es/review-results?campaignCode="
+                                + escapeHtml(c.getCampaignCode());
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td>" + escapeHtml(c.getCampaignCode()) + "</td>");
+                        panelOut.println("              <td><a href=\"" + detailUrl + "\">"
+                                + escapeHtml(c.getCampaignName()) + "</a></td>");
+                        panelOut.println("              <td>" + escapeHtml(String.valueOf(c.getStatus())) + "</td>");
+                        panelOut.println("              <td>" + topicCount + "</td>");
+                        panelOut.println("              <td>" + regCount + "</td>");
+                        panelOut.println("              <td><a href=\"" + reviewUrl + "\">Open Review</a></td>");
+                        panelOut.println("              <td><a href=\"" + resultsUrl + "\">View Results</a></td>");
+                        panelOut.println("            </tr>");
+                    }
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
                 }
-                out.println("      </tbody>");
-                out.println("    </table>");
-            }
 
-            out.println("    <p style=\"margin-top:1.5rem\">");
-            out.println("      <a href=\"" + contextPath + "/admin/es-topic-import\">Import Topics</a>");
-            out.println("    </p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("        <p style=\"margin-top:1.5rem\">");
+                panelOut.println("          <a href=\"" + contextPath + "/admin/es-topic-import\">Import Topics</a>");
+                panelOut.println("        </p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

@@ -93,17 +93,17 @@ public class EmailService {
 
     private void validateSettings(HubSetting settings) {
         if (settings.getSmtpHost() == null || settings.getSmtpHost().isBlank()) {
-            throw new IllegalStateException("SMTP host is missing. Update /settings and save.");
+            throw new IllegalStateException("SMTP host is missing. Update /admin/settings and save.");
         }
         if (settings.getSmtpPort() == null || settings.getSmtpPort() < 1 || settings.getSmtpPort() > 65535) {
-            throw new IllegalStateException("SMTP port is invalid. Update /settings and save.");
+            throw new IllegalStateException("SMTP port is invalid. Update /admin/settings and save.");
         }
         if (Boolean.TRUE.equals(settings.getSmtpAuth())) {
             if (settings.getSmtpUsername() == null || settings.getSmtpUsername().isBlank()) {
-                throw new IllegalStateException("SMTP username is missing. Update /settings and save.");
+                throw new IllegalStateException("SMTP username is missing. Update /admin/settings and save.");
             }
             if (settings.getSmtpPassword() == null || settings.getSmtpPassword().isBlank()) {
-                throw new IllegalStateException("SMTP password is missing. Update /settings and save.");
+                throw new IllegalStateException("SMTP password is missing. Update /admin/settings and save.");
             }
         }
     }

@@ -152,92 +152,91 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
             EsCampaign campaign, String errorMessage) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Edit Campaign - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Edit Campaign</h1>");
+            AdminShellRenderer.render(out, "Edit Campaign - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Edit Campaign</h2>");
 
-            if (errorMessage != null) {
-                out.println("    <p class=\"error\"><strong>Error:</strong> " + escapeHtml(errorMessage) + "</p>");
-            }
+                if (errorMessage != null) {
+                    panelOut.println(
+                            "        <p class=\"error\"><strong>Error:</strong> " + escapeHtml(errorMessage)
+                                    + "</p>");
+                }
 
-            out.println("    <form class=\"login-form\" method=\"post\" action=\"" + contextPath
-                    + "/admin/es/campaigns/edit\">");
-            out.println("      <input type=\"hidden\" name=\"campaignCode\" value=\""
-                    + escapeHtml(campaign.getCampaignCode()) + "\" />");
+                panelOut.println("        <form class=\"login-form\" method=\"post\" action=\"" + contextPath
+                        + "/admin/es/campaigns/edit\">");
+                panelOut.println("          <input type=\"hidden\" name=\"campaignCode\" value=\""
+                        + escapeHtml(campaign.getCampaignCode()) + "\" />");
 
-            out.println("      <label for=\"campaignCode\">Campaign Code</label>");
-            out.println("      <input id=\"campaignCode\" type=\"text\" value=\""
-                    + escapeHtml(campaign.getCampaignCode()) + "\" disabled />");
+                panelOut.println("          <label for=\"campaignCode\">Campaign Code</label>");
+                panelOut.println("          <input id=\"campaignCode\" type=\"text\" value=\""
+                        + escapeHtml(campaign.getCampaignCode()) + "\" disabled />");
 
-            out.println("      <label for=\"campaignName\">Campaign Name</label>");
-            out.println("      <input id=\"campaignName\" name=\"campaignName\" type=\"text\" required value=\""
-                    + escapeHtml(orEmpty(campaign.getCampaignName())) + "\" />");
+                panelOut.println("          <label for=\"campaignName\">Campaign Name</label>");
+                panelOut.println(
+                        "          <input id=\"campaignName\" name=\"campaignName\" type=\"text\" required value=\""
+                                + escapeHtml(orEmpty(campaign.getCampaignName())) + "\" />");
 
-            out.println("      <label for=\"description\">Description</label>");
-            out.println("      <textarea id=\"description\" name=\"description\" rows=\"4\">"
-                    + escapeHtml(orEmpty(campaign.getDescription())) + "</textarea>");
+                panelOut.println("          <label for=\"description\">Description</label>");
+                panelOut.println("          <textarea id=\"description\" name=\"description\" rows=\"4\">"
+                        + escapeHtml(orEmpty(campaign.getDescription())) + "</textarea>");
 
-            out.println("      <label for=\"campaignType\">Campaign Type</label>");
-            out.println("      <input id=\"campaignType\" name=\"campaignType\" type=\"text\" required value=\""
-                    + escapeHtml(orEmpty(campaign.getCampaignType())) + "\" />");
+                panelOut.println("          <label for=\"campaignType\">Campaign Type</label>");
+                panelOut.println(
+                        "          <input id=\"campaignType\" name=\"campaignType\" type=\"text\" required value=\""
+                                + escapeHtml(orEmpty(campaign.getCampaignType())) + "\" />");
 
-            out.println("      <label for=\"status\">Status</label>");
-            out.println("      <select id=\"status\" name=\"status\" required>");
-            for (EsCampaign.CampaignStatus status : EsCampaign.CampaignStatus.values()) {
-                boolean selected = status == campaign.getStatus();
-                out.println("        <option value=\"" + status.name() + "\"" + (selected ? " selected" : "") + ">"
-                        + status.name() + "</option>");
-            }
-            out.println("      </select>");
+                panelOut.println("          <label for=\"status\">Status</label>");
+                panelOut.println("          <select id=\"status\" name=\"status\" required>");
+                for (EsCampaign.CampaignStatus status : EsCampaign.CampaignStatus.values()) {
+                    boolean selected = status == campaign.getStatus();
+                    panelOut.println("            <option value=\"" + status.name() + "\""
+                            + (selected ? " selected" : "") + ">"
+                            + status.name() + "</option>");
+                }
+                panelOut.println("          </select>");
 
-            out.println("      <label for=\"allowTopicComments\">Allow Topic Comments</label>");
-            out.println("      <select id=\"allowTopicComments\" name=\"allowTopicComments\" required>");
-            out.println("        <option value=\"true\""
-                    + (Boolean.TRUE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
-                    + ">Yes</option>");
-            out.println("        <option value=\"false\""
-                    + (Boolean.FALSE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
-                    + ">No</option>");
-            out.println("      </select>");
+                panelOut.println("          <label for=\"allowTopicComments\">Allow Topic Comments</label>");
+                panelOut.println(
+                        "          <select id=\"allowTopicComments\" name=\"allowTopicComments\" required>");
+                panelOut.println("            <option value=\"true\""
+                        + (Boolean.TRUE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
+                        + ">Yes</option>");
+                panelOut.println("            <option value=\"false\""
+                        + (Boolean.FALSE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
+                        + ">No</option>");
+                panelOut.println("          </select>");
 
-            out.println("      <label for=\"allowGeneralComments\">Allow General Comments</label>");
-            out.println("      <select id=\"allowGeneralComments\" name=\"allowGeneralComments\" required>");
-            out.println("        <option value=\"true\""
-                    + (Boolean.TRUE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
-                    + ">Yes</option>");
-            out.println("        <option value=\"false\""
-                    + (Boolean.FALSE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
-                    + ">No</option>");
-            out.println("      </select>");
+                panelOut.println("          <label for=\"allowGeneralComments\">Allow General Comments</label>");
+                panelOut.println(
+                        "          <select id=\"allowGeneralComments\" name=\"allowGeneralComments\" required>");
+                panelOut.println("            <option value=\"true\""
+                        + (Boolean.TRUE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
+                        + ">Yes</option>");
+                panelOut.println("            <option value=\"false\""
+                        + (Boolean.FALSE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
+                        + ">No</option>");
+                panelOut.println("          </select>");
 
-            out.println("      <label for=\"startAt\">Start At</label>");
-            out.println("      <input id=\"startAt\" name=\"startAt\" type=\"datetime-local\" value=\""
-                    + escapeHtml(formatDateTimeForInput(campaign.getStartAt())) + "\" />");
+                panelOut.println("          <label for=\"startAt\">Start At</label>");
+                panelOut.println(
+                        "          <input id=\"startAt\" name=\"startAt\" type=\"datetime-local\" value=\""
+                                + escapeHtml(formatDateTimeForInput(campaign.getStartAt())) + "\" />");
 
-            out.println("      <label for=\"endAt\">End At</label>");
-            out.println("      <input id=\"endAt\" name=\"endAt\" type=\"datetime-local\" value=\""
-                    + escapeHtml(formatDateTimeForInput(campaign.getEndAt())) + "\" />");
+                panelOut.println("          <label for=\"endAt\">End At</label>");
+                panelOut.println(
+                        "          <input id=\"endAt\" name=\"endAt\" type=\"datetime-local\" value=\""
+                                + escapeHtml(formatDateTimeForInput(campaign.getEndAt())) + "\" />");
 
-            out.println("      <div class=\"form-actions\">");
-            out.println("        <button type=\"submit\">Save Campaign</button>");
-            out.println("        <a class=\"button-link\" href=\"" + contextPath
-                    + "/admin/es/campaigns/detail?campaignCode=" + escapeUrlComponent(campaign.getCampaignCode())
-                    + "\">Cancel</a>");
-            out.println("      </div>");
-            out.println("    </form>");
-
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("          <div class=\"form-actions\">");
+                panelOut.println("            <button type=\"submit\">Save Campaign</button>");
+                panelOut.println("            <a class=\"button-link\" href=\"" + contextPath
+                        + "/admin/es/campaigns/detail?campaignCode="
+                        + escapeUrlComponent(campaign.getCampaignCode())
+                        + "\">Cancel</a>");
+                panelOut.println("          </div>");
+                panelOut.println("        </form>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -246,23 +245,16 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Campaign Not Found - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Campaign Not Found</h1>");
-            out.println("    <p>No campaign found with code: <strong>" + escapeHtml(campaignCode) + "</strong></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Campaign Not Found - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Campaign Not Found</h2>");
+                panelOut.println(
+                        "        <p>No campaign found with code: <strong>" + escapeHtml(campaignCode)
+                                + "</strong></p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

@@ -194,54 +194,47 @@ public class AdminEsTopicServlet extends HttpServlet {
         List<EsTopic> topics = esTopicDao.findAllOrderByTopicName();
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>ES Topics Admin - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>ES Topics</h1>");
-            out.println("    <p>View and manage Emerging Standards topics.</p>");
-            if (message != null && !message.isBlank()) {
-                out.println("    <p><strong>" + escapeHtml(message) + "</strong></p>");
-            }
+            AdminShellRenderer.render(out, "ES Topics Admin - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>ES Topics</h2>");
+                panelOut.println("        <p>View and manage Emerging Standards topics.</p>");
+                if (message != null && !message.isBlank()) {
+                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
+                }
 
-            out.println("    <table class=\"data-table\">");
-            out.println("      <thead>");
-            out.println("        <tr>");
-            out.println("          <th>Topic Name</th>");
-            out.println("          <th>Stage</th>");
-            out.println("          <th>Status</th>");
-            out.println("        </tr>");
-            out.println("      </thead>");
-            out.println("      <tbody>");
-            for (EsTopic topic : topics) {
-                out.println("        <tr>");
-                out.println(
-                        "          <td><a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
-                                + "\">" + escapeHtml(orEmpty(topic.getTopicName())) + "</a></td>");
-                out.println("          <td>" + escapeHtml(orEmpty(topic.getStage())) + "</td>");
-                out.println("          <td>" + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name())
-                        + "</td>");
-                out.println("        </tr>");
-            }
-            if (topics.isEmpty()) {
-                out.println("        <tr>");
-                out.println("          <td colspan=\"3\">No ES topics found.</td>");
-                out.println("        </tr>");
-            }
-            out.println("      </tbody>");
-            out.println("    </table>");
+                panelOut.println("        <table class=\"data-table\">");
+                panelOut.println("          <thead>");
+                panelOut.println("            <tr>");
+                panelOut.println("              <th>Topic Name</th>");
+                panelOut.println("              <th>Stage</th>");
+                panelOut.println("              <th>Status</th>");
+                panelOut.println("            </tr>");
+                panelOut.println("          </thead>");
+                panelOut.println("          <tbody>");
+                for (EsTopic topic : topics) {
+                    panelOut.println("            <tr>");
+                    panelOut.println(
+                            "              <td><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
+                                    + topic.getEsTopicId()
+                                    + "\">" + escapeHtml(orEmpty(topic.getTopicName())) + "</a></td>");
+                    panelOut.println("              <td>" + escapeHtml(orEmpty(topic.getStage())) + "</td>");
+                    panelOut.println(
+                            "              <td>" + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name())
+                                    + "</td>");
+                    panelOut.println("            </tr>");
+                }
+                if (topics.isEmpty()) {
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <td colspan=\"3\">No ES topics found.</td>");
+                    panelOut.println("            </tr>");
+                }
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
 
-            out.println("    <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -251,61 +244,65 @@ public class AdminEsTopicServlet extends HttpServlet {
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>ES Topic Details - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>ES Topic Details</h1>");
-            out.println("    <p>This view is read-only. Use Edit to change this topic.</p>");
+            AdminShellRenderer.render(out, "ES Topic Details - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>ES Topic Details</h2>");
+                panelOut.println("        <p>This view is read-only. Use Edit to change this topic.</p>");
 
-            out.println("    <section class=\"panel\">");
-            out.println("      <p><strong>Topic Code:</strong> " + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
-            out.println("      <p><strong>Topic Name:</strong> " + escapeHtml(orEmpty(topic.getTopicName())) + "</p>");
-            out.println(
-                    "      <p><strong>Description:</strong> " + escapeHtml(orEmpty(topic.getDescription())) + "</p>");
-            out.println(
-                    "      <p><strong>Neighborhood:</strong> " + escapeHtml(orEmpty(topic.getNeighborhood())) + "</p>");
-            out.println("      <p><strong>Priority IIS:</strong> " + escapeHtml(String.valueOf(topic.getPriorityIis()))
-                    + "</p>");
-            out.println("      <p><strong>Priority EHR:</strong> " + escapeHtml(String.valueOf(topic.getPriorityEhr()))
-                    + "</p>");
-            out.println("      <p><strong>Priority CDC:</strong> " + escapeHtml(String.valueOf(topic.getPriorityCdc()))
-                    + "</p>");
-            out.println("      <p><strong>Stage:</strong> " + escapeHtml(orEmpty(topic.getStage())) + "</p>");
-            out.println("      <p><strong>Policy Status:</strong> " + escapeHtml(orEmpty(topic.getPolicyStatus()))
-                    + "</p>");
-            out.println("      <p><strong>Topic Type:</strong> " + escapeHtml(orEmpty(topic.getTopicType())) + "</p>");
-            out.println("      <p><strong>Status:</strong> "
-                    + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name()) + "</p>");
-            out.println("      <p><strong>Created By User ID:</strong> "
-                    + escapeHtml(topic.getCreatedByUserId() == null ? "" : String.valueOf(topic.getCreatedByUserId()))
-                    + "</p>");
-            out.println("      <p><strong>Meeting Enabled:</strong> " + (meetingEnabled ? "Yes" : "No") + "</p>");
-            if (meeting != null) {
-                out.println("      <p><strong>Meeting Name:</strong> " + escapeHtml(orEmpty(meeting.getMeetingName()))
+                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("          <p><strong>Topic Code:</strong> "
+                        + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
+                panelOut.println("          <p><strong>Topic Name:</strong> "
+                        + escapeHtml(orEmpty(topic.getTopicName())) + "</p>");
+                panelOut.println(
+                        "          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topic.getDescription()))
+                                + "</p>");
+                panelOut.println(
+                        "          <p><strong>Neighborhood:</strong> " + escapeHtml(orEmpty(topic.getNeighborhood()))
+                                + "</p>");
+                panelOut.println("          <p><strong>Priority IIS:</strong> "
+                        + escapeHtml(String.valueOf(topic.getPriorityIis()))
                         + "</p>");
-                out.println("      <p><strong>Meeting Description:</strong> "
-                        + escapeHtml(orEmpty(meeting.getMeetingDescription())) + "</p>");
-                out.println("      <p><strong>Join Requires Approval:</strong> "
-                        + (Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? "Yes" : "No") + "</p>");
-                out.println("      <p><strong>Meeting Status:</strong> "
-                        + escapeHtml(meeting.getStatus() == null ? "" : meeting.getStatus().name()) + "</p>");
-            }
-            out.println("    </section>");
+                panelOut.println("          <p><strong>Priority EHR:</strong> "
+                        + escapeHtml(String.valueOf(topic.getPriorityEhr()))
+                        + "</p>");
+                panelOut.println("          <p><strong>Priority CDC:</strong> "
+                        + escapeHtml(String.valueOf(topic.getPriorityCdc()))
+                        + "</p>");
+                panelOut.println(
+                        "          <p><strong>Stage:</strong> " + escapeHtml(orEmpty(topic.getStage())) + "</p>");
+                panelOut.println(
+                        "          <p><strong>Policy Status:</strong> " + escapeHtml(orEmpty(topic.getPolicyStatus()))
+                                + "</p>");
+                panelOut.println("          <p><strong>Topic Type:</strong> "
+                        + escapeHtml(orEmpty(topic.getTopicType())) + "</p>");
+                panelOut.println("          <p><strong>Status:</strong> "
+                        + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name()) + "</p>");
+                panelOut.println("          <p><strong>Created By User ID:</strong> "
+                        + escapeHtml(
+                                topic.getCreatedByUserId() == null ? "" : String.valueOf(topic.getCreatedByUserId()))
+                        + "</p>");
+                panelOut.println(
+                        "          <p><strong>Meeting Enabled:</strong> " + (meetingEnabled ? "Yes" : "No") + "</p>");
+                if (meeting != null) {
+                    panelOut.println("          <p><strong>Meeting Name:</strong> "
+                            + escapeHtml(orEmpty(meeting.getMeetingName()))
+                            + "</p>");
+                    panelOut.println("          <p><strong>Meeting Description:</strong> "
+                            + escapeHtml(orEmpty(meeting.getMeetingDescription())) + "</p>");
+                    panelOut.println("          <p><strong>Join Requires Approval:</strong> "
+                            + (Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? "Yes" : "No") + "</p>");
+                    panelOut.println("          <p><strong>Meeting Status:</strong> "
+                            + escapeHtml(meeting.getStatus() == null ? "" : meeting.getStatus().name()) + "</p>");
+                }
+                panelOut.println("        </section>");
 
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
-                    + "&mode=edit\">Edit Topic</a></p>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
+                                + "&mode=edit\">Edit Topic</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -315,101 +312,96 @@ public class AdminEsTopicServlet extends HttpServlet {
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Edit ES Topic - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Edit ES Topic</h1>");
+            AdminShellRenderer.render(out, "Edit ES Topic - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Edit ES Topic</h2>");
 
-            if (errorMessage != null && !errorMessage.isBlank()) {
-                out.println("    <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
-            }
+                if (errorMessage != null && !errorMessage.isBlank()) {
+                    panelOut.println(
+                            "        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
+                }
 
-            out.println(
-                    "    <form class=\"login-form\" action=\"" + contextPath + "/admin/es/topics\" method=\"post\">");
-            out.println("      <input type=\"hidden\" name=\"esTopicId\" value=\"" + topic.getEsTopicId() + "\" />");
+                panelOut.println(
+                        "        <form class=\"login-form\" action=\"" + contextPath
+                                + "/admin/es/topics\" method=\"post\">");
+                out.println(
+                        "      <input type=\"hidden\" name=\"esTopicId\" value=\"" + topic.getEsTopicId() + "\" />");
 
-            out.println("      <p><strong>Topic Code:</strong> " + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
+                out.println(
+                        "      <p><strong>Topic Code:</strong> " + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
 
-            out.println("      <label for=\"topicName\">Topic Name (required)</label>");
-            out.println("      <input id=\"topicName\" name=\"topicName\" type=\"text\" required value=\""
-                    + escapeHtml(orEmpty(topic.getTopicName())) + "\" />");
+                out.println("      <label for=\"topicName\">Topic Name (required)</label>");
+                out.println("      <input id=\"topicName\" name=\"topicName\" type=\"text\" required value=\""
+                        + escapeHtml(orEmpty(topic.getTopicName())) + "\" />");
 
-            out.println("      <label for=\"description\">Description</label>");
-            out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
-                    + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
+                out.println("      <label for=\"description\">Description</label>");
+                out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
+                        + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
 
-            out.println("      <label for=\"neighborhood\">Neighborhood</label>");
-            out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
+                out.println("      <label for=\"neighborhood\">Neighborhood</label>");
+                out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
 
-            out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
-            out.println("      <input id=\"priorityIis\" name=\"priorityIis\" type=\"number\" required value=\""
-                    + escapeHtml(String.valueOf(topic.getPriorityIis() == null ? 0 : topic.getPriorityIis()))
-                    + "\" />");
+                out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
+                out.println("      <input id=\"priorityIis\" name=\"priorityIis\" type=\"number\" required value=\""
+                        + escapeHtml(String.valueOf(topic.getPriorityIis() == null ? 0 : topic.getPriorityIis()))
+                        + "\" />");
 
-            out.println("      <label for=\"priorityEhr\">Priority EHR (required)</label>");
-            out.println("      <input id=\"priorityEhr\" name=\"priorityEhr\" type=\"number\" required value=\""
-                    + escapeHtml(String.valueOf(topic.getPriorityEhr() == null ? 0 : topic.getPriorityEhr()))
-                    + "\" />");
+                out.println("      <label for=\"priorityEhr\">Priority EHR (required)</label>");
+                out.println("      <input id=\"priorityEhr\" name=\"priorityEhr\" type=\"number\" required value=\""
+                        + escapeHtml(String.valueOf(topic.getPriorityEhr() == null ? 0 : topic.getPriorityEhr()))
+                        + "\" />");
 
-            out.println("      <label for=\"priorityCdc\">Priority CDC (required)</label>");
-            out.println("      <input id=\"priorityCdc\" name=\"priorityCdc\" type=\"number\" required value=\""
-                    + escapeHtml(String.valueOf(topic.getPriorityCdc() == null ? 0 : topic.getPriorityCdc()))
-                    + "\" />");
+                out.println("      <label for=\"priorityCdc\">Priority CDC (required)</label>");
+                out.println("      <input id=\"priorityCdc\" name=\"priorityCdc\" type=\"number\" required value=\""
+                        + escapeHtml(String.valueOf(topic.getPriorityCdc() == null ? 0 : topic.getPriorityCdc()))
+                        + "\" />");
 
-            out.println("      <label for=\"stage\">Stage</label>");
-            out.println("      <input id=\"stage\" name=\"stage\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(topic.getStage())) + "\" />");
+                out.println("      <label for=\"stage\">Stage</label>");
+                out.println("      <input id=\"stage\" name=\"stage\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(topic.getStage())) + "\" />");
 
-            out.println("      <label for=\"policyStatus\">Policy Status</label>");
-            out.println("      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
+                out.println("      <label for=\"policyStatus\">Policy Status</label>");
+                out.println("      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
 
-            out.println("      <label for=\"topicType\">Topic Type</label>");
-            out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
+                out.println("      <label for=\"topicType\">Topic Type</label>");
+                out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
 
-            out.println("      <label for=\"status\">Status (required)</label>");
-            out.println("      <select id=\"status\" name=\"status\" required>");
-            out.println("        <option value=\"ACTIVE\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ACTIVE)
-                    + ">ACTIVE</option>");
-            out.println("        <option value=\"RETIRED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.RETIRED)
-                    + ">RETIRED</option>");
-            out.println("        <option value=\"ARCHIVED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ARCHIVED)
-                    + ">ARCHIVED</option>");
-            out.println("      </select>");
+                out.println("      <label for=\"status\">Status (required)</label>");
+                out.println("      <select id=\"status\" name=\"status\" required>");
+                out.println("        <option value=\"ACTIVE\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ACTIVE)
+                        + ">ACTIVE</option>");
+                out.println("        <option value=\"RETIRED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.RETIRED)
+                        + ">RETIRED</option>");
+                out.println("        <option value=\"ARCHIVED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ARCHIVED)
+                        + ">ARCHIVED</option>");
+                out.println("      </select>");
 
-            out.println("      <h2>Meeting Configuration</h2>");
-            out.println("      <label><input type=\"checkbox\" name=\"meetingEnabled\""
-                    + (meetingEnabled ? " checked" : "")
-                    + " /> Enable Meeting Support</label>");
+                out.println("      <h2>Meeting Configuration</h2>");
+                out.println("      <label><input type=\"checkbox\" name=\"meetingEnabled\""
+                        + (meetingEnabled ? " checked" : "")
+                        + " /> Enable Meeting Support</label>");
 
-            out.println("      <label for=\"meetingName\">Meeting Name (required when enabled)</label>");
-            out.println("      <input id=\"meetingName\" name=\"meetingName\" type=\"text\" value=\""
-                    + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingName())) + "\" />");
+                out.println("      <label for=\"meetingName\">Meeting Name (required when enabled)</label>");
+                out.println("      <input id=\"meetingName\" name=\"meetingName\" type=\"text\" value=\""
+                        + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingName())) + "\" />");
 
-            out.println("      <label for=\"meetingDescription\">Meeting Description</label>");
-            out.println("      <textarea id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
-                    + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingDescription())) + "</textarea>");
+                out.println("      <label for=\"meetingDescription\">Meeting Description</label>");
+                out.println("      <textarea id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
+                        + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingDescription()))
+                        + "</textarea>");
 
-            out.println("      <label><input type=\"checkbox\" name=\"meetingRequiresApproval\""
-                    + (meeting != null && Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? " checked" : "")
-                    + " /> Join Requires Approval</label>");
+                out.println("      <label><input type=\"checkbox\" name=\"meetingRequiresApproval\""
+                        + (meeting != null && Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? " checked" : "")
+                        + " /> Join Requires Approval</label>");
 
-            out.println("      <button type=\"submit\">Save</button>");
-            out.println("    </form>");
-            out.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+                panelOut.println("      <button type=\"submit\">Save</button>");
+                panelOut.println("    </form>");
+                panelOut.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -417,23 +409,13 @@ public class AdminEsTopicServlet extends HttpServlet {
         response.setStatus(HttpServletResponse.SC_FORBIDDEN);
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Access Denied - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Access Denied</h1>");
-            out.println("    <p>You must be an InteropHub admin to access ES topic settings.</p>");
-            out.println("    <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Access Denied</h2>");
+                panelOut.println("        <p>You must be an InteropHub admin to access ES topic settings.</p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

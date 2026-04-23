@@ -63,28 +63,19 @@ public class AdminQrCodeServlet extends HttpServlet {
         String backHref = resolveBackHref(contextPath, back);
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>QR Code - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>QR Code</h1>");
-            out.println("    <p><strong>Link:</strong> " + escapeHtml(effectiveLabel) + "</p>");
-            out.println("    <p><strong>Target Path:</strong> " + escapeHtml(targetPath) + "</p>");
-            out.println("    <p><strong>Resolved URL:</strong> <a href=\"" + escapeHtml(resolvedUrl) + "\">"
-                    + escapeHtml(resolvedUrl) + "</a></p>");
-            out.println("    <p><img src=\"" + qrCodeDataUrl + "\" alt=\"QR code for "
-                    + escapeHtml(effectiveLabel) + "\" style=\"max-width:360px;width:100%;height:auto\" /></p>");
-            out.println("    <p><a href=\"" + escapeHtml(backHref) + "\">Back</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "QR Code - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>QR Code</h2>");
+                panelOut.println("        <p><strong>Link:</strong> " + escapeHtml(effectiveLabel) + "</p>");
+                panelOut.println("        <p><strong>Target Path:</strong> " + escapeHtml(targetPath) + "</p>");
+                panelOut.println(
+                        "        <p><strong>Resolved URL:</strong> <a href=\"" + escapeHtml(resolvedUrl) + "\">"
+                                + escapeHtml(resolvedUrl) + "</a></p>");
+                panelOut.println("        <p><img src=\"" + qrCodeDataUrl + "\" alt=\"QR code for "
+                        + escapeHtml(effectiveLabel) + "\" style=\"max-width:360px;width:100%;height:auto\" /></p>");
+                panelOut.println("        <p><a href=\"" + escapeHtml(backHref) + "\">Back</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
@@ -95,23 +86,14 @@ public class AdminQrCodeServlet extends HttpServlet {
         String backHref = resolveBackHref(contextPath, back);
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>QR Code Error - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>QR Code Error</h1>");
-            out.println("    <p>" + escapeHtml(orDefault(message, "The QR code request was invalid.")) + "</p>");
-            out.println("    <p><a href=\"" + escapeHtml(backHref) + "\">Back</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            AdminShellRenderer.render(out, "QR Code Error - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>QR Code Error</h2>");
+                panelOut.println(
+                        "        <p>" + escapeHtml(orDefault(message, "The QR code request was invalid.")) + "</p>");
+                panelOut.println("        <p><a href=\"" + escapeHtml(backHref) + "\">Back</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 

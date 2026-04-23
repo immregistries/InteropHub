@@ -47,6 +47,11 @@
 
   <servlet-mapping>
     <servlet-name>SettingsServlet</servlet-name>
+    <url-pattern>/admin/settings</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>SettingsServlet</servlet-name>
     <url-pattern>/settings</url-pattern>
   </servlet-mapping>
 
@@ -98,6 +103,16 @@
   <servlet-mapping>
     <servlet-name>LogoutServlet</servlet-name>
     <url-pattern>/logout</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>AdminHomeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminHomeServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminHomeServlet</servlet-name>
+    <url-pattern>/admin</url-pattern>
   </servlet-mapping>
 
   <servlet>
