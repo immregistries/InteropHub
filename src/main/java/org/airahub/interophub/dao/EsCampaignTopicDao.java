@@ -33,7 +33,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder, t.confluenceUrl)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
@@ -76,6 +76,25 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         }
     }
 
+    public List<EsCampaignMeetingBrowseRow> findAllActiveMeetingRowsOrdered() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select new org.airahub.interophub.dao.EsCampaignMeetingBrowseRow("
+                            + " t.esTopicId, t.topicCode, t.topicName, t.stage, 0,"
+                            + " m.esTopicMeetingId, m.meetingName, m.meetingDescription, m.joinRequiresApproval)"
+                            + " from EsTopicMeeting m, EsTopic t"
+                            + " where m.esTopicId = t.esTopicId"
+                            + " and t.status = :activeTopicStatus"
+                            + " and m.disabledAt is null"
+                            + " order by"
+                            + " lower(coalesce(m.meetingName, t.topicName)) asc,"
+                            + " t.esTopicId asc",
+                    EsCampaignMeetingBrowseRow.class)
+                    .setParameter("activeTopicStatus", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
     public List<EsCampaignTopicBrowseRow> findDistinctTopicBrowseRowsByCampaignIdOrdered(Long campaignId) {
         if (campaignId == null) {
             return List.of();
@@ -83,7 +102,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, max(ct.displayOrder))"
+                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, max(ct.displayOrder), t.confluenceUrl)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
@@ -105,7 +124,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder, t.confluenceUrl)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.tableNo = :tableNo"

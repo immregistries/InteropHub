@@ -70,6 +70,7 @@ public class EsTopicImportService {
      *   "stage": "...",            // nullable
     *   "policyStatus": "...",     // nullable
     *   "topicType": "...",        // nullable
+    *   "confluenceUrl": "...",    // nullable
      *   "displayOrder": 10,        // integer, defaults 0
      *   "set": 1                   // nullable integer for topic_set_no
      * }
@@ -144,19 +145,20 @@ public class EsTopicImportService {
                     isNewTopic = true;
                 }
 
+                // Import policy: topic metadata is always upserted regardless of campaign
+                // status. Only campaign-assignment rebuild logic is gated to DRAFT campaigns.
                 topic.setTopicName(json.getString("topicName"));
                 topic.setDescription(
                         json.isNull("description") ? null : json.optString("description", null));
-                if (allowCampaignReset) {
-                    topic.setNeighborhood(
-                            json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
-                    topic.setPriorityIis(json.optInt("priorityIis", 0));
-                    topic.setPriorityEhr(json.optInt("priorityEhr", 0));
-                    topic.setPriorityCdc(json.optInt("priorityCdc", 0));
-                    topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
-                    topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
-                    topic.setTopicType(readNullableTrimmedString(json, "topicType"));
-                }
+                topic.setNeighborhood(
+                    json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
+                topic.setPriorityIis(json.optInt("priorityIis", 0));
+                topic.setPriorityEhr(json.optInt("priorityEhr", 0));
+                topic.setPriorityCdc(json.optInt("priorityCdc", 0));
+                topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
+                topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
+                topic.setTopicType(readNullableTrimmedString(json, "topicType"));
+                topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));
 
                 topic = topicDao.saveOrUpdate(topic);
 

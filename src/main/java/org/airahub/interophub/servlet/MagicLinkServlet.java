@@ -8,14 +8,17 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EsInterestService;
 
 public class MagicLinkServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(MagicLinkServlet.class.getName());
 
     private final AuthFlowService authFlowService;
+    private final EsInterestService esInterestService;
 
     public MagicLinkServlet() {
         this.authFlowService = new AuthFlowService();
+        this.esInterestService = new EsInterestService();
     }
 
     @Override
@@ -42,6 +45,9 @@ public class MagicLinkServlet extends HttpServlet {
             AuthFlowService.AuthenticatedSession authenticatedSession = authFlowService.consumeMagicLink(token,
                     request);
             response.addCookie(authFlowService.buildSessionCookie(authenticatedSession.getRawSessionToken(), request));
+            esInterestService.linkAnonymousRecordsByEmail(
+                    authenticatedSession.getUser().getUserId(),
+                    authenticatedSession.getUser().getEmailNormalized());
             String redirectTarget = authenticatedSession.getExternalRedirectUrl()
                     .or(() -> authenticatedSession.getInternalRedirectUrl()
                             .map(value -> request.getContextPath() + value))

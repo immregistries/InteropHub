@@ -14,6 +14,8 @@ import org.airahub.interophub.dao.EsCampaignRegistrationDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignRegistration;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
 
@@ -30,11 +32,13 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsCampaignRegistrationDao registrationDao;
     private final EsInterestService esInterestService;
+    private final AuthFlowService authFlowService;
 
     public EsCampaignRegistrationServlet() {
         this.campaignDao = new EsCampaignDao();
         this.registrationDao = new EsCampaignRegistrationDao();
         this.esInterestService = new EsInterestService();
+        this.authFlowService = new AuthFlowService();
     }
 
     @Override
@@ -96,15 +100,22 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
         registrationDao.save(registration);
 
         if (emailNormalized != null && generalUpdatesOptIn) {
+            Long authenticatedUserId = authFlowService.findAuthenticatedUser(request)
+                    .filter(u -> emailNormalized.equals(u.getEmailNormalized()))
+                    .map(User::getUserId)
+                    .orElse(null);
             EsSubscription subscription = new EsSubscription();
             subscription.setEmail(email);
             subscription.setEmailNormalized(emailNormalized);
-            subscription.setUserId(null);
+            subscription.setUserId(authenticatedUserId);
             subscription.setEsTopicId(null);
             subscription.setSubscriptionType(EsSubscription.SubscriptionType.GENERAL_ES);
             subscription.setStatus(EsSubscription.SubscriptionStatus.SUBSCRIBED);
             subscription.setSourceCampaignId(campaign.get().getEsCampaignId());
             esInterestService.subscribeOrUpdate(subscription);
+            if (authenticatedUserId != null) {
+                esInterestService.linkAnonymousRecordsByEmail(authenticatedUserId, emailNormalized);
+            }
         }
 
         setSessionValue(session, ATTR_FIRST_NAME, firstName);

@@ -24,6 +24,17 @@ public class EsCampaignDao extends GenericDao<EsCampaign, Long> {
         }
     }
 
+    public java.util.Optional<EsCampaign> findMostRecentActive() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsCampaign c where c.status = :status order by c.startAt desc, c.esCampaignId desc",
+                    EsCampaign.class)
+                    .setParameter("status", EsCampaign.CampaignStatus.ACTIVE)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
     public List<EsCampaign> findAllActive() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(

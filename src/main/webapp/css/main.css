@@ -646,6 +646,18 @@ a.doc-card {
   box-shadow: 0 8px 18px rgba(63, 122, 114, 0.18);
 }
 
+.es-topic-row.is-meeting-registered {
+  border-color: #2563eb;
+  background: linear-gradient(180deg, #eff6ff 0%, #e8f0fe 100%);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18);
+}
+
+.es-topic-row.is-meeting-registered .es-topic-state {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #dbeafe;
+}
+
 .es-review-topic-row.is-reviewed {
   border-color: #8f99aa;
   background: linear-gradient(180deg, #e5e9f0 0%, #dbe2ec 100%);

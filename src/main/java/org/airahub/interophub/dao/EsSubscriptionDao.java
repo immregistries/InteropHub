@@ -120,6 +120,35 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    /**
+     * Sets user_id on all es_subscription rows that match the given email and
+     * currently have user_id IS NULL. Safe to call repeatedly (idempotent).
+     *
+     * @return the number of rows updated
+     */
+    public int updateUserIdWhereNullByEmailNormalized(String emailNormalized, Long userId) {
+        if (emailNormalized == null || userId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update EsSubscription s set s.userId = :uid"
+                            + " where s.emailNormalized = :email and s.userId is null")
+                    .setParameter("uid", userId)
+                    .setParameter("email", emailNormalized)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public Set<Long> findActiveTopicIdsByEmailAndTopicIds(String emailNormalized, List<Long> topicIds) {
         if (emailNormalized == null || emailNormalized.isBlank() || topicIds == null || topicIds.isEmpty()) {
             return Set.of();
@@ -138,6 +167,91 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     .setParameterList("topicIds", topicIds)
                     .getResultList();
             return Set.copyOf(result);
+        }
+    }
+
+    public Set<Long> findActiveTopicIdsByUserOrEmailAndTopicIds(Long userId, String emailNormalized,
+            List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return Set.of();
+        }
+        boolean hasUser = userId != null;
+        boolean hasEmail = emailNormalized != null && !emailNormalized.isBlank();
+        if (!hasUser && !hasEmail) {
+            return Set.of();
+        }
+
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            StringBuilder hql = new StringBuilder();
+            hql.append("select distinct s.esTopicId from EsSubscription s");
+            hql.append(" where s.subscriptionType = :type");
+            hql.append(" and s.status = :status");
+            hql.append(" and s.esTopicId in :topicIds");
+            hql.append(" and (");
+            if (hasUser) {
+                hql.append("s.userId = :userId");
+            }
+            if (hasEmail) {
+                if (hasUser) {
+                    hql.append(" or ");
+                }
+                hql.append("s.emailNormalized = :email");
+            }
+            hql.append(")");
+
+            var query = session.createQuery(hql.toString(), Long.class)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameterList("topicIds", topicIds);
+            if (hasUser) {
+                query.setParameter("userId", userId);
+            }
+            if (hasEmail) {
+                query.setParameter("email", emailNormalized.trim());
+            }
+            return Set.copyOf(query.getResultList());
+        }
+    }
+
+    public Optional<EsSubscription> findByUserOrEmailAndTopic(Long userId, String emailNormalized, Long esTopicId) {
+        if (esTopicId == null) {
+            return Optional.empty();
+        }
+        boolean hasUser = userId != null;
+        boolean hasEmail = emailNormalized != null && !emailNormalized.isBlank();
+        if (!hasUser && !hasEmail) {
+            return Optional.empty();
+        }
+
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            StringBuilder hql = new StringBuilder();
+            hql.append("from EsSubscription s");
+            hql.append(" where s.subscriptionType = :type");
+            hql.append(" and s.esTopicId = :topicId");
+            hql.append(" and (");
+            if (hasUser) {
+                hql.append("s.userId = :userId");
+            }
+            if (hasEmail) {
+                if (hasUser) {
+                    hql.append(" or ");
+                }
+                hql.append("s.emailNormalized = :email");
+            }
+            hql.append(")");
+            hql.append(" order by s.updatedAt desc, s.createdAt desc");
+
+            var query = session.createQuery(hql.toString(), EsSubscription.class)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("topicId", esTopicId)
+                    .setMaxResults(1);
+            if (hasUser) {
+                query.setParameter("userId", userId);
+            }
+            if (hasEmail) {
+                query.setParameter("email", emailNormalized.trim());
+            }
+            return query.uniqueResultOptional();
         }
     }
 

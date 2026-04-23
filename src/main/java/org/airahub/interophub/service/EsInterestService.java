@@ -10,6 +10,7 @@ import java.util.logging.Logger;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsInterestDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsInterest;
 import org.airahub.interophub.model.EsSubscription;
@@ -31,11 +32,13 @@ public class EsInterestService {
     private final EsInterestDao interestDao;
     private final EsCommentDao commentDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicMeetingMemberDao topicMeetingMemberDao;
 
     public EsInterestService() {
         this.interestDao = new EsInterestDao();
         this.commentDao = new EsCommentDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
     }
 
     // -------------------------------------------------------------------------
@@ -132,6 +135,27 @@ public class EsInterestService {
         sub.setStatus(EsSubscription.SubscriptionStatus.UNSUBSCRIBED);
         sub.setUnsubscribedAt(LocalDateTime.now());
         subscriptionDao.saveOrUpdate(sub);
+    }
+
+    // -------------------------------------------------------------------------
+    // Email-to-account linking
+    // -------------------------------------------------------------------------
+
+    /**
+     * Backfills user_id on any anonymous es_subscription and
+     * es_topic_meeting_member rows whose email_normalized matches the given value
+     * and whose user_id is currently NULL. Safe to call on every login or
+     * welcome-page visit — the WHERE clause makes it fully idempotent.
+     *
+     * @param userId          the authenticated user's ID
+     * @param emailNormalized the user's normalized email address
+     */
+    public void linkAnonymousRecordsByEmail(long userId, String emailNormalized) {
+        if (emailNormalized == null || emailNormalized.isBlank()) {
+            return;
+        }
+        subscriptionDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+        topicMeetingMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
     }
 
     // -------------------------------------------------------------------------

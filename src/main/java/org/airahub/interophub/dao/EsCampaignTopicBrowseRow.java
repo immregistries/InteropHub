@@ -9,9 +9,11 @@ public class EsCampaignTopicBrowseRow {
     private final String neighborhood;
     private final String stage;
     private final Integer displayOrder;
+    private final String confluenceUrl;
 
     public EsCampaignTopicBrowseRow(Long esTopicId, String topicName, String description,
-            String topicType, String policyStatus, String neighborhood, String stage, Integer displayOrder) {
+            String topicType, String policyStatus, String neighborhood, String stage, Integer displayOrder,
+            String confluenceUrl) {
         this.esTopicId = esTopicId;
         this.topicName = topicName;
         this.description = description;
@@ -20,6 +22,7 @@ public class EsCampaignTopicBrowseRow {
         this.neighborhood = neighborhood;
         this.stage = stage;
         this.displayOrder = displayOrder;
+        this.confluenceUrl = confluenceUrl;
     }
 
     public Long getEsTopicId() {
@@ -52,5 +55,9 @@ public class EsCampaignTopicBrowseRow {
 
     public Integer getDisplayOrder() {
         return displayOrder;
+    }
+
+    public String getConfluenceUrl() {
+        return confluenceUrl;
     }
 }

@@ -18,6 +18,7 @@ import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EsInterestService;
 
 public class WelcomeServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
@@ -25,6 +26,7 @@ public class WelcomeServlet extends HttpServlet {
     private final ConnectWorkspaceDao connectWorkspaceDao;
     private final IgTopicDao igTopicDao;
     private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
+    private final EsInterestService esInterestService;
 
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
@@ -32,6 +34,7 @@ public class WelcomeServlet extends HttpServlet {
         this.connectWorkspaceDao = new ConnectWorkspaceDao();
         this.igTopicDao = new IgTopicDao();
         this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
+        this.esInterestService = new EsInterestService();
     }
 
     @Override
@@ -43,6 +46,8 @@ public class WelcomeServlet extends HttpServlet {
             response.sendRedirect(request.getContextPath() + "/home");
             return;
         }
+
+        esInterestService.linkAnonymousRecordsByEmail(user.getUserId(), user.getEmailNormalized());
 
         response.setContentType("text/html;charset=UTF-8");
         String contextPath = request.getContextPath();

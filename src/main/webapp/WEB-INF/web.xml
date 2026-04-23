@@ -306,6 +306,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicFollowToggleServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicFollowToggleServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicMeetingToggleServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignDetailServlet</servlet-class>
   </servlet>
@@ -408,6 +418,16 @@
   <servlet-mapping>
     <servlet-name>EsTopicsServlet</servlet-name>
     <url-pattern>/es/topics</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicFollowToggleServlet</servlet-name>
+    <url-pattern>/es/topics/follow-toggle</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
+    <url-pattern>/es/topics/meeting-toggle</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
