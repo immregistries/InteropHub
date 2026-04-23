@@ -151,7 +151,7 @@ public class EsTopicImportService {
                 topic.setDescription(
                         json.isNull("description") ? null : json.optString("description", null));
                 topic.setNeighborhood(
-                    json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
+                        json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
                 topic.setPriorityIis(json.optInt("priorityIis", 0));
                 topic.setPriorityEhr(json.optInt("priorityEhr", 0));
                 topic.setPriorityCdc(json.optInt("priorityCdc", 0));
