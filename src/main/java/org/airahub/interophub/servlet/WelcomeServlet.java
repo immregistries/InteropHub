@@ -78,76 +78,93 @@ public class WelcomeServlet extends HttpServlet {
             out.println("  <title>Welcome - InteropHub</title>");
             out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
             out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <section class=\"panel\">");
-            out.println("      <img class=\"banner\" src=\"" + contextPath
-                    + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
-            out.println("    </section>");
-            out.println("    <h1>Welcome " + escapeHtml(name) + "</h1>");
-            out.println(
-                    "    <p>You are signed in as <strong>" + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
-
-            if (adminUser && pendingRegistrationCount > 0) {
-                out.println("    <section class=\"panel\">");
-                out.println("      <h2>Pending Workspace Registrations</h2>");
-                out.println("      <p>There are currently <strong>" + pendingRegistrationCount
-                        + "</strong> pending registration request(s).</p>");
-                out.println("      <p><a href=\"" + contextPath
-                        + "/workspace?mode=admin-enrollments\">Review Pending Registrations</a></p>");
-                out.println("    </section>");
-            }
-
-            out.println("    <h2>Applications</h2>");
-            if (availableApps.isEmpty()) {
-                out.println("    <p>No applications are currently available.</p>");
-            } else {
-                out.println("    <ul>");
-                for (AppRegistry app : availableApps) {
-                    out.println("      <li><a href=\"" + contextPath + "/app-access?appId=" + app.getAppId()
-                            + "\">" + escapeHtml(app.getAppName()) + "</a></li>");
-                }
-                out.println("    </ul>");
-            }
-
-            out.println("    <h2>Workspaces</h2>");
-            if (activeWorkspaces.isEmpty()) {
-                out.println("    <p>No active workspaces are currently available.</p>");
-            } else {
-                out.println("    <ul>");
-                for (ConnectWorkspace workspace : activeWorkspaces) {
-                    String topicName = topicNameById.get(workspace.getTopicId());
-                    if (topicName == null || topicName.isBlank()) {
-                        topicName = "Unknown Topic";
-                    }
-                    String workspaceName = workspace.getWorkspaceName();
-                    if (workspaceName == null || workspaceName.isBlank()) {
-                        workspaceName = "(Unnamed Workspace)";
-                    }
-                    out.println("      <li><a href=\"" + contextPath + "/workspace?workspaceId="
-                            + workspace.getWorkspaceId() + "\">"
-                            + escapeHtml(topicName + ": " + workspaceName) + "</a></li>");
-                }
-                out.println("    </ul>");
-            }
-
             if (adminUser) {
-                out.println("    <section class=\"panel\">");
-                out.println("      <h2>Admin Functions</h2>");
-                out.println(
-                        "      <p>Administrative tools have moved to a dedicated navigation center.</p>");
-                out.println("      <p><a href=\"" + contextPath + "/admin\">Open Admin Home</a></p>");
+                out.println("<body class=\"admin-page\">");
+                out.println("  <main class=\"admin-shell\">");
+                out.println("    <aside class=\"admin-rail\">");
+                out.println("      <h1>Admin</h1>");
+                out.println("      <p class=\"admin-rail-subtitle\">Navigation center</p>");
+                AdminNavRenderer.renderPanel(out, contextPath);
+                out.println("      <p class=\"admin-rail-footer-link\"><a href=\"" + contextPath
+                        + "/admin\">Open Admin Home</a></p>");
+                out.println("    </aside>");
+                out.println("    <section class=\"admin-main\">");
+                renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
+                        pendingRegistrationCount, true);
                 out.println("    </section>");
+                out.println("  </main>");
+            } else {
+                out.println("<body>");
+                out.println("  <main class=\"container\">");
+                renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
+                        pendingRegistrationCount, false);
+                out.println("  </main>");
             }
-
-            out.println("    <form action=\"" + contextPath + "/logout\" method=\"post\">");
-            out.println("      <button type=\"submit\">Logout</button>");
-            out.println("    </form>");
-            out.println("  </main>");
             PageFooterRenderer.render(out);
             out.println("</body>");
             out.println("</html>");
         }
+    }
+
+    private void renderWelcomePanel(PrintWriter out, String contextPath, String name, User user,
+            List<AppRegistry> availableApps, List<ConnectWorkspace> activeWorkspaces, Map<Long, String> topicNameById,
+            long pendingRegistrationCount, boolean adminUser) {
+        out.println("      <section class=\"panel\">");
+        out.println("        <img class=\"banner\" src=\"" + contextPath
+                + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
+        out.println("        <h2>Welcome " + escapeHtml(name) + "</h2>");
+        out.println(
+                "        <p>You are signed in as <strong>" + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
+
+        if (adminUser && pendingRegistrationCount > 0) {
+            out.println("        <h3>Pending Workspace Registrations</h3>");
+            out.println("        <p>There are currently <strong>" + pendingRegistrationCount
+                    + "</strong> pending registration request(s).</p>");
+            out.println("        <p><a href=\"" + contextPath
+                    + "/workspace?mode=admin-enrollments\">Review Pending Registrations</a></p>");
+        }
+
+        out.println("        <ul>");
+        out.println("          <li><a href=\"" + contextPath + "/es/topics\">Emerging Standard Topics</a></li>");
+        out.println("        </ul>");
+
+        out.println("        <h3>Applications</h3>");
+        if (availableApps.isEmpty()) {
+            out.println("        <p>No applications are currently available.</p>");
+        } else {
+            out.println("        <ul>");
+            for (AppRegistry app : availableApps) {
+                out.println("          <li><a href=\"" + contextPath + "/app-access?appId=" + app.getAppId()
+                        + "\">" + escapeHtml(app.getAppName()) + "</a></li>");
+            }
+            out.println("        </ul>");
+        }
+
+        out.println("        <h3>Workspaces</h3>");
+        if (activeWorkspaces.isEmpty()) {
+            out.println("        <p>No active workspaces are currently available.</p>");
+        } else {
+            out.println("        <ul>");
+            for (ConnectWorkspace workspace : activeWorkspaces) {
+                String topicName = topicNameById.get(workspace.getTopicId());
+                if (topicName == null || topicName.isBlank()) {
+                    topicName = "Unknown Topic";
+                }
+                String workspaceName = workspace.getWorkspaceName();
+                if (workspaceName == null || workspaceName.isBlank()) {
+                    workspaceName = "(Unnamed Workspace)";
+                }
+                out.println("          <li><a href=\"" + contextPath + "/workspace?workspaceId="
+                        + workspace.getWorkspaceId() + "\">"
+                        + escapeHtml(topicName + ": " + workspaceName) + "</a></li>");
+            }
+            out.println("        </ul>");
+        }
+
+        out.println("        <form action=\"" + contextPath + "/logout\" method=\"post\">");
+        out.println("          <button type=\"submit\">Logout</button>");
+        out.println("        </form>");
+        out.println("      </section>");
     }
 
     private String escapeHtml(String value) {

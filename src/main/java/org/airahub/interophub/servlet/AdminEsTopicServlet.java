@@ -2,6 +2,7 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URI;
 import java.util.List;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -96,6 +97,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         String stage = trimToNull(request.getParameter("stage"));
         String policyStatus = trimToNull(request.getParameter("policyStatus"));
         String topicType = trimToNull(request.getParameter("topicType"));
+        String confluenceUrl = trimToNull(request.getParameter("confluenceUrl"));
         String statusRaw = trimToNull(request.getParameter("status"));
 
         boolean meetingEnabled = request.getParameter("meetingEnabled") != null;
@@ -113,6 +115,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setStage(stage);
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
+            topic.setConfluenceUrl(validateOptionalUrl(confluenceUrl, "Confluence URL"));
             topic.setStatus(parseStatus(required(statusRaw, "Status")));
 
             esTopicDao.saveOrUpdate(topic);
@@ -141,6 +144,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setStage(stage);
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
+            topic.setConfluenceUrl(confluenceUrl);
             if (priorityIisRaw != null) {
                 topic.setPriorityIis(parseIntOrNull(priorityIisRaw));
             }
@@ -276,6 +280,13 @@ public class AdminEsTopicServlet extends HttpServlet {
                                 + "</p>");
                 panelOut.println("          <p><strong>Topic Type:</strong> "
                         + escapeHtml(orEmpty(topic.getTopicType())) + "</p>");
+                if (trimToNull(topic.getConfluenceUrl()) == null) {
+                    panelOut.println("          <p><strong>Confluence URL:</strong> </p>");
+                } else {
+                    panelOut.println("          <p><strong>Confluence URL:</strong> <a href=\""
+                            + escapeHtml(topic.getConfluenceUrl()) + "\" target=\"_blank\" rel=\"noopener\">"
+                            + escapeHtml(topic.getConfluenceUrl()) + "</a></p>");
+                }
                 panelOut.println("          <p><strong>Status:</strong> "
                         + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name()) + "</p>");
                 panelOut.println("          <p><strong>Created By User ID:</strong> "
@@ -338,7 +349,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
                         + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
 
-                out.println("      <label for=\"neighborhood\">Neighborhood</label>");
+                out.println("      <label for=\"neighborhood\">Neighborhood(s) (comma-separated)</label>");
                 out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
                         + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
 
@@ -368,6 +379,10 @@ public class AdminEsTopicServlet extends HttpServlet {
                 out.println("      <label for=\"topicType\">Topic Type</label>");
                 out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
                         + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
+
+                out.println("      <label for=\"confluenceUrl\">Confluence URL</label>");
+                out.println("      <input id=\"confluenceUrl\" name=\"confluenceUrl\" type=\"url\" value=\""
+                        + escapeHtml(orEmpty(topic.getConfluenceUrl())) + "\" />");
 
                 out.println("      <label for=\"status\">Status (required)</label>");
                 out.println("      <select id=\"status\" name=\"status\" required>");
@@ -462,6 +477,28 @@ public class AdminEsTopicServlet extends HttpServlet {
             throw new IllegalArgumentException(label + " is required.");
         }
         return normalized;
+    }
+
+    private String validateOptionalUrl(String value, String label) {
+        String normalized = trimToNull(value);
+        if (normalized == null) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(normalized);
+            String scheme = uri.getScheme();
+            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
+                throw new IllegalArgumentException(label + " must start with http:// or https://");
+            }
+            if (uri.getHost() == null || uri.getHost().isBlank()) {
+                throw new IllegalArgumentException(label + " must include a host.");
+            }
+            return normalized;
+        } catch (IllegalArgumentException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new IllegalArgumentException(label + " is invalid.");
+        }
     }
 
     private String trimToNull(String value) {

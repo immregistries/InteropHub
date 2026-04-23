@@ -33,6 +33,29 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public List<EsTopic> findAllActiveForPublicPage() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopic t"
+                            + " where t.status = :status"
+                            + " order by"
+                            + " case when t.neighborhood is null or trim(t.neighborhood) = '' then 1 else 0 end asc,"
+                            + " lower(coalesce(t.neighborhood, '')) asc,"
+                            + " case"
+                            + " when lower(coalesce(t.stage, '')) = 'draft' then 1"
+                            + " when lower(coalesce(t.stage, '')) = 'gather' then 2"
+                            + " when lower(coalesce(t.stage, '')) = 'monitor' then 3"
+                            + " when lower(coalesce(t.stage, '')) = 'pilot' then 4"
+                            + " when lower(coalesce(t.stage, '')) = 'rollout' then 5"
+                            + " when lower(coalesce(t.stage, '')) = 'parked' then 6"
+                            + " else 99 end asc,"
+                            + " lower(t.topicName) asc",
+                    EsTopic.class)
+                    .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
     public List<EsCampaignTopicBrowseRow> findAllActiveBrowseRowsOrdered() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(

@@ -296,6 +296,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsNeighborhoodServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsNeighborhoodServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicsServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignDetailServlet</servlet-class>
   </servlet>
@@ -388,6 +398,16 @@
   <servlet-mapping>
     <servlet-name>AdminEsTopicServlet</servlet-name>
     <url-pattern>/admin/es/topics</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsNeighborhoodServlet</servlet-name>
+    <url-pattern>/admin/es/neighborhoods</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicsServlet</servlet-name>
+    <url-pattern>/es/topics</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

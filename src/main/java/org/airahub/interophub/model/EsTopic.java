@@ -57,6 +57,9 @@ public class EsTopic {
     @Column(name = "topic_type", length = 120)
     private String topicType;
 
+    @Column(name = "confluence_url", length = 500)
+    private String confluenceUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private EsTopicStatus status;
@@ -182,6 +185,14 @@ public class EsTopic {
 
     public void setTopicType(String topicType) {
         this.topicType = topicType;
+    }
+
+    public String getConfluenceUrl() {
+        return confluenceUrl;
+    }
+
+    public void setConfluenceUrl(String confluenceUrl) {
+        this.confluenceUrl = confluenceUrl;
     }
 
     public EsTopicStatus getStatus() {
