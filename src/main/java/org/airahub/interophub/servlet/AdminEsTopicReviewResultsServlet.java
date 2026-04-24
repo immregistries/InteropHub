@@ -126,9 +126,11 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
                         String avgText = row.getAverageScore() == null ? "--"
                                 : scoreFormat.format(row.getAverageScore());
                         long commentCount = commentCountByTopicId.getOrDefault(row.getEsTopicId(), 0L);
+                        String topicUrl = contextPath + "/admin/es/topics?esTopicId=" + row.getEsTopicId();
                         panelOut.println("            <tr>");
                         panelOut.println("              <td>" + rank + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(orEmpty(row.getTopicName())) + "</td>");
+                        panelOut.println("              <td><a href=\"" + topicUrl + "\">"
+                                + escapeHtml(orEmpty(row.getTopicName())) + "</a></td>");
                         panelOut.println("              <td>" + avgText + "</td>");
                         panelOut.println("              <td>" + row.getReviewCount() + "</td>");
                         panelOut.println("              <td>" + row.getCountScore3Plus() + "</td>");

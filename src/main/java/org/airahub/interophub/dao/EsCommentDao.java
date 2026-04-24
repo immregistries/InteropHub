@@ -53,6 +53,21 @@ public class EsCommentDao extends GenericDao<EsComment, Long> {
         }
     }
 
+    public List<EsComment> findByTopicId(Long topicId) {
+        if (topicId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsComment c where c.esTopicId = :tid and c.commentType = :type"
+                            + " order by c.createdAt asc",
+                    EsComment.class)
+                    .setParameter("tid", topicId)
+                    .setParameter("type", EsComment.CommentType.TOPIC)
+                    .getResultList();
+        }
+    }
+
     public List<TopicCommentCountRow> findTopicCommentCountsByCampaignId(Long campaignId) {
         if (campaignId == null) {
             return List.of();

@@ -3,13 +3,22 @@ package org.airahub.interophub.servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URI;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
@@ -17,14 +26,20 @@ import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsTopicServlet extends HttpServlet {
 
+    private static final DateTimeFormatter COMMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
     private final AuthFlowService authFlowService;
     private final EsTopicDao esTopicDao;
     private final EsTopicMeetingDao esTopicMeetingDao;
+    private final EsCommentDao esCommentDao;
+    private final UserDao userDao;
 
     public AdminEsTopicServlet() {
         this.authFlowService = new AuthFlowService();
         this.esTopicDao = new EsTopicDao();
         this.esTopicMeetingDao = new EsTopicMeetingDao();
+        this.esCommentDao = new EsCommentDao();
+        this.userDao = new UserDao();
     }
 
     @Override
@@ -57,7 +72,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 return;
             }
 
-            renderDetails(response, contextPath, topic, meeting);
+            renderDetails(response, contextPath, topic, meeting, esCommentDao.findByTopicId(topicId));
             return;
         }
 
@@ -242,10 +257,12 @@ public class AdminEsTopicServlet extends HttpServlet {
         }
     }
 
-    private void renderDetails(HttpServletResponse response, String contextPath, EsTopic topic, EsTopicMeeting meeting)
+    private void renderDetails(HttpServletResponse response, String contextPath, EsTopic topic, EsTopicMeeting meeting,
+            List<EsComment> comments)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
+        Map<Long, User> usersById = loadUsersById(comments);
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "ES Topic Details - InteropHub", contextPath, panelOut -> {
@@ -305,6 +322,35 @@ public class AdminEsTopicServlet extends HttpServlet {
                             + (Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? "Yes" : "No") + "</p>");
                     panelOut.println("          <p><strong>Meeting Status:</strong> "
                             + escapeHtml(meeting.getStatus() == null ? "" : meeting.getStatus().name()) + "</p>");
+                }
+                panelOut.println("        </section>");
+
+                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("          <h3>Comments</h3>");
+                if (comments.isEmpty()) {
+                    panelOut.println("          <p>No comments.</p>");
+                } else {
+                    panelOut.println("          <table class=\"data-table\">");
+                    panelOut.println("            <thead>");
+                    panelOut.println("              <tr>");
+                    panelOut.println("                <th>Date</th>");
+                    panelOut.println("                <th>Commented By</th>");
+                    panelOut.println("                <th>Comment</th>");
+                    panelOut.println("              </tr>");
+                    panelOut.println("            </thead>");
+                    panelOut.println("            <tbody>");
+                    for (EsComment comment : comments) {
+                        panelOut.println("              <tr>");
+                        panelOut.println("                <td>" + escapeHtml(formatCommentDate(comment.getCreatedAt()))
+                                + "</td>");
+                        panelOut.println("                <td>" + escapeHtml(resolveCommentAuthor(comment, usersById))
+                                + "</td>");
+                        panelOut.println("                <td>" + escapeHtml(orEmpty(comment.getCommentText()))
+                                + "</td>");
+                        panelOut.println("              </tr>");
+                    }
+                    panelOut.println("            </tbody>");
+                    panelOut.println("          </table>");
                 }
                 panelOut.println("        </section>");
 
@@ -511,6 +557,68 @@ public class AdminEsTopicServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private Map<Long, User> loadUsersById(List<EsComment> comments) {
+        List<Long> userIds = comments.stream()
+                .map(EsComment::getUserId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userDao.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getUserId, user -> user, (left, right) -> left, LinkedHashMap::new));
+    }
+
+    private String resolveCommentAuthor(EsComment comment, Map<Long, User> usersById) {
+        if (comment.getUserId() != null) {
+            User user = usersById.get(comment.getUserId());
+            String displayName = user == null ? null : trimToNull(user.getDisplayName());
+            if (displayName != null) {
+                return displayName;
+            }
+
+            String commentName = joinNameParts(comment.getFirstName(), comment.getLastName());
+            if (commentName != null) {
+                return commentName;
+            }
+
+            if (user != null && trimToNull(user.getEmail()) != null) {
+                return user.getEmail();
+            }
+        }
+
+        String email = trimToNull(comment.getEmail());
+        if (email != null) {
+            return email;
+        }
+
+        String commentName = joinNameParts(comment.getFirstName(), comment.getLastName());
+        return commentName == null ? "" : commentName;
+    }
+
+    private String joinNameParts(String firstName, String lastName) {
+        String first = trimToNull(firstName);
+        String last = trimToNull(lastName);
+        if (first == null && last == null) {
+            return null;
+        }
+        if (first == null) {
+            return last;
+        }
+        if (last == null) {
+            return first;
+        }
+        return first + " " + last;
+    }
+
+    private String formatCommentDate(LocalDateTime createdAt) {
+        if (createdAt == null) {
+            return "";
+        }
+        return COMMENT_DATE_FORMAT.format(createdAt);
     }
 
     private String escapeHtml(String value) {
