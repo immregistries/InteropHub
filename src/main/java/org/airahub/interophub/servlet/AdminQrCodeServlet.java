@@ -9,6 +9,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URI;
 import java.util.Base64;
 import java.util.Optional;
 import javax.imageio.ImageIO;
@@ -40,24 +41,57 @@ public class AdminQrCodeServlet extends HttpServlet {
         String target = trimToNull(request.getParameter("target"));
         String label = trimToNull(request.getParameter("label"));
         String back = trimToNull(request.getParameter("back"));
+        boolean allowExternal = parseBooleanFlag(request.getParameter("allowExternal"));
 
         if (target == null) {
-            renderError(response, contextPath, "A target path is required.", back);
+            renderForm(response, contextPath, label, back, false);
             return;
         }
 
         try {
-            String normalizedTarget = publicUrlService.normalizeInternalPath(target);
-            String resolvedUrl = publicUrlService.resolveExternalUrl(normalizedTarget);
+            String normalizedTarget = publicUrlService.normalizeInternalPath(target, allowExternal);
+            String resolvedUrl = isAbsoluteUrl(normalizedTarget)
+                    ? normalizedTarget
+                    : publicUrlService.resolveExternalUrl(normalizedTarget);
             String qrCodeDataUrl = buildQrCodeDataUrl(resolvedUrl);
-            renderPage(response, contextPath, normalizedTarget, resolvedUrl, qrCodeDataUrl, label, back);
+            renderPage(response, contextPath, normalizedTarget, resolvedUrl, qrCodeDataUrl, label, back, allowExternal);
         } catch (IllegalArgumentException ex) {
             renderError(response, contextPath, ex.getMessage(), back);
         }
     }
 
+    private void renderForm(HttpServletResponse response, String contextPath, String label, String back,
+            boolean allowExternal) throws IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        String formAction = contextPath + "/admin/qr";
+
+        try (PrintWriter out = response.getWriter()) {
+            AdminShellRenderer.render(out, "QR Generator - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>QR Generator</h2>");
+                panelOut.println("        <form method=\"get\" action=\"" + escapeHtml(formAction) + "\">");
+                panelOut.println("          <label for=\"target\">Target URL or internal path</label>");
+                panelOut.println(
+                        "          <input id=\"target\" name=\"target\" type=\"text\" placeholder=\"/admin/es or https://example.org\" required />");
+                panelOut.println("          <label for=\"label\">Label (optional)</label>");
+                panelOut.println("          <input id=\"label\" name=\"label\" type=\"text\" value=\""
+                        + escapeHtml(orDefault(label, "")) + "\" />");
+                panelOut.println("          <label><input type=\"checkbox\" name=\"allowExternal\" value=\"true\""
+                        + (allowExternal ? " checked" : "")
+                        + " /> allow generating for external URL</label>");
+                if (back != null) {
+                    panelOut.println("          <input type=\"hidden\" name=\"back\" value=\"" + escapeHtml(back)
+                            + "\" />");
+                }
+                panelOut.println("          <p><button type=\"submit\">Generate QR</button></p>");
+                panelOut.println("        </form>");
+                panelOut.println("      </section>");
+            });
+        }
+    }
+
     private void renderPage(HttpServletResponse response, String contextPath, String targetPath, String resolvedUrl,
-            String qrCodeDataUrl, String label, String back) throws IOException {
+            String qrCodeDataUrl, String label, String back, boolean allowExternal) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         String effectiveLabel = label == null ? "QR Code" : label;
         String backHref = resolveBackHref(contextPath, back);
@@ -67,12 +101,15 @@ public class AdminQrCodeServlet extends HttpServlet {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>QR Code</h2>");
                 panelOut.println("        <p><strong>Link:</strong> " + escapeHtml(effectiveLabel) + "</p>");
-                panelOut.println("        <p><strong>Target Path:</strong> " + escapeHtml(targetPath) + "</p>");
+                panelOut.println("        <p><strong>Target:</strong> " + escapeHtml(targetPath) + "</p>");
                 panelOut.println(
                         "        <p><strong>Resolved URL:</strong> <a href=\"" + escapeHtml(resolvedUrl) + "\">"
                                 + escapeHtml(resolvedUrl) + "</a></p>");
                 panelOut.println("        <p><img src=\"" + qrCodeDataUrl + "\" alt=\"QR code for "
                         + escapeHtml(effectiveLabel) + "\" style=\"max-width:360px;width:100%;height:auto\" /></p>");
+                panelOut.println("        <p><a href=\"" + escapeHtml(contextPath)
+                        + "/admin/qr?allowExternal=" + (allowExternal ? "true" : "false")
+                        + "\">Generate another</a></p>");
                 panelOut.println("        <p><a href=\"" + escapeHtml(backHref) + "\">Back</a></p>");
                 panelOut.println("      </section>");
             });
@@ -151,6 +188,22 @@ public class AdminQrCodeServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean parseBooleanFlag(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase();
+        return "true".equals(normalized) || "1".equals(normalized) || "on".equals(normalized);
+    }
+
+    private boolean isAbsoluteUrl(String value) {
+        try {
+            return URI.create(value).isAbsolute();
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 
     private String orDefault(String value, String defaultValue) {

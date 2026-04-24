@@ -24,6 +24,10 @@ public class PublicUrlService {
     }
 
     public String normalizeInternalPath(String internalPath) {
+        return normalizeInternalPath(internalPath, false);
+    }
+
+    public String normalizeInternalPath(String internalPath, boolean allowExternalUrl) {
         if (internalPath == null) {
             throw new IllegalArgumentException("Target path is required.");
         }
@@ -31,9 +35,6 @@ public class PublicUrlService {
         String value = internalPath.trim();
         if (value.isEmpty()) {
             throw new IllegalArgumentException("Target path is required.");
-        }
-        if (!value.startsWith("/") || value.startsWith("//")) {
-            throw new IllegalArgumentException("Target path must begin with a single '/'.");
         }
         if (value.contains("\r") || value.contains("\n")) {
             throw new IllegalArgumentException("Target path is invalid.");
@@ -45,8 +46,15 @@ public class PublicUrlService {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("Target path is invalid.", ex);
         }
+
         if (uri.isAbsolute()) {
+            if (allowExternalUrl) {
+                return value;
+            }
             throw new IllegalArgumentException("Target path must be an internal application path.");
+        }
+        if (!value.startsWith("/") || value.startsWith("//")) {
+            throw new IllegalArgumentException("Target path must begin with a single '/'.");
         }
         if (uri.getPath() == null || uri.getPath().isBlank()) {
             throw new IllegalArgumentException("Target path is invalid.");
