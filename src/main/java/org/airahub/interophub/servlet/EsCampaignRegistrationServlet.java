@@ -146,7 +146,10 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
             out.println("<body>");
             out.println("  <main class=\"container\">");
             out.println("    <h1>" + escapeHtml(orEmpty(campaign.getCampaignName())) + "</h1>");
-            out.println("    <p>Register to participate and share your input.</p>");
+            out.println(
+                    "    <p>Stay involved after the meeting. Register to receive updates and invitations for the topics you follow.</p>");
+            out.println(
+                    "    <p><em>Note:</em> Registration is not required for participation. </p><br/>");
             if (errorMessage != null) {
                 out.println("    <p><strong>Could not submit:</strong> " + escapeHtml(errorMessage) + "</p>");
             }

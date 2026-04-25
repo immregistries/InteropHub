@@ -149,6 +149,18 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
         }
 
         String action = trimToNull(request.getParameter("roundAction"));
+        String cleanupAction = trimToNull(request.getParameter("cleanupAction"));
+        boolean cleanupConfirmed = "1".equals(request.getParameter("confirmCleanup"));
+
+        if ("cleanup".equalsIgnoreCase(cleanupAction)
+                && campaign.get().getStatus() == EsCampaign.CampaignStatus.DRAFT
+                && cleanupConfirmed) {
+            Long campaignId = campaign.get().getEsCampaignId();
+            interestDao.deleteByCampaignId(campaignId);
+            subscriptionDao.deleteBySourceCampaignId(campaignId);
+            registrationDao.deleteByCampaignId(campaignId);
+        }
+
         if ("next".equalsIgnoreCase(action)) {
             campaignDao.changeRoundByDelta(campaign.get().getEsCampaignId(), 1);
         } else if ("previous".equalsIgnoreCase(action)) {
@@ -285,6 +297,12 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
                     : campaign.getCurrentRoundNo();
             out.println("    <div class=\"es-reg-grid\">");
             out.println("      <section class=\"es-reg-left\">");
+
+            if (campaign.getStatus() != EsCampaign.CampaignStatus.ACTIVE) {
+                out.println("        <p class=\"es-reg-mode-badge\">Mode: "
+                        + escapeHtml(String.valueOf(campaign.getStatus())) + "</p>");
+            }
+
             out.println("        <p class=\"es-reg-count\">" + count + "</p>");
 
             String namesCsv = firstNames.stream()
@@ -314,6 +332,29 @@ public class AdminEsCampaignRegistrationDisplayServlet extends HttpServlet {
             }
             out.println("          </tbody>");
             out.println("        </table>");
+
+            if (campaign.getStatus() == EsCampaign.CampaignStatus.DRAFT) {
+                out.println("        <section class=\"es-reg-cleanup\">");
+                out.println("          <h2>Cleanup</h2>");
+                out.println("          <form method=\"post\" action=\"" + contextPath + "/admin/es/registrations\">");
+                out.println("            <input type=\"hidden\" name=\"campaignCode\" value=\""
+                        + escapeHtml(orEmpty(campaign.getCampaignCode())) + "\" />");
+                out.println("            <input type=\"hidden\" name=\"nameLimit\" value=\"" + nameLimit + "\" />");
+                if (autoRefreshActive) {
+                    out.println("            <input type=\"hidden\" name=\"auto\" value=\"1\" />");
+                    out.println("            <input type=\"hidden\" name=\"startedAt\" value=\"" + startedAt
+                            + "\" />");
+                }
+                out.println("            <input type=\"hidden\" name=\"cleanupAction\" value=\"cleanup\" />");
+                out.println("            <label class=\"es-reg-cleanup-confirm\">");
+                out.println("              <input type=\"checkbox\" name=\"confirmCleanup\" value=\"1\" />");
+                out.println("              delete all registrations, topics followed, and table votes");
+                out.println("            </label>");
+                out.println("            <button type=\"submit\">Cleanup</button>");
+                out.println("          </form>");
+                out.println("        </section>");
+            }
+
             out.println("      </section>");
 
             long toggleStartedAt = System.currentTimeMillis();

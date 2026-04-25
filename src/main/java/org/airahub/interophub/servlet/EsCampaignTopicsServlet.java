@@ -350,6 +350,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                         + "\" aria-label=\"Close confirmation\"></a>");
                 out.println("    <section id=\"es-confirm-sheet\" class=\"es-confirm-sheet\">");
                 out.println("      <h2>Confirm Following</h2>");
+                out.println(
+                        "      <p class=\"es-topics-help\">When a topic you follow becomes active because a meeting is scheduled, a discussion opens, or progress is made, we'll send you an email so you don't miss it. You can opt out at any time.</p>");
                 if (confirmationError != null) {
                     out.println("      <p class=\"es-confirm-error\">" + escapeHtml(confirmationError) + "</p>");
                 }

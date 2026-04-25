@@ -74,4 +74,25 @@ public class EsCampaignRegistrationDao extends GenericDao<EsCampaignRegistration
                     .uniqueResultOptional();
         }
     }
+
+    public int deleteByCampaignId(Long esCampaignId) {
+        if (esCampaignId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int deleted = session.createMutationQuery(
+                    "delete from EsCampaignRegistration r where r.esCampaignId = :campaignId")
+                    .setParameter("campaignId", esCampaignId)
+                    .executeUpdate();
+            tx.commit();
+            return deleted;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
 }

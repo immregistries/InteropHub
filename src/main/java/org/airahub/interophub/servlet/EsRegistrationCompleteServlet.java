@@ -375,11 +375,12 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
             out.println("        </form>");
             out.println("      </section>");
 
-            out.println("      <section class=\"es-stage-group\">\n"
-                    + "        <h2 class=\"es-stage-title\">Topics</h2>\n"
-                    + "        <p>Follow topics you care about and get updates.</p>\n"
-                    + "        <p><a class=\"button-link\" href=\"" + contextPath + "/topics/" + encodedCampaignCode
-                    + "\">Explore topics</a></p>\n"
+            out.println("      <section class=\"es-stage-group es-topics-next-step\">\n"
+                    + "        <h2 class=\"es-stage-title\">Next Step: Choose Topics to Follow</h2>\n"
+                    + "        <p>Browse all topics and select the ones you want to follow.</p>\n"
+                    + "        <p class=\"es-topics-help\">Selecting topics to follow is not required for this meeting; instead, your selections will be used later to notify you when progress is made or discussions start on those topics.</p>\n"
+                    + "        <p><a class=\"es-primary-cta\" href=\"" + contextPath + "/topics/" + encodedCampaignCode
+                    + "\">Choose Topics to Follow</a></p>\n"
                     + "      </section>");
             out.println("    </section>");
             out.println("  </main>");
