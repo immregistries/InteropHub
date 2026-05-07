@@ -74,7 +74,6 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             AdminShellRenderer.render(out, "Registered Users - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>Users &amp; Prospects</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">&larr; Back to Welcome</a></p>");
 
                 // --- Search bar ---
                 panelOut.println("        <form method=\"get\" action=\"" + contextPath + "/admin/users\">");

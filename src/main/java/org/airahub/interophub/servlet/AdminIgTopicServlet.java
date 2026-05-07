@@ -204,7 +204,6 @@ public class AdminIgTopicServlet extends HttpServlet {
                         "          <p><a href=\"" + contextPath + "/admin/topics?mode=new\">Add New IG Topic</a></p>");
                 panelOut.println("        </section>");
 
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
                 panelOut.println("      </section>");
             });
         }

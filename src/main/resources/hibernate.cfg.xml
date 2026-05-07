@@ -47,5 +47,6 @@
     <mapping class="org.airahub.interophub.model.EsCampaignRegistration"/>
     <mapping class="org.airahub.interophub.model.EsTopicMeeting"/>
     <mapping class="org.airahub.interophub.model.EsTopicMeetingMember"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingAttendance"/>
   </session-factory>
 </hibernate-configuration>

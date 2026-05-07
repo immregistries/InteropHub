@@ -282,7 +282,6 @@ public class AdminAppRegistryServlet extends HttpServlet {
                         "          <p><a href=\"" + contextPath
                                 + "/admin/apps?mode=new\">Add New App Registry Entry</a></p>");
                 panelOut.println("        </section>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Back to Welcome</a></p>");
                 panelOut.println("      </section>");
             });
         }

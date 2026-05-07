@@ -131,7 +131,6 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
             AdminShellRenderer.render(out, "App Login Statistics - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>App Login Statistics</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">&larr; Back to Welcome</a></p>");
 
                 int totalCols = monthColumns.length + 1;
                 panelOut.println("        <table class=\"data-table\">");

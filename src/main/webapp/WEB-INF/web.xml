@@ -351,6 +351,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsMeetingAttendanceServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingAttendanceServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsRegistrationCompleteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsRegistrationCompleteServlet</servlet-class>
   </servlet>
@@ -368,6 +373,11 @@
   <servlet-mapping>
     <servlet-name>EsRegisterForMeetingServlet</servlet-name>
     <url-pattern>/registerForMeeting/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingAttendanceServlet</servlet-name>
+    <url-pattern>/attend/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

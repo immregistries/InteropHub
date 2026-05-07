@@ -1221,6 +1221,223 @@ a.doc-card {
 
 .es-table-health-wrap {
   margin-bottom: 0.8rem;
+}
+
+/* -------------------------
+   Meeting Attendance Page (/attend/*)
+   ------------------------- */
+.attend-page {
+  width: min(760px, 92vw);
+}
+
+.attend-heading {
+  margin: 0 0 0.5rem;
+  color: var(--accent);
+}
+
+.attend-description {
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+}
+
+.attend-success-msg {
+  padding: 0.75rem 1rem;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  border-radius: 8px;
+  color: #065f46;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+}
+
+.attend-form {
+  display: grid;
+  gap: 0.7rem;
+  margin-bottom: 2rem;
+}
+
+.attend-form label {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.attend-form input[type="text"],
+.attend-form input[type="email"] {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #bac6db;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.attend-form input[type="text"]:focus,
+.attend-form input[type="email"]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.attend-required {
+  color: #b42318;
+}
+
+.attend-error {
+  padding: 0.65rem 0.9rem;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  color: #991b1b;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.attend-logged-in-notice {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.attend-mode-toggle {
+  font-size: 0.9rem;
+  margin-top: -0.3rem;
+}
+
+.attend-action-fieldset {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.attend-action-fieldset legend {
+  font-weight: 600;
+  font-size: 0.95rem;
+  padding: 0 0.25rem;
+}
+
+.attend-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: normal;
+  cursor: pointer;
+}
+
+.attend-checkbox-row {
+  margin-top: 0.5rem;
+}
+
+.attend-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.attend-checkbox-label input[type="checkbox"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.attend-hope-textarea {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #bac6db;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.attend-hope-textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.attend-submit-btn {
+  justify-self: start;
+  padding: 0.75rem 1.5rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.attend-submit-btn:hover {
+  filter: brightness(0.93);
+}
+
+/* Attendees section */
+.attend-attendees-section {
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1.5rem;
+}
+
+.attend-attendees-heading {
+  margin: 0 0 1rem;
+  font-size: 1.2rem;
+  color: #0f172a;
+}
+
+.attend-no-attendees {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.attend-attendee-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+}
+
+.attend-attendee-table th,
+.attend-attendee-table td {
+  border: 1px solid var(--border);
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.95rem;
+}
+
+.attend-attendee-table th {
+  background: #f1f5fb;
+  font-weight: 600;
+}
+
+.attend-attendee-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+/* Hopes section */
+.attend-hopes-section {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.attend-hopes-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: #0f172a;
+}
+
+.attend-hopes-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.attend-hopes-list li {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
   overflow-x: auto;
 }
 

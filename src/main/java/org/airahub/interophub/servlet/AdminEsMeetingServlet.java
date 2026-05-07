@@ -2,6 +2,8 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -14,14 +16,17 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.AdminMeetingBrowseRow;
+import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicMeetingMember.MembershipStatus;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.PublicUrlService;
 
 public class AdminEsMeetingServlet extends HttpServlet {
 
@@ -30,13 +35,17 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final EsTopicMeetingDao meetingDao;
     private final EsTopicMeetingMemberDao memberDao;
+    private final EsTopicDao topicDao;
     private final UserDao userDao;
+    private final PublicUrlService publicUrlService;
 
     public AdminEsMeetingServlet() {
         this.authFlowService = new AuthFlowService();
         this.meetingDao = new EsTopicMeetingDao();
         this.memberDao = new EsTopicMeetingMemberDao();
+        this.topicDao = new EsTopicDao();
         this.userDao = new UserDao();
+        this.publicUrlService = new PublicUrlService();
     }
 
     @Override
@@ -196,6 +205,19 @@ public class AdminEsMeetingServlet extends HttpServlet {
         Map<Long, User> usersById = loadUsersByMembers(requested, approved, declined, removed);
         Long meetingId = meeting.getEsTopicMeetingId();
 
+        EsTopic topic = meeting.getEsTopicId() != null
+                ? topicDao.findById(meeting.getEsTopicId()).orElse(null)
+                : null;
+        String topicCode = topic != null ? topic.getTopicCode() : null;
+        String backPath = "/admin/es/meetings?meetingId=" + meetingId;
+        String attendancePath = topicCode != null ? "/attend/" + encodePathSegment(topicCode) : null;
+        String attendanceAbsoluteUrl = attendancePath != null
+                ? publicUrlService.resolveExternalUrl(attendancePath)
+                : null;
+        String attendanceQrUrl = attendancePath != null
+                ? buildQrPageUrl(contextPath, attendancePath, "Meeting Attendance", backPath)
+                : null;
+
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Meeting Members - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
@@ -203,6 +225,12 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
                 if (message != null && !message.isBlank()) {
                     panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
+                }
+
+                if (attendanceAbsoluteUrl != null) {
+                    panelOut.println("        <p><strong>Attendance URL:</strong> <a href=\""
+                            + escapeHtml(attendanceAbsoluteUrl) + "\">" + escapeHtml(attendanceAbsoluteUrl)
+                            + "</a> (<a href=\"" + escapeHtml(attendanceQrUrl) + "\">qr code</a>)</p>");
                 }
 
                 if (!requested.isEmpty()) {
@@ -361,6 +389,20 @@ public class AdminEsMeetingServlet extends HttpServlet {
             return value;
         }
         return Character.toUpperCase(value.charAt(0)) + value.substring(1);
+    }
+
+    private String buildQrPageUrl(String contextPath, String targetPath, String label, String backPath) {
+        return contextPath + "/admin/qr?target=" + encodeQueryComponent(targetPath)
+                + "&label=" + encodeQueryComponent(label)
+                + "&back=" + encodeQueryComponent(backPath);
+    }
+
+    private String encodePathSegment(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String encodeQueryComponent(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     private String escapeHtml(String value) {
