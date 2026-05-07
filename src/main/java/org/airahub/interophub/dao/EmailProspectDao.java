@@ -1,6 +1,5 @@
 package org.airahub.interophub.dao;
 
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.airahub.interophub.config.HibernateUtil;
@@ -15,7 +14,7 @@ public class EmailProspectDao {
     public long countProspects() {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Object result = session
-                    .createNativeQuery("SELECT COUNT(*) FROM v_email_prospect")
+                    .createNativeQuery("SELECT COUNT(*) FROM v_email_prospect", Object.class)
                     .getSingleResult();
             return ((Number) result).longValue();
         }
