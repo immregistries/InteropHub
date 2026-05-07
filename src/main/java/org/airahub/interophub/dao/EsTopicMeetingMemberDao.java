@@ -200,6 +200,22 @@ public class EsTopicMeetingMemberDao extends GenericDao<EsTopicMeetingMember, Lo
         }
     }
 
+    public List<EsTopicMeetingMember> findByMeetingIdAndStatus(Long esTopicMeetingId,
+            EsTopicMeetingMember.MembershipStatus status) {
+        if (esTopicMeetingId == null || status == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopicMeetingMember m where m.esTopicMeetingId = :meetingId"
+                            + " and m.membershipStatus = :status order by m.createdAt asc",
+                    EsTopicMeetingMember.class)
+                    .setParameter("meetingId", esTopicMeetingId)
+                    .setParameter("status", status)
+                    .getResultList();
+        }
+    }
+
     public EsTopicMeetingMember saveOrUpdate(EsTopicMeetingMember member) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

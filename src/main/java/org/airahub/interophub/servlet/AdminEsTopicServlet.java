@@ -15,10 +15,12 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCommentDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
+import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
@@ -32,6 +34,7 @@ public class AdminEsTopicServlet extends HttpServlet {
     private final EsTopicDao esTopicDao;
     private final EsTopicMeetingDao esTopicMeetingDao;
     private final EsCommentDao esCommentDao;
+    private final EsSubscriptionDao esSubscriptionDao;
     private final UserDao userDao;
 
     public AdminEsTopicServlet() {
@@ -39,6 +42,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         this.esTopicDao = new EsTopicDao();
         this.esTopicMeetingDao = new EsTopicMeetingDao();
         this.esCommentDao = new EsCommentDao();
+        this.esSubscriptionDao = new EsSubscriptionDao();
         this.userDao = new UserDao();
     }
 
@@ -72,7 +76,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 return;
             }
 
-            renderDetails(response, contextPath, topic, meeting, esCommentDao.findByTopicId(topicId));
+            List<EsSubscription> subscriptions = esSubscriptionDao.findActiveByTopicId(topicId);
+            renderDetails(response, contextPath, topic, meeting, esCommentDao.findByTopicId(topicId), subscriptions);
             return;
         }
 
@@ -258,11 +263,12 @@ public class AdminEsTopicServlet extends HttpServlet {
     }
 
     private void renderDetails(HttpServletResponse response, String contextPath, EsTopic topic, EsTopicMeeting meeting,
-            List<EsComment> comments)
+            List<EsComment> comments, List<EsSubscription> subscriptions)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
         Map<Long, User> usersById = loadUsersById(comments);
+        Map<Long, User> subUsersById = loadUsersByIdFromSubscriptions(subscriptions);
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "ES Topic Details - InteropHub", contextPath, panelOut -> {
@@ -322,6 +328,38 @@ public class AdminEsTopicServlet extends HttpServlet {
                             + (Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? "Yes" : "No") + "</p>");
                     panelOut.println("          <p><strong>Meeting Status:</strong> "
                             + escapeHtml(meeting.getStatus() == null ? "" : meeting.getStatus().name()) + "</p>");
+                }
+                panelOut.println("        </section>");
+
+                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("          <h3>Subscriptions (" + subscriptions.size() + ")</h3>");
+                if (subscriptions.isEmpty()) {
+                    panelOut.println("          <p>No subscriptions.</p>");
+                } else {
+                    panelOut.println("          <table class=\"data-table\">");
+                    panelOut.println("            <thead>");
+                    panelOut.println("              <tr>");
+                    panelOut.println("                <th>Email</th>");
+                    panelOut.println("                <th>Display Name</th>");
+                    panelOut.println("                <th>Organization</th>");
+                    panelOut.println("                <th>Subscribed On</th>");
+                    panelOut.println("              </tr>");
+                    panelOut.println("            </thead>");
+                    panelOut.println("            <tbody>");
+                    for (EsSubscription sub : subscriptions) {
+                        User subUser = sub.getUserId() != null ? subUsersById.get(sub.getUserId()) : null;
+                        panelOut.println("              <tr>");
+                        panelOut.println("                <td>" + escapeHtml(orEmpty(sub.getEmail())) + "</td>");
+                        panelOut.println("                <td>"
+                                + escapeHtml(subUser == null ? "" : orEmpty(subUser.getDisplayName())) + "</td>");
+                        panelOut.println("                <td>"
+                                + escapeHtml(subUser == null ? "" : orEmpty(subUser.getOrganization())) + "</td>");
+                        panelOut.println("                <td>" + escapeHtml(formatCommentDate(sub.getCreatedAt()))
+                                + "</td>");
+                        panelOut.println("              </tr>");
+                    }
+                    panelOut.println("            </tbody>");
+                    panelOut.println("          </table>");
                 }
                 panelOut.println("        </section>");
 
@@ -562,6 +600,19 @@ public class AdminEsTopicServlet extends HttpServlet {
     private Map<Long, User> loadUsersById(List<EsComment> comments) {
         List<Long> userIds = comments.stream()
                 .map(EsComment::getUserId)
+                .filter(id -> id != null)
+                .distinct()
+                .collect(Collectors.toCollection(ArrayList::new));
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userDao.findByIds(userIds).stream()
+                .collect(Collectors.toMap(User::getUserId, user -> user, (left, right) -> left, LinkedHashMap::new));
+    }
+
+    private Map<Long, User> loadUsersByIdFromSubscriptions(List<EsSubscription> subscriptions) {
+        List<Long> userIds = subscriptions.stream()
+                .map(EsSubscription::getUserId)
                 .filter(id -> id != null)
                 .distinct()
                 .collect(Collectors.toCollection(ArrayList::new));
