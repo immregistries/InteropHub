@@ -67,4 +67,47 @@ public class UserDao extends GenericDao<User, Long> {
                     .getResultList();
         }
     }
+
+    public long countActiveUsers() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select count(u) from User u where u.status = 'ACTIVE'", Long.class)
+                    .getSingleResult();
+        }
+    }
+
+    public long countRecentLogins() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select count(u) from User u where u.status = 'ACTIVE' and u.lastLoginAt >= :since", Long.class)
+                    .setParameter("since", java.time.LocalDateTime.now().minusDays(30))
+                    .getSingleResult();
+        }
+    }
+
+    public List<User> findRecentLogins(int limit) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from User u where u.status = 'ACTIVE' and u.lastLoginAt >= :since order by u.lastLoginAt desc",
+                    User.class)
+                    .setParameter("since", java.time.LocalDateTime.now().minusDays(30))
+                    .setMaxResults(limit)
+                    .getResultList();
+        }
+    }
+
+    public List<User> searchRecentLogins(String query) {
+        String pattern = "%" + query.trim().toLowerCase() + "%";
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from User u where u.status = 'ACTIVE' and u.lastLoginAt >= :since" +
+                            " and (lower(u.email) like :p or lower(u.firstName) like :p or lower(u.lastName) like :p or lower(u.organization) like :p)"
+                            +
+                            " order by u.lastLoginAt desc",
+                    User.class)
+                    .setParameter("since", java.time.LocalDateTime.now().minusDays(30))
+                    .setParameter("p", pattern)
+                    .getResultList();
+        }
+    }
 }

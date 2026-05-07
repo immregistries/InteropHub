@@ -1393,3 +1393,45 @@ a.doc-card p:last-child {
 .legal-footer a {
   color: var(--accent);
 }
+
+/* -------------------------
+   Admin Users Funnel Dashboard
+   ------------------------- */
+.stat-cards {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1rem 0 1.75rem;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 160px;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f4f8ff;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.07);
+  text-align: center;
+}
+
+.stat-card-value {
+  display: block;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #1b3a75;
+  line-height: 1.1;
+}
+
+.stat-card-label {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
