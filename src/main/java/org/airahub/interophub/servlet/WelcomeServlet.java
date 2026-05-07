@@ -52,9 +52,9 @@ public class WelcomeServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
         String contextPath = request.getContextPath();
         boolean adminUser = authFlowService.isAdminUser(user);
-        String name = user.getDisplayName() == null || user.getDisplayName().isBlank()
+        String name = user.getFullName() == null || user.getFullName().isBlank()
                 ? user.getEmail()
-                : user.getDisplayName();
+                : user.getFullName();
         List<AppRegistry> availableApps = appRegistryDao.findAllOrdered().stream()
                 .filter(app -> Boolean.TRUE.equals(app.getEnabled()))
                 .filter(app -> !Boolean.TRUE.equals(app.getKillSwitch()))

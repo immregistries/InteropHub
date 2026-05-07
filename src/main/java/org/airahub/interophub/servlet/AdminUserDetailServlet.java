@@ -70,7 +70,7 @@ public class AdminUserDetailServlet extends HttpServlet {
                 row(out, "User ID", String.valueOf(user.getUserId()));
                 row(out, "Email", user.getEmail());
                 row(out, "Email (normalized)", user.getEmailNormalized());
-                row(out, "Display Name", user.getDisplayName());
+                row(out, "Name", user.getFullName());
                 row(out, "Organization", user.getOrganization());
                 row(out, "Role Title", user.getRoleTitle());
                 row(out, "Email Verified", String.valueOf(Boolean.TRUE.equals(user.getEmailVerified())));

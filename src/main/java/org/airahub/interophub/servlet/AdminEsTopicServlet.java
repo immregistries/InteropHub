@@ -351,7 +351,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                         panelOut.println("              <tr>");
                         panelOut.println("                <td>" + escapeHtml(orEmpty(sub.getEmail())) + "</td>");
                         panelOut.println("                <td>"
-                                + escapeHtml(subUser == null ? "" : orEmpty(subUser.getDisplayName())) + "</td>");
+                                + escapeHtml(subUser == null ? "" : orEmpty(subUser.getFullName())) + "</td>");
                         panelOut.println("                <td>"
                                 + escapeHtml(subUser == null ? "" : orEmpty(subUser.getOrganization())) + "</td>");
                         panelOut.println("                <td>" + escapeHtml(formatCommentDate(sub.getCreatedAt()))
@@ -626,7 +626,7 @@ public class AdminEsTopicServlet extends HttpServlet {
     private String resolveCommentAuthor(EsComment comment, Map<Long, User> usersById) {
         if (comment.getUserId() != null) {
             User user = usersById.get(comment.getUserId());
-            String displayName = user == null ? null : trimToNull(user.getDisplayName());
+            String displayName = user == null ? null : trimToNull(user.getFullName());
             if (displayName != null) {
                 return displayName;
             }

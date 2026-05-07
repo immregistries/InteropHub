@@ -469,7 +469,7 @@ public class EsTopicsServlet extends HttpServlet {
         }
 
         if (authenticatedUser.isPresent()) {
-            String identity = trimToNull(authenticatedUser.get().getDisplayName());
+            String identity = trimToNull(authenticatedUser.get().getFullName());
             if (identity == null) {
                 identity = orEmpty(authenticatedUser.get().getEmail());
             }

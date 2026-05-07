@@ -213,7 +213,7 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
         if (user == null) {
             return "(unknown user)";
         }
-        String name = user.getDisplayName();
+        String name = user.getFullName();
         if (name != null && !name.isBlank()) {
             return name;
         }

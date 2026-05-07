@@ -36,7 +36,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(SendWelcomeEmailServlet.class.getName());
     private static final int MAX_EMAIL_LENGTH = 254;
     private static final int MAX_EMAIL_LOCAL_PART_LENGTH = 64;
-    private static final int MAX_DISPLAY_NAME_LENGTH = 60;
+    private static final int MAX_FIRST_NAME_LENGTH = 60;
+    private static final int MAX_LAST_NAME_LENGTH = 60;
     private static final int MAX_ORGANIZATION_LENGTH = 120;
     private static final int MAX_ROLE_TITLE_LENGTH = 120;
 
@@ -69,7 +70,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         String email = trimToNull(request.getParameter("email"));
         String normalizedEmail = normalizeEmail(email);
         String contextPath = request.getContextPath();
-        String displayName = trimToNull(request.getParameter("displayName"));
+        String firstName = trimToNull(request.getParameter("firstName"));
+        String lastName = trimToNull(request.getParameter("lastName"));
         String organization = trimToNull(request.getParameter("organization"));
         String roleTitle = trimToNull(request.getParameter("roleTitle"));
         Set<Long> selectedLegalTermIds = parseSelectedRegistrationTermIds(request);
@@ -124,7 +126,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                     user = existingUser.get();
                     auditUser = user;
                 } else if (!profileSubmission) {
-                    renderProfileForm(out, contextPath, email, displayName, organization, roleTitle,
+                    renderProfileForm(out, contextPath, email, firstName, lastName, organization, roleTitle,
                             selectedLegalTermIds,
                             Map.of(),
                             null,
@@ -135,14 +137,15 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                     out.println("</html>");
                     return;
                 } else {
-                    Map<String, String> fieldErrors = validateRegistrationFields(displayName, organization, roleTitle);
+                    Map<String, String> fieldErrors = validateRegistrationFields(firstName, lastName, organization,
+                            roleTitle);
                     List<LegalTerm> registrationTerms = loadRegistrationTerms();
                     if (registrationTerms.isEmpty()) {
                         throw new IllegalArgumentException(
                                 "Registration terms are not configured. Please contact support.");
                     }
                     if (!fieldErrors.isEmpty()) {
-                        renderProfileForm(out, contextPath, email, displayName, organization, roleTitle,
+                        renderProfileForm(out, contextPath, email, firstName, lastName, organization, roleTitle,
                                 selectedLegalTermIds,
                                 fieldErrors,
                                 null,
@@ -161,7 +164,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
 
                     user = authService.registerUser(
                             normalizedEmail,
-                            displayName,
+                            firstName,
+                            lastName,
                             organization,
                             roleTitle);
                     auditUser = user;
@@ -227,7 +231,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 LOGGER.log(Level.INFO, "Could not complete registration request: {0}", ex.getMessage());
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 if (profileSubmission && normalizedEmail != null) {
-                    renderProfileForm(out, contextPath, email, displayName, organization, roleTitle,
+                    renderProfileForm(out, contextPath, email, firstName, lastName, organization, roleTitle,
                             selectedLegalTermIds,
                             Map.of(),
                             ex.getMessage(),
@@ -262,7 +266,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 LOGGER.log(Level.SEVERE, "Failed to issue magic link or send welcome email.", ex);
                 response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
                 if (profileSubmission && normalizedEmail != null) {
-                    renderProfileForm(out, contextPath, email, displayName, organization, roleTitle,
+                    renderProfileForm(out, contextPath, email, firstName, lastName, organization, roleTitle,
                             selectedLegalTermIds,
                             Map.of(),
                             ex.getMessage(),
@@ -289,9 +293,9 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
     }
 
-    private void renderProfileForm(PrintWriter out, String contextPath, String email, String displayName,
-            String organization, String roleTitle, Set<Long> selectedLegalTermIds, Map<String, String> fieldErrors,
-            String errorMessage,
+    private void renderProfileForm(PrintWriter out, String contextPath, String email, String firstName,
+            String lastName, String organization, String roleTitle, Set<Long> selectedLegalTermIds,
+            Map<String, String> fieldErrors, String errorMessage,
             AuthFlowService.ExternalAuthRequest externalAuthRequest) {
         List<LegalTerm> registrationTerms = loadRegistrationTerms();
 
@@ -317,12 +321,17 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                     + escapeHtml(externalAuthRequest.getRequestedUrl()) + "\" />");
         }
 
-        out.println("      <label for=\"displayName\">Display Name" + renderFieldError(fieldErrors, "displayName")
+        out.println("      <label for=\"firstName\">First Name" + renderFieldError(fieldErrors, "firstName")
                 + "</label>");
-        out.println("      <div class=\"field-hint\">Your first and last name for others to see</div>");
-        out.println("      <input id=\"displayName\" name=\"displayName\" type=\"text\" required maxlength=\""
-                + MAX_DISPLAY_NAME_LENGTH + "\" value=\""
-                + escapeHtml(orEmpty(displayName)) + "\" />");
+        out.println("      <input id=\"firstName\" name=\"firstName\" type=\"text\" required maxlength=\""
+                + MAX_FIRST_NAME_LENGTH + "\" value=\""
+                + escapeHtml(orEmpty(firstName)) + "\" />");
+
+        out.println("      <label for=\"lastName\">Last Name" + renderFieldError(fieldErrors, "lastName")
+                + "</label>");
+        out.println("      <input id=\"lastName\" name=\"lastName\" type=\"text\" maxlength=\""
+                + MAX_LAST_NAME_LENGTH + "\" value=\""
+                + escapeHtml(orEmpty(lastName)) + "\" />");
 
         out.println("      <label for=\"organization\">Organization" + renderFieldError(fieldErrors, "organization")
                 + "</label>");
@@ -393,13 +402,17 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         return true;
     }
 
-    private Map<String, String> validateRegistrationFields(String displayName, String organization, String roleTitle) {
+    private Map<String, String> validateRegistrationFields(String firstName, String lastName, String organization,
+            String roleTitle) {
         Map<String, String> fieldErrors = new LinkedHashMap<>();
 
-        if (!isValidDisplayName(displayName)) {
-            fieldErrors.put("displayName",
-                    "Enter your full first and last name (2+ characters each, max " + MAX_DISPLAY_NAME_LENGTH
-                            + ").");
+        if (!isValidName(firstName)) {
+            fieldErrors.put("firstName",
+                    "Enter your first name (2+ characters, max " + MAX_FIRST_NAME_LENGTH + ").");
+        }
+        if (lastName != null && !isValidName(lastName)) {
+            fieldErrors.put("lastName",
+                    "Last name must be 2+ characters if provided (max " + MAX_LAST_NAME_LENGTH + ").");
         }
         if (!isValidOrganization(organization)) {
             fieldErrors.put("organization",
@@ -415,22 +428,11 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         return fieldErrors;
     }
 
-    private boolean isValidDisplayName(String displayName) {
-        if (displayName == null || displayName.length() < 5 || displayName.length() > MAX_DISPLAY_NAME_LENGTH) {
+    private boolean isValidName(String name) {
+        if (name == null || name.length() < 2 || name.length() > MAX_FIRST_NAME_LENGTH) {
             return false;
         }
-        if (!containsOnlySafeDisplayNameChars(displayName)) {
-            return false;
-        }
-
-        String[] nameParts = displayName.split("\\s+");
-        if (nameParts.length < 2) {
-            return false;
-        }
-
-        String firstName = nameParts[0];
-        String lastName = nameParts[nameParts.length - 1];
-        return countLetters(firstName) >= 2 && countLetters(lastName) >= 2;
+        return containsOnlySafeDisplayNameChars(name) && countLetters(name) >= 2;
     }
 
     private boolean isValidOrganization(String organization) {

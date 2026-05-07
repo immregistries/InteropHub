@@ -19,13 +19,14 @@ public class AuthService {
         return userDao.findByEmail(email);
     }
 
-    public User registerUser(String email, String displayName, String organization, String roleTitle) {
+    public User registerUser(String email, String firstName, String lastName, String organization, String roleTitle) {
         LOGGER.info("Registering a new placeholder user.");
         User user = new User();
         String normalizedEmail = email == null ? null : email.trim().toLowerCase();
         user.setEmail(email == null ? null : email.trim());
         user.setEmailNormalized(normalizedEmail);
-        user.setDisplayName(displayName == null ? null : displayName.trim());
+        user.setFirstName(firstName == null ? null : firstName.trim());
+        user.setLastName(lastName == null ? null : lastName.trim());
         user.setOrganization(organization == null ? null : organization.trim());
         user.setRoleTitle(roleTitle == null ? null : roleTitle.trim());
         user.setStatus(User.UserStatus.ACTIVE);

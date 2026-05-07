@@ -259,7 +259,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
             out.println("              <tr>");
             out.println("                <td>" + escapeHtml(orEmpty(member.getEmail())) + "</td>");
             out.println("                <td>"
-                    + escapeHtml(user != null ? orEmpty(user.getDisplayName()) : "") + "</td>");
+                    + escapeHtml(user != null ? orEmpty(user.getFullName()) : "") + "</td>");
             out.println("                <td>"
                     + escapeHtml(user != null ? orEmpty(user.getOrganization()) : "") + "</td>");
             out.println("                <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");

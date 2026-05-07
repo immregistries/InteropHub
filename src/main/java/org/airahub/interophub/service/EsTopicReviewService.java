@@ -120,7 +120,7 @@ public class EsTopicReviewService {
     }
 
     private NameParts deriveNameParts(User user) {
-        String displayName = trimToNull(user.getDisplayName());
+        String displayName = trimToNull(user.getFullName());
         if (displayName != null) {
             String[] parts = displayName.split("\\s+");
             String first = trimToNull(parts.length > 0 ? parts[0] : null);

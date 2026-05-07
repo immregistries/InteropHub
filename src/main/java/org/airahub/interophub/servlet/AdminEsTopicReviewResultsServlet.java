@@ -151,7 +151,7 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
     }
 
     private String responderLabel(EsTopicReviewDao.ResponderRow responder) {
-        String display = trimToNull(responder.getDisplayName());
+        String display = trimToNull(responder.getFullName());
         if (display == null) {
             display = trimToNull(responder.getEmailNormalized());
         }

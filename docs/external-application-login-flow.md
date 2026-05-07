@@ -106,6 +106,8 @@ Successful response (`200 OK`):
   "hub_user_id": 123,
   "email": "user@example.org",
   "name": "Jane Doe",
+  "first_name": "Jane",
+  "last_name": "Doe",
   "organization": "AIRA",
   "title": "Developer",
   "requested_url": "https://app.example.org/workspace/42",

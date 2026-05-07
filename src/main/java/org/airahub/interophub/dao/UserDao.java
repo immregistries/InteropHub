@@ -61,7 +61,7 @@ public class UserDao extends GenericDao<User, Long> {
         String pattern = "%" + query.trim().toLowerCase() + "%";
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from User u where lower(u.email) like :p or lower(u.displayName) like :p or lower(u.organization) like :p order by u.createdAt desc",
+                    "from User u where lower(u.email) like :p or lower(u.firstName) like :p or lower(u.lastName) like :p or lower(u.organization) like :p order by u.createdAt desc",
                     User.class)
                     .setParameter("p", pattern)
                     .getResultList();

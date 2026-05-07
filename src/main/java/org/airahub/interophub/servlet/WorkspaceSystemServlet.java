@@ -792,7 +792,7 @@ public class WorkspaceSystemServlet extends HttpServlet {
     private String userDisplayName(User u) {
         if (u == null)
             return "";
-        String name = trimToNull(u.getDisplayName());
+        String name = trimToNull(u.getFullName());
         return name != null ? name : orEmpty(u.getEmail());
     }
 

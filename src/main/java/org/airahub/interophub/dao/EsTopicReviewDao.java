@@ -81,11 +81,11 @@ public class EsTopicReviewDao extends GenericDao<EsTopicReview, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsTopicReviewDao$ResponderRow("
-                            + " u.userId, u.displayName, u.email, u.emailNormalized, count(r.esTopicReviewId))"
+                            + " u.userId, u.firstName, u.lastName, u.email, u.emailNormalized, count(r.esTopicReviewId))"
                             + " from EsTopicReview r, User u"
                             + " where r.esCampaignId = :campaignId and r.userId = u.userId"
-                            + " group by u.userId, u.displayName, u.email, u.emailNormalized"
-                            + " order by lower(coalesce(u.displayName, u.emailNormalized, u.email)) asc",
+                            + " group by u.userId, u.firstName, u.lastName, u.email, u.emailNormalized"
+                            + " order by lower(coalesce(u.firstName, u.emailNormalized, u.email)) asc",
                     ResponderRow.class)
                     .setParameter("campaignId", campaignId)
                     .getResultList();
@@ -139,14 +139,17 @@ public class EsTopicReviewDao extends GenericDao<EsTopicReview, Long> {
 
     public static final class ResponderRow {
         private final Long userId;
-        private final String displayName;
+        private final String firstName;
+        private final String lastName;
         private final String email;
         private final String emailNormalized;
         private final Long reviewCount;
 
-        public ResponderRow(Long userId, String displayName, String email, String emailNormalized, Long reviewCount) {
+        public ResponderRow(Long userId, String firstName, String lastName, String email, String emailNormalized,
+                Long reviewCount) {
             this.userId = userId;
-            this.displayName = displayName;
+            this.firstName = firstName;
+            this.lastName = lastName;
             this.email = email;
             this.emailNormalized = emailNormalized;
             this.reviewCount = reviewCount == null ? 0L : reviewCount;
@@ -156,8 +159,23 @@ public class EsTopicReviewDao extends GenericDao<EsTopicReview, Long> {
             return userId;
         }
 
-        public String getDisplayName() {
-            return displayName;
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public String getFullName() {
+            if (firstName != null && !firstName.isBlank() && lastName != null && !lastName.isBlank()) {
+                return firstName.trim() + " " + lastName.trim();
+            } else if (firstName != null && !firstName.isBlank()) {
+                return firstName.trim();
+            } else if (lastName != null && !lastName.isBlank()) {
+                return lastName.trim();
+            }
+            return null;
         }
 
         public String getEmail() {

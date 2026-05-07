@@ -88,7 +88,7 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                     panelOut.println("          <tbody>");
                     for (User user : users) {
                         String userDetailLink = contextPath + "/admin/users/detail?userId=" + user.getUserId();
-                        String displayText = trimToNull(user.getDisplayName());
+                        String displayText = trimToNull(user.getFullName());
                         if (displayText == null) {
                             displayText = orEmpty(user.getEmail());
                         }

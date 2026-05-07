@@ -34,6 +34,12 @@ public class User {
     @Column(name = "display_name", length = 160)
     private String displayName;
 
+    @Column(name = "first_name", length = 100)
+    private String firstName;
+
+    @Column(name = "last_name", length = 100)
+    private String lastName;
+
     @Column(name = "organization", length = 200)
     private String organization;
 
@@ -102,6 +108,45 @@ public class User {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    /**
+     * Returns the display_name override if set, otherwise returns "firstName
+     * lastName".
+     * Falls back to just firstName (or lastName) if only one is present.
+     */
+    public String getFullName() {
+        if (displayName != null && !displayName.isBlank()) {
+            return displayName;
+        }
+        String f = firstName != null ? firstName.trim() : null;
+        String l = lastName != null ? lastName.trim() : null;
+        if (f != null && !f.isEmpty() && l != null && !l.isEmpty()) {
+            return f + " " + l;
+        }
+        if (f != null && !f.isEmpty()) {
+            return f;
+        }
+        if (l != null && !l.isEmpty()) {
+            return l;
+        }
+        return null;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public void setFirstName(String firstName) {
+        this.firstName = firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public void setLastName(String lastName) {
+        this.lastName = lastName;
     }
 
     public String getOrganization() {

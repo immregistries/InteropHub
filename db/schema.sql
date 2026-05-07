@@ -73,7 +73,9 @@ CREATE TABLE auth_user (
   user_id            BIGINT NOT NULL AUTO_INCREMENT,
   email              VARCHAR(254) NOT NULL,
   email_normalized   VARCHAR(254) NOT NULL,  -- lowercase trimmed
-  display_name       VARCHAR(160) NULL,
+  display_name       VARCHAR(160) NULL,      -- optional override; when NULL, first_name + last_name is used
+  first_name         VARCHAR(100) NULL,
+  last_name          VARCHAR(100) NULL,
   organization       VARCHAR(200) NULL,
   role_title         VARCHAR(200) NULL,      -- free text
   email_verified     BIT(1) NOT NULL DEFAULT b'0',

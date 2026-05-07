@@ -32,7 +32,8 @@ import org.airahub.interophub.model.WorkspaceSystem;
 import org.airahub.interophub.service.AuthFlowService;
 
 public class WorkspaceCenterServlet extends HttpServlet {
-    private static final int MAX_DISPLAY_NAME_LENGTH = 60;
+    private static final int MAX_FIRST_NAME_LENGTH = 60;
+    private static final int MAX_LAST_NAME_LENGTH = 60;
     private static final int MAX_ORGANIZATION_LENGTH = 120;
     private static final int MAX_ROLE_TITLE_LENGTH = 120;
 
@@ -75,10 +76,11 @@ public class WorkspaceCenterServlet extends HttpServlet {
         }
 
         renderWorkspaceCenter(response, request.getContextPath(), authenticatedUser.get(),
-            trimToNull(request.getParameter("workspaceId")), null, Set.of(), Map.of(),
-            trimToNull(authenticatedUser.get().getDisplayName()),
-            trimToNull(authenticatedUser.get().getOrganization()),
-            trimToNull(authenticatedUser.get().getRoleTitle()));
+                trimToNull(request.getParameter("workspaceId")), null, Set.of(), Map.of(),
+                trimToNull(authenticatedUser.get().getFirstName()),
+                trimToNull(authenticatedUser.get().getLastName()),
+                trimToNull(authenticatedUser.get().getOrganization()),
+                trimToNull(authenticatedUser.get().getRoleTitle()));
     }
 
     @Override
@@ -106,12 +108,16 @@ public class WorkspaceCenterServlet extends HttpServlet {
         String message = null;
         Map<String, String> fieldErrors = Map.of();
         Set<Long> selectedWorkspaceTermIds = parseSelectedWorkspaceTermIds(request);
-        String displayName = trimToNull(request.getParameter("displayName"));
+        String firstName = trimToNull(request.getParameter("firstName"));
+        String lastName = trimToNull(request.getParameter("lastName"));
         String organization = trimToNull(request.getParameter("organization"));
         String roleTitle = trimToNull(request.getParameter("roleTitle"));
 
-        if (displayName == null) {
-            displayName = trimToNull(authenticatedUser.get().getDisplayName());
+        if (firstName == null) {
+            firstName = trimToNull(authenticatedUser.get().getFirstName());
+        }
+        if (lastName == null) {
+            lastName = trimToNull(authenticatedUser.get().getLastName());
         }
         if (organization == null) {
             organization = trimToNull(authenticatedUser.get().getOrganization());
@@ -126,16 +132,17 @@ public class WorkspaceCenterServlet extends HttpServlet {
                     .findByWorkspaceAndUser(workspaceId, authenticatedUser.get().getUserId())
                     .orElse(null);
             if (existing == null) {
-                fieldErrors = validateProfileFields(displayName, organization, roleTitle);
+                fieldErrors = validateProfileFields(firstName, lastName, organization, roleTitle);
                 List<LegalTerm> workspaceTerms = loadWorkspaceJoinTerms();
                 selectedWorkspaceTermIds = applyPreviouslyAcceptedBothTerms(authenticatedUser.get(), workspaceTerms,
                         selectedWorkspaceTermIds);
                 if (!fieldErrors.isEmpty()) {
                     message = "Please correct the highlighted profile fields.";
-                } else if (!workspaceTerms.isEmpty() && !allRequiredTermsAccepted(workspaceTerms, selectedWorkspaceTermIds)) {
+                } else if (!workspaceTerms.isEmpty()
+                        && !allRequiredTermsAccepted(workspaceTerms, selectedWorkspaceTermIds)) {
                     message = "Please accept all required workspace legal terms before requesting to join.";
                 } else {
-                    applyUserProfileUpdates(authenticatedUser.get(), displayName, organization, roleTitle);
+                    applyUserProfileUpdates(authenticatedUser.get(), firstName, lastName, organization, roleTitle);
                     WorkspaceEnrollment enrollment = new WorkspaceEnrollment();
                     enrollment.setWorkspaceId(workspaceId);
                     enrollment.setUserId(authenticatedUser.get().getUserId());
@@ -149,7 +156,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
         }
 
         renderWorkspaceCenter(response, request.getContextPath(), authenticatedUser.get(), workspaceIdRaw, message,
-            selectedWorkspaceTermIds, fieldErrors, displayName, organization, roleTitle);
+                selectedWorkspaceTermIds, fieldErrors, firstName, lastName, organization, roleTitle);
     }
 
     private void handleAdminEnrollmentAction(HttpServletRequest request, HttpServletResponse response,
@@ -271,7 +278,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
                 out.println("    <table class=\"data-table\">");
                 out.println("      <thead>");
                 out.println("        <tr>");
-                out.println("          <th>Display Name</th>");
+                out.println("          <th>Name</th>");
                 out.println("          <th>Organization</th>");
                 out.println("          <th>Email</th>");
                 out.println("          <th>Action</th>");
@@ -280,7 +287,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
                 out.println("      <tbody>");
                 for (WorkspaceEnrollment enrollment : enrollments) {
                     User user = userById.get(enrollment.getUserId());
-                    String displayName = user == null ? "" : trimToNull(user.getDisplayName());
+                    String displayName = user == null ? "" : trimToNull(user.getFullName());
                     if (displayName == null) {
                         displayName = user == null ? "(Unknown User)" : orEmpty(user.getEmail());
                     }
@@ -333,7 +340,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
     private void renderWorkspaceCenter(HttpServletResponse response, String contextPath, User user,
             String workspaceIdRaw,
             String submittedMessage, Set<Long> selectedWorkspaceTermIds, Map<String, String> fieldErrors,
-            String displayName, String organization, String roleTitle) throws IOException {
+            String firstName, String lastName, String organization, String roleTitle) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         Long workspaceId = parseId(workspaceIdRaw);
@@ -384,28 +391,33 @@ public class WorkspaceCenterServlet extends HttpServlet {
                 List<LegalTerm> workspaceTerms = loadWorkspaceJoinTerms();
 
                 Set<Long> resolvedSelectedWorkspaceTermIds = applyPreviouslyAcceptedBothTerms(user, workspaceTerms,
-                    selectedWorkspaceTermIds);
+                        selectedWorkspaceTermIds);
 
                 out.println("      <section>");
                 out.println("        <h3>Your Profile</h3>");
                 out.println("      </section>");
 
-                out.println("      <label for=\"displayName\">Display Name" + renderFieldError(fieldErrors, "displayName")
-                    + "</label>");
-                out.println("      <div class=\"field-hint\">Your first and last name for others to see</div>");
-                out.println("      <input id=\"displayName\" name=\"displayName\" type=\"text\" required maxlength=\""
-                    + MAX_DISPLAY_NAME_LENGTH + "\" value=\"" + escapeHtml(orEmpty(displayName)) + "\" />");
+                out.println("      <label for=\"firstName\">First Name" + renderFieldError(fieldErrors, "firstName")
+                        + "</label>");
+                out.println("      <input id=\"firstName\" name=\"firstName\" type=\"text\" required maxlength=\""
+                        + MAX_FIRST_NAME_LENGTH + "\" value=\"" + escapeHtml(orEmpty(firstName)) + "\" />");
 
-                out.println("      <label for=\"organization\">Organization" + renderFieldError(fieldErrors, "organization")
-                    + "</label>");
+                out.println("      <label for=\"lastName\">Last Name" + renderFieldError(fieldErrors, "lastName")
+                        + "</label>");
+                out.println("      <input id=\"lastName\" name=\"lastName\" type=\"text\" maxlength=\""
+                        + MAX_LAST_NAME_LENGTH + "\" value=\"" + escapeHtml(orEmpty(lastName)) + "\" />");
+
+                out.println(
+                        "      <label for=\"organization\">Organization" + renderFieldError(fieldErrors, "organization")
+                                + "</label>");
                 out.println("      <div class=\"field-hint\">Full name of organization you are associated with</div>");
                 out.println("      <input id=\"organization\" name=\"organization\" type=\"text\" required maxlength=\""
-                    + MAX_ORGANIZATION_LENGTH + "\" value=\"" + escapeHtml(orEmpty(organization)) + "\" />");
+                        + MAX_ORGANIZATION_LENGTH + "\" value=\"" + escapeHtml(orEmpty(organization)) + "\" />");
 
                 out.println("      <label for=\"roleTitle\">Role Title" + renderFieldError(fieldErrors, "roleTitle")
-                    + "</label>");
+                        + "</label>");
                 out.println("      <input id=\"roleTitle\" name=\"roleTitle\" type=\"text\" required maxlength=\""
-                    + MAX_ROLE_TITLE_LENGTH + "\" value=\"" + escapeHtml(orEmpty(roleTitle)) + "\" />");
+                        + MAX_ROLE_TITLE_LENGTH + "\" value=\"" + escapeHtml(orEmpty(roleTitle)) + "\" />");
 
                 if (!workspaceTerms.isEmpty()) {
                     out.println("      <section>");
@@ -484,22 +496,29 @@ public class WorkspaceCenterServlet extends HttpServlet {
         }
     }
 
-    private void applyUserProfileUpdates(User user, String displayName, String organization, String roleTitle) {
+    private void applyUserProfileUpdates(User user, String firstName, String lastName, String organization,
+            String roleTitle) {
         if (user == null) {
             return;
         }
-        user.setDisplayName(displayName);
+        user.setFirstName(firstName);
+        user.setLastName(lastName);
         user.setOrganization(organization);
         user.setRoleTitle(roleTitle);
         userDao.saveOrUpdate(user);
     }
 
-    private Map<String, String> validateProfileFields(String displayName, String organization, String roleTitle) {
+    private Map<String, String> validateProfileFields(String firstName, String lastName, String organization,
+            String roleTitle) {
         Map<String, String> fieldErrors = new HashMap<>();
 
-        if (!isValidDisplayName(displayName)) {
-            fieldErrors.put("displayName",
-                    "Enter your full first and last name (2+ letters each, max " + MAX_DISPLAY_NAME_LENGTH + ").");
+        if (!isValidName(firstName)) {
+            fieldErrors.put("firstName",
+                    "Enter your first name (2+ letters, max " + MAX_FIRST_NAME_LENGTH + ").");
+        }
+        if (lastName != null && !isValidName(lastName)) {
+            fieldErrors.put("lastName",
+                    "Last name must be 2+ letters if provided (max " + MAX_LAST_NAME_LENGTH + ").");
         }
         if (!isValidOrganization(organization)) {
             fieldErrors.put("organization",
@@ -515,22 +534,11 @@ public class WorkspaceCenterServlet extends HttpServlet {
         return fieldErrors;
     }
 
-    private boolean isValidDisplayName(String displayName) {
-        if (displayName == null || displayName.length() < 5 || displayName.length() > MAX_DISPLAY_NAME_LENGTH) {
+    private boolean isValidName(String name) {
+        if (name == null || name.length() < 2 || name.length() > MAX_FIRST_NAME_LENGTH) {
             return false;
         }
-        if (!containsOnlySafeDisplayNameChars(displayName)) {
-            return false;
-        }
-
-        String[] nameParts = displayName.split("\\s+");
-        if (nameParts.length < 2) {
-            return false;
-        }
-
-        String firstName = nameParts[0];
-        String lastName = nameParts[nameParts.length - 1];
-        return countLetters(firstName) >= 2 && countLetters(lastName) >= 2;
+        return containsOnlySafeDisplayNameChars(name) && countLetters(name) >= 2;
     }
 
     private boolean isValidOrganization(String organization) {
@@ -707,7 +715,7 @@ public class WorkspaceCenterServlet extends HttpServlet {
         if (user == null) {
             return "";
         }
-        String displayName = trimToNull(user.getDisplayName());
+        String displayName = trimToNull(user.getFullName());
         if (displayName != null) {
             return displayName.toLowerCase();
         }
