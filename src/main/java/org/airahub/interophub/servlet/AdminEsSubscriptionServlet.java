@@ -156,11 +156,14 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
                 panelOut.println(
                         "            <div class=\"login-form\" style=\"display:flex;gap:0.5rem;flex-wrap:wrap;\">");
                 String disabledSubscribed = status == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                        ? " disabled" : "";
+                        ? " disabled"
+                        : "";
                 String disabledChampion = status == EsSubscription.SubscriptionStatus.CHAMPION
-                        ? " disabled" : "";
+                        ? " disabled"
+                        : "";
                 String disabledUnsubscribed = status == EsSubscription.SubscriptionStatus.UNSUBSCRIBED
-                        ? " disabled" : "";
+                        ? " disabled"
+                        : "";
                 panelOut.println(
                         "              <button type=\"submit\" name=\"action\" value=\"SUBSCRIBED\""
                                 + disabledSubscribed + ">Set Subscribed</button>");
@@ -239,10 +242,14 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
             return "";
         }
         switch (status) {
-            case SUBSCRIBED: return "Subscribed";
-            case CHAMPION: return "Champion";
-            case UNSUBSCRIBED: return "Unsubscribed";
-            default: return status.name();
+            case SUBSCRIBED:
+                return "Subscribed";
+            case CHAMPION:
+                return "Champion";
+            case UNSUBSCRIBED:
+                return "Unsubscribed";
+            default:
+                return status.name();
         }
     }
 
