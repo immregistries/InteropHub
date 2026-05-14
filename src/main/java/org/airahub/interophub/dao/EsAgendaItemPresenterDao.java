@@ -115,6 +115,29 @@ public class EsAgendaItemPresenterDao extends GenericDao<EsAgendaItemPresenter, 
         return updateStatusWithNote(esAgendaItemPresenterId, EsAgendaItemPresenter.PresenterStatus.REMOVED, null);
     }
 
+    public int updateRole(Long esAgendaItemPresenterId, EsAgendaItemPresenter.PresenterRole newRole) {
+        if (esAgendaItemPresenterId == null || newRole == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update EsAgendaItemPresenter p set p.presenterRole = :role"
+                            + " where p.esAgendaItemPresenterId = :id")
+                    .setParameter("role", newRole)
+                    .setParameter("id", esAgendaItemPresenterId)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     private int updateStatusWithNote(Long esAgendaItemPresenterId, EsAgendaItemPresenter.PresenterStatus newStatus,
             String responseNote) {
         if (esAgendaItemPresenterId == null) {

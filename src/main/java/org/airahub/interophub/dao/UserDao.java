@@ -110,4 +110,13 @@ public class UserDao extends GenericDao<User, Long> {
                     .getResultList();
         }
     }
+
+    public List<User> findAllOrderByName() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from User u order by lower(coalesce(u.firstName, '')), lower(coalesce(u.lastName, '')), lower(u.email)",
+                    User.class)
+                    .getResultList();
+        }
+    }
 }
