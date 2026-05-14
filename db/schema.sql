@@ -78,6 +78,7 @@ CREATE TABLE auth_user (
   last_name          VARCHAR(100) NULL,
   organization       VARCHAR(200) NULL,
   role_title         VARCHAR(200) NULL,      -- free text
+  timezone_id        VARCHAR(64) NULL,         -- IANA timezone id e.g. America/New_York
   email_verified     BIT(1) NOT NULL DEFAULT b'0',
   status             ENUM('ACTIVE','DELETED','DISABLED') NOT NULL DEFAULT 'ACTIVE',
   created_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
@@ -698,7 +699,7 @@ CREATE TABLE es_subscription (
   email_normalized        VARCHAR(254) NOT NULL,
   es_topic_id             BIGINT UNSIGNED NULL,   -- NULL = GENERAL_ES subscription
   subscription_type       ENUM('GENERAL_ES','TOPIC') NOT NULL,
-  status                  ENUM('SUBSCRIBED','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',
+  status                  ENUM('SUBSCRIBED','CHAMPION','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',  -- CHAMPION only valid for TOPIC type
   source_campaign_id      BIGINT UNSIGNED NULL,   -- which campaign produced this subscription
   unsubscribe_token_hash  BINARY(32) NULL,        -- SHA-256(raw token); for email-link unsubscribe
   created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -765,5 +766,112 @@ CREATE TABLE es_topic_meeting_member (
   CONSTRAINT fk_es_tmm_source_campaign FOREIGN KEY (source_campaign_id)
     REFERENCES es_campaign(es_campaign_id),
   CONSTRAINT fk_es_tmm_approved_by_user FOREIGN KEY (approved_by_user_id)
+    REFERENCES auth_user(user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- es_meeting
+-- Standalone meeting record for Emerging Standards working group sessions.
+-- ---------------------------------------------------------------------------
+CREATE TABLE es_meeting (
+  es_meeting_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  meeting_key           VARCHAR(80) NULL,              -- optional human-readable slug
+  meeting_name          VARCHAR(160) NOT NULL,
+  meeting_description   TEXT NULL,
+  scheduled_start       DATETIME NOT NULL,
+  scheduled_end         DATETIME NULL,
+  timezone_id           VARCHAR(64) NULL,              -- IANA timezone id
+  status                ENUM('DRAFT','PROPOSED','FINALIZED','COMPLETED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
+  created_by_user_id    BIGINT UNSIGNED NOT NULL,
+  finalized_at          DATETIME NULL,
+  completed_at          DATETIME NULL,
+  cancelled_at          DATETIME NULL,
+  cancellation_reason   TEXT NULL,
+  created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_meeting_id),
+  KEY ix_es_meeting_scheduled_start (scheduled_start),
+  KEY ix_es_meeting_status (status),
+  KEY ix_es_meeting_key (meeting_key),
+  CONSTRAINT fk_es_meeting_created_by FOREIGN KEY (created_by_user_id)
+    REFERENCES auth_user(user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- es_meeting_agenda_item
+-- An item on a specific meeting's agenda. Can optionally be linked to an ES topic.
+-- ---------------------------------------------------------------------------
+CREATE TABLE es_meeting_agenda_item (
+  es_meeting_agenda_item_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_meeting_id              BIGINT UNSIGNED NOT NULL,
+  es_topic_id                BIGINT UNSIGNED NULL,      -- optional link to an ES topic
+  display_order              INT NOT NULL DEFAULT 0,
+  title                      VARCHAR(200) NOT NULL,
+  agenda_markdown            TEXT NULL,
+  time_minutes               INT NULL,                  -- estimated slot length in minutes
+  status                     ENUM('DRAFT','PROPOSED','ACCEPTED','NEEDS_REVISION','POSTPONED','COVERED','NOT_COVERED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
+  proposed_by_user_id        BIGINT UNSIGNED NULL,
+  accepted_at                DATETIME NULL,
+  postponed_to_meeting_id    BIGINT UNSIGNED NULL,      -- target meeting when POSTPONED
+  status_note                TEXT NULL,
+  created_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_meeting_agenda_item_id),
+  KEY ix_es_mai_meeting_order (es_meeting_id, display_order),
+  KEY ix_es_mai_topic (es_topic_id),
+  KEY ix_es_mai_status (status),
+  CONSTRAINT fk_es_mai_meeting FOREIGN KEY (es_meeting_id)
+    REFERENCES es_meeting(es_meeting_id),
+  CONSTRAINT fk_es_mai_topic FOREIGN KEY (es_topic_id)
+    REFERENCES es_topic(es_topic_id),
+  CONSTRAINT fk_es_mai_proposed_by FOREIGN KEY (proposed_by_user_id)
+    REFERENCES auth_user(user_id),
+  CONSTRAINT fk_es_mai_postponed_to FOREIGN KEY (postponed_to_meeting_id)
+    REFERENCES es_meeting(es_meeting_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- es_agenda_item_presenter
+-- Associates a presenter (by email, optionally by user_id) with an agenda item.
+-- ---------------------------------------------------------------------------
+CREATE TABLE es_agenda_item_presenter (
+  es_agenda_item_presenter_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_meeting_agenda_item_id    BIGINT UNSIGNED NOT NULL,
+  user_id                      BIGINT UNSIGNED NULL,    -- NULL if invited person has no account
+  email                        VARCHAR(254) NOT NULL,
+  email_normalized             VARCHAR(254) NOT NULL,
+  display_name                 VARCHAR(160) NULL,
+  presenter_role               ENUM('LEAD','SUPPORTING','FACILITATOR','REQUESTED_REVIEWER') NOT NULL DEFAULT 'LEAD',
+  status                       ENUM('INVITED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED') NOT NULL DEFAULT 'INVITED',
+  response_note                TEXT NULL,
+  responded_at                 DATETIME NULL,
+  created_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_agenda_item_presenter_id),
+  KEY ix_es_aip_item_status (es_meeting_agenda_item_id, status),
+  KEY ix_es_aip_email_status (email_normalized, status),
+  CONSTRAINT fk_es_aip_agenda_item FOREIGN KEY (es_meeting_agenda_item_id)
+    REFERENCES es_meeting_agenda_item(es_meeting_agenda_item_id),
+  CONSTRAINT fk_es_aip_user FOREIGN KEY (user_id)
+    REFERENCES auth_user(user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------------
+-- es_agenda_item_comment
+-- Append-only comments and notes attached to an agenda item. No updates.
+-- ---------------------------------------------------------------------------
+CREATE TABLE es_agenda_item_comment (
+  es_agenda_item_comment_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_meeting_agenda_item_id  BIGINT UNSIGNED NOT NULL,
+  user_id                    BIGINT UNSIGNED NULL,
+  email                      VARCHAR(254) NULL,
+  comment_type               ENUM('COMMENT','CHANGE_REQUEST','POSTPONE_REQUEST','DECLINE_REASON','MEETING_NOTE') NOT NULL DEFAULT 'COMMENT',
+  comment_markdown           TEXT NOT NULL,
+  created_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_agenda_item_comment_id),
+  KEY ix_es_aic_item_created (es_meeting_agenda_item_id, created_at),
+  CONSTRAINT fk_es_aic_agenda_item FOREIGN KEY (es_meeting_agenda_item_id)
+    REFERENCES es_meeting_agenda_item(es_meeting_agenda_item_id),
+  CONSTRAINT fk_es_aic_user FOREIGN KEY (user_id)
     REFERENCES auth_user(user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

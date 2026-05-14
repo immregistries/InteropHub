@@ -48,5 +48,9 @@
     <mapping class="org.airahub.interophub.model.EsTopicMeeting"/>
     <mapping class="org.airahub.interophub.model.EsTopicMeetingMember"/>
     <mapping class="org.airahub.interophub.model.EsMeetingAttendance"/>
+    <mapping class="org.airahub.interophub.model.EsMeeting"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingAgendaItem"/>
+    <mapping class="org.airahub.interophub.model.EsAgendaItemPresenter"/>
+    <mapping class="org.airahub.interophub.model.EsAgendaItemComment"/>
   </session-factory>
 </hibernate-configuration>

@@ -3,6 +3,7 @@ package org.airahub.interophub.dao;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.time.LocalDateTime;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsSubscription;
 
@@ -89,7 +90,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns active (SUBSCRIBED) subscriptions for a specific topic.
+     * Returns active (SUBSCRIBED or CHAMPION) subscriptions for a specific topic.
      */
     public List<EsSubscription> findActiveByTopicId(Long esTopicId) {
         if (esTopicId == null) {
@@ -97,11 +98,14 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from EsSubscription s where s.esTopicId = :topicId and s.status = :status"
+                    "from EsSubscription s where s.esTopicId = :topicId"
+                            + " and s.status in (:statuses)"
                             + " order by s.createdAt asc",
                     EsSubscription.class)
                     .setParameter("topicId", esTopicId)
-                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameterList("statuses", List.of(
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            EsSubscription.SubscriptionStatus.CHAMPION))
                     .getResultList();
         }
     }
@@ -130,22 +134,21 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         if (emailNormalized == null || userId == null) {
             return 0;
         }
-        org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
-            int updated = session.createMutationQuery(
-                    "update EsSubscription s set s.userId = :uid"
-                            + " where s.emailNormalized = :email and s.userId is null")
-                    .setParameter("uid", userId)
-                    .setParameter("email", emailNormalized)
-                    .executeUpdate();
-            tx.commit();
-            return updated;
-        } catch (Exception ex) {
-            if (tx != null) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int updated = session.createMutationQuery(
+                        "update EsSubscription s set s.userId = :uid"
+                                + " where s.emailNormalized = :email and s.userId is null")
+                        .setParameter("uid", userId)
+                        .setParameter("email", emailNormalized)
+                        .executeUpdate();
+                tx.commit();
+                return updated;
+            } catch (Exception ex) {
                 tx.rollback();
+                throw ex;
             }
-            throw ex;
         }
     }
 
@@ -158,12 +161,14 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     "select s.esTopicId from EsSubscription s"
                             + " where s.emailNormalized = :email"
                             + " and s.subscriptionType = :type"
-                            + " and s.status = :status"
+                            + " and s.status in (:statuses)"
                             + " and s.esTopicId in :topicIds",
                     Long.class)
                     .setParameter("email", emailNormalized)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
-                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameterList("statuses", List.of(
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            EsSubscription.SubscriptionStatus.CHAMPION))
                     .setParameterList("topicIds", topicIds)
                     .getResultList();
             return Set.copyOf(result);
@@ -185,7 +190,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
             StringBuilder hql = new StringBuilder();
             hql.append("select distinct s.esTopicId from EsSubscription s");
             hql.append(" where s.subscriptionType = :type");
-            hql.append(" and s.status = :status");
+            hql.append(" and s.status in (:statuses)");
             hql.append(" and s.esTopicId in :topicIds");
             hql.append(" and (");
             if (hasUser) {
@@ -201,7 +206,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
 
             var query = session.createQuery(hql.toString(), Long.class)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
-                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameterList("statuses", List.of(
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            EsSubscription.SubscriptionStatus.CHAMPION))
                     .setParameterList("topicIds", topicIds);
             if (hasUser) {
                 query.setParameter("userId", userId);
@@ -285,36 +292,178 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         if (sourceCampaignId == null) {
             return 0;
         }
-        org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
-            int deleted = session.createMutationQuery(
-                    "delete from EsSubscription s where s.sourceCampaignId = :campaignId")
-                    .setParameter("campaignId", sourceCampaignId)
-                    .executeUpdate();
-            tx.commit();
-            return deleted;
-        } catch (Exception ex) {
-            if (tx != null) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int deleted = session.createMutationQuery(
+                        "delete from EsSubscription s where s.sourceCampaignId = :campaignId")
+                        .setParameter("campaignId", sourceCampaignId)
+                        .executeUpdate();
+                tx.commit();
+                return deleted;
+            } catch (Exception ex) {
                 tx.rollback();
+                throw ex;
             }
-            throw ex;
         }
     }
 
     public EsSubscription saveOrUpdate(EsSubscription subscription) {
-        org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
-            EsSubscription merged = (EsSubscription) session.merge(subscription);
-            tx.commit();
-            return merged;
-        } catch (Exception ex) {
-            if (tx != null) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                EsSubscription merged = (EsSubscription) session.merge(subscription);
+                tx.commit();
+                return merged;
+            } catch (Exception ex) {
                 tx.rollback();
+                throw ex;
             }
-            throw ex;
         }
+    }
+
+    /**
+     * Returns all subscriptions for a given user filtered by subscription type.
+     */
+    public List<EsSubscription> findByUserIdAndType(Long userId, EsSubscription.SubscriptionType subscriptionType) {
+        if (userId == null || subscriptionType == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.userId = :uid"
+                            + " and s.subscriptionType = :type order by s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("uid", userId)
+                    .setParameter("type", subscriptionType)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns all CHAMPION subscriptions for a specific topic.
+     */
+    public List<EsSubscription> findChampionsByTopicId(Long esTopicId) {
+        if (esTopicId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.esTopicId = :topicId"
+                            + " and s.status = :status order by s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("topicId", esTopicId)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Sets the status on a subscription row. When setting UNSUBSCRIBED, pass the
+     * unsubscribedAt timestamp; otherwise pass null.
+     *
+     * @return number of rows updated (0 or 1)
+     */
+    public int setTopicSubscriptionStatus(Long esSubscriptionId, EsSubscription.SubscriptionStatus newStatus,
+            LocalDateTime unsubscribedAt) {
+        if (esSubscriptionId == null || newStatus == null) {
+            return 0;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int updated = session.createNativeMutationQuery(
+                        "UPDATE es_subscription SET status = :status, unsubscribed_at = :unsubAt"
+                                + " WHERE es_subscription_id = :id")
+                        .setParameter("status", newStatus.name())
+                        .setParameter("unsubAt", unsubscribedAt)
+                        .setParameter("id", esSubscriptionId)
+                        .executeUpdate();
+                tx.commit();
+                return updated;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    /**
+     * Promotes a SUBSCRIBED topic subscription to CHAMPION status.
+     * Throws IllegalArgumentException if the subscription is not of type TOPIC.
+     *
+     * @return number of rows updated (1 on success, 0 if not found or not currently
+     *         SUBSCRIBED)
+     */
+    public int promoteToChampion(Long esSubscriptionId) {
+        if (esSubscriptionId == null) {
+            return 0;
+        }
+        Optional<EsSubscription> sub = findById(esSubscriptionId);
+        if (sub.isEmpty()) {
+            return 0;
+        }
+        if (sub.get().getSubscriptionType() != EsSubscription.SubscriptionType.TOPIC) {
+            throw new IllegalArgumentException(
+                    "CHAMPION status is only valid for TOPIC subscriptions (id=" + esSubscriptionId + ")");
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int updated = session.createNativeMutationQuery(
+                        "UPDATE es_subscription SET status = 'CHAMPION'"
+                                + " WHERE es_subscription_id = :id"
+                                + " AND subscription_type = 'TOPIC'"
+                                + " AND status = 'SUBSCRIBED'")
+                        .setParameter("id", esSubscriptionId)
+                        .executeUpdate();
+                tx.commit();
+                return updated;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    /**
+     * Demotes a CHAMPION subscription back to SUBSCRIBED status.
+     *
+     * @return number of rows updated (1 on success, 0 if not found or not currently
+     *         CHAMPION)
+     */
+    public int demoteFromChampion(Long esSubscriptionId) {
+        if (esSubscriptionId == null) {
+            return 0;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int updated = session.createNativeMutationQuery(
+                        "UPDATE es_subscription SET status = 'SUBSCRIBED'"
+                                + " WHERE es_subscription_id = :id"
+                                + " AND status = 'CHAMPION'")
+                        .setParameter("id", esSubscriptionId)
+                        .executeUpdate();
+                tx.commit();
+                return updated;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    /**
+     * Sets a topic subscription to UNSUBSCRIBED and records the timestamp.
+     *
+     * @return number of rows updated (1 on success, 0 if not found)
+     */
+    public int unsubscribeFromTopic(Long esSubscriptionId) {
+        return setTopicSubscriptionStatus(
+                esSubscriptionId,
+                EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
+                LocalDateTime.now());
     }
 
     public static final class CampaignTopicSubscriptionCountRow {

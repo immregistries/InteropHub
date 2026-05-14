@@ -146,6 +146,13 @@ p {
   filter: brightness(0.95);
 }
 
+.login-form button:disabled {
+  background: var(--border);
+  color: var(--muted);
+  cursor: default;
+  filter: none;
+}
+
 .login-form .form-actions {
   display: flex;
   gap: 0.75rem;

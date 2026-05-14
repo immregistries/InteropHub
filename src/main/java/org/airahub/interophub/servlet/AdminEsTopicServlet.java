@@ -72,12 +72,22 @@ public class AdminEsTopicServlet extends HttpServlet {
 
             EsTopicMeeting meeting = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, topic, meeting, null);
+                renderEditForm(response, contextPath, topic, meeting, null, false);
                 return;
             }
 
             List<EsSubscription> subscriptions = esSubscriptionDao.findActiveByTopicId(topicId);
             renderDetails(response, contextPath, topic, meeting, esCommentDao.findByTopicId(topicId), subscriptions);
+            return;
+        }
+
+        if ("new".equalsIgnoreCase(mode)) {
+            EsTopic blank = new EsTopic();
+            blank.setPriorityIis(0);
+            blank.setPriorityEhr(0);
+            blank.setPriorityCdc(0);
+            blank.setStatus(EsTopic.EsTopicStatus.ACTIVE);
+            renderEditForm(response, contextPath, blank, null, null, true);
             return;
         }
 
@@ -94,19 +104,6 @@ public class AdminEsTopicServlet extends HttpServlet {
 
         String contextPath = request.getContextPath();
         String topicIdRaw = trimToNull(request.getParameter("esTopicId"));
-        Long topicId = parseId(topicIdRaw);
-        if (topicId == null) {
-            renderList(response, contextPath, "Invalid topic identifier.");
-            return;
-        }
-
-        EsTopic topic = esTopicDao.findById(topicId).orElse(null);
-        if (topic == null) {
-            renderList(response, contextPath, "Topic entry was not found.");
-            return;
-        }
-
-        EsTopicMeeting meeting = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
@@ -124,6 +121,99 @@ public class AdminEsTopicServlet extends HttpServlet {
         String meetingName = trimToNull(request.getParameter("meetingName"));
         String meetingDescription = trimToNull(request.getParameter("meetingDescription"));
         boolean meetingRequiresApproval = request.getParameter("meetingRequiresApproval") != null;
+
+        if (topicIdRaw == null) {
+            // CREATE path
+            String topicCodeParam = trimToNull(request.getParameter("topicCode"));
+            EsTopic newTopic = new EsTopic();
+            EsTopicMeeting newMeeting = null;
+            try {
+                String topicCodeVal = required(topicCodeParam, "Topic code");
+                if (esTopicDao.findByTopicCode(topicCodeVal).isPresent()) {
+                    throw new IllegalArgumentException("Topic code is already in use.");
+                }
+                newTopic.setTopicCode(topicCodeVal);
+                newTopic.setTopicName(required(topicName, "Topic name"));
+                newTopic.setDescription(description);
+                newTopic.setNeighborhood(neighborhood);
+                newTopic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
+                newTopic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
+                newTopic.setPriorityCdc(parseRequiredInt(priorityCdcRaw, "Priority CDC"));
+                newTopic.setStage(stage);
+                newTopic.setPolicyStatus(policyStatus);
+                newTopic.setTopicType(topicType);
+                newTopic.setConfluenceUrl(validateOptionalUrl(confluenceUrl, "Confluence URL"));
+                newTopic.setStatus(parseStatus(required(statusRaw, "Status")));
+                newTopic.setCreatedByUserId(adminUser.get().getUserId());
+
+                EsTopic saved = esTopicDao.saveOrUpdate(newTopic);
+
+                if (meetingEnabled) {
+                    newMeeting = new EsTopicMeeting();
+                    newMeeting.setEsTopicId(saved.getEsTopicId());
+                    newMeeting.setMeetingName(required(meetingName, "Meeting name"));
+                    newMeeting.setMeetingDescription(meetingDescription);
+                    newMeeting.setJoinRequiresApproval(meetingRequiresApproval);
+                    newMeeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
+                    esTopicMeetingDao.saveOrUpdate(newMeeting);
+                }
+
+                response.sendRedirect(contextPath + "/admin/es/topics?esTopicId=" + saved.getEsTopicId());
+            } catch (Exception ex) {
+                newTopic.setTopicCode(topicCodeParam);
+                newTopic.setTopicName(topicName);
+                newTopic.setDescription(description);
+                newTopic.setNeighborhood(neighborhood);
+                newTopic.setStage(stage);
+                newTopic.setPolicyStatus(policyStatus);
+                newTopic.setTopicType(topicType);
+                newTopic.setConfluenceUrl(confluenceUrl);
+                if (priorityIisRaw != null) {
+                    newTopic.setPriorityIis(parseIntOrNull(priorityIisRaw));
+                }
+                if (priorityEhrRaw != null) {
+                    newTopic.setPriorityEhr(parseIntOrNull(priorityEhrRaw));
+                }
+                if (priorityCdcRaw != null) {
+                    newTopic.setPriorityCdc(parseIntOrNull(priorityCdcRaw));
+                }
+                if (statusRaw != null) {
+                    try {
+                        newTopic.setStatus(parseStatus(statusRaw));
+                    } catch (Exception ignored) {
+                        // Keep existing status if parse fails to avoid masking original validation
+                        // error.
+                    }
+                }
+                if (meetingEnabled) {
+                    if (newMeeting == null) {
+                        newMeeting = new EsTopicMeeting();
+                    }
+                    newMeeting.setMeetingName(meetingName);
+                    newMeeting.setMeetingDescription(meetingDescription);
+                    newMeeting.setJoinRequiresApproval(meetingRequiresApproval);
+                    newMeeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
+                }
+                renderEditForm(response, contextPath, newTopic, meetingEnabled ? newMeeting : null, ex.getMessage(),
+                        true);
+            }
+            return;
+        }
+
+        // EDIT path
+        Long topicId = parseId(topicIdRaw);
+        if (topicId == null) {
+            renderList(response, contextPath, "Invalid topic identifier.");
+            return;
+        }
+
+        EsTopic topic = esTopicDao.findById(topicId).orElse(null);
+        if (topic == null) {
+            renderList(response, contextPath, "Topic entry was not found.");
+            return;
+        }
+
+        EsTopicMeeting meeting = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
 
         try {
             topic.setTopicName(required(topicName, "Topic name"));
@@ -194,7 +284,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 meeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
             }
 
-            renderEditForm(response, contextPath, topic, meetingEnabled ? meeting : null, ex.getMessage());
+            renderEditForm(response, contextPath, topic, meetingEnabled ? meeting : null, ex.getMessage(), false);
         }
     }
 
@@ -256,6 +346,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 panelOut.println("        </table>");
 
                 panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/topics?mode=new\">Add New Topic</a></p>");
+                panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
                 panelOut.println("      </section>");
             });
@@ -276,7 +368,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 panelOut.println("        <h2>ES Topic Details</h2>");
                 panelOut.println("        <p>This view is read-only. Use Edit to change this topic.</p>");
 
-                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("        <section>");
                 panelOut.println("          <p><strong>Topic Code:</strong> "
                         + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
                 panelOut.println("          <p><strong>Topic Name:</strong> "
@@ -331,8 +423,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 }
                 panelOut.println("        </section>");
 
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Subscriptions (" + subscriptions.size() + ")</h3>");
+                panelOut.println("        <section>");
+                panelOut.println("          <h3>Following (" + subscriptions.size() + ")</h3>");
                 if (subscriptions.isEmpty()) {
                     panelOut.println("          <p>No subscriptions.</p>");
                 } else {
@@ -342,20 +434,23 @@ public class AdminEsTopicServlet extends HttpServlet {
                     panelOut.println("                <th>Email</th>");
                     panelOut.println("                <th>Display Name</th>");
                     panelOut.println("                <th>Organization</th>");
-                    panelOut.println("                <th>Subscribed On</th>");
+                    panelOut.println("                <th>Role</th>");
                     panelOut.println("              </tr>");
                     panelOut.println("            </thead>");
                     panelOut.println("            <tbody>");
                     for (EsSubscription sub : subscriptions) {
                         User subUser = sub.getUserId() != null ? subUsersById.get(sub.getUserId()) : null;
                         panelOut.println("              <tr>");
-                        panelOut.println("                <td>" + escapeHtml(orEmpty(sub.getEmail())) + "</td>");
+                        panelOut.println("                <td><a href=\"" + contextPath
+                                + "/admin/es/subscription?subscriptionId=" + sub.getEsSubscriptionId()
+                                + "&amp;topicId=" + topic.getEsTopicId() + "\">"
+                                + escapeHtml(orEmpty(sub.getEmail())) + "</a></td>");
                         panelOut.println("                <td>"
                                 + escapeHtml(subUser == null ? "" : orEmpty(subUser.getFullName())) + "</td>");
                         panelOut.println("                <td>"
                                 + escapeHtml(subUser == null ? "" : orEmpty(subUser.getOrganization())) + "</td>");
-                        panelOut.println("                <td>" + escapeHtml(formatCommentDate(sub.getCreatedAt()))
-                                + "</td>");
+                        String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION ? "Champion" : "Subscribed";
+                        panelOut.println("                <td>" + escapeHtml(roleLabel) + "</td>");
                         panelOut.println("              </tr>");
                     }
                     panelOut.println("            </tbody>");
@@ -363,7 +458,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 }
                 panelOut.println("        </section>");
 
-                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("        <section>");
                 panelOut.println("          <h3>Comments</h3>");
                 if (comments.isEmpty()) {
                     panelOut.println("          <p>No comments.</p>");
@@ -402,105 +497,127 @@ public class AdminEsTopicServlet extends HttpServlet {
     }
 
     private void renderEditForm(HttpServletResponse response, String contextPath, EsTopic topic, EsTopicMeeting meeting,
-            String errorMessage) throws IOException {
+            String errorMessage, boolean isNew) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
 
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Edit ES Topic - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Edit ES Topic</h2>");
+            AdminShellRenderer.render(out,
+                    isNew ? "Add New ES Topic - InteropHub" : "Edit ES Topic - InteropHub",
+                    contextPath, panelOut -> {
+                        panelOut.println("      <section class=\"panel\">");
+                        panelOut.println("        <h2>" + (isNew ? "Add New ES Topic" : "Edit ES Topic") + "</h2>");
 
-                if (errorMessage != null && !errorMessage.isBlank()) {
-                    panelOut.println(
-                            "        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
-                }
+                        if (errorMessage != null && !errorMessage.isBlank()) {
+                            panelOut.println(
+                                    "        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
+                        }
 
-                panelOut.println(
-                        "        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/es/topics\" method=\"post\">");
-                out.println(
-                        "      <input type=\"hidden\" name=\"esTopicId\" value=\"" + topic.getEsTopicId() + "\" />");
+                        panelOut.println(
+                                "        <form class=\"login-form\" action=\"" + contextPath
+                                        + "/admin/es/topics\" method=\"post\">");
+                        if (isNew) {
+                            out.println("      <label for=\"topicCode\">Topic Code (required)</label>");
+                            out.println(
+                                    "      <input id=\"topicCode\" name=\"topicCode\" type=\"text\" required maxlength=\"80\" value=\""
+                                            + escapeHtml(orEmpty(topic.getTopicCode())) + "\" />");
+                        } else {
+                            out.println(
+                                    "      <input type=\"hidden\" name=\"esTopicId\" value=\"" + topic.getEsTopicId()
+                                            + "\" />");
+                            out.println(
+                                    "      <p><strong>Topic Code:</strong> " + escapeHtml(orEmpty(topic.getTopicCode()))
+                                            + "</p>");
+                        }
 
-                out.println(
-                        "      <p><strong>Topic Code:</strong> " + escapeHtml(orEmpty(topic.getTopicCode())) + "</p>");
+                        out.println("      <label for=\"topicName\">Topic Name (required)</label>");
+                        out.println("      <input id=\"topicName\" name=\"topicName\" type=\"text\" required value=\""
+                                + escapeHtml(orEmpty(topic.getTopicName())) + "\" />");
 
-                out.println("      <label for=\"topicName\">Topic Name (required)</label>");
-                out.println("      <input id=\"topicName\" name=\"topicName\" type=\"text\" required value=\""
-                        + escapeHtml(orEmpty(topic.getTopicName())) + "\" />");
+                        out.println("      <label for=\"description\">Description</label>");
+                        out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
+                                + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
 
-                out.println("      <label for=\"description\">Description</label>");
-                out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
-                        + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
+                        out.println("      <label for=\"neighborhood\">Neighborhood(s) (comma-separated)</label>");
+                        out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
 
-                out.println("      <label for=\"neighborhood\">Neighborhood(s) (comma-separated)</label>");
-                out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
+                        out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
+                        out.println(
+                                "      <input id=\"priorityIis\" name=\"priorityIis\" type=\"number\" required value=\""
+                                        + escapeHtml(String
+                                                .valueOf(topic.getPriorityIis() == null ? 0 : topic.getPriorityIis()))
+                                        + "\" />");
 
-                out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
-                out.println("      <input id=\"priorityIis\" name=\"priorityIis\" type=\"number\" required value=\""
-                        + escapeHtml(String.valueOf(topic.getPriorityIis() == null ? 0 : topic.getPriorityIis()))
-                        + "\" />");
+                        out.println("      <label for=\"priorityEhr\">Priority EHR (required)</label>");
+                        out.println(
+                                "      <input id=\"priorityEhr\" name=\"priorityEhr\" type=\"number\" required value=\""
+                                        + escapeHtml(String
+                                                .valueOf(topic.getPriorityEhr() == null ? 0 : topic.getPriorityEhr()))
+                                        + "\" />");
 
-                out.println("      <label for=\"priorityEhr\">Priority EHR (required)</label>");
-                out.println("      <input id=\"priorityEhr\" name=\"priorityEhr\" type=\"number\" required value=\""
-                        + escapeHtml(String.valueOf(topic.getPriorityEhr() == null ? 0 : topic.getPriorityEhr()))
-                        + "\" />");
+                        out.println("      <label for=\"priorityCdc\">Priority CDC (required)</label>");
+                        out.println(
+                                "      <input id=\"priorityCdc\" name=\"priorityCdc\" type=\"number\" required value=\""
+                                        + escapeHtml(String
+                                                .valueOf(topic.getPriorityCdc() == null ? 0 : topic.getPriorityCdc()))
+                                        + "\" />");
 
-                out.println("      <label for=\"priorityCdc\">Priority CDC (required)</label>");
-                out.println("      <input id=\"priorityCdc\" name=\"priorityCdc\" type=\"number\" required value=\""
-                        + escapeHtml(String.valueOf(topic.getPriorityCdc() == null ? 0 : topic.getPriorityCdc()))
-                        + "\" />");
+                        out.println("      <label for=\"stage\">Stage</label>");
+                        out.println("      <input id=\"stage\" name=\"stage\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(topic.getStage())) + "\" />");
 
-                out.println("      <label for=\"stage\">Stage</label>");
-                out.println("      <input id=\"stage\" name=\"stage\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(topic.getStage())) + "\" />");
+                        out.println("      <label for=\"policyStatus\">Policy Status</label>");
+                        out.println("      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
 
-                out.println("      <label for=\"policyStatus\">Policy Status</label>");
-                out.println("      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
+                        out.println("      <label for=\"topicType\">Topic Type</label>");
+                        out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
 
-                out.println("      <label for=\"topicType\">Topic Type</label>");
-                out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
+                        out.println("      <label for=\"confluenceUrl\">Confluence URL</label>");
+                        out.println("      <input id=\"confluenceUrl\" name=\"confluenceUrl\" type=\"url\" value=\""
+                                + escapeHtml(orEmpty(topic.getConfluenceUrl())) + "\" />");
 
-                out.println("      <label for=\"confluenceUrl\">Confluence URL</label>");
-                out.println("      <input id=\"confluenceUrl\" name=\"confluenceUrl\" type=\"url\" value=\""
-                        + escapeHtml(orEmpty(topic.getConfluenceUrl())) + "\" />");
+                        out.println("      <label for=\"status\">Status (required)</label>");
+                        out.println("      <select id=\"status\" name=\"status\" required>");
+                        out.println(
+                                "        <option value=\"ACTIVE\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ACTIVE)
+                                        + ">ACTIVE</option>");
+                        out.println("        <option value=\"RETIRED\""
+                                + selectedStatus(topic, EsTopic.EsTopicStatus.RETIRED)
+                                + ">RETIRED</option>");
+                        out.println("        <option value=\"ARCHIVED\""
+                                + selectedStatus(topic, EsTopic.EsTopicStatus.ARCHIVED)
+                                + ">ARCHIVED</option>");
+                        out.println("      </select>");
 
-                out.println("      <label for=\"status\">Status (required)</label>");
-                out.println("      <select id=\"status\" name=\"status\" required>");
-                out.println("        <option value=\"ACTIVE\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ACTIVE)
-                        + ">ACTIVE</option>");
-                out.println("        <option value=\"RETIRED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.RETIRED)
-                        + ">RETIRED</option>");
-                out.println("        <option value=\"ARCHIVED\"" + selectedStatus(topic, EsTopic.EsTopicStatus.ARCHIVED)
-                        + ">ARCHIVED</option>");
-                out.println("      </select>");
+                        out.println("      <h2>Meeting Configuration</h2>");
+                        out.println("      <label><input type=\"checkbox\" name=\"meetingEnabled\""
+                                + (meetingEnabled ? " checked" : "")
+                                + " /> Enable Meeting Support</label>");
 
-                out.println("      <h2>Meeting Configuration</h2>");
-                out.println("      <label><input type=\"checkbox\" name=\"meetingEnabled\""
-                        + (meetingEnabled ? " checked" : "")
-                        + " /> Enable Meeting Support</label>");
+                        out.println("      <label for=\"meetingName\">Meeting Name (required when enabled)</label>");
+                        out.println("      <input id=\"meetingName\" name=\"meetingName\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingName())) + "\" />");
 
-                out.println("      <label for=\"meetingName\">Meeting Name (required when enabled)</label>");
-                out.println("      <input id=\"meetingName\" name=\"meetingName\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingName())) + "\" />");
+                        out.println("      <label for=\"meetingDescription\">Meeting Description</label>");
+                        out.println("      <textarea id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
+                                + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingDescription()))
+                                + "</textarea>");
 
-                out.println("      <label for=\"meetingDescription\">Meeting Description</label>");
-                out.println("      <textarea id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
-                        + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingDescription()))
-                        + "</textarea>");
+                        out.println("      <label><input type=\"checkbox\" name=\"meetingRequiresApproval\""
+                                + (meeting != null && Boolean.TRUE.equals(meeting.getJoinRequiresApproval())
+                                        ? " checked"
+                                        : "")
+                                + " /> Join Requires Approval</label>");
 
-                out.println("      <label><input type=\"checkbox\" name=\"meetingRequiresApproval\""
-                        + (meeting != null && Boolean.TRUE.equals(meeting.getJoinRequiresApproval()) ? " checked" : "")
-                        + " /> Join Requires Approval</label>");
-
-                panelOut.println("      <button type=\"submit\">Save</button>");
-                panelOut.println("    </form>");
-                panelOut.println("    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
-                panelOut.println("      </section>");
-            });
+                        panelOut.println("      <button type=\"submit\">Save</button>");
+                        panelOut.println("    </form>");
+                        panelOut.println(
+                                "    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
+                        panelOut.println("      </section>");
+                    });
         }
     }
 

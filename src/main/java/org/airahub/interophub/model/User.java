@@ -46,6 +46,9 @@ public class User {
     @Column(name = "role_title", length = 200)
     private String roleTitle;
 
+    @Column(name = "timezone_id", length = 64)
+    private String timezoneId;
+
     @Column(name = "email_verified", nullable = false)
     private Boolean emailVerified;
 
@@ -163,6 +166,14 @@ public class User {
 
     public void setRoleTitle(String roleTitle) {
         this.roleTitle = roleTitle;
+    }
+
+    public String getTimezoneId() {
+        return timezoneId;
+    }
+
+    public void setTimezoneId(String timezoneId) {
+        this.timezoneId = timezoneId;
     }
 
     public Boolean getEmailVerified() {

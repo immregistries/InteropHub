@@ -23,6 +23,7 @@ public class EsSubscription {
 
     public enum SubscriptionStatus {
         SUBSCRIBED,
+        CHAMPION,
         UNSUBSCRIBED
     }
 
@@ -48,7 +49,7 @@ public class EsSubscription {
     private SubscriptionType subscriptionType;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 16)
+    @Column(name = "status", nullable = false, length = 12)
     private SubscriptionStatus status;
 
     @Column(name = "source_campaign_id")

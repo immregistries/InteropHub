@@ -296,6 +296,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsSubscriptionServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsSubscriptionServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsMeetingServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsMeetingServlet</servlet-class>
   </servlet>
@@ -423,6 +428,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsTopicServlet</servlet-name>
     <url-pattern>/admin/es/topics</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsSubscriptionServlet</servlet-name>
+    <url-pattern>/admin/es/subscription</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
