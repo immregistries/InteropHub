@@ -316,6 +316,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicDetailServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicDetailServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicFollowToggleServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicFollowToggleServlet</servlet-class>
   </servlet>
@@ -448,6 +453,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicsServlet</servlet-name>
     <url-pattern>/es/topics</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicDetailServlet</servlet-name>
+    <url-pattern>/es/topic/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

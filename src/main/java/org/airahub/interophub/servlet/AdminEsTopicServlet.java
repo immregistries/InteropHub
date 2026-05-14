@@ -491,6 +491,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
                                 + "&mode=edit\">Edit Topic</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/es/topic/" + topic.getEsTopicId()
+                        + "\">View Public Page</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
                 panelOut.println("      </section>");
             });
