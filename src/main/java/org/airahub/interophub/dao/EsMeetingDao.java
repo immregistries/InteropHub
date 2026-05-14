@@ -197,6 +197,35 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Returns up to {@code limit} meetings in the same series (esTopicMeetingId)
+     * excluding the specified meeting, with status FINALIZED, COMPLETED, or
+     * CANCELLED, ordered by scheduledStart descending (most recent first).
+     */
+    public List<EsMeeting> findRecentPreviousByTopicMeeting(
+            Long esTopicMeetingId, Long excludeMeetingId, int limit) {
+        if (esTopicMeetingId == null) {
+            return List.of();
+        }
+        long excludeId = excludeMeetingId != null ? excludeMeetingId : -1L;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicMeetingId = :tid"
+                            + " and m.esMeetingId != :excludeId"
+                            + " and m.status in (:statuses)"
+                            + " order by m.scheduledStart desc",
+                    EsMeeting.class)
+                    .setParameter("tid", esTopicMeetingId)
+                    .setParameter("excludeId", excludeId)
+                    .setParameterList("statuses", List.of(
+                            EsMeeting.MeetingStatus.FINALIZED,
+                            EsMeeting.MeetingStatus.COMPLETED,
+                            EsMeeting.MeetingStatus.CANCELLED))
+                    .setMaxResults(limit > 0 ? limit : 12)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Returns the most recent meeting for the given es_topic_meeting whose
      * scheduledStart is strictly before {@code before}, or empty if none exists.
      * Used to copy time-of-day and timezone when creating a new agenda stub.

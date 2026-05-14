@@ -171,6 +171,25 @@ public class EsMeetingAgendaItemDao extends GenericDao<EsMeetingAgendaItem, Long
         }
     }
 
+    /**
+     * Returns all agenda items for the given set of meeting IDs, ordered by
+     * esMeetingId then displayOrder ascending. Used to load items from multiple
+     * previous meetings in a single query.
+     */
+    public List<EsMeetingAgendaItem> findByMeetingIds(List<Long> meetingIds) {
+        if (meetingIds == null || meetingIds.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeetingAgendaItem a where a.esMeetingId in (:ids)"
+                            + " order by a.esMeetingId asc, a.displayOrder asc, a.esMeetingAgendaItemId asc",
+                    EsMeetingAgendaItem.class)
+                    .setParameterList("ids", meetingIds)
+                    .getResultList();
+        }
+    }
+
     public EsMeetingAgendaItem saveOrUpdate(EsMeetingAgendaItem item) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
