@@ -484,4 +484,15 @@
     <servlet-name>TableVoteServlet</servlet-name>
     <url-pattern>/table/*</url-pattern>
   </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsAgendaServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsAgendaServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsAgendaServlet</servlet-name>
+    <url-pattern>/es/agenda</url-pattern>
+  </servlet-mapping>
+
 </web-app>

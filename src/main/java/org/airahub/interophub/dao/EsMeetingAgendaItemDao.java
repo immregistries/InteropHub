@@ -170,4 +170,19 @@ public class EsMeetingAgendaItemDao extends GenericDao<EsMeetingAgendaItem, Long
             throw ex;
         }
     }
+
+    public EsMeetingAgendaItem saveOrUpdate(EsMeetingAgendaItem item) {
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            EsMeetingAgendaItem merged = session.merge(item);
+            tx.commit();
+            return merged;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
 }

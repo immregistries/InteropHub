@@ -1,0 +1,1802 @@
+package org.airahub.interophub.servlet;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
+import java.util.LinkedHashMap;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
+import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsAgendaItemPresenter;
+import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeeting.MeetingStatus;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
+import org.airahub.interophub.model.EsMeetingAgendaItem.AgendaItemStatus;
+import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.AuthFlowService;
+
+public class EsAgendaServlet extends HttpServlet {
+
+    private static final DateTimeFormatter DATE_PARSE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter TIME_PARSE_FMT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter DISPLAY_DATE_FMT = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy");
+    private static final DateTimeFormatter DISPLAY_TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
+    private static final DateTimeFormatter INPUT_DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final DateTimeFormatter INPUT_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
+
+    private static final Set<String> ALLOWED_TIMEZONES = Set.of(
+            "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+            "America/Phoenix", "America/Anchorage", "Pacific/Honolulu",
+            "America/Sao_Paulo", "America/Santiago",
+            "Europe/London", "Europe/Paris",
+            "Africa/Johannesburg",
+            "Asia/Kolkata", "Asia/Tokyo",
+            "Australia/Sydney",
+            "Pacific/Auckland");
+
+    private final AuthFlowService authFlowService;
+    private final EsMeetingDao meetingDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
+    private final EsTopicDao topicDao;
+    private final EsAgendaItemPresenterDao presenterDao;
+    private final UserDao userDao;
+
+    public EsAgendaServlet() {
+        this.authFlowService = new AuthFlowService();
+        this.meetingDao = new EsMeetingDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
+        this.topicDao = new EsTopicDao();
+        this.presenterDao = new EsAgendaItemPresenterDao();
+        this.userDao = new UserDao();
+    }
+
+    // =========================================================================
+    // GET
+    // =========================================================================
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Optional<User> userOpt = requireLogin(request, response);
+        if (userOpt.isEmpty()) {
+            return;
+        }
+        User user = userOpt.get();
+        String contextPath = request.getContextPath();
+
+        Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
+        if (meetingId == null) {
+            renderError(response, contextPath, "Missing or invalid meetingId parameter.");
+            return;
+        }
+
+        EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
+        if (meeting == null) {
+            renderError(response, contextPath, "Meeting not found.");
+            return;
+        }
+
+        List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
+        boolean isEditor = isEditor(user, meeting, items);
+
+        if (!canView(user, meeting, isEditor)) {
+            renderAccessDenied(response, contextPath);
+            return;
+        }
+
+        // Seed default agenda items when empty and meeting is editable
+        if (items.isEmpty() && meeting.getStatus() != MeetingStatus.COMPLETED
+                && meeting.getStatus() != MeetingStatus.CANCELLED) {
+            createDefaultAgendaItems(meeting);
+            items = agendaItemDao.findByMeetingIdOrdered(meetingId);
+        }
+
+        boolean editOverride = "true".equals(request.getParameter("edit"));
+        boolean canEdit = canEdit(user, meeting, editOverride, isEditor);
+
+        // Load presenters keyed by agendaItemId
+        Map<Long, List<EsAgendaItemPresenter>> presentersByItem = new LinkedHashMap<>();
+        Map<Long, User> presenterUsers = new LinkedHashMap<>();
+        for (EsMeetingAgendaItem item : items) {
+            List<EsAgendaItemPresenter> ps = presenterDao.findByAgendaItemId(item.getEsMeetingAgendaItemId());
+            presentersByItem.put(item.getEsMeetingAgendaItemId(), ps);
+            for (EsAgendaItemPresenter p : ps) {
+                if (p.getUserId() != null && !presenterUsers.containsKey(p.getUserId())) {
+                    userDao.findById(p.getUserId()).ifPresent(u -> presenterUsers.put(u.getUserId(), u));
+                }
+            }
+        }
+
+        // Next meeting for footer
+        EsMeeting nextMeeting = findNextMeeting(meeting);
+
+        String savedMsg = request.getParameter("saved") != null ? "Changes saved." : null;
+        String errorMsg = trimToNull(request.getParameter("err"));
+
+        renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
+                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg);
+    }
+
+    // =========================================================================
+    // POST
+    // =========================================================================
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        request.setCharacterEncoding("UTF-8");
+
+        Optional<User> userOpt = requireLogin(request, response);
+        if (userOpt.isEmpty()) {
+            return;
+        }
+        User user = userOpt.get();
+        String contextPath = request.getContextPath();
+
+        Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
+        if (meetingId == null) {
+            response.sendRedirect(contextPath + "/es/agenda");
+            return;
+        }
+
+        EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
+        if (meeting == null) {
+            response.sendRedirect(contextPath + "/es/agenda");
+            return;
+        }
+
+        List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
+        boolean isEditor = isEditor(user, meeting, items);
+        boolean editOverride = "true".equals(request.getParameter("edit"));
+        boolean canEdit = canEdit(user, meeting, editOverride, isEditor);
+
+        String action = trimToNull(request.getParameter("action"));
+        if (action == null) {
+            redirectBack(response, contextPath, meetingId, editOverride);
+            return;
+        }
+
+        // Viewer timezone update does not require edit permission
+        if ("updateViewerTimezone".equals(action)) {
+            handleUpdateViewerTimezone(request, response, contextPath, user, meetingId, editOverride);
+            return;
+        }
+
+        // All other actions require edit permission
+        if (!canEdit) {
+            redirectBackWithError(response, contextPath, meetingId, editOverride,
+                    "You do not have permission to edit this agenda.");
+            return;
+        }
+
+        switch (action) {
+            case "updateMeetingName":
+                handleUpdateMeetingName(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateMeetingDate":
+                handleUpdateMeetingDate(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateMeetingTime":
+                handleUpdateMeetingTime(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateMeetingTimezone":
+                handleUpdateMeetingTimezone(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateMeetingTimeAndTimezone":
+                handleUpdateMeetingTimeAndTimezone(request, response, contextPath, meeting, user, editOverride);
+                break;
+            case "updateMeetingDescription":
+                handleUpdateMeetingDescription(request, response, contextPath, meeting, editOverride);
+                break;
+            case "addAgendaItem":
+                handleAddAgendaItem(request, response, contextPath, meeting, items, editOverride);
+                break;
+            case "updateAgendaItem":
+                handleUpdateAgendaItem(request, response, contextPath, meeting, editOverride);
+                break;
+            case "moveItemUp":
+                handleMoveItem(request, response, contextPath, meeting, items, editOverride, true);
+                break;
+            case "moveItemDown":
+                handleMoveItem(request, response, contextPath, meeting, items, editOverride, false);
+                break;
+            case "cancelAgendaItem":
+                handleCancelAgendaItem(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateItemStatus":
+                handleUpdateItemStatus(request, response, contextPath, meeting, editOverride);
+                break;
+            case "updateMeetingStatus":
+                handleUpdateMeetingStatus(request, response, contextPath, meeting, items, user, editOverride);
+                break;
+            default:
+                redirectBack(response, contextPath, meetingId, editOverride);
+        }
+    }
+
+    // =========================================================================
+    // Access control
+    // =========================================================================
+
+    private Optional<User> requireLogin(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
+        if (userOpt.isEmpty()) {
+            response.sendRedirect(request.getContextPath() + "/home");
+        }
+        return userOpt;
+    }
+
+    private boolean isEditor(User user, EsMeeting meeting, List<EsMeetingAgendaItem> items) {
+        if (authFlowService.isAdminUser(user)) {
+            return true;
+        }
+        // Check if user is an active presenter on any agenda item of this meeting
+        Set<Long> itemIds = items.stream()
+                .map(EsMeetingAgendaItem::getEsMeetingAgendaItemId)
+                .collect(Collectors.toSet());
+        if (itemIds.isEmpty()) {
+            return false;
+        }
+        for (Long itemId : itemIds) {
+            List<EsAgendaItemPresenter> presenters = presenterDao.findByAgendaItemId(itemId);
+            for (EsAgendaItemPresenter p : presenters) {
+                if (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.REMOVED
+                        || p.getStatus() == EsAgendaItemPresenter.PresenterStatus.DECLINED) {
+                    continue;
+                }
+                if (user.getUserId() != null && user.getUserId().equals(p.getUserId())) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean canView(User user, EsMeeting meeting, boolean isEditor) {
+        MeetingStatus status = meeting.getStatus();
+        if (status == MeetingStatus.DRAFT) {
+            return isEditor;
+        }
+        // PROPOSED, FINALIZED, COMPLETED, CANCELLED — any logged-in user
+        return true;
+    }
+
+    private boolean canEdit(User user, EsMeeting meeting, boolean editOverride, boolean isEditor) {
+        if (!isEditor) {
+            return false;
+        }
+        MeetingStatus status = meeting.getStatus();
+        if (status == MeetingStatus.COMPLETED || status == MeetingStatus.CANCELLED) {
+            return false;
+        }
+        if (status == MeetingStatus.FINALIZED) {
+            return editOverride;
+        }
+        // DRAFT or PROPOSED
+        return true;
+    }
+
+    // =========================================================================
+    // POST handlers — meeting fields
+    // =========================================================================
+
+    private void handleUpdateMeetingName(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        String name = trimToNull(request.getParameter("name"));
+        if (name == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting name is required.");
+            return;
+        }
+        meeting.setMeetingName(name);
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingDate(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        String dateRaw = trimToNull(request.getParameter("date"));
+        if (dateRaw == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride, "Date is required.");
+            return;
+        }
+        LocalDate newDate;
+        try {
+            newDate = LocalDate.parse(dateRaw, DATE_PARSE_FMT);
+        } catch (DateTimeParseException ex) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid date format.");
+            return;
+        }
+        LocalTime existingStartTime = meeting.getScheduledStart() != null
+                ? meeting.getScheduledStart().toLocalTime()
+                : LocalTime.of(11, 0);
+        LocalDateTime newStart = newDate.atTime(existingStartTime);
+        if (meeting.getScheduledEnd() != null && meeting.getScheduledStart() != null) {
+            long durationMinutes = ChronoUnit.MINUTES.between(meeting.getScheduledStart(), meeting.getScheduledEnd());
+            meeting.setScheduledEnd(newStart.plusMinutes(durationMinutes));
+        }
+        meeting.setScheduledStart(newStart);
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingTime(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        String startTimeRaw = trimToNull(request.getParameter("startTime"));
+        String endTimeRaw = trimToNull(request.getParameter("endTime"));
+        if (startTimeRaw == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Start time is required.");
+            return;
+        }
+        LocalTime newStart;
+        try {
+            newStart = LocalTime.parse(startTimeRaw, TIME_PARSE_FMT);
+        } catch (DateTimeParseException ex) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid start time format (use HH:mm).");
+            return;
+        }
+        LocalDate existingDate = meeting.getScheduledStart() != null
+                ? meeting.getScheduledStart().toLocalDate()
+                : LocalDate.now();
+        meeting.setScheduledStart(existingDate.atTime(newStart));
+        if (endTimeRaw != null && !endTimeRaw.isBlank()) {
+            try {
+                LocalTime newEnd = LocalTime.parse(endTimeRaw, TIME_PARSE_FMT);
+                meeting.setScheduledEnd(existingDate.atTime(newEnd));
+            } catch (DateTimeParseException ex) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "Invalid end time format (use HH:mm).");
+                return;
+            }
+        } else {
+            meeting.setScheduledEnd(null);
+        }
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingTimezone(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        String tz = trimToNull(request.getParameter("timezoneId"));
+        if (tz == null || !ALLOWED_TIMEZONES.contains(tz)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid or unsupported timezone.");
+            return;
+        }
+        meeting.setTimezoneId(tz);
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingTimeAndTimezone(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, User user, boolean editOverride) throws IOException {
+        // 1. Meeting timezone (set first; times are entered relative to this zone)
+        String meetingTzRaw = trimToNull(request.getParameter("meetingTimezone"));
+        if (meetingTzRaw != null && ALLOWED_TIMEZONES.contains(meetingTzRaw)) {
+            meeting.setTimezoneId(meetingTzRaw);
+        }
+        // 2. Start time (required)
+        String startTimeRaw = trimToNull(request.getParameter("startTime"));
+        if (startTimeRaw == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Start time is required.");
+            return;
+        }
+        LocalTime newStart;
+        try {
+            newStart = LocalTime.parse(startTimeRaw, TIME_PARSE_FMT);
+        } catch (DateTimeParseException ex) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid start time format (use HH:mm).");
+            return;
+        }
+        LocalDate existingDate = meeting.getScheduledStart() != null
+                ? meeting.getScheduledStart().toLocalDate()
+                : LocalDate.now();
+        meeting.setScheduledStart(existingDate.atTime(newStart));
+        // 3. End time (optional)
+        String endTimeRaw = trimToNull(request.getParameter("endTime"));
+        if (endTimeRaw != null && !endTimeRaw.isBlank()) {
+            try {
+                LocalTime newEnd = LocalTime.parse(endTimeRaw, TIME_PARSE_FMT);
+                meeting.setScheduledEnd(existingDate.atTime(newEnd));
+            } catch (DateTimeParseException ex) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "Invalid end time format (use HH:mm).");
+                return;
+            }
+        } else {
+            meeting.setScheduledEnd(null);
+        }
+        meetingDao.saveOrUpdate(meeting);
+        // 4. Viewer (My) timezone
+        String viewerTzRaw = trimToNull(request.getParameter("viewerTimezone"));
+        if (viewerTzRaw != null && ALLOWED_TIMEZONES.contains(viewerTzRaw)) {
+            user.setTimezoneId(viewerTzRaw);
+            userDao.saveOrUpdate(user);
+        }
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingDescription(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        String desc = trimToNull(request.getParameter("description"));
+        meeting.setMeetingDescription(desc);
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateViewerTimezone(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, User user, Long meetingId, boolean editOverride) throws IOException {
+        String tz = trimToNull(request.getParameter("timezoneId"));
+        if (tz == null || !ALLOWED_TIMEZONES.contains(tz)) {
+            redirectBackWithError(response, contextPath, meetingId, editOverride, "Invalid or unsupported timezone.");
+            return;
+        }
+        user.setTimezoneId(tz);
+        userDao.saveOrUpdate(user);
+        redirectBack(response, contextPath, meetingId, editOverride);
+    }
+
+    // =========================================================================
+    // POST handlers — agenda items
+    // =========================================================================
+
+    private void handleAddAgendaItem(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, List<EsMeetingAgendaItem> items,
+            boolean editOverride) throws IOException {
+        String title = trimToNull(request.getParameter("title"));
+        if (title == null) {
+            title = "New Agenda Item";
+        }
+        String topicIdRaw = trimToNull(request.getParameter("topicId"));
+        Long topicId = null;
+        if (topicIdRaw != null) {
+            try {
+                topicId = Long.parseLong(topicIdRaw);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        int maxOrder = items.stream()
+                .mapToInt(i -> i.getDisplayOrder() != null ? i.getDisplayOrder() : 0)
+                .max().orElse(0);
+        // Default to end; insert before last item if it looks like a "Wrap Up" closer
+        List<EsMeetingAgendaItem> visibleItems = items.stream()
+                .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
+                .collect(Collectors.toList());
+        int newOrder = maxOrder + 10;
+        if (!visibleItems.isEmpty()) {
+            EsMeetingAgendaItem last = visibleItems.get(visibleItems.size() - 1);
+            boolean isWrapUp = Integer.valueOf(5).equals(last.getTimeMinutes())
+                    || "wrap up".equalsIgnoreCase(last.getTitle() != null ? last.getTitle().trim() : "");
+            if (isWrapUp) {
+                int wrapUpOrder = last.getDisplayOrder() != null ? last.getDisplayOrder() : maxOrder;
+                if (visibleItems.size() > 1) {
+                    EsMeetingAgendaItem prev = visibleItems.get(visibleItems.size() - 2);
+                    int prevOrder = prev.getDisplayOrder() != null ? prev.getDisplayOrder() : 0;
+                    newOrder = wrapUpOrder - prevOrder > 1
+                            ? prevOrder + (wrapUpOrder - prevOrder) / 2
+                            : wrapUpOrder - 1;
+                } else {
+                    newOrder = wrapUpOrder - 5;
+                }
+            }
+        }
+        EsMeetingAgendaItem newItem = new EsMeetingAgendaItem();
+        newItem.setEsMeetingId(meeting.getEsMeetingId());
+        newItem.setTitle(title);
+        newItem.setAgendaMarkdown("");
+        newItem.setTimeMinutes(20);
+        newItem.setDisplayOrder(newOrder);
+        newItem.setStatus(AgendaItemStatus.DRAFT);
+        if (topicId != null) {
+            newItem.setEsTopicId(topicId);
+        }
+        agendaItemDao.save(newItem);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateAgendaItem(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        Long itemId = parseId(trimToNull(request.getParameter("itemId")));
+        if (itemId == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        EsMeetingAgendaItem item = agendaItemDao.findById(itemId).orElse(null);
+        if (item == null || !meeting.getEsMeetingId().equals(item.getEsMeetingId())) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        String title = trimToNull(request.getParameter("title"));
+        if (title != null && !title.isBlank()) {
+            item.setTitle(title);
+        }
+        String markdown = request.getParameter("agendaMarkdown");
+        if (markdown != null) {
+            item.setAgendaMarkdown(markdown.isBlank() ? null : markdown);
+        }
+        String minutesRaw = trimToNull(request.getParameter("timeMinutes"));
+        if (minutesRaw != null) {
+            try {
+                item.setTimeMinutes(Integer.parseInt(minutesRaw));
+            } catch (NumberFormatException ignored) {
+                // keep existing value
+            }
+        }
+        agendaItemDao.saveOrUpdate(item);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleMoveItem(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, List<EsMeetingAgendaItem> items,
+            boolean editOverride, boolean moveUp) throws IOException {
+        Long itemId = parseId(trimToNull(request.getParameter("itemId")));
+        if (itemId == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        // Find the item and its neighbor in the ordered list
+        int idx = -1;
+        for (int i = 0; i < items.size(); i++) {
+            if (itemId.equals(items.get(i).getEsMeetingAgendaItemId())) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx < 0) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        int neighborIdx = moveUp ? idx - 1 : idx + 1;
+        if (neighborIdx < 0 || neighborIdx >= items.size()) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        EsMeetingAgendaItem item = items.get(idx);
+        EsMeetingAgendaItem neighbor = items.get(neighborIdx);
+        int itemOrder = item.getDisplayOrder() != null ? item.getDisplayOrder() : 0;
+        int neighborOrder = neighbor.getDisplayOrder() != null ? neighbor.getDisplayOrder() : 0;
+        if (itemOrder == neighborOrder) {
+            // Ensure distinct values before swap
+            neighborOrder = itemOrder + (moveUp ? -1 : 1);
+        }
+        Map<Long, Integer> reorderMap = new LinkedHashMap<>();
+        reorderMap.put(item.getEsMeetingAgendaItemId(), neighborOrder);
+        reorderMap.put(neighbor.getEsMeetingAgendaItemId(), itemOrder);
+        agendaItemDao.reorderItems(reorderMap);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleCancelAgendaItem(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        Long itemId = parseId(trimToNull(request.getParameter("itemId")));
+        if (itemId != null) {
+            EsMeetingAgendaItem item = agendaItemDao.findById(itemId).orElse(null);
+            if (item != null && meeting.getEsMeetingId().equals(item.getEsMeetingId())) {
+                agendaItemDao.cancelItem(itemId);
+            }
+        }
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateItemStatus(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        Long itemId = parseId(trimToNull(request.getParameter("itemId")));
+        String targetStatusRaw = trimToNull(request.getParameter("targetStatus"));
+        if (itemId == null || targetStatusRaw == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        EsMeetingAgendaItem item = agendaItemDao.findById(itemId).orElse(null);
+        if (item == null || !meeting.getEsMeetingId().equals(item.getEsMeetingId())) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        AgendaItemStatus targetStatus;
+        try {
+            targetStatus = AgendaItemStatus.valueOf(targetStatusRaw);
+        } catch (IllegalArgumentException ex) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        AgendaItemStatus current = item.getStatus();
+        if (!isValidItemStatusTransition(current, targetStatus)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid status transition: " + current + " → " + targetStatus);
+            return;
+        }
+        applyItemStatusTransition(item, targetStatus);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private boolean isValidItemStatusTransition(AgendaItemStatus from, AgendaItemStatus to) {
+        switch (from) {
+            case DRAFT:
+                return to == AgendaItemStatus.PROPOSED || to == AgendaItemStatus.ACCEPTED
+                        || to == AgendaItemStatus.NEEDS_REVISION || to == AgendaItemStatus.POSTPONED
+                        || to == AgendaItemStatus.CANCELLED;
+            case PROPOSED:
+                return to == AgendaItemStatus.ACCEPTED || to == AgendaItemStatus.NEEDS_REVISION
+                        || to == AgendaItemStatus.POSTPONED || to == AgendaItemStatus.CANCELLED;
+            case ACCEPTED:
+                return to == AgendaItemStatus.POSTPONED || to == AgendaItemStatus.COVERED
+                        || to == AgendaItemStatus.NOT_COVERED || to == AgendaItemStatus.CANCELLED;
+            case NEEDS_REVISION:
+                return to == AgendaItemStatus.ACCEPTED || to == AgendaItemStatus.PROPOSED
+                        || to == AgendaItemStatus.POSTPONED || to == AgendaItemStatus.CANCELLED;
+            case POSTPONED:
+                return to == AgendaItemStatus.CANCELLED;
+            default:
+                return false;
+        }
+    }
+
+    private void applyItemStatusTransition(EsMeetingAgendaItem item, AgendaItemStatus targetStatus) {
+        switch (targetStatus) {
+            case POSTPONED:
+                agendaItemDao.postponeItem(item.getEsMeetingAgendaItemId(), null);
+                break;
+            case COVERED:
+                agendaItemDao.markCovered(item.getEsMeetingAgendaItemId());
+                break;
+            case NOT_COVERED:
+                agendaItemDao.markNotCovered(item.getEsMeetingAgendaItemId());
+                break;
+            case CANCELLED:
+                agendaItemDao.cancelItem(item.getEsMeetingAgendaItemId());
+                break;
+            default:
+                item.setStatus(targetStatus);
+                if (targetStatus == AgendaItemStatus.ACCEPTED) {
+                    item.setAcceptedAt(LocalDateTime.now());
+                }
+                agendaItemDao.saveOrUpdate(item);
+        }
+    }
+
+    // =========================================================================
+    // POST handlers — meeting status
+    // =========================================================================
+
+    private void handleUpdateMeetingStatus(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, List<EsMeetingAgendaItem> items,
+            User user, boolean editOverride) throws IOException {
+        String targetStatusRaw = trimToNull(request.getParameter("targetStatus"));
+        if (targetStatusRaw == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        MeetingStatus targetStatus;
+        try {
+            targetStatus = MeetingStatus.valueOf(targetStatusRaw);
+        } catch (IllegalArgumentException ex) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Unknown meeting status.");
+            return;
+        }
+        MeetingStatus current = meeting.getStatus();
+        if (!isValidMeetingStatusTransition(current, targetStatus)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid meeting status transition: " + current + " → " + targetStatus);
+            return;
+        }
+        // Finalization requires all non-CANCELLED items to be ACCEPTED
+        if (targetStatus == MeetingStatus.FINALIZED) {
+            boolean blocked = items.stream()
+                    .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
+                    .anyMatch(i -> i.getStatus() != AgendaItemStatus.ACCEPTED);
+            if (blocked) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "This meeting cannot be finalized until all active agenda items are accepted.");
+                return;
+            }
+        }
+        applyMeetingStatusTransition(meeting, targetStatus,
+                trimToNull(request.getParameter("cancellationReason")));
+        // After finalize or complete, edit override no longer makes sense
+        boolean keepEdit = targetStatus == MeetingStatus.FINALIZED ? false : editOverride;
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), keepEdit);
+    }
+
+    private boolean isValidMeetingStatusTransition(MeetingStatus from, MeetingStatus to) {
+        switch (from) {
+            case DRAFT:
+                return to == MeetingStatus.PROPOSED || to == MeetingStatus.FINALIZED
+                        || to == MeetingStatus.CANCELLED;
+            case PROPOSED:
+                return to == MeetingStatus.FINALIZED || to == MeetingStatus.COMPLETED
+                        || to == MeetingStatus.CANCELLED;
+            case FINALIZED:
+                return to == MeetingStatus.COMPLETED || to == MeetingStatus.CANCELLED;
+            default:
+                return false;
+        }
+    }
+
+    private void applyMeetingStatusTransition(EsMeeting meeting, MeetingStatus targetStatus,
+            String cancellationReason) {
+        switch (targetStatus) {
+            case CANCELLED:
+                meetingDao.cancelMeeting(meeting.getEsMeetingId(), cancellationReason);
+                break;
+            case FINALIZED:
+                if (meeting.getStatus() == MeetingStatus.PROPOSED) {
+                    meetingDao.finalizeMeeting(meeting.getEsMeetingId());
+                } else {
+                    meeting.setStatus(MeetingStatus.FINALIZED);
+                    meeting.setFinalizedAt(LocalDateTime.now());
+                    meetingDao.saveOrUpdate(meeting);
+                }
+                break;
+            case COMPLETED:
+                if (meeting.getStatus() == MeetingStatus.FINALIZED) {
+                    meetingDao.completeMeeting(meeting.getEsMeetingId());
+                } else {
+                    meeting.setStatus(MeetingStatus.COMPLETED);
+                    meeting.setCompletedAt(LocalDateTime.now());
+                    meetingDao.saveOrUpdate(meeting);
+                }
+                break;
+            default:
+                meeting.setStatus(targetStatus);
+                meetingDao.saveOrUpdate(meeting);
+        }
+    }
+
+    // =========================================================================
+    // Default agenda items
+    // =========================================================================
+
+    private void createDefaultAgendaItems(EsMeeting meeting) {
+        EsMeetingAgendaItem welcome = new EsMeetingAgendaItem();
+        welcome.setEsMeetingId(meeting.getEsMeetingId());
+        welcome.setTitle("Welcome and Introductions");
+        welcome.setAgendaMarkdown("Welcome\nIntroductions");
+        welcome.setTimeMinutes(5);
+        welcome.setDisplayOrder(10);
+        welcome.setStatus(AgendaItemStatus.DRAFT);
+        agendaItemDao.save(welcome);
+
+        EsMeetingAgendaItem wrapUp = new EsMeetingAgendaItem();
+        wrapUp.setEsMeetingId(meeting.getEsMeetingId());
+        wrapUp.setTitle("Wrap Up");
+        wrapUp.setAgendaMarkdown("Next steps\nNext topics");
+        wrapUp.setTimeMinutes(5);
+        wrapUp.setDisplayOrder(20);
+        wrapUp.setStatus(AgendaItemStatus.DRAFT);
+        agendaItemDao.save(wrapUp);
+    }
+
+    // =========================================================================
+    // Next meeting lookup
+    // =========================================================================
+
+    private EsMeeting findNextMeeting(EsMeeting current) {
+        if (current.getScheduledStart() == null) {
+            return null;
+        }
+        List<EsMeeting> siblings = meetingDao.findByEsTopicMeetingId(current.getEsTopicMeetingId());
+        return siblings.stream()
+                .filter(m -> !m.getEsMeetingId().equals(current.getEsMeetingId()))
+                .filter(m -> m.getStatus() == MeetingStatus.PROPOSED || m.getStatus() == MeetingStatus.FINALIZED)
+                .filter(m -> m.getScheduledStart() != null
+                        && m.getScheduledStart().isAfter(current.getScheduledStart()))
+                .min((a, b) -> a.getScheduledStart().compareTo(b.getScheduledStart()))
+                .orElse(null);
+    }
+
+    // =========================================================================
+    // Redirect helpers
+    // =========================================================================
+
+    private void redirectBack(HttpServletResponse response, String contextPath, Long meetingId,
+            boolean editOverride) throws IOException {
+        String url = contextPath + "/es/agenda?meetingId=" + meetingId + "&saved=1";
+        if (editOverride) {
+            url += "&edit=true";
+        }
+        response.sendRedirect(url);
+    }
+
+    private void redirectBackWithError(HttpServletResponse response, String contextPath, Long meetingId,
+            boolean editOverride, String errorMsg) throws IOException {
+        String url = contextPath + "/es/agenda?meetingId=" + meetingId
+                + "&err=" + URLEncoder.encode(errorMsg, StandardCharsets.UTF_8);
+        if (editOverride) {
+            url += "&edit=true";
+        }
+        response.sendRedirect(url);
+    }
+
+    // =========================================================================
+    // Page rendering
+    // =========================================================================
+
+    private void renderPage(HttpServletResponse response, String contextPath, User user,
+            EsMeeting meeting, List<EsMeetingAgendaItem> items,
+            Map<Long, List<EsAgendaItemPresenter>> presentersByItem,
+            Map<Long, User> presenterUsers,
+            boolean isEditor, boolean canEdit, boolean editOverride,
+            EsMeeting nextMeeting, String savedMsg, String errorMsg) throws IOException {
+        response.setContentType("text/html;charset=UTF-8");
+
+        String effectiveTz = resolveEffectiveTz(user, meeting);
+        ZoneId meetingZone = safeZoneId(meeting.getTimezoneId(), effectiveTz);
+        ZoneId viewerZone = safeZoneId(effectiveTz, "America/New_York");
+
+        // Convert meeting times to viewer's timezone for display
+        ZonedDateTime displayStart = meeting.getScheduledStart() != null
+                ? ZonedDateTime.of(meeting.getScheduledStart(), meetingZone).withZoneSameInstant(viewerZone)
+                : null;
+        ZonedDateTime displayEnd = meeting.getScheduledEnd() != null
+                ? ZonedDateTime.of(meeting.getScheduledEnd(), meetingZone).withZoneSameInstant(viewerZone)
+                : null;
+
+        String dateDisplay = displayStart != null ? DISPLAY_DATE_FMT.format(displayStart) : "";
+        String startTimeDisplay = displayStart != null ? DISPLAY_TIME_FMT.format(displayStart) : "";
+        String endTimeDisplay = displayEnd != null ? DISPLAY_TIME_FMT.format(displayEnd) : "";
+        String tzAbbr = displayStart != null ? displayStart.getZone().getId() : effectiveTz;
+        String meetingTzDisplay = orEmpty(meeting.getTimezoneId()).isEmpty() ? "America/New_York"
+                : meeting.getTimezoneId();
+
+        boolean isCancelled = meeting.getStatus() == MeetingStatus.CANCELLED;
+        String selfUrl = contextPath + "/es/agenda?meetingId=" + meeting.getEsMeetingId();
+        String editUrl = selfUrl + "&edit=true";
+
+        // Duration warning calculation
+        int agendaMinutes = items.stream()
+                .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
+                .mapToInt(i -> i.getTimeMinutes() != null ? i.getTimeMinutes() : 0)
+                .sum();
+        Long meetingDurationMinutes = null;
+        if (meeting.getScheduledStart() != null && meeting.getScheduledEnd() != null) {
+            meetingDurationMinutes = ChronoUnit.MINUTES.between(meeting.getScheduledStart(), meeting.getScheduledEnd());
+        }
+
+        // Topics for add-item autocomplete (only needed when editing)
+        List<EsTopic> allTopics = canEdit ? topicDao.findAllOrderByTopicName() : List.of();
+
+        try (PrintWriter out = response.getWriter()) {
+            out.println("<!DOCTYPE html>");
+            out.println("<html lang=\"en\">");
+            out.println("<head>");
+            out.println("  <meta charset=\"UTF-8\" />");
+            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
+            out.println("  <title>" + escapeHtml(orEmpty(meeting.getMeetingName())) + " — Agenda</title>");
+            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
+            out.println("  <style>");
+            renderAgendaStyles(out);
+            out.println("  </style>");
+            out.println("</head>");
+            out.println("<body>");
+            out.println("<main class=\"agenda-page\">");
+
+            // Cancellation banner
+            if (isCancelled) {
+                out.println("  <div class=\"agenda-cancelled-banner\">");
+                out.println("    <strong>CANCELLED</strong>");
+                if (meeting.getCancellationReason() != null && !meeting.getCancellationReason().isBlank()) {
+                    out.println("    &mdash; " + escapeHtml(meeting.getCancellationReason()));
+                }
+                out.println("  </div>");
+            }
+
+            // Messages
+            if (savedMsg != null) {
+                out.println("  <div class=\"agenda-msg-success no-print\">" + escapeHtml(savedMsg) + "</div>");
+            }
+            if (errorMsg != null) {
+                out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");
+            }
+
+            // --- HEADER ---
+            out.println("  <div class=\"agenda-header\">");
+            out.println("    <div class=\"agenda-logo-cell\">");
+            out.println("      <img src=\"" + contextPath
+                    + "/image/aira_logo.webp\" alt=\"AIRA\" class=\"agenda-logo\" />");
+            out.println("    </div>");
+            out.println("    <div class=\"agenda-title-cell\">");
+            out.println("      <h1 class=\"agenda-title\">AGENDA</h1>");
+            out.println("    </div>");
+            out.println("  </div>");
+
+            // --- METADATA BLOCK ---
+            out.println("  <div class=\"agenda-meta panel\">");
+
+            // Meeting name (editable)
+            if (canEdit) {
+                out.println("    <div class=\"agenda-meta-row\">");
+                out.println("      <span class=\"agenda-meta-label\">Meeting:</span>");
+                out.println(
+                        "      <span id=\"meeting-name-display\" class=\"agenda-meta-value click-to-edit\" onclick=\"esShowEdit('meeting-name')\" title=\"Click to edit\">"
+                                + escapeHtml(orEmpty(meeting.getMeetingName())) + "</span>");
+                out.println(
+                        "      <form id=\"meeting-name-form\" class=\"agenda-inline-form no-print\" method=\"post\" action=\""
+                                + contextPath
+                                + "/es/agenda\" style=\"display:none\">");
+                out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
+                        + "\">");
+                out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingName\">");
+                if (editOverride)
+                    out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("        <input type=\"text\" name=\"name\" value=\""
+                        + escapeHtml(orEmpty(meeting.getMeetingName())) + "\" required size=\"40\">");
+                out.println("        <button type=\"submit\">Save</button>");
+                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-name')\">Cancel</button>");
+                out.println("      </form>");
+                out.println("    </div>");
+            } else {
+                out.println("    <div class=\"agenda-meta-row\">");
+                out.println("      <span class=\"agenda-meta-label\">Meeting:</span>");
+                out.println("      <span class=\"agenda-meta-value\">" + escapeHtml(orEmpty(meeting.getMeetingName()))
+                        + "</span>");
+                out.println("    </div>");
+            }
+
+            // Date (editable)
+            if (canEdit) {
+                String dateInputVal = meeting.getScheduledStart() != null
+                        ? INPUT_DATE_FMT.format(meeting.getScheduledStart().toLocalDate())
+                        : "";
+                out.println("    <div class=\"agenda-meta-row\">");
+                out.println("      <span class=\"agenda-meta-label\">Date:</span>");
+                out.println(
+                        "      <span id=\"meeting-date-display\" class=\"agenda-meta-value click-to-edit\" onclick=\"esShowEdit('meeting-date')\" title=\"Click to edit\">"
+                                + escapeHtml(dateDisplay) + "</span>");
+                out.println(
+                        "      <form id=\"meeting-date-form\" class=\"agenda-inline-form no-print\" method=\"post\" action=\""
+                                + contextPath
+                                + "/es/agenda\" style=\"display:none\">");
+                out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
+                        + "\">");
+                out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingDate\">");
+                if (editOverride)
+                    out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("        <span class=\"agenda-tz-note\">Date in meeting timezone: "
+                        + escapeHtml(meetingTzDisplay) + "</span>");
+                out.println("        <input type=\"date\" name=\"date\" value=\"" + escapeHtml(dateInputVal)
+                        + "\" required>");
+                out.println("        <button type=\"submit\">Save</button>");
+                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-date')\">Cancel</button>");
+                out.println("      </form>");
+                out.println("    </div>");
+            } else {
+                out.println("    <div class=\"agenda-meta-row\">");
+                out.println("      <span class=\"agenda-meta-label\">Date:</span>");
+                out.println("      <span class=\"agenda-meta-value\">" + escapeHtml(dateDisplay) + "</span>");
+                out.println("    </div>");
+            }
+
+            // Time + Timezone (combined click-to-edit)
+            String timeDisplay = startTimeDisplay.isEmpty() ? ""
+                    : (endTimeDisplay.isEmpty() ? startTimeDisplay + " " + tzAbbr
+                            : startTimeDisplay + " – " + endTimeDisplay + " " + tzAbbr);
+            {
+                String timeClickTitle = canEdit ? "Click to edit time or timezones" : "Click to set My Timezone";
+                out.println("    <div class=\"agenda-meta-row\">");
+                out.println("      <span class=\"agenda-meta-label\">Time:</span>");
+                out.println("      <span id=\"meeting-time-display\" class=\"agenda-meta-value click-to-edit\""
+                        + " onclick=\"esShowEdit('meeting-time')\" title=\"" + escapeHtml(timeClickTitle) + "\">"
+                        + escapeHtml(timeDisplay.isEmpty() ? "Not set" : timeDisplay) + "</span>");
+                if (canEdit) {
+                    String startInput = meeting.getScheduledStart() != null
+                            ? INPUT_TIME_FMT.format(meeting.getScheduledStart().toLocalTime())
+                            : "";
+                    String endInput = meeting.getScheduledEnd() != null
+                            ? INPUT_TIME_FMT.format(meeting.getScheduledEnd().toLocalTime())
+                            : "";
+                    out.println("      <form id=\"meeting-time-form\" class=\"agenda-inline-form no-print\""
+                            + " method=\"post\" action=\"" + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "        <input type=\"hidden\" name=\"action\" value=\"updateMeetingTimeAndTimezone\">");
+                    if (editOverride)
+                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("        <span class=\"agenda-tz-note\">Times are in meeting timezone: "
+                            + escapeHtml(meetingTzDisplay) + "</span>");
+                    out.println("        <label>Start <input type=\"time\" name=\"startTime\" value=\""
+                            + escapeHtml(startInput) + "\" required></label>");
+                    out.println("        <label>End <input type=\"time\" name=\"endTime\" value=\""
+                            + escapeHtml(endInput) + "\"></label>");
+                    out.println("        <label>Meeting Timezone "
+                            + renderTimezoneSelect("meetingTimezone", meetingTzDisplay) + "</label>");
+                    out.println("        <label>My Timezone "
+                            + renderTimezoneSelect("viewerTimezone", effectiveTz) + "</label>");
+                    out.println("        <button type=\"submit\">Save</button>");
+                    out.println(
+                            "        <button type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
+                    out.println("      </form>");
+                } else {
+                    out.println("      <form id=\"meeting-time-form\" class=\"agenda-inline-form no-print\""
+                            + " method=\"post\" action=\"" + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println("        <input type=\"hidden\" name=\"action\" value=\"updateViewerTimezone\">");
+                    if (editOverride)
+                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("        <label>My Timezone "
+                            + renderTimezoneSelect("timezoneId", effectiveTz) + "</label>");
+                    out.println("        <button type=\"submit\">Save</button>");
+                    out.println(
+                            "        <button type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
+                    out.println("      </form>");
+                }
+                out.println("    </div>");
+            }
+
+            // Meeting status (click-to-edit for editors with available transitions)
+            List<MeetingStatus> statusTransitions = (isEditor && !isCancelled)
+                    ? validMeetingTransitions(meeting.getStatus())
+                    : List.of();
+            boolean finalizeBlocked = statusTransitions.contains(MeetingStatus.FINALIZED)
+                    && items.stream()
+                            .filter(it -> it.getStatus() != AgendaItemStatus.CANCELLED)
+                            .anyMatch(it -> it.getStatus() != AgendaItemStatus.ACCEPTED);
+            out.println("    <div class=\"agenda-meta-row no-print\">");
+            out.println("      <span class=\"agenda-meta-label\">Status:</span>");
+            if (!statusTransitions.isEmpty()) {
+                out.println("      <span id=\"meeting-status-display\" class=\"agenda-status-badge agenda-status-"
+                        + meeting.getStatus().name().toLowerCase()
+                        + " click-to-edit\" onclick=\"esShowEdit('meeting-status')\" title=\"Click to change status\">"
+                        + escapeHtml(meeting.getStatus().name().substring(0, 1)
+                                + meeting.getStatus().name().substring(1).toLowerCase())
+                        + "</span>");
+                out.println(
+                        "      <div id=\"meeting-status-form\" class=\"agenda-inline-form no-print\" style=\"display:none\">");
+                for (MeetingStatus ts : statusTransitions) {
+                    out.println("        <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" style=\"display:contents\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println("          <input type=\"hidden\" name=\"action\" value=\"updateMeetingStatus\">");
+                    out.println("          <input type=\"hidden\" name=\"targetStatus\" value=\"" + ts.name() + "\">");
+                    if (editOverride)
+                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    if (ts == MeetingStatus.FINALIZED) {
+                        if (finalizeBlocked) {
+                            out.println(
+                                    "          <button type=\"submit\" disabled title=\"All active items must be ACCEPTED first\">Finalize</button>");
+                        } else {
+                            out.println(
+                                    "          <button type=\"submit\" onclick=\"return confirm('Finalize this meeting?')\">Finalize</button>");
+                        }
+                    } else if (ts == MeetingStatus.CANCELLED) {
+                        out.println(
+                                "          <input type=\"text\" name=\"cancellationReason\" placeholder=\"Cancellation reason (optional)\" size=\"20\">");
+                        out.println(
+                                "          <button type=\"submit\" onclick=\"return confirm('Cancel this meeting?')\">Cancel Meeting</button>");
+                    } else {
+                        out.println("          <button type=\"submit\">"
+                                + escapeHtml(ts.name().substring(0, 1) + ts.name().substring(1).toLowerCase())
+                                + "</button>");
+                    }
+                    out.println("        </form>");
+                }
+                if (finalizeBlocked) {
+                    out.println(
+                            "        <span class=\"agenda-tz-note\">All active items must be accepted before finalizing.</span>");
+                }
+                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-status')\">Close</button>");
+                out.println("      </div>");
+            } else {
+                out.println("      <span class=\"agenda-status-badge agenda-status-"
+                        + meeting.getStatus().name().toLowerCase() + "\">"
+                        + escapeHtml(meeting.getStatus().name().substring(0, 1)
+                                + meeting.getStatus().name().substring(1).toLowerCase())
+                        + "</span>");
+            }
+            out.println("    </div>");
+
+            // Enable editing link for FINALIZED
+            if (isEditor && meeting.getStatus() == MeetingStatus.FINALIZED && !canEdit) {
+                out.println("    <div class=\"agenda-meta-row no-print\">");
+                out.println("      <a href=\"" + escapeHtml(editUrl)
+                        + "\" class=\"agenda-edit-enable-link\">Enable editing</a>");
+                out.println("    </div>");
+            }
+
+            out.println("  </div>"); // end agenda-meta
+
+            // --- DESCRIPTION ---
+            boolean hasDescription = meeting.getMeetingDescription() != null
+                    && !meeting.getMeetingDescription().isBlank();
+            if (hasDescription || canEdit) {
+                out.println("  <div class=\"agenda-description panel\">");
+                out.println("    <h3 class=\"agenda-section-heading\">Meeting Information</h3>");
+                if (hasDescription) {
+                    if (canEdit) {
+                        out.println(
+                                "    <div id=\"description-display\" class=\"agenda-description-text click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to edit\">"
+                                        + renderPlainText(meeting.getMeetingDescription()) + "</div>");
+                    } else {
+                        out.println("    <div class=\"agenda-description-text\">"
+                                + renderPlainText(meeting.getMeetingDescription()) + "</div>");
+                    }
+                } else {
+                    out.println(
+                            "    <span id=\"description-display\" class=\"agenda-muted click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to add\">No meeting information provided. Click to add.</span>");
+                }
+                if (canEdit) {
+                    out.println(
+                            "    <div id=\"description-form\" class=\"no-print\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.6rem\">");
+                    out.println("      <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
+                            + "\">");
+                    out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingDescription\">");
+                    if (editOverride)
+                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println(
+                            "        <textarea name=\"description\" rows=\"4\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\" placeholder=\"Join information, conference link, etc.\">"
+                                    + escapeHtml(orEmpty(meeting.getMeetingDescription())) + "</textarea>");
+                    out.println("        <div class=\"agenda-inline-form\" style=\"margin-top:0.4rem\">");
+                    out.println("          <button type=\"submit\">Save</button>");
+                    out.println(
+                            "          <button type=\"button\" onclick=\"esHideEdit('description')\">Cancel</button>");
+                    out.println("        </div>");
+                    out.println("      </form>");
+                    out.println("    </div>");
+                }
+                out.println("  </div>");
+            }
+
+            // --- DURATION WARNING ---
+            if (meetingDurationMinutes != null) {
+                long diff = agendaMinutes - meetingDurationMinutes;
+                if (diff > 0) {
+                    out.println("  <div class=\"agenda-duration-warning\">");
+                    out.println("    &#9888; Agenda uses <strong>" + agendaMinutes + " minutes</strong>, "
+                            + "but meeting is scheduled for <strong>" + meetingDurationMinutes + " minutes</strong>. "
+                            + "Reduce agenda by <strong>" + diff + " minute" + (diff == 1 ? "" : "s") + "</strong>.");
+                    out.println("  </div>");
+                } else if (diff < 0) {
+                    out.println("  <div class=\"agenda-duration-info\">");
+                    out.println("    Agenda has <strong>" + (-diff) + " unallocated minute"
+                            + ((-diff) == 1 ? "" : "s") + "</strong>.");
+                    out.println("  </div>");
+                } else {
+                    out.println("  <div class=\"agenda-duration-ok\">");
+                    out.println("    Agenda time matches scheduled meeting length.");
+                    out.println("  </div>");
+                }
+            }
+
+            // --- AGENDA TABLE ---
+            out.println("  <div class=\"agenda-table-container\">");
+            out.println("  <table class=\"agenda-table\">");
+            out.println("    <thead>");
+            out.println("      <tr>");
+            if (canEdit)
+                out.println("        <th class=\"no-print\">Controls</th>");
+            out.println("        <th class=\"col-topic\">Topic / Time</th>");
+            out.println("        <th class=\"col-agenda\">Agenda</th>");
+            out.println("        <th class=\"col-presenter\">Presenter(s)</th>");
+            if (isEditor)
+                out.println("        <th class=\"col-status no-print\">Status</th>");
+            out.println("      </tr>");
+            out.println("    </thead>");
+            out.println("    <tbody>");
+
+            // Calculate item time ranges
+            LocalDateTime cursor = meeting.getScheduledStart();
+
+            for (int i = 0; i < items.size(); i++) {
+                EsMeetingAgendaItem item = items.get(i);
+                if (item.getStatus() == AgendaItemStatus.CANCELLED)
+                    continue;
+                boolean isCancelledItem = false;
+                String rowClass = "";
+
+                out.println("      <tr class=\"" + rowClass + "\">");
+
+                // Controls column
+                if (canEdit) {
+                    out.println("        <td class=\"col-controls no-print\">");
+                    if (!isCancelledItem) {
+                        // Move up
+                        if (i > 0) {
+                            out.println("          <form method=\"post\" action=\"" + contextPath
+                                    + "/es/agenda\" style=\"display:inline\">");
+                            out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                                    + meeting.getEsMeetingId() + "\">");
+                            out.println("            <input type=\"hidden\" name=\"action\" value=\"moveItemUp\">");
+                            out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
+                                    + item.getEsMeetingAgendaItemId() + "\">");
+                            if (editOverride)
+                                out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("            <button type=\"submit\" title=\"Move up\">&#8593;</button>");
+                            out.println("          </form>");
+                        }
+                        // Move down
+                        if (i < items.size() - 1) {
+                            out.println("          <form method=\"post\" action=\"" + contextPath
+                                    + "/es/agenda\" style=\"display:inline\">");
+                            out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                                    + meeting.getEsMeetingId() + "\">");
+                            out.println("            <input type=\"hidden\" name=\"action\" value=\"moveItemDown\">");
+                            out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
+                                    + item.getEsMeetingAgendaItemId() + "\">");
+                            if (editOverride)
+                                out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("            <button type=\"submit\" title=\"Move down\">&#8595;</button>");
+                            out.println("          </form>");
+                        }
+                    }
+                    out.println("        </td>");
+                }
+
+                // Topic / Time column
+                int itemMinutes = item.getTimeMinutes() != null ? item.getTimeMinutes() : 0;
+                String itemTimeRange = "";
+                if (cursor != null && !isCancelledItem) {
+                    ZonedDateTime itemStart = ZonedDateTime.of(cursor, meetingZone).withZoneSameInstant(viewerZone);
+                    ZonedDateTime itemEnd = itemStart.plusMinutes(itemMinutes);
+                    itemTimeRange = DISPLAY_TIME_FMT.format(itemStart) + "–" + DISPLAY_TIME_FMT.format(itemEnd);
+                }
+
+                if (canEdit && !isCancelledItem) {
+                    out.println("        <td class=\"col-topic click-to-edit\" onclick=\"esShowEdit('item-"
+                            + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
+                } else {
+                    out.println("        <td class=\"col-topic\">");
+                }
+                out.println("          <div class=\"agenda-item-title\">" + escapeHtml(orEmpty(item.getTitle()))
+                        + "</div>");
+                if (!itemTimeRange.isEmpty()) {
+                    out.println("          <div class=\"agenda-item-time\">" + escapeHtml(itemTimeRange) + "</div>");
+                }
+                if (item.getTimeMinutes() != null) {
+                    out.println("          <div class=\"agenda-item-duration no-print\">" + item.getTimeMinutes()
+                            + " min</div>");
+                }
+                out.println("        </td>");
+
+                // Agenda text column
+                out.println("        <td class=\"col-agenda\">");
+                if (canEdit && !isCancelledItem) {
+                    out.println("          <div id=\"item-" + item.getEsMeetingAgendaItemId()
+                            + "-display\" class=\"click-to-edit\" onclick=\"esShowEdit('item-"
+                            + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
+                    if (item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()) {
+                        out.println("            <div class=\"agenda-item-text\">"
+                                + renderPlainText(item.getAgendaMarkdown()) + "</div>");
+                    } else {
+                        out.println("            <span class=\"agenda-muted\">Click to edit...</span>");
+                    }
+                    out.println("          </div>");
+                    out.println("          <form id=\"item-" + item.getEsMeetingAgendaItemId()
+                            + "-form\" class=\"agenda-edit-form no-print\" method=\"post\" action=\""
+                            + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println("            <input type=\"hidden\" name=\"action\" value=\"updateAgendaItem\">");
+                    out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
+                            + item.getEsMeetingAgendaItemId() + "\">");
+                    if (editOverride)
+                        out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("            <input type=\"text\" name=\"title\" value=\""
+                            + escapeHtml(orEmpty(item.getTitle())) + "\" placeholder=\"Title\" size=\"30\">");
+                    out.println(
+                            "            <textarea name=\"agendaMarkdown\" rows=\"2\" style=\"width:100%\" placeholder=\"Agenda text\">"
+                                    + escapeHtml(orEmpty(item.getAgendaMarkdown())) + "</textarea>");
+                    out.println("            <div style=\"display:flex;align-items:center;gap:0.3rem\">");
+                    out.println("              <input type=\"number\" name=\"timeMinutes\" value=\""
+                            + (item.getTimeMinutes() != null ? item.getTimeMinutes() : "")
+                            + "\" min=\"0\" max=\"480\" style=\"width:3.5rem\">");
+                    out.println("              <span>min</span>");
+                    out.println("            </div>");
+                    out.println("            <div style=\"display:flex;gap:0.3rem\">");
+                    out.println("              <button type=\"submit\">Save</button>");
+                    out.println("              <button type=\"button\" onclick=\"esHideEdit('item-"
+                            + item.getEsMeetingAgendaItemId() + "')\">Cancel</button>");
+                    out.println("            </div>");
+                    out.println("          </form>");
+                } else {
+                    if (item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()) {
+                        out.println("          <div class=\"agenda-item-text\">"
+                                + renderPlainText(item.getAgendaMarkdown()) + "</div>");
+                    }
+                }
+                out.println("        </td>");
+
+                // Presenter(s) column
+                out.println("        <td class=\"col-presenter\">");
+                List<EsAgendaItemPresenter> pList = presentersByItem.getOrDefault(
+                        item.getEsMeetingAgendaItemId(), List.of());
+                for (EsAgendaItemPresenter p : pList) {
+                    if (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.REMOVED) {
+                        continue;
+                    }
+                    String name = presenterDisplayName(p, presenterUsers);
+                    String statusSuffix = canEdit ? " (" + p.getStatus().name() + ")" : "";
+                    out.println("          <div class=\"agenda-presenter\">" + escapeHtml(name)
+                            + escapeHtml(statusSuffix) + "</div>");
+                }
+                out.println("        </td>");
+
+                // Status column (editor only)
+                if (isEditor) {
+                    String statusLabel = Arrays.stream(item.getStatus().name().split("_"))
+                            .map(w -> w.substring(0, 1) + w.substring(1).toLowerCase())
+                            .collect(Collectors.joining(" "));
+                    AgendaItemStatus s = item.getStatus();
+                    String statusColorClass = (s == AgendaItemStatus.ACCEPTED || s == AgendaItemStatus.COVERED)
+                            ? "status-green"
+                            : (s == AgendaItemStatus.NEEDS_REVISION || s == AgendaItemStatus.NOT_COVERED)
+                                    ? "status-red"
+                                    : "";
+                    out.println("        <td class=\"col-status no-print\">");
+                    if (canEdit && !isCancelledItem) {
+                        List<AgendaItemStatus> transitions = validItemTransitions(item.getStatus());
+                        if (!transitions.isEmpty()) {
+                            out.println("          <span class=\"agenda-item-status-badge " + statusColorClass
+                                    + " click-to-edit\" onclick=\"document.getElementById('status-"
+                                    + item.getEsMeetingAgendaItemId()
+                                    + "-form').style.display='flex'\" title=\"Click to change status\">"
+                                    + escapeHtml(statusLabel) + "</span>");
+                            out.println("          <div id=\"status-" + item.getEsMeetingAgendaItemId()
+                                    + "-form\" style=\"display:none;flex-direction:column;margin-top:0.3rem\">");
+                            for (AgendaItemStatus ts : transitions) {
+                                String tsLabel = Arrays.stream(ts.name().split("_"))
+                                        .map(w -> w.substring(0, 1) + w.substring(1).toLowerCase())
+                                        .collect(Collectors.joining(" "));
+                                out.println("            <form method=\"post\" action=\"" + contextPath
+                                        + "/es/agenda\" style=\"display:block;margin-top:2px\">");
+                                out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                                        + meeting.getEsMeetingId() + "\">");
+                                out.println(
+                                        "              <input type=\"hidden\" name=\"action\" value=\"updateItemStatus\">");
+                                out.println("              <input type=\"hidden\" name=\"itemId\" value=\""
+                                        + item.getEsMeetingAgendaItemId() + "\">");
+                                out.println("              <input type=\"hidden\" name=\"targetStatus\" value=\""
+                                        + ts.name()
+                                        + "\">");
+                                if (editOverride)
+                                    out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                                out.println("              <button type=\"submit\" class=\"agenda-status-btn\">"
+                                        + escapeHtml(tsLabel) + "</button>");
+                                out.println("            </form>");
+                            }
+                            out.println("          </div>");
+                        } else {
+                            out.println("          <span class=\"agenda-item-status-badge " + statusColorClass + "\">"
+                                    + escapeHtml(statusLabel) + "</span>");
+                        }
+                    } else {
+                        out.println("          <span class=\"agenda-item-status-badge " + statusColorClass + "\">"
+                                + escapeHtml(statusLabel) + "</span>");
+                    }
+                    out.println("        </td>");
+                }
+
+                out.println("      </tr>");
+
+                // Advance cursor
+                if (!isCancelledItem && cursor != null) {
+                    cursor = cursor.plusMinutes(itemMinutes);
+                }
+            }
+
+            if (items.isEmpty()) {
+                int colspan = 3 + (canEdit ? 1 : 0) + (isEditor ? 1 : 0);
+                out.println("      <tr><td colspan=\"" + colspan + "\">No agenda items.</td></tr>");
+            }
+
+            out.println("    </tbody>");
+            out.println("  </table>");
+            out.println("  </div>"); // end agenda-table-container
+
+            // --- ADD AGENDA ITEM ---
+            if (canEdit) {
+                out.println("  <div class=\"agenda-add-item no-print\">");
+                out.println("    <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                out.println(
+                        "      <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+                out.println("      <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
+                if (editOverride)
+                    out.println("      <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("      <input type=\"hidden\" name=\"topicId\" id=\"add-topic-id\">");
+                out.println("      <div class=\"add-item-row\">");
+                out.println("        <input type=\"text\" id=\"add-topic-search\" list=\"add-topic-list\"");
+                out.println(
+                        "               placeholder=\"Search topics...\" autocomplete=\"off\" class=\"add-item-input\"");
+                out.println("               oninput=\"esOnTopicInput(this.value)\">");
+                out.println("        <datalist id=\"add-topic-list\"></datalist>");
+                out.println("      </div>");
+                out.println("      <div class=\"add-item-row\">");
+                out.println(
+                        "        <input type=\"text\" name=\"title\" id=\"add-item-title\" placeholder=\"Title (optional)\" class=\"add-item-input\">");
+                out.println("        <button type=\"submit\">+ Add Agenda Item</button>");
+                out.println("      </div>");
+                out.println("    </form>");
+                out.println("  </div>");
+            }
+
+            // --- FOOTER: NEXT MEETING ---
+            out.println("  <div class=\"agenda-footer\">");
+            if (nextMeeting != null && nextMeeting.getScheduledStart() != null) {
+                ZoneId nextMeetingZone = safeZoneId(nextMeeting.getTimezoneId(), effectiveTz);
+                ZonedDateTime nextDisplay = ZonedDateTime.of(nextMeeting.getScheduledStart(), nextMeetingZone)
+                        .withZoneSameInstant(viewerZone);
+                String nextDateStr = DISPLAY_DATE_FMT.format(nextDisplay);
+                String nextTimeStr = DISPLAY_TIME_FMT.format(nextDisplay) + " " + nextDisplay.getZone().getId();
+                out.println("    <p class=\"agenda-next-meeting\">");
+                out.println("      Next Meeting: " + escapeHtml(nextDateStr) + ", at " + escapeHtml(nextTimeStr));
+                out.println("    </p>");
+            }
+            out.println("  </div>");
+
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("<script>");
+            // Topic autocomplete data
+            if (canEdit && !allTopics.isEmpty()) {
+                out.print("const esTopics=[");
+                for (int i = 0; i < allTopics.size(); i++) {
+                    EsTopic t = allTopics.get(i);
+                    if (i > 0)
+                        out.print(",");
+                    out.print("{id:" + t.getEsTopicId() + ",name:" + jsString(t.getTopicName()) + "}");
+                }
+                out.println("];");
+                out.println("const esTopicNameMap={};");
+                out.println("esTopics.forEach(function(t){esTopicNameMap[t.name]=t.id;});");
+                out.println("(function(){");
+                out.println("  var dl=document.getElementById('add-topic-list');");
+                out.println("  if(!dl) return;");
+                out.println(
+                        "  esTopics.forEach(function(t){var o=document.createElement('option');o.value=t.name;dl.appendChild(o);});");
+                out.println("})();");
+                out.println("function esOnTopicInput(val){");
+                out.println("  var tid=esTopicNameMap[val];");
+                out.println("  document.getElementById('add-topic-id').value=tid!==undefined?tid:'';");
+                out.println("  if(tid!==undefined) document.getElementById('add-item-title').value=val;");
+                out.println("}");
+            }
+            out.println("function esShowEdit(id) {");
+            out.println("  document.getElementById(id+'-display').style.display='none';");
+            out.println("  var form=document.getElementById(id+'-form');");
+            out.println("  form.style.display='flex';");
+            out.println(
+                    "  var inp=form.querySelector('input[type=text],input[type=date],input[type=time],select,textarea');");
+            out.println("  if(inp) inp.focus();");
+            out.println("}");
+            out.println("function esHideEdit(id) {");
+            out.println("  document.getElementById(id+'-display').style.display='';");
+            out.println("  document.getElementById(id+'-form').style.display='none';");
+            out.println("}");
+            out.println("</script>");
+            out.println("</body>");
+            out.println("</html>");
+        }
+    }
+
+    private static String jsString(String s) {
+        if (s == null)
+            return "\"\"";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "\\n") + "\"";
+    }
+
+    private void renderAgendaStyles(PrintWriter out) {
+        out.println("    body { background: #f7f9fc; }");
+        out.println(
+                "    .agenda-page { max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; font-family: sans-serif; }");
+        out.println(
+                "    .agenda-cancelled-banner { background: #fee2e2; border: 1px solid #fca5a5; color: #7f1d1d; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-weight: bold; }");
+        out.println(
+                "    .agenda-msg-success { background: #dcfce7; border: 1px solid #86efac; color: #14532d; padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; }");
+        out.println(
+                "    .agenda-msg-error { background: #fee2e2; border: 1px solid #fca5a5; color: #7f1d1d; padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; }");
+        out.println(
+                "    .agenda-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; border-bottom: 2px solid #0f766e; padding-bottom: 0.75rem; }");
+        out.println("    .agenda-logo { max-height: 60px; max-width: 140px; object-fit: contain; }");
+        out.println(
+                "    .agenda-title { font-size: 2.4rem; font-weight: 800; letter-spacing: 0.15em; color: #0f766e; margin: 0; }");
+        out.println("    .agenda-meta { margin-bottom: 1rem; padding: 1rem; }");
+        out.println(
+                "    .agenda-meta-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid #e2e8f0; }");
+        out.println("    .agenda-meta-row:last-child { border-bottom: none; }");
+        out.println(
+                "    .agenda-meta-label { font-weight: 600; min-width: 130px; color: #475569; font-size: 0.9rem; }");
+        out.println("    .agenda-meta-value { font-weight: 500; flex: 1; }");
+        out.println("    .agenda-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
+        out.println("    .click-to-edit { cursor: pointer; }");
+        out.println("    .click-to-edit:hover { color: #1a56db; }");
+        out.println(
+                "    .agenda-inline-form input[type=text], .agenda-inline-form input[type=date], .agenda-inline-form input[type=time], .agenda-inline-form select { padding: 0.2rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.88rem; }");
+        out.println("    .agenda-tz-note { font-size: 0.8rem; color: #64748b; font-style: italic; width: 100%; }");
+        out.println(
+                "    .agenda-inline-form button { padding: 0.2rem 0.6rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }");
+        out.println(
+                "    .agenda-inline-form button:disabled { opacity: 0.4; cursor: not-allowed; }");
+        out.println(
+                "    .agenda-section-heading { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin: 0 0 0.5rem 0; }");
+        out.println("    .agenda-description { margin-bottom: 1rem; padding: 1rem; }");
+        out.println(
+                "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
+        out.println("    .agenda-muted { color: #94a3b8; font-size: 0.9rem; }");
+        out.println(
+                "    .agenda-duration-warning { background: #fef9c3; border: 1px solid #fde68a; color: #713f12; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
+        out.println(
+                "    .agenda-duration-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
+        out.println(
+                "    .agenda-duration-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
+        out.println("    .agenda-table-container { overflow-x: auto; }");
+        out.println(
+                "    .agenda-table { width: 100%; border-collapse: collapse; border: 1px solid #d7deea; font-size: 0.92rem; }");
+        out.println(
+                "    .agenda-table th { background: #0f766e; color: white; padding: 0.55rem 0.8rem; text-align: left; font-weight: 600; font-size: 0.85rem; }");
+        out.println(
+                "    .agenda-table td { padding: 0.6rem 0.8rem; vertical-align: top; border-bottom: 1px solid #e2e8f0; }");
+        out.println("    .agenda-table tr:last-child td { border-bottom: none; }");
+        out.println("    .agenda-table tr:nth-child(even) td { background: #f8fafd; }");
+        out.println(
+                "    .agenda-row-cancelled td { color: #94a3b8; text-decoration: line-through; background: #f8fafd !important; }");
+        out.println("    .col-topic { width: 18%; }");
+        out.println("    .col-agenda { width: 42%; }");
+        out.println("    .col-presenter { width: 18%; }");
+        out.println("    .col-status { width: 14%; }");
+        out.println("    .col-controls { width: 8%; white-space: nowrap; }");
+        out.println("    .agenda-item-title { font-weight: 600; color: #0f172a; }");
+        out.println("    .agenda-item-time { font-size: 0.82rem; color: #475569; margin-top: 2px; }");
+        out.println("    .agenda-item-duration { font-size: 0.78rem; color: #94a3b8; }");
+        out.println(
+                "    .agenda-item-text { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; color: #334155; }");
+        out.println(
+                "    .agenda-edit-form { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; }");
+        out.println(
+                "    .agenda-edit-form input, .agenda-edit-form textarea { font-size: 0.85rem; padding: 0.25rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
+        out.println(
+                "    .agenda-edit-form button { align-self: flex-start; padding: 0.2rem 0.6rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }");
+        out.println("    .agenda-presenter { font-size: 0.88rem; color: #334155; line-height: 1.5; }");
+        out.println(
+                "    .agenda-item-status-badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: #e2e8f0; color: #334155; font-weight: 600; }");
+        out.println(
+                "    .agenda-item-status-badge.status-green { background: #dcfce7; color: #166534; }");
+        out.println(
+                "    .agenda-item-status-badge.status-red { background: #fee2e2; color: #991b1b; }");
+        out.println(
+                "    .agenda-status-btn { display: block; font-size: 0.78rem; padding: 0.15rem 0.4rem; margin-top: 2px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; text-align: left; }");
+        out.println("    .agenda-status-btn:hover { background: #e2e8f0; }");
+        out.println(
+                "    .col-controls button { padding: 0.1rem 0.35rem; font-size: 0.85rem; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 3px; cursor: pointer; }");
+        out.println("    .col-controls button:hover { background: #e2e8f0; }");
+        out.println(
+                "    .agenda-add-item { margin: 0.8rem 0; padding: 0.6rem; background: #f8fafd; border: 1px dashed #cbd5e1; border-radius: 6px; }");
+        out.println(
+                "    .add-item-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.4rem; }");
+        out.println(
+                "    .add-item-row:first-child { margin-top: 0; }");
+        out.println(
+                "    .add-item-input { flex: 1; padding: 0.25rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.9rem; min-width: 0; }");
+        out.println(
+                "    .agenda-add-item button { padding: 0.25rem 0.8rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; }");
+        out.println(
+                "    .agenda-status-controls { margin: 1rem 0; padding: 1rem; background: #f8fafd; border: 1px solid #d7deea; border-radius: 6px; }");
+        out.println("    .agenda-status-controls h3 { margin: 0 0 0.6rem 0; font-size: 0.95rem; }");
+        out.println(
+                "    .agenda-meeting-transitions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; }");
+        out.println(
+                "    .agenda-meeting-transitions button { padding: 0.3rem 0.8rem; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; background: #f1f5f9; font-size: 0.88rem; }");
+        out.println("    .agenda-meeting-transitions button:hover { background: #e2e8f0; }");
+        out.println("    .agenda-meeting-transitions button:disabled { opacity: 0.4; cursor: not-allowed; }");
+        out.println("    .agenda-finalize-blocked { color: #b42318; font-size: 0.88rem; margin-top: 0.4rem; }");
+        out.println("    .agenda-edit-enable-link { font-size: 0.88rem; color: #0f766e; text-decoration: underline; }");
+        out.println(
+                "    .agenda-status-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.82rem; font-weight: 700; }");
+        out.println("    .agenda-status-draft { background: #e2e8f0; color: #334155; }");
+        out.println("    .agenda-status-proposed { background: #dbeafe; color: #1e40af; }");
+        out.println("    .agenda-status-finalized { background: #dcfce7; color: #166534; }");
+        out.println("    .agenda-status-completed { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }");
+        out.println("    .agenda-status-cancelled { background: #fee2e2; color: #7f1d1d; }");
+        out.println(
+                "    .agenda-footer { margin-top: 2rem; padding: 0.75rem 0; border-top: 1px solid #d7deea; font-size: 0.9rem; color: #475569; }");
+        out.println("    .agenda-next-meeting { margin: 0; font-style: italic; }");
+        out.println("    @media print {");
+        out.println("      .no-print { display: none !important; }");
+        out.println("      body { background: white; }");
+        out.println("      .agenda-page { max-width: 100%; margin: 0; padding: 0; }");
+        out.println("      .agenda-header { border-bottom: 2pt solid #000; }");
+        out.println("      .agenda-title { color: #000; font-size: 2rem; }");
+        out.println("      .agenda-meta, .agenda-description { border: none; box-shadow: none; padding: 0.5rem 0; }");
+        out.println("      .agenda-table { border: 1pt solid #000; font-size: 10pt; }");
+        out.println(
+                "      .agenda-table th { background: #ccc !important; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }");
+        out.println("      .agenda-table td { padding: 4pt 6pt; }");
+        out.println("      .agenda-table tr { page-break-inside: avoid; }");
+        out.println("      .agenda-duration-warning, .agenda-duration-info, .agenda-duration-ok { display: none; }");
+        out.println("      .panel { border: none; box-shadow: none; background: transparent; }");
+        out.println("    }");
+    }
+
+    // =========================================================================
+    // Error pages
+    // =========================================================================
+
+    private void renderError(HttpServletResponse response, String contextPath, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            out.println("<!DOCTYPE html>");
+            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
+            out.println("<title>Not Found - InteropHub</title>");
+            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
+            out.println("<body><main class=\"container\">");
+            out.println("<h1>Agenda Not Found</h1>");
+            out.println("<p>" + escapeHtml(message) + "</p>");
+            out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
+        }
+    }
+
+    private void renderAccessDenied(HttpServletResponse response, String contextPath) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            out.println("<!DOCTYPE html>");
+            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
+            out.println("<title>Access Denied - InteropHub</title>");
+            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
+            out.println("<body><main class=\"container\">");
+            out.println("<h1>Access Denied</h1>");
+            out.println("<p>You do not have permission to view this agenda.</p>");
+            out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
+        }
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+
+    private String resolveEffectiveTz(User user, EsMeeting meeting) {
+        if (user.getTimezoneId() != null && !user.getTimezoneId().isBlank()) {
+            return user.getTimezoneId();
+        }
+        if (meeting.getTimezoneId() != null && !meeting.getTimezoneId().isBlank()) {
+            return meeting.getTimezoneId();
+        }
+        return "America/New_York";
+    }
+
+    private ZoneId safeZoneId(String tzId, String fallback) {
+        if (tzId != null && !tzId.isBlank()) {
+            try {
+                return ZoneId.of(tzId);
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        try {
+            return ZoneId.of(fallback);
+        } catch (Exception ignored) {
+            return ZoneId.of("America/New_York");
+        }
+    }
+
+    private String presenterDisplayName(EsAgendaItemPresenter p, Map<Long, User> presenterUsers) {
+        if (p.getDisplayName() != null && !p.getDisplayName().isBlank()) {
+            return p.getDisplayName();
+        }
+        if (p.getUserId() != null) {
+            User u = presenterUsers.get(p.getUserId());
+            if (u != null && u.getFullName() != null && !u.getFullName().isBlank()) {
+                return u.getFullName();
+            }
+        }
+        return orEmpty(p.getEmail());
+    }
+
+    private String renderPlainText(String text) {
+        if (text == null)
+            return "";
+        return escapeHtml(text).replace("\n", "<br>");
+    }
+
+    private String renderTimezoneSelect(String name, String selected) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<select name=\"").append(escapeHtml(name)).append("\">");
+        for (String tz : ALLOWED_TIMEZONES.stream().sorted().collect(Collectors.toList())) {
+            sb.append("<option value=\"").append(escapeHtml(tz)).append("\"");
+            if (tz.equals(selected))
+                sb.append(" selected");
+            sb.append(">").append(escapeHtml(tz)).append("</option>");
+        }
+        sb.append("</select>");
+        return sb.toString();
+    }
+
+    private List<AgendaItemStatus> validItemTransitions(AgendaItemStatus from) {
+        switch (from) {
+            case DRAFT:
+                return List.of(AgendaItemStatus.PROPOSED, AgendaItemStatus.ACCEPTED,
+                        AgendaItemStatus.NEEDS_REVISION, AgendaItemStatus.POSTPONED,
+                        AgendaItemStatus.CANCELLED);
+            case PROPOSED:
+                return List.of(AgendaItemStatus.ACCEPTED, AgendaItemStatus.NEEDS_REVISION,
+                        AgendaItemStatus.POSTPONED, AgendaItemStatus.CANCELLED);
+            case ACCEPTED:
+                return List.of(AgendaItemStatus.POSTPONED, AgendaItemStatus.COVERED,
+                        AgendaItemStatus.NOT_COVERED, AgendaItemStatus.CANCELLED);
+            case NEEDS_REVISION:
+                return List.of(AgendaItemStatus.ACCEPTED, AgendaItemStatus.PROPOSED,
+                        AgendaItemStatus.POSTPONED, AgendaItemStatus.CANCELLED);
+            case POSTPONED:
+                return List.of(AgendaItemStatus.CANCELLED);
+            default:
+                return List.of();
+        }
+    }
+
+    private List<MeetingStatus> validMeetingTransitions(MeetingStatus from) {
+        switch (from) {
+            case DRAFT:
+                return List.of(MeetingStatus.PROPOSED, MeetingStatus.FINALIZED, MeetingStatus.CANCELLED);
+            case PROPOSED:
+                return List.of(MeetingStatus.FINALIZED, MeetingStatus.COMPLETED, MeetingStatus.CANCELLED);
+            case FINALIZED:
+                return List.of(MeetingStatus.COMPLETED, MeetingStatus.CANCELLED);
+            default:
+                return List.of();
+        }
+    }
+
+    private static Long parseId(String value) {
+        if (value == null)
+            return null;
+        try {
+            long v = Long.parseLong(value);
+            return v > 0 ? v : null;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null)
+            return null;
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null)
+            return "";
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    private static String orEmpty(String value) {
+        return value != null ? value : "";
+    }
+}

@@ -377,7 +377,9 @@ public class AdminEsMeetingServlet extends HttpServlet {
                 timeStr += " " + escapeHtml(agenda.getTimezoneId());
             }
             out.println("            <tr>");
-            out.println("              <td>" + escapeHtml(orEmpty(agenda.getMeetingName())) + "</td>");
+            out.println("              <td><a href=\"" + contextPath + "/es/agenda?meetingId=" + agenda.getEsMeetingId()
+                    + "\">"
+                    + escapeHtml(orEmpty(agenda.getMeetingName())) + "</a></td>");
             out.println("              <td>" + escapeHtml(dateStr) + "</td>");
             out.println("              <td>" + escapeHtml(timeStr) + "</td>");
             out.println("              <td>" + escapeHtml(agenda.getStatus() != null ? agenda.getStatus().name() : "")
