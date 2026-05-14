@@ -6,6 +6,7 @@ SET time_zone = '+00:00';
 -- ---------------------------------------------------------------------------
 CREATE TABLE es_meeting (
   es_meeting_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_topic_meeting_id   BIGINT UNSIGNED NOT NULL,
   meeting_key           VARCHAR(80) NULL,
   meeting_name          VARCHAR(160) NOT NULL,
   meeting_description   TEXT NULL,
@@ -21,11 +22,10 @@ CREATE TABLE es_meeting (
   created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (es_meeting_id),
+  KEY ix_es_meeting_topic_meeting (es_topic_meeting_id),
   KEY ix_es_meeting_scheduled_start (scheduled_start),
   KEY ix_es_meeting_status (status),
-  KEY ix_es_meeting_key (meeting_key),
-  CONSTRAINT fk_es_meeting_created_by FOREIGN KEY (created_by_user_id)
-    REFERENCES auth_user(user_id)
+  KEY ix_es_meeting_key (meeting_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------------

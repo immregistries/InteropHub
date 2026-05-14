@@ -177,4 +177,63 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
             throw ex;
         }
     }
+
+    /**
+     * Returns all meetings for a given es_topic_meeting, ordered by scheduledStart
+     * ascending.
+     */
+    public List<EsMeeting> findByEsTopicMeetingId(Long esTopicMeetingId) {
+        if (esTopicMeetingId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicMeetingId = :id"
+                            + " order by m.scheduledStart asc",
+                    EsMeeting.class)
+                    .setParameter("id", esTopicMeetingId)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns the most recent meeting for the given es_topic_meeting whose
+     * scheduledStart is strictly before {@code before}, or empty if none exists.
+     * Used to copy time-of-day and timezone when creating a new agenda stub.
+     */
+    public Optional<EsMeeting> findMostRecentPrevious(Long esTopicMeetingId, LocalDateTime before) {
+        if (esTopicMeetingId == null || before == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicMeetingId = :id"
+                            + " and m.scheduledStart < :before"
+                            + " order by m.scheduledStart desc",
+                    EsMeeting.class)
+                    .setParameter("id", esTopicMeetingId)
+                    .setParameter("before", before)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    /**
+     * Saves a new or updated EsMeeting. Uses merge to handle both insert and
+     * update.
+     */
+    public EsMeeting saveOrUpdate(EsMeeting meeting) {
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            EsMeeting merged = session.merge(meeting);
+            tx.commit();
+            return merged;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
 }

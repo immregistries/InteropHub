@@ -29,6 +29,9 @@ public class EsMeeting {
     @Column(name = "es_meeting_id")
     private Long esMeetingId;
 
+    @Column(name = "es_topic_meeting_id", nullable = false)
+    private Long esTopicMeetingId;
+
     @Column(name = "meeting_key", length = 80)
     private String meetingKey;
 
@@ -95,6 +98,14 @@ public class EsMeeting {
 
     public void setEsMeetingId(Long esMeetingId) {
         this.esMeetingId = esMeetingId;
+    }
+
+    public Long getEsTopicMeetingId() {
+        return esTopicMeetingId;
+    }
+
+    public void setEsTopicMeetingId(Long esTopicMeetingId) {
+        this.esTopicMeetingId = esTopicMeetingId;
     }
 
     public String getMeetingKey() {
