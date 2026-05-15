@@ -50,11 +50,12 @@ public class AdminUserDetailServlet extends HttpServlet {
         }
 
         List<MagicLinkSendEvent> sendEvents = magicLinkSendEventDao.findRecentByUserId(userId, 50);
-        renderPage(response, request.getContextPath(), targetUser.get(), sendEvents);
+        boolean saved = "1".equals(request.getParameter("saved"));
+        renderPage(response, request.getContextPath(), targetUser.get(), sendEvents, saved);
     }
 
     private void renderPage(HttpServletResponse response, String contextPath, User user,
-            List<MagicLinkSendEvent> sendEvents) throws IOException {
+            List<MagicLinkSendEvent> sendEvents, boolean saved) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
@@ -63,6 +64,12 @@ public class AdminUserDetailServlet extends HttpServlet {
                 panelOut.println("        <h2>User Detail</h2>");
                 panelOut.println("        <p><a href=\"" + contextPath
                         + "/admin/users\">&larr; Back to Registered Users</a></p>");
+                panelOut.println("        <p><a class=\"button-link\" href=\"" + contextPath
+                        + "/admin/users/edit?userId=" + user.getUserId() + "\">Edit User</a></p>");
+
+                if (saved) {
+                    panelOut.println("        <p class=\"success\">Changes saved successfully.</p>");
+                }
 
                 panelOut.println("        <h2>Profile</h2>");
                 panelOut.println("        <table class=\"data-table\">");

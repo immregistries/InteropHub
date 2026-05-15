@@ -166,6 +166,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminUserEditServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminUserEditServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminUserEditServlet</servlet-name>
+    <url-pattern>/admin/users/edit</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AdminAppLoginStatsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminAppLoginStatsServlet</servlet-class>
   </servlet>
