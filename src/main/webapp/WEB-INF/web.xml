@@ -505,4 +505,14 @@
     <url-pattern>/es/agenda</url-pattern>
   </servlet-mapping>
 
+  <servlet>
+    <servlet-name>EsMeetingSeriesServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingSeriesServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingSeriesServlet</servlet-name>
+    <url-pattern>/es/meetings</url-pattern>
+  </servlet-mapping>
+
 </web-app>

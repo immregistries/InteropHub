@@ -29,6 +29,7 @@ import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
@@ -37,6 +38,7 @@ import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAgendaItem.AgendaItemStatus;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 
@@ -65,6 +67,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsTopicDao topicDao;
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicMeetingDao topicMeetingDao;
     private final UserDao userDao;
 
     public EsAgendaServlet() {
@@ -74,6 +77,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.topicDao = new EsTopicDao();
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicMeetingDao = new EsTopicMeetingDao();
         this.userDao = new UserDao();
     }
 
@@ -83,11 +87,8 @@ public class EsAgendaServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> userOpt = requireLogin(request, response);
-        if (userOpt.isEmpty()) {
-            return;
-        }
-        User user = userOpt.get();
+        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
+        User user = userOpt.orElse(null);
         String contextPath = request.getContextPath();
 
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
@@ -103,12 +104,7 @@ public class EsAgendaServlet extends HttpServlet {
         }
 
         List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
-        boolean isEditor = isEditor(user, meeting, items);
-
-        if (!canView(user, meeting, isEditor)) {
-            renderAccessDenied(response, contextPath);
-            return;
-        }
+        boolean isEditor = user != null && isEditor(user, meeting, items);
 
         // Seed default agenda items when empty and meeting is editable
         if (items.isEmpty() && meeting.getStatus() != MeetingStatus.COMPLETED
@@ -1059,7 +1055,7 @@ public class EsAgendaServlet extends HttpServlet {
         List<EsMeeting> siblings = meetingDao.findByEsTopicMeetingId(current.getEsTopicMeetingId());
         return siblings.stream()
                 .filter(m -> !m.getEsMeetingId().equals(current.getEsMeetingId()))
-                .filter(m -> m.getStatus() == MeetingStatus.PROPOSED || m.getStatus() == MeetingStatus.FINALIZED)
+                .filter(m -> m.getStatus() != MeetingStatus.CANCELLED)
                 .filter(m -> m.getScheduledStart() != null
                         && m.getScheduledStart().isAfter(current.getScheduledStart()))
                 .min((a, b) -> a.getScheduledStart().compareTo(b.getScheduledStart()))
@@ -1123,6 +1119,12 @@ public class EsAgendaServlet extends HttpServlet {
         boolean isCancelled = meeting.getStatus() == MeetingStatus.CANCELLED;
         String selfUrl = contextPath + "/es/agenda?meetingId=" + meeting.getEsMeetingId();
         String editUrl = selfUrl + "&edit=true";
+
+        EsTopicMeeting topicMeeting = meeting.getEsTopicMeetingId() != null
+                ? topicMeetingDao.findById(meeting.getEsTopicMeetingId()).orElse(null)
+                : null;
+        String seriesName = topicMeeting != null && topicMeeting.getMeetingName() != null
+                ? topicMeeting.getMeetingName() : null;
 
         // Duration warning calculation
         int agendaMinutes = items.stream()
@@ -1279,7 +1281,12 @@ public class EsAgendaServlet extends HttpServlet {
                     + "/image/aira_logo.webp\" alt=\"AIRA\" class=\"agenda-logo\" />");
             out.println("    </div>");
             out.println("    <div class=\"agenda-title-cell\">");
-            out.println("      <h1 class=\"agenda-title\">AGENDA</h1>");
+            if (meeting.getStatus() == MeetingStatus.DRAFT || meeting.getStatus() == MeetingStatus.PROPOSED) {
+                out.println("      <h1 class=\"agenda-title\"><span class=\"agenda-draft-label\">"
+                        + meeting.getStatus().name() + "</span> AGENDA</h1>");
+            } else {
+                out.println("      <h1 class=\"agenda-title\">AGENDA</h1>");
+            }
             out.println("    </div>");
             out.println("  </div>");
 
@@ -2162,13 +2169,23 @@ public class EsAgendaServlet extends HttpServlet {
             // --- FOOTER: NEXT MEETING ---
             out.println("  <div class=\"agenda-footer\">");
             if (nextMeeting != null && nextMeeting.getScheduledStart() != null) {
+                String nextSeriesLabel = seriesName != null ? "Next " + seriesName + " Meeting" : "Next Meeting";
                 ZoneId nextMeetingZone = safeZoneId(nextMeeting.getTimezoneId(), effectiveTz);
                 ZonedDateTime nextDisplay = ZonedDateTime.of(nextMeeting.getScheduledStart(), nextMeetingZone)
                         .withZoneSameInstant(viewerZone);
                 String nextDateStr = DISPLAY_DATE_FMT.format(nextDisplay);
                 String nextTimeStr = DISPLAY_TIME_FMT.format(nextDisplay) + " " + nextDisplay.getZone().getId();
                 out.println("    <p class=\"agenda-next-meeting\">");
-                out.println("      Next Meeting: " + escapeHtml(nextDateStr) + ", at " + escapeHtml(nextTimeStr));
+                out.println("      " + escapeHtml(nextSeriesLabel) + ": <a href=\"" + contextPath
+                        + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId() + "\" class=\"agenda-next-meeting-link\">"
+                        + escapeHtml(nextDateStr) + ", at " + escapeHtml(nextTimeStr) + "</a>");
+                out.println("    </p>");
+            }
+            if (meeting.getEsTopicMeetingId() != null) {
+                String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
+                out.println("    <p class=\"agenda-all-meetings\">");
+                out.println("      <a href=\"" + contextPath + "/es/meetings?seriesId="
+                        + meeting.getEsTopicMeetingId() + "\">" + escapeHtml(allLabel) + "</a>");
                 out.println("    </p>");
             }
             out.println("  </div>");
@@ -2294,6 +2311,8 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-logo { max-height: 60px; max-width: 140px; object-fit: contain; }");
         out.println(
                 "    .agenda-title { font-size: 2.4rem; font-weight: 800; letter-spacing: 0.15em; color: #0f766e; margin: 0; }");
+        out.println(
+                "    .agenda-draft-label { color: #dc2626; font-size: 1.6rem; font-weight: 800; letter-spacing: 0.1em; margin-right: 0.4rem; }");
         out.println("    .agenda-meta { margin-bottom: 1rem; padding: 1rem; }");
         out.println(
                 "    .agenda-meta-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid #e2e8f0; }");
@@ -2430,6 +2449,11 @@ public class EsAgendaServlet extends HttpServlet {
         out.println(
                 "    .agenda-footer { margin-top: 2rem; padding: 0.75rem 0; border-top: 1px solid #d7deea; font-size: 0.9rem; color: #475569; }");
         out.println("    .agenda-next-meeting { margin: 0; font-style: italic; }");
+        out.println("    .agenda-next-meeting-link { color: #2563eb; text-decoration: none; }");
+        out.println("    .agenda-next-meeting-link:hover { text-decoration: underline; }");
+        out.println("    .agenda-all-meetings { margin: 0.35rem 0 0; }");
+        out.println("    .agenda-all-meetings a { color: #475569; font-size: 0.85rem; text-decoration: none; }");
+        out.println("    .agenda-all-meetings a:hover { text-decoration: underline; color: #1e40af; }");
         out.println("    @media print {");
         out.println("      .no-print { display: none !important; }");
         out.println("      body { background: white; }");
@@ -2518,7 +2542,7 @@ public class EsAgendaServlet extends HttpServlet {
     // =========================================================================
 
     private String resolveEffectiveTz(User user, EsMeeting meeting) {
-        if (user.getTimezoneId() != null && !user.getTimezoneId().isBlank()) {
+        if (user != null && user.getTimezoneId() != null && !user.getTimezoneId().isBlank()) {
             return user.getTimezoneId();
         }
         if (meeting.getTimezoneId() != null && !meeting.getTimezoneId().isBlank()) {

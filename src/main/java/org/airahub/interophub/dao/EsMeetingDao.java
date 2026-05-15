@@ -197,6 +197,24 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Returns all meetings for a given series, ordered by scheduledStart
+     * descending (most recent first). All statuses are included.
+     */
+    public List<EsMeeting> findAllBySeriesDesc(Long esTopicMeetingId) {
+        if (esTopicMeetingId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicMeetingId = :id"
+                            + " order by m.scheduledStart desc",
+                    EsMeeting.class)
+                    .setParameter("id", esTopicMeetingId)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Returns up to {@code limit} meetings in the same series (esTopicMeetingId)
      * excluding the specified meeting, with status FINALIZED, COMPLETED, or
      * CANCELLED, ordered by scheduledStart descending (most recent first).

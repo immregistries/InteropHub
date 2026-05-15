@@ -5,6 +5,8 @@ import java.io.PrintWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -13,9 +15,11 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
+import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.model.EsMeetingAttendance;
+import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
@@ -30,6 +34,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
     private final EsTopicDao topicDao;
     private final EsTopicMeetingDao topicMeetingDao;
+    private final EsMeetingDao meetingDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final AuthFlowService authFlowService;
     private final AuthService authService;
@@ -38,6 +43,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     public EsMeetingAttendanceServlet() {
         this.topicDao = new EsTopicDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
+        this.meetingDao = new EsMeetingDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.authFlowService = new AuthFlowService();
         this.authService = new AuthService();
@@ -204,10 +210,58 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                     resolution.topic().getTopicCode());
         }
 
-        String redirectUrl = request.getContextPath()
-                + "/attend/" + URLEncoder.encode(resolution.topic().getTopicCode(), StandardCharsets.UTF_8)
-                + "?submitted=1";
-        response.sendRedirect(redirectUrl);
+        String agendaUrl = pickAgendaUrl(request.getContextPath(),
+                resolution.meeting().getEsTopicMeetingId());
+        response.sendRedirect(agendaUrl);
+    }
+
+    // -------------------------------------------------------------------------
+    // Agenda redirect helper
+    // -------------------------------------------------------------------------
+
+    /**
+     * Picks the best EsMeeting agenda URL for the given series (esTopicMeetingId)
+     * based on today's date and current time.
+     * Priority:
+     * 1. Meetings on today's date (by scheduledStart date)
+     * 2. If only one today → use it
+     * 3. If multiple today → prefer one where now is between start and end
+     * 4. Otherwise → pick the one with scheduledStart closest to now (absolute)
+     * Falls back to the series list page if no today meetings exist.
+     */
+    private String pickAgendaUrl(String contextPath, Long esTopicMeetingId) {
+        if (esTopicMeetingId == null) {
+            return contextPath + "/es/topics";
+        }
+        LocalDateTime now = LocalDateTime.now();
+        LocalDate today = now.toLocalDate();
+        List<EsMeeting> all = meetingDao.findAllBySeriesDesc(esTopicMeetingId);
+        List<EsMeeting> todayMeetings = all.stream()
+                .filter(m -> m.getScheduledStart() != null
+                        && m.getScheduledStart().toLocalDate().equals(today)
+                        && m.getStatus() != EsMeeting.MeetingStatus.CANCELLED)
+                .toList();
+        if (todayMeetings.isEmpty()) {
+            return contextPath + "/es/meetings?seriesId=" + esTopicMeetingId;
+        }
+        if (todayMeetings.size() == 1) {
+            return contextPath + "/es/agenda?meetingId=" + todayMeetings.get(0).getEsMeetingId();
+        }
+        // Multiple today: prefer one where now is between start and end
+        Optional<EsMeeting> inProgress = todayMeetings.stream()
+                .filter(m -> m.getScheduledStart() != null && !m.getScheduledStart().isAfter(now)
+                        && (m.getScheduledEnd() == null || m.getScheduledEnd().isAfter(now)))
+                .findFirst();
+        if (inProgress.isPresent()) {
+            return contextPath + "/es/agenda?meetingId=" + inProgress.get().getEsMeetingId();
+        }
+        // Closest by absolute difference of scheduledStart to now
+        EsMeeting closest = todayMeetings.stream()
+                .filter(m -> m.getScheduledStart() != null)
+                .min(Comparator.comparingLong(m -> Math.abs(
+                        java.time.Duration.between(m.getScheduledStart(), now).toMinutes())))
+                .orElse(todayMeetings.get(0));
+        return contextPath + "/es/agenda?meetingId=" + closest.getEsMeetingId();
     }
 
     // -------------------------------------------------------------------------
