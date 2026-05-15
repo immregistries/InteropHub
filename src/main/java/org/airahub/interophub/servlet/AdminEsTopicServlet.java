@@ -120,6 +120,8 @@ public class AdminEsTopicServlet extends HttpServlet {
         boolean meetingEnabled = request.getParameter("meetingEnabled") != null;
         String meetingName = trimToNull(request.getParameter("meetingName"));
         String meetingDescription = trimToNull(request.getParameter("meetingDescription"));
+        String meetingOnlineUrl = trimToNull(request.getParameter("onlineMeetingUrl"));
+        String meetingOnlineDetails = trimToNull(request.getParameter("onlineMeetingDetails"));
         boolean meetingRequiresApproval = request.getParameter("meetingRequiresApproval") != null;
 
         if (topicIdRaw == null) {
@@ -153,6 +155,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                     newMeeting.setEsTopicId(saved.getEsTopicId());
                     newMeeting.setMeetingName(required(meetingName, "Meeting name"));
                     newMeeting.setMeetingDescription(meetingDescription);
+                    newMeeting.setOnlineMeetingUrl(meetingOnlineUrl);
+                    newMeeting.setOnlineMeetingDetails(meetingOnlineDetails);
                     newMeeting.setJoinRequiresApproval(meetingRequiresApproval);
                     newMeeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
                     esTopicMeetingDao.saveOrUpdate(newMeeting);
@@ -191,6 +195,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                     }
                     newMeeting.setMeetingName(meetingName);
                     newMeeting.setMeetingDescription(meetingDescription);
+                    newMeeting.setOnlineMeetingUrl(meetingOnlineUrl);
+                    newMeeting.setOnlineMeetingDetails(meetingOnlineDetails);
                     newMeeting.setJoinRequiresApproval(meetingRequiresApproval);
                     newMeeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
                 }
@@ -237,6 +243,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 }
                 meeting.setMeetingName(required(meetingName, "Meeting name"));
                 meeting.setMeetingDescription(meetingDescription);
+                meeting.setOnlineMeetingUrl(meetingOnlineUrl);
+                meeting.setOnlineMeetingDetails(meetingOnlineDetails);
                 meeting.setJoinRequiresApproval(meetingRequiresApproval);
                 meeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
                 meeting.setDisabledAt(null);
@@ -280,6 +288,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 }
                 meeting.setMeetingName(meetingName);
                 meeting.setMeetingDescription(meetingDescription);
+                meeting.setOnlineMeetingUrl(meetingOnlineUrl);
+                meeting.setOnlineMeetingDetails(meetingOnlineDetails);
                 meeting.setJoinRequiresApproval(meetingRequiresApproval);
                 meeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
             }
@@ -608,6 +618,20 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("      <textarea id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
                                 + escapeHtml(orEmpty(meeting == null ? null : meeting.getMeetingDescription()))
                                 + "</textarea>");
+
+                        out.println("      <label for=\"onlineMeetingUrl\">Meeting URL (e.g. Zoom link)</label>");
+                        out.println(
+                                "      <input id=\"onlineMeetingUrl\" name=\"onlineMeetingUrl\" type=\"text\" value=\""
+                                        + escapeHtml(orEmpty(meeting == null ? null : meeting.getOnlineMeetingUrl()))
+                                        + "\" />");
+
+                        out.println(
+                                "      <label for=\"onlineMeetingDetails\">Connection Details (dial-in info, passcode, etc.)</label>");
+                        out.println(
+                                "      <textarea id=\"onlineMeetingDetails\" name=\"onlineMeetingDetails\" rows=\"5\">"
+                                        + escapeHtml(
+                                                orEmpty(meeting == null ? null : meeting.getOnlineMeetingDetails()))
+                                        + "</textarea>");
 
                         out.println("      <label><input type=\"checkbox\" name=\"meetingRequiresApproval\""
                                 + (meeting != null && Boolean.TRUE.equals(meeting.getJoinRequiresApproval())

@@ -29,10 +29,8 @@ import org.airahub.interophub.service.AuthFlowService;
  */
 public class EsMeetingSeriesServlet extends HttpServlet {
 
-    private static final DateTimeFormatter DISPLAY_DATE_FMT =
-            DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy");
-    private static final DateTimeFormatter DISPLAY_TIME_FMT =
-            DateTimeFormatter.ofPattern("h:mm a");
+    private static final DateTimeFormatter DISPLAY_DATE_FMT = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy");
+    private static final DateTimeFormatter DISPLAY_TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
 
     private static final Set<String> ALLOWED_TIMEZONES = Set.of(
             "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
@@ -166,7 +164,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             String timeStr = "";
             if (m.getScheduledStart() != null) {
                 ZoneId meetingZone = (m.getTimezoneId() != null && ALLOWED_TIMEZONES.contains(m.getTimezoneId()))
-                        ? ZoneId.of(m.getTimezoneId()) : viewerZone;
+                        ? ZoneId.of(m.getTimezoneId())
+                        : viewerZone;
                 ZonedDateTime display = ZonedDateTime.of(m.getScheduledStart(), meetingZone)
                         .withZoneSameInstant(viewerZone);
                 dateStr = DISPLAY_DATE_FMT.format(display);
@@ -203,7 +202,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     }
 
     private static String statusLabel(MeetingStatus status) {
-        if (status == null) return "Unknown";
+        if (status == null)
+            return "Unknown";
         return switch (status) {
             case DRAFT -> "Draft";
             case PROPOSED -> "Proposed";
@@ -214,7 +214,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     }
 
     private static String statusCssClass(MeetingStatus status) {
-        if (status == null) return "mseries-badge-neutral";
+        if (status == null)
+            return "mseries-badge-neutral";
         return switch (status) {
             case DRAFT -> "mseries-badge-draft";
             case PROPOSED -> "mseries-badge-proposed";
@@ -225,41 +226,53 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     }
 
     private static void renderStyles(PrintWriter out) {
-        out.println("    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f6f7f8; margin: 0; color: #0f1720; }");
+        out.println(
+                "    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f6f7f8; margin: 0; color: #0f1720; }");
         out.println("    .mseries-page { max-width: 900px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }");
         out.println("    .mseries-breadcrumb { font-size: 0.85rem; color: #5b6673; margin-bottom: 0.5rem; }");
         out.println("    .mseries-breadcrumb a { color: #2563eb; text-decoration: none; }");
         out.println("    .mseries-breadcrumb a:hover { text-decoration: underline; }");
         out.println("    .mseries-sep { margin: 0 0.35rem; color: #94a3b8; }");
         out.println("    .mseries-title { margin: 0 0 0.4rem; font-size: 1.6rem; font-weight: 700; color: #0f1720; }");
-        out.println("    .mseries-description { margin: 0 0 1.25rem; color: #475569; font-size: 0.95rem; max-width: 680px; }");
-        out.println("    .mseries-header { border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem; margin-bottom: 1.5rem; }");
+        out.println(
+                "    .mseries-description { margin: 0 0 1.25rem; color: #475569; font-size: 0.95rem; max-width: 680px; }");
+        out.println(
+                "    .mseries-header { border-bottom: 1px solid #e2e8f0; padding-bottom: 1rem; margin-bottom: 1.5rem; }");
         out.println("    .mseries-empty { color: #64748b; font-style: italic; margin-top: 1.5rem; }");
         out.println("    .mseries-section { margin-bottom: 2rem; }");
-        out.println("    .mseries-section-heading { font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 0.6rem; }");
-        out.println("    .mseries-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(15,23,32,0.05); }");
-        out.println("    .mseries-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #fff; }");
-        out.println("    .mseries-table th { background: #f1f5f9; color: #475569; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.75rem; border-bottom: 2px solid #e2e8f0; text-align: left; white-space: nowrap; }");
-        out.println("    .mseries-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }");
+        out.println(
+                "    .mseries-section-heading { font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin: 0 0 0.6rem; }");
+        out.println(
+                "    .mseries-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 2px 8px rgba(15,23,32,0.05); }");
+        out.println(
+                "    .mseries-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; background: #fff; }");
+        out.println(
+                "    .mseries-table th { background: #f1f5f9; color: #475569; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.5rem 0.75rem; border-bottom: 2px solid #e2e8f0; text-align: left; white-space: nowrap; }");
+        out.println(
+                "    .mseries-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }");
         out.println("    .mseries-table tr:last-child td { border-bottom: none; }");
         out.println("    .mseries-table tr:hover td { background: #f8fafc; }");
         out.println("    .mseries-row-upcoming td { background: #f0f9ff; }");
         out.println("    .mseries-row-upcoming:hover td { background: #e0f2fe; }");
         out.println("    .mseries-date { white-space: nowrap; }");
         out.println("    .mseries-date-date { display: block; font-weight: 500; }");
-        out.println("    .mseries-date-time { display: block; font-size: 0.82rem; color: #64748b; margin-top: 0.1rem; }");
+        out.println(
+                "    .mseries-date-time { display: block; font-size: 0.82rem; color: #64748b; margin-top: 0.1rem; }");
         out.println("    .mseries-name { max-width: 280px; }");
-        out.println("    .mseries-badge { font-size: 0.73rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; display: inline-block; border: 1px solid transparent; }");
+        out.println(
+                "    .mseries-badge { font-size: 0.73rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap; display: inline-block; border: 1px solid transparent; }");
         out.println("    .mseries-badge-draft { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }");
         out.println("    .mseries-badge-proposed { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }");
         out.println("    .mseries-badge-finalized { background: #f0fdf4; color: #166534; border-color: #86efac; }");
         out.println("    .mseries-badge-completed { background: #f0fdf4; color: #166534; border-color: #86efac; }");
         out.println("    .mseries-badge-cancelled { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }");
         out.println("    .mseries-badge-neutral { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }");
-        out.println("    .mseries-agenda-link { color: #2563eb; text-decoration: none; font-size: 0.85rem; font-weight: 500; }");
+        out.println(
+                "    .mseries-agenda-link { color: #2563eb; text-decoration: none; font-size: 0.85rem; font-weight: 500; }");
         out.println("    .mseries-agenda-link:hover { text-decoration: underline; }");
         out.println("    .mseries-no-agenda { color: #94a3b8; }");
-        out.println("    .mseries-admin-bar { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed #e2e8f0; font-size: 0.82rem; }");
+        out.println(
+                "    .mseries-admin-bar { margin-top: 1.5rem; padding-top: 1rem; border-top: 1px dashed #e2e8f0; font-size: 0.82rem; }");
         out.println("    .mseries-admin-bar a { color: #64748b; text-decoration: none; }");
         out.println("    .mseries-admin-bar a:hover { text-decoration: underline; color: #334155; }");
     }
@@ -282,18 +295,25 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     }
 
     private static Long parseId(String raw) {
-        if (raw == null) return null;
-        try { return Long.parseLong(raw); } catch (NumberFormatException e) { return null; }
+        if (raw == null)
+            return null;
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static String trimToNull(String s) {
-        if (s == null) return null;
+        if (s == null)
+            return null;
         String t = s.trim();
         return t.isEmpty() ? null : t;
     }
 
     private static String escapeHtml(String s) {
-        if (s == null) return "";
+        if (s == null)
+            return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;").replace("'", "&#x27;");
     }

@@ -191,6 +191,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
         LocalDateTime scheduledStart;
         LocalDateTime scheduledEnd = null;
         String timezoneId;
+        String onlineMeetingUrl;
+        String onlineMeetingDetails;
 
         if (previous.isPresent()) {
             EsMeeting prev = previous.get();
@@ -202,9 +204,13 @@ public class AdminEsMeetingServlet extends HttpServlet {
                         prev.getScheduledStart(), prev.getScheduledEnd()).toMinutes();
                 scheduledEnd = scheduledStart.plusMinutes(durationMinutes);
             }
+            onlineMeetingUrl = prev.getOnlineMeetingUrl();
+            onlineMeetingDetails = prev.getOnlineMeetingDetails();
         } else {
             timezoneId = "America/New_York";
             scheduledStart = submittedDate.atTime(11, 0);
+            onlineMeetingUrl = topicMeeting.getOnlineMeetingUrl();
+            onlineMeetingDetails = topicMeeting.getOnlineMeetingDetails();
         }
 
         EsMeeting newMeeting = new EsMeeting();
@@ -214,6 +220,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
         newMeeting.setScheduledStart(scheduledStart);
         newMeeting.setScheduledEnd(scheduledEnd);
         newMeeting.setTimezoneId(timezoneId);
+        newMeeting.setOnlineMeetingUrl(onlineMeetingUrl);
+        newMeeting.setOnlineMeetingDetails(onlineMeetingDetails);
         newMeeting.setStatus(EsMeeting.MeetingStatus.DRAFT);
         newMeeting.setCreatedByUserId(adminUser.getUserId());
 

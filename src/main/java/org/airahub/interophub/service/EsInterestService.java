@@ -7,13 +7,17 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.List;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsInterestDao;
+import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
+import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsInterest;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.User;
 
 /**
  * Orchestrates ES interest, comment, and subscription operations.
@@ -33,12 +37,16 @@ public class EsInterestService {
     private final EsCommentDao commentDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
+    private final EsMeetingAttendanceDao meetingAttendanceDao;
+    private final UserDao userDao;
 
     public EsInterestService() {
         this.interestDao = new EsInterestDao();
         this.commentDao = new EsCommentDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
+        this.meetingAttendanceDao = new EsMeetingAttendanceDao();
+        this.userDao = new UserDao();
     }
 
     // -------------------------------------------------------------------------
@@ -156,6 +164,21 @@ public class EsInterestService {
         }
         subscriptionDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
         topicMeetingMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+        commentDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+        meetingAttendanceDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+    }
+
+    /**
+     * Bulk backfill: iterates every non-deleted registered user and links their
+     * anonymous records across all tracked tables. Safe to run multiple times
+     * (fully idempotent). Returns the number of users processed.
+     */
+    public int linkAllProspects() {
+        List<User> users = userDao.findAllNonDeletedWithEmail();
+        for (User user : users) {
+            linkAnonymousRecordsByEmail(user.getUserId(), user.getEmailNormalized());
+        }
+        return users.size();
     }
 
     // -------------------------------------------------------------------------

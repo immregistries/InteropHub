@@ -119,4 +119,13 @@ public class UserDao extends GenericDao<User, Long> {
                     .getResultList();
         }
     }
+
+    public List<User> findAllNonDeletedWithEmail() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from User u where u.status <> 'DELETED' and u.emailNormalized is not null",
+                    User.class)
+                    .getResultList();
+        }
+    }
 }

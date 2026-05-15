@@ -14,6 +14,7 @@ import org.airahub.interophub.dao.EmailProspectDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EsInterestService;
 
 public class AdminRegisteredUsersServlet extends HttpServlet {
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
@@ -22,11 +23,13 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final UserDao userDao;
     private final EmailProspectDao emailProspectDao;
+    private final EsInterestService esInterestService;
 
     public AdminRegisteredUsersServlet() {
         this.authFlowService = new AuthFlowService();
         this.userDao = new UserDao();
         this.emailProspectDao = new EmailProspectDao();
+        this.esInterestService = new EsInterestService();
     }
 
     @Override
@@ -38,6 +41,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
 
         String contextPath = request.getContextPath();
         String search = trimToNull(request.getParameter("search"));
+        String linkedParam = trimToNull(request.getParameter("linked"));
+        int linkedCount = 0;
+        if (linkedParam != null) {
+            try {
+                linkedCount = Integer.parseInt(linkedParam);
+            } catch (NumberFormatException ignored) {
+            }
+        }
 
         // Stat card counts — always totals, never filtered by search
         long countRegistered = userDao.countActiveUsers();
@@ -58,12 +69,27 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             prospects = emailProspectDao.findRecentProspects(DEFAULT_LIMIT);
         }
 
-        renderPage(response, contextPath, search,
+        renderPage(response, contextPath, search, linkedCount,
                 countRegistered, countActiveLogins, countProspects,
                 registrations, activeLogins, prospects);
     }
 
-    private void renderPage(HttpServletResponse response, String contextPath, String search,
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Optional<User> adminUser = requireAdmin(request, response);
+        if (adminUser.isEmpty()) {
+            return;
+        }
+        String action = trimToNull(request.getParameter("action"));
+        if ("linkAllProspects".equals(action)) {
+            int count = esInterestService.linkAllProspects();
+            response.sendRedirect(request.getContextPath() + "/admin/users?linked=" + count);
+        } else {
+            response.sendRedirect(request.getContextPath() + "/admin/users");
+        }
+    }
+
+    private void renderPage(HttpServletResponse response, String contextPath, String search, int linkedCount,
             long countRegistered, long countActiveLogins, long countProspects,
             List<User> registrations, List<User> activeLogins,
             List<EmailProspectBrowseRow> prospects) throws IOException {
@@ -93,6 +119,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                 renderStatCard(panelOut, String.valueOf(countProspects), "Prospects (email only)");
                 panelOut.println("        </div>");
 
+                // --- Success banner after link action ---
+                if (linkedCount > 0) {
+                    panelOut.println("        <p class=\"success-banner\"><strong>"
+                            + escapeHtml(linkedCount + " user" + (linkedCount == 1 ? "" : "s")
+                                    + " processed — anonymous records have been linked.")
+                            + "</strong></p>");
+                }
+
                 // --- Table 1: Registrations ---
                 String regHeading = isSearch
                         ? "Registrations matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + registrations.size()
@@ -110,6 +144,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
                 String prospectHeading = isSearch
                         ? "Prospects matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + prospects.size() + ")"
                         : "Last " + DEFAULT_LIMIT + " Prospects (not yet registered)";
+
+                // --- Link All Prospects button ---
+                panelOut.println("        <form method=\"post\" action=\"" + contextPath
+                        + "/admin/users\" style=\"margin: 1rem 0;\">");
+                panelOut.println("          <input type=\"hidden\" name=\"action\" value=\"linkAllProspects\" />");
+                panelOut.println("          <button type=\"submit\">Link All Prospects to Registered Users</button>");
+                panelOut.println("        </form>");
+
                 renderProspectsTable(panelOut, prospectHeading, prospects);
 
                 panelOut.println("      </section>");

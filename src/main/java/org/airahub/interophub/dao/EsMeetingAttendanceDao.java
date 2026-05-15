@@ -47,6 +47,29 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
         }
     }
 
+    public int updateUserIdWhereNullByEmailNormalized(String emailNormalized, Long userId) {
+        if (emailNormalized == null || userId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update EsMeetingAttendance a set a.userId = :uid"
+                            + " where a.emailNormalized = :email and a.userId is null")
+                    .setParameter("uid", userId)
+                    .setParameter("email", emailNormalized)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public EsMeetingAttendance saveOrUpdate(EsMeetingAttendance record) {
         Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

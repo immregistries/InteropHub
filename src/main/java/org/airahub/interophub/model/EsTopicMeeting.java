@@ -48,6 +48,12 @@ public class EsTopicMeeting {
     @Column(name = "disabled_by_user_id")
     private Long disabledByUserId;
 
+    @Column(name = "online_meeting_url", length = 2048)
+    private String onlineMeetingUrl;
+
+    @Column(name = "online_meeting_details", columnDefinition = "TEXT")
+    private String onlineMeetingDetails;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -136,6 +142,22 @@ public class EsTopicMeeting {
 
     public void setDisabledByUserId(Long disabledByUserId) {
         this.disabledByUserId = disabledByUserId;
+    }
+
+    public String getOnlineMeetingUrl() {
+        return onlineMeetingUrl;
+    }
+
+    public void setOnlineMeetingUrl(String onlineMeetingUrl) {
+        this.onlineMeetingUrl = onlineMeetingUrl;
+    }
+
+    public String getOnlineMeetingDetails() {
+        return onlineMeetingDetails;
+    }
+
+    public void setOnlineMeetingDetails(String onlineMeetingDetails) {
+        this.onlineMeetingDetails = onlineMeetingDetails;
     }
 
     public LocalDateTime getCreatedAt() {

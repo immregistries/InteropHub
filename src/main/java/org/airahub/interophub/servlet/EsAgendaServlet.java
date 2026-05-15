@@ -209,6 +209,9 @@ public class EsAgendaServlet extends HttpServlet {
             case "updateMeetingDescription":
                 handleUpdateMeetingDescription(request, response, contextPath, meeting, editOverride);
                 break;
+            case "updateMeetingOnlineInfo":
+                handleUpdateMeetingOnlineInfo(request, response, contextPath, meeting, editOverride);
+                break;
             case "addAgendaItem":
                 handleAddAgendaItem(request, response, contextPath, meeting, items, editOverride);
                 break;
@@ -461,6 +464,14 @@ public class EsAgendaServlet extends HttpServlet {
             String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
         String desc = trimToNull(request.getParameter("description"));
         meeting.setMeetingDescription(desc);
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingOnlineInfo(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        meeting.setOnlineMeetingUrl(trimToNull(request.getParameter("onlineMeetingUrl")));
+        meeting.setOnlineMeetingDetails(trimToNull(request.getParameter("onlineMeetingDetails")));
         meetingDao.saveOrUpdate(meeting);
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
@@ -1124,7 +1135,8 @@ public class EsAgendaServlet extends HttpServlet {
                 ? topicMeetingDao.findById(meeting.getEsTopicMeetingId()).orElse(null)
                 : null;
         String seriesName = topicMeeting != null && topicMeeting.getMeetingName() != null
-                ? topicMeeting.getMeetingName() : null;
+                ? topicMeeting.getMeetingName()
+                : null;
 
         // Duration warning calculation
         int agendaMinutes = items.stream()
@@ -1488,10 +1500,14 @@ public class EsAgendaServlet extends HttpServlet {
 
             out.println("  </div>"); // end agenda-meta
 
-            // --- DESCRIPTION ---
+            // --- DESCRIPTION / MEETING INFORMATION ---
             boolean hasDescription = meeting.getMeetingDescription() != null
                     && !meeting.getMeetingDescription().isBlank();
-            if (hasDescription || canEdit) {
+            boolean hasOnlineMeetingUrl = meeting.getOnlineMeetingUrl() != null
+                    && !meeting.getOnlineMeetingUrl().isBlank();
+            boolean hasOnlineMeetingDetails = meeting.getOnlineMeetingDetails() != null
+                    && !meeting.getOnlineMeetingDetails().isBlank();
+            if (hasDescription || canEdit || hasOnlineMeetingUrl) {
                 out.println("  <div class=\"agenda-description panel\">");
                 out.println("    <h3 class=\"agenda-section-heading\">Meeting Information</h3>");
                 if (hasDescription) {
@@ -1525,6 +1541,62 @@ public class EsAgendaServlet extends HttpServlet {
                             "          <button type=\"button\" onclick=\"esHideEdit('description')\">Cancel</button>");
                     out.println("        </div>");
                     out.println("      </form>");
+                    out.println("    </div>");
+                }
+                // --- ONLINE MEETING LINK ---
+                if (canEdit) {
+                    String displayUrl = hasOnlineMeetingUrl ? meeting.getOnlineMeetingUrl() : "Add Meeting Link";
+                    String linkDisplayClass = hasOnlineMeetingUrl
+                            ? "agenda-join-link-edit click-to-edit"
+                            : "agenda-muted click-to-edit";
+                    out.println("    <div class=\"agenda-online-meeting no-print\" style=\"margin-top:0.5rem\">");
+                    out.println("      <span id=\"meeting-link-display\" class=\"" + linkDisplayClass
+                            + "\" onclick=\"esShowEdit('meeting-link')\" title=\"Click to edit\">"
+                            + escapeHtml(displayUrl) + "</span>");
+                    out.println(
+                            "      <div id=\"meeting-link-form\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.4rem\">");
+                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "          <input type=\"hidden\" name=\"action\" value=\"updateMeetingOnlineInfo\">");
+                    if (editOverride)
+                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println(
+                            "          <label style=\"font-size:0.85rem;font-weight:600;color:#475569\">Meeting URL</label>");
+                    out.println(
+                            "          <input type=\"text\" name=\"onlineMeetingUrl\" value=\""
+                                    + escapeHtml(orEmpty(meeting.getOnlineMeetingUrl()))
+                                    + "\" placeholder=\"https://zoom.us/j/...\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\">");
+                    out.println(
+                            "          <label style=\"font-size:0.85rem;font-weight:600;color:#475569;margin-top:0.3rem\">Connection Details</label>");
+                    out.println(
+                            "          <textarea name=\"onlineMeetingDetails\" rows=\"5\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\" placeholder=\"Dial-in numbers, passcode, etc.\">"
+                                    + escapeHtml(orEmpty(meeting.getOnlineMeetingDetails())) + "</textarea>");
+                    out.println("          <div class=\"agenda-inline-form\" style=\"margin-top:0.4rem\">");
+                    out.println("            <button type=\"submit\">Save</button>");
+                    out.println(
+                            "            <button type=\"button\" onclick=\"esHideEdit('meeting-link')\">Cancel</button>");
+                    out.println("          </div>");
+                    out.println("        </form>");
+                    out.println("      </div>");
+                    out.println("    </div>");
+                } else if (hasOnlineMeetingUrl) {
+                    out.println("    <div class=\"agenda-online-meeting\" style=\"margin-top:0.5rem\">");
+                    out.println("      <a href=\"" + escapeHtml(meeting.getOnlineMeetingUrl())
+                            + "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"agenda-join-link\">Join Online &#8599;</a>"
+                            + (hasOnlineMeetingDetails
+                                    ? "&nbsp;&nbsp;&nbsp;<span id=\"join-details-toggle\" class=\"agenda-join-more\" onclick=\"esShowJoinDetails()\">More information&hellip;</span>"
+                                    : ""));
+                    if (hasOnlineMeetingDetails) {
+                        out.println(
+                                "      <div id=\"join-details-content\" class=\"agenda-join-details\" style=\"display:none\">");
+                        out.println("        <div class=\"agenda-join-details-text\">"
+                                + renderPlainText(meeting.getOnlineMeetingDetails()) + "</div>");
+                        out.println(
+                                "        <div style=\"margin-top:0.3rem\"><button type=\"button\" class=\"agenda-join-details-close\" onclick=\"esHideJoinDetails()\">Close</button></div>");
+                        out.println("      </div>");
+                    }
                     out.println("    </div>");
                 }
                 out.println("  </div>");
@@ -2177,7 +2249,8 @@ public class EsAgendaServlet extends HttpServlet {
                 String nextTimeStr = DISPLAY_TIME_FMT.format(nextDisplay) + " " + nextDisplay.getZone().getId();
                 out.println("    <p class=\"agenda-next-meeting\">");
                 out.println("      " + escapeHtml(nextSeriesLabel) + ": <a href=\"" + contextPath
-                        + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId() + "\" class=\"agenda-next-meeting-link\">"
+                        + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId()
+                        + "\" class=\"agenda-next-meeting-link\">"
                         + escapeHtml(nextDateStr) + ", at " + escapeHtml(nextTimeStr) + "</a>");
                 out.println("    </p>");
             }
@@ -2228,6 +2301,14 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("function esHideEdit(id) {");
             out.println("  document.getElementById(id+'-display').style.display='';");
             out.println("  document.getElementById(id+'-form').style.display='none';");
+            out.println("}");
+            out.println("function esShowJoinDetails() {");
+            out.println("  document.getElementById('join-details-toggle').style.display='none';");
+            out.println("  document.getElementById('join-details-content').style.display='block';");
+            out.println("}");
+            out.println("function esHideJoinDetails() {");
+            out.println("  document.getElementById('join-details-toggle').style.display='';");
+            out.println("  document.getElementById('join-details-content').style.display='none';");
             out.println("}");
             // Presenter panel functions
             out.println("function esShowPresEdit(id) {");
@@ -2336,6 +2417,19 @@ public class EsAgendaServlet extends HttpServlet {
         out.println(
                 "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
         out.println("    .agenda-muted { color: #94a3b8; font-size: 0.9rem; }");
+        out.println("    .agenda-online-meeting { margin-top: 0.6rem; }");
+        out.println(
+                "    .agenda-join-link { font-weight: 600; color: #0f766e; text-decoration: none; font-size: 0.95rem; }");
+        out.println("    .agenda-join-link:hover { text-decoration: underline; }");
+        out.println("    .agenda-join-link-edit { font-size: 0.9rem; color: #334155; word-break: break-all; }");
+        out.println(
+                "    .agenda-join-more { cursor: pointer; color: #0369a1; font-size: 0.88rem; text-decoration: underline; }");
+        out.println(
+                "    .agenda-join-details { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.35rem 0.6rem; margin-top: 0.4rem; }");
+        out.println(
+                "    .agenda-join-details-text { white-space: pre-wrap; font-size: 0.82rem; color: #374151; line-height: 1; }");
+        out.println(
+                "    .agenda-join-details-close { font-size: 0.8rem; padding: 0.15rem 0.5rem; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; }");
         out.println(
                 "    .agenda-duration-warning { background: #fef9c3; border: 1px solid #fde68a; color: #713f12; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
         out.println(

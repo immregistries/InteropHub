@@ -103,6 +103,29 @@ public class EsCommentDao extends GenericDao<EsComment, Long> {
         }
     }
 
+    public int updateUserIdWhereNullByEmailNormalized(String emailNormalized, Long userId) {
+        if (emailNormalized == null || userId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update EsComment c set c.userId = :uid"
+                            + " where c.emailNormalized = :email and c.userId is null")
+                    .setParameter("uid", userId)
+                    .setParameter("email", emailNormalized)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public int deleteByCampaignId(Long campaignId) {
         if (campaignId == null) {
             return 0;

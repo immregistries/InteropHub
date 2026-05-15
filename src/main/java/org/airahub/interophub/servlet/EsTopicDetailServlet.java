@@ -19,8 +19,24 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.stream.Collectors;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
+import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsComment;
+import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
+import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.EsTopicMeeting;
 
 public class EsTopicDetailServlet extends HttpServlet {
+
+    private static final DateTimeFormatter MEETING_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a");
 
     private final AuthFlowService authFlowService;
     private final EsTopicDao esTopicDao;
@@ -29,6 +45,10 @@ public class EsTopicDetailServlet extends HttpServlet {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsCommentDao commentDao;
+    private final UserDao userDao;
+    private final EsTopicMeetingDao esTopicMeetingDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
+    private final EsMeetingDao esMeetingDao;
 
     public EsTopicDetailServlet() {
         this.authFlowService = new AuthFlowService();
@@ -38,6 +58,10 @@ public class EsTopicDetailServlet extends HttpServlet {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.commentDao = new EsCommentDao();
+        this.userDao = new UserDao();
+        this.esTopicMeetingDao = new EsTopicMeetingDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
+        this.esMeetingDao = new EsMeetingDao();
     }
 
     @Override
@@ -119,6 +143,60 @@ public class EsTopicDetailServlet extends HttpServlet {
                 : membership.getMembershipStatus().name();
         Long meetingId = meeting == null ? null : meeting.getEsTopicMeetingId();
 
+        // Champion / admin intelligence view
+        boolean isAdmin = authenticatedUser.isPresent() && authFlowService.isAdminUser(authenticatedUser.get());
+        List<EsSubscription> topicSubscriptions = List.of();
+        boolean showChampionView = isAdmin;
+
+        if (!showChampionView && authenticatedUser.isPresent()) {
+            topicSubscriptions = subscriptionDao.findActiveByTopicId(topicId);
+            final Long curUserId = authenticatedUser.get().getUserId();
+            final String curEmail = authenticatedEmailNormalized;
+            showChampionView = topicSubscriptions.stream()
+                    .anyMatch(s -> EsSubscription.SubscriptionStatus.CHAMPION.equals(s.getStatus())
+                            && (s.getUserId() != null && curUserId.equals(s.getUserId())
+                                    || (curEmail != null && curEmail.equals(s.getEmailNormalized()))));
+            if (!showChampionView) {
+                topicSubscriptions = List.of();
+            }
+        }
+
+        Map<Long, User> subscriberUsers = Map.of();
+        EsTopicMeeting topicMeetingSeries = null;
+        List<EsMeeting> topicAgendaMeetings = List.of();
+        List<EsComment> topicComments = List.of();
+
+        if (showChampionView) {
+            if (topicSubscriptions.isEmpty()) {
+                topicSubscriptions = subscriptionDao.findActiveByTopicId(topicId);
+            }
+            List<Long> subUserIds = topicSubscriptions.stream()
+                    .map(EsSubscription::getUserId)
+                    .filter(id -> id != null)
+                    .distinct()
+                    .collect(Collectors.toList());
+            if (!subUserIds.isEmpty()) {
+                subscriberUsers = userDao.findByIds(subUserIds).stream()
+                        .collect(Collectors.toMap(User::getUserId, u -> u));
+            }
+            topicMeetingSeries = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
+            List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
+            List<Long> agendaMeetingIds = agendaItems.stream()
+                    .map(EsMeetingAgendaItem::getEsMeetingId)
+                    .distinct()
+                    .collect(Collectors.toList());
+            List<EsMeeting> tempMeetings = new ArrayList<>();
+            for (Long mid : agendaMeetingIds) {
+                EsMeeting m = esMeetingDao.findById(mid).orElse(null);
+                if (m != null && m.getStatus() != EsMeeting.MeetingStatus.CANCELLED) {
+                    tempMeetings.add(m);
+                }
+            }
+            tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart));
+            topicAgendaMeetings = tempMeetings;
+            topicComments = commentDao.findByTopicId(topicId);
+        }
+
         String topicName = orEmpty(topic.getTopicName());
         String description = orEmpty(topic.getDescription());
         String normalizedStage = orEmpty(topic.getStage());
@@ -188,6 +266,11 @@ public class EsTopicDetailServlet extends HttpServlet {
 
             // Render the shared detail sheet HTML (no overlay in page mode)
             EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, false);
+
+            if (showChampionView) {
+                renderChampionSection(out, contextPath, topicSubscriptions, subscriberUsers,
+                        topicMeetingSeries, topicAgendaMeetings, topicComments);
+            }
 
             out.println("  </div>");
 
@@ -275,6 +358,148 @@ public class EsTopicDetailServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private void renderChampionSection(PrintWriter out, String contextPath,
+            List<EsSubscription> subscriptions, Map<Long, User> userMap,
+            EsTopicMeeting series, List<EsMeeting> agendaMeetings,
+            List<EsComment> comments) {
+        String thStyle = "text-align:left; padding:0.45rem 0.75rem; border-bottom:1px solid #d5dde5;"
+                + " background:#eef2f7; font-size:0.82rem; font-weight:600; color:#5b6673;";
+        String cellStyle = "padding:0.4rem 0.75rem; border-bottom:1px solid #eef1f4;";
+
+        out.println("    <div style=\"margin-top:1.5rem; background:#fff; border:1px solid #d5dde5;"
+                + " border-radius:8px; padding:1.25rem 1.5rem;\">");
+        out.println("      <h2 style=\"font-size:1rem; color:#0b6fb8; margin:0 0 1.25rem;"
+                + " font-weight:600; letter-spacing:0.01em; border-bottom:1px solid #d5dde5;"
+                + " padding-bottom:0.6rem;\">Champion &amp; Admin View</h2>");
+
+        // --- Followers ---
+        List<EsSubscription> sortedSubs = new ArrayList<>(subscriptions);
+        sortedSubs.sort((a, b) -> {
+            boolean aIsChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(a.getStatus());
+            boolean bIsChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(b.getStatus());
+            if (aIsChamp != bIsChamp) {
+                return aIsChamp ? -1 : 1;
+            }
+            User uA = a.getUserId() != null ? userMap.get(a.getUserId()) : null;
+            User uB = b.getUserId() != null ? userMap.get(b.getUserId()) : null;
+            String nameA = uA != null
+                    ? (orEmpty(uA.getFirstName()) + " " + orEmpty(uA.getLastName())).trim()
+                    : orEmpty(a.getEmail());
+            String nameB = uB != null
+                    ? (orEmpty(uB.getFirstName()) + " " + orEmpty(uB.getLastName())).trim()
+                    : orEmpty(b.getEmail());
+            return nameA.compareToIgnoreCase(nameB);
+        });
+
+        out.println("      <section style=\"margin-bottom:1.5rem;\">");
+        out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                + " margin:0 0 0.5rem;\">Followers (" + sortedSubs.size() + ")</h3>");
+        if (sortedSubs.isEmpty()) {
+            out.println("        <p style=\"color:#5b6673; font-size:0.88rem; margin:0;\">No followers yet.</p>");
+        } else {
+            out.println("        <table style=\"width:100%; border-collapse:collapse; font-size:0.87rem;\">");
+            out.println("          <thead><tr>");
+            out.println("            <th style=\"" + thStyle + "\">Name</th>");
+            out.println("            <th style=\"" + thStyle + "\">Organization</th>");
+            out.println("            <th style=\"" + thStyle + "\">Email</th>");
+            out.println("            <th style=\"" + thStyle + "\">Role</th>");
+            out.println("          </tr></thead><tbody>");
+            for (EsSubscription s : sortedSubs) {
+                User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
+                boolean isChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(s.getStatus());
+                String role = isChamp ? "Champion" : "Follower";
+                String name = u != null
+                        ? (orEmpty(u.getFirstName()) + " " + orEmpty(u.getLastName())).trim()
+                        : "";
+                String org = u != null ? orEmpty(u.getOrganization()) : "";
+                String email = orEmpty(s.getEmail());
+                out.println("          <tr>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(name) + "</td>");
+                out.println("            <td style=\"" + cellStyle + " color:#5b6673;\">" + escapeHtml(org) + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(email) + "</td>");
+                out.println("            <td style=\"" + cellStyle
+                        + (isChamp ? " font-weight:600; color:#0b6fb8;" : "") + "\">" + escapeHtml(role) + "</td>");
+                out.println("          </tr>");
+            }
+            out.println("          </tbody></table>");
+        }
+        out.println("      </section>");
+
+        // --- Series Meeting Link ---
+        if (series != null) {
+            out.println("      <section style=\"margin-bottom:1.5rem;\">");
+            out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                    + " margin:0 0 0.4rem;\">Working Group Meeting Series</h3>");
+            out.println("        <p style=\"margin:0;\"><a href=\"" + contextPath + "/es/meetings?seriesId="
+                    + series.getEsTopicMeetingId() + "\" style=\"color:#0b6fb8;\">"
+                    + escapeHtml(orEmpty(series.getMeetingName())) + " \u2192</a></p>");
+            out.println("      </section>");
+        }
+
+        // --- Agenda Appearances ---
+        out.println("      <section style=\"margin-bottom:1.5rem;\">");
+        out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                + " margin:0 0 0.5rem;\">Meeting Appearances (" + agendaMeetings.size() + ")</h3>");
+        if (agendaMeetings.isEmpty()) {
+            out.println(
+                    "        <p style=\"color:#5b6673; font-size:0.88rem; margin:0;\">This topic has not appeared on any meeting agendas yet.</p>");
+        } else {
+            out.println("        <table style=\"width:100%; border-collapse:collapse; font-size:0.87rem;\">");
+            out.println("          <thead><tr>");
+            out.println("            <th style=\"" + thStyle + "\">Date</th>");
+            out.println("            <th style=\"" + thStyle + "\">Meeting</th>");
+            out.println("            <th style=\"" + thStyle + "\">Status</th>");
+            out.println("          </tr></thead><tbody>");
+            for (EsMeeting m : agendaMeetings) {
+                String dateStr = m.getScheduledStart() != null
+                        ? m.getScheduledStart().format(MEETING_DATE_FMT)
+                        : "";
+                String statusStr = m.getStatus() != null ? m.getStatus().name() : "";
+                out.println("          <tr>");
+                out.println("            <td style=\"" + cellStyle + " white-space:nowrap; color:#5b6673;\">"
+                        + escapeHtml(dateStr) + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\"><a href=\"" + contextPath
+                        + "/es/agenda?meetingId=" + m.getEsMeetingId() + "\" style=\"color:#0b6fb8;\">"
+                        + escapeHtml(orEmpty(m.getMeetingName())) + "</a></td>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(statusStr) + "</td>");
+                out.println("          </tr>");
+            }
+            out.println("          </tbody></table>");
+        }
+        out.println("      </section>");
+
+        // --- Campaign Comments ---
+        out.println("      <section>");
+        out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                + " margin:0 0 0.5rem;\">Campaign Comments (" + comments.size() + ")</h3>");
+        if (comments.isEmpty()) {
+            out.println(
+                    "        <p style=\"color:#5b6673; font-size:0.88rem; margin:0;\">No campaign comments yet.</p>");
+        } else {
+            out.println("        <table style=\"width:100%; border-collapse:collapse; font-size:0.87rem;\">");
+            out.println("          <thead><tr>");
+            out.println("            <th style=\"" + thStyle + "\">Date</th>");
+            out.println("            <th style=\"" + thStyle + "\">Submitted by</th>");
+            out.println("            <th style=\"" + thStyle + "\">Comment</th>");
+            out.println("          </tr></thead><tbody>");
+            for (EsComment c : comments) {
+                String dateStr = c.getCreatedAt() != null ? c.getCreatedAt().toLocalDate().toString() : "";
+                String name = (orEmpty(c.getFirstName()) + " " + orEmpty(c.getLastName())).trim();
+                String commentText = orEmpty(c.getCommentText());
+                out.println("          <tr style=\"vertical-align:top;\">");
+                out.println("            <td style=\"" + cellStyle + " white-space:nowrap;\">"
+                        + escapeHtml(dateStr) + "</td>");
+                out.println("            <td style=\"" + cellStyle + " white-space:nowrap;\">"
+                        + escapeHtml(name) + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(commentText) + "</td>");
+                out.println("          </tr>");
+            }
+            out.println("          </tbody></table>");
+        }
+        out.println("      </section>");
+        out.println("    </div>");
     }
 
     private String escapeHtml(String value) {
