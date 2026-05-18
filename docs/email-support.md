@@ -353,3 +353,76 @@ Replace the username and password with your Mailtrap mailbox credentials from th
 | `servlet/SettingsServlet.java` | Admin screen at `/admin/settings` to configure SMTP |
 | `servlet/SendWelcomeEmailServlet.java` | User registration + magic-link email dispatch |
 | `WEB-INF/web.xml` | Servlet URL mappings |
+
+---
+
+## Adding New Email Types (current pattern)
+
+All email added after the initial implementation must follow this pattern. It keeps message content out of servlets and creates an audit record for every delivery.
+
+### The four moving parts
+
+| What | Where | Rule |
+|---|---|---|
+| Reason code | `EmailReason` | One `public static final String` per email type. Never rename a value once rows exist in production. |
+| Subject + body | `EmailTemplates` | One `subject()` + one `body(…)` method pair per type. All message text lives here — not in servlets. |
+| Send + log | Calling servlet | Compose with `EmailTemplates`, call `EmailService.send()`, write a row to `email_send_log` via `EmailSendLogDao`. |
+| DB table | `email_send_log` | Already exists. No schema changes needed for new email types. |
+
+### Checklist
+
+**1. Add a constant to `EmailReason.java`**
+
+```java
+/** Brief description of when this email is sent. */
+public static final String MY_NEW_EMAIL = "MY_NEW_EMAIL";
+```
+
+**2. Add methods to `EmailTemplates.java`**
+
+```java
+// -------------------------------------------------------------------------
+// MY_NEW_EMAIL — brief description
+// -------------------------------------------------------------------------
+
+public static String myNewEmailSubject() {
+    return "Your subject line here";
+}
+
+public static String myNewEmailBody(String someParam) {
+    return "Body text.\n\n" + someParam + "\n";
+}
+```
+
+**3. Send and log in the calling servlet**
+
+```java
+String subject = EmailTemplates.myNewEmailSubject();
+String body    = EmailTemplates.myNewEmailBody(someParam);
+EmailService.SendResult result = emailService.send(recipientEmail, subject, body);
+
+EmailSendLog logEntry = new EmailSendLog();
+logEntry.setEmailReason(EmailReason.MY_NEW_EMAIL);
+logEntry.setRecipientEmail(recipientEmail);           // as provided
+logEntry.setRecipientEmailNormalized(normalizedEmail); // lowercase trimmed
+logEntry.setUserId(user.getUserId());                 // null if no account yet
+logEntry.setSubject(subject);
+logEntry.setBodyText(body);
+logEntry.setSmtpMessageId(result.getSmtpMessageId());
+logEntry.setSmtpProvider(result.getSmtpProvider());
+logEntry.setMagicId(magicId);                         // null if not a magic-link email
+emailSendLogDao.log(logEntry);
+```
+
+`EmailSendLogDao.log()` swallows and logs any persistence exception so that a logging failure never blocks delivery.
+
+### `EmailService.send()` contract
+
+- Throws `IllegalArgumentException` if `recipientEmail`, `subject`, or `bodyText` are blank.  
+- Throws `EmailService.EmailSendException` on SMTP failure (carries `smtpReplyCode` and `smtpProvider`). Do not swallow this silently in critical flows — callers should log a failure event before re-throwing or surfacing an error to the user.
+- Returns `EmailService.SendResult` with `smtpMessageId` and `smtpProvider` on success.
+
+### Where sent emails appear
+
+- `/admin/emails` — last 20 sent, searchable by address (up to 100 results)
+- `/admin/users/{id}` — "Email Log" section, last 50 for that user
