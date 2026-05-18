@@ -64,6 +64,24 @@ public class EsAgendaItemPresenterDao extends GenericDao<EsAgendaItemPresenter, 
         }
     }
 
+    /**
+     * Returns all presenters for a batch of agenda item IDs in a single query,
+     * ordered by agenda item id then presenter id. Used for bulk loading.
+     */
+    public List<EsAgendaItemPresenter> findByAgendaItemIds(List<Long> itemIds) {
+        if (itemIds == null || itemIds.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsAgendaItemPresenter p where p.esMeetingAgendaItemId in (:ids)"
+                            + " order by p.esMeetingAgendaItemId asc, p.esAgendaItemPresenterId asc",
+                    EsAgendaItemPresenter.class)
+                    .setParameterList("ids", itemIds)
+                    .getResultList();
+        }
+    }
+
     public List<EsAgendaItemPresenter> findByUserId(Long userId) {
         if (userId == null) {
             return List.of();

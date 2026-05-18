@@ -244,6 +244,29 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Returns ALL meetings in the same series prior to the excluded meeting,
+     * regardless of status (includes DRAFT and PROPOSED), ordered
+     * most-recent-first.
+     * Used for the agenda carry-forward / open-items logic.
+     */
+    public List<EsMeeting> findAllPreviousByTopicMeeting(Long esTopicMeetingId, Long excludeMeetingId) {
+        if (esTopicMeetingId == null) {
+            return List.of();
+        }
+        long excludeId = excludeMeetingId != null ? excludeMeetingId : -1L;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicMeetingId = :tid"
+                            + " and m.esMeetingId != :excludeId"
+                            + " order by m.scheduledStart desc",
+                    EsMeeting.class)
+                    .setParameter("tid", esTopicMeetingId)
+                    .setParameter("excludeId", excludeId)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Returns the most recent meeting for the given es_topic_meeting whose
      * scheduledStart is strictly before {@code before}, or empty if none exists.
      * Used to copy time-of-day and timezone when creating a new agenda stub.

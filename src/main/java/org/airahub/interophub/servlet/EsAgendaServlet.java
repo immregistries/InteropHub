@@ -1131,7 +1131,8 @@ public class EsAgendaServlet extends HttpServlet {
 
         // Duration warning calculation
         int agendaMinutes = items.stream()
-                .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
+                .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED
+                        && i.getStatus() != AgendaItemStatus.POSTPONED)
                 .mapToInt(i -> i.getTimeMinutes() != null ? i.getTimeMinutes() : 0)
                 .sum();
         Long meetingDurationMinutes = null;
@@ -1171,76 +1172,126 @@ public class EsAgendaServlet extends HttpServlet {
             allUsers = userDao.findAllOrderByName();
         }
 
-        // Previous meeting items for "copy from previous" panel (canEdit only)
-        List<EsMeetingAgendaItem> prevCandidates = List.of();
-        Map<Long, EsMeeting> prevMeetingById = new LinkedHashMap<>();
+        // Previous meeting items for "open items" and "copy from previous" panels
+        // (canEdit only)
+        List<EsMeetingAgendaItem> openItems = List.of();
+        Map<Long, EsMeeting> openMeetingById = new LinkedHashMap<>();
+        List<EsMeeting> copyMeetings = List.of();
+        Map<Long, List<EsMeetingAgendaItem>> copyItemsByMeeting = new LinkedHashMap<>();
         Map<Long, List<EsAgendaItemPresenter>> prevPresentersByItem = new LinkedHashMap<>();
         if (canEdit && meeting.getEsTopicMeetingId() != null) {
-            List<EsMeeting> prevMeetings = meetingDao.findRecentPreviousByTopicMeeting(
-                    meeting.getEsTopicMeetingId(), meeting.getEsMeetingId(), 12);
-            if (!prevMeetings.isEmpty()) {
-                for (EsMeeting pm : prevMeetings) {
-                    prevMeetingById.put(pm.getEsMeetingId(), pm);
-                }
-                List<Long> prevMeetingIds = prevMeetings.stream()
+            // Fetch ALL previous meetings in this series (all statuses, including
+            // DRAFT/PROPOSED)
+            List<EsMeeting> allPrevMeetings = meetingDao.findAllPreviousByTopicMeeting(
+                    meeting.getEsTopicMeetingId(), meeting.getEsMeetingId());
+            if (!allPrevMeetings.isEmpty()) {
+                List<Long> allPrevIds = allPrevMeetings.stream()
                         .map(EsMeeting::getEsMeetingId).collect(Collectors.toList());
-                List<EsMeetingAgendaItem> allPrevItems = agendaItemDao.findByMeetingIds(prevMeetingIds);
-                // Group items by meeting (already ordered by meetingId/displayOrder from DAO)
-                Map<Long, List<EsMeetingAgendaItem>> itemsByPrevMeeting = new LinkedHashMap<>();
-                for (EsMeetingAgendaItem pi : allPrevItems) {
-                    itemsByPrevMeeting.computeIfAbsent(pi.getEsMeetingId(), k -> new ArrayList<>()).add(pi);
+                List<EsMeetingAgendaItem> allPrevItems = agendaItemDao.findByMeetingIds(allPrevIds);
+
+                // Group items by meeting (DAO returns ordered by meetingId, displayOrder)
+                Map<Long, List<EsMeetingAgendaItem>> itemsByMtg = new LinkedHashMap<>();
+                for (EsMeeting pm : allPrevMeetings) {
+                    itemsByMtg.put(pm.getEsMeetingId(), new ArrayList<>());
                 }
+                for (EsMeetingAgendaItem pi : allPrevItems) {
+                    List<EsMeetingAgendaItem> bucket = itemsByMtg.get(pi.getEsMeetingId());
+                    if (bucket != null)
+                        bucket.add(pi);
+                }
+
+                // Build current meeting's occupied topic IDs and titles (suppress from open
+                // items)
+                Set<Long> currentTopicIds = items.stream()
+                        .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED && i.getEsTopicId() != null)
+                        .map(EsMeetingAgendaItem::getEsTopicId)
+                        .collect(Collectors.toSet());
+                Set<String> currentTitles = items.stream()
+                        .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED
+                                && i.getEsTopicId() == null
+                                && i.getTitle() != null && !i.getTitle().isBlank())
+                        .map(i -> i.getTitle().trim().toLowerCase())
+                        .collect(Collectors.toSet());
+
+                // ── Open Items ──
+                // Iterate most-recent-first; first (most recent) occurrence of each
+                // topic/title wins. Surface only if that occurrence is POSTPONED,
+                // NOT_COVERED, or NEEDS_REVISION. Suppress if already on this meeting.
                 Set<Long> seenTopicIds = new HashSet<>();
                 Set<String> seenTitles = new HashSet<>();
-                List<EsMeetingAgendaItem> postponed = new ArrayList<>();
-                List<EsMeetingAgendaItem> others = new ArrayList<>();
-                // prevMeetings is ordered most-recent-first; iterate that way so dedup keeps
-                // most recent
-                for (EsMeeting pm : prevMeetings) {
-                    List<EsMeetingAgendaItem> mItems = itemsByPrevMeeting.getOrDefault(pm.getEsMeetingId(), List.of());
-                    if (mItems.isEmpty())
-                        continue;
-                    // Identify first/last for Welcome / Wrap Up filter
-                    EsMeetingAgendaItem firstItem = mItems.get(0);
-                    EsMeetingAgendaItem lastItem = mItems.get(mItems.size() - 1);
-                    boolean filterFirst = Integer.valueOf(5).equals(firstItem.getTimeMinutes())
-                            || "welcome and introductions".equalsIgnoreCase(
-                                    firstItem.getTitle() != null ? firstItem.getTitle().trim() : "");
-                    boolean filterLast = Integer.valueOf(5).equals(lastItem.getTimeMinutes())
-                            || "wrap up".equalsIgnoreCase(
-                                    lastItem.getTitle() != null ? lastItem.getTitle().trim() : "");
-                    for (int pi = 0; pi < mItems.size(); pi++) {
-                        EsMeetingAgendaItem mi = mItems.get(pi);
+                List<EsMeetingAgendaItem> open = new ArrayList<>();
+                Map<Long, EsMeeting> openMtgMap = new LinkedHashMap<>();
+                for (EsMeeting pm : allPrevMeetings) {
+                    for (EsMeetingAgendaItem mi : itemsByMtg.getOrDefault(pm.getEsMeetingId(), List.of())) {
                         if (mi.getStatus() == AgendaItemStatus.CANCELLED)
                             continue;
-                        if (pi == 0 && filterFirst)
-                            continue;
-                        if (pi == mItems.size() - 1 && filterLast)
-                            continue;
-                        // Deduplicate: by topic if linked, otherwise by normalised title
-                        if (mi.getEsTopicId() != null) {
-                            if (!seenTopicIds.add(mi.getEsTopicId()))
+                        Long topicId = mi.getEsTopicId();
+                        String normTitle = topicId == null
+                                ? (mi.getTitle() != null ? mi.getTitle().trim().toLowerCase() : "")
+                                : null;
+                        // Dedup: first occurrence (most recent) wins
+                        if (topicId != null) {
+                            if (!seenTopicIds.add(topicId))
                                 continue;
                         } else {
-                            String normTitle = mi.getTitle() != null ? mi.getTitle().trim().toLowerCase() : "";
+                            if (normTitle == null || normTitle.isEmpty())
+                                continue;
                             if (!seenTitles.add(normTitle))
                                 continue;
                         }
-                        if (mi.getStatus() == AgendaItemStatus.POSTPONED) {
-                            postponed.add(mi);
-                        } else {
-                            others.add(mi);
-                        }
+                        // Only surface actionable statuses
+                        if (mi.getStatus() != AgendaItemStatus.POSTPONED
+                                && mi.getStatus() != AgendaItemStatus.NOT_COVERED
+                                && mi.getStatus() != AgendaItemStatus.NEEDS_REVISION)
+                            continue;
+                        // Suppress if already on current meeting's agenda
+                        if (topicId != null && currentTopicIds.contains(topicId))
+                            continue;
+                        if (topicId == null && currentTitles.contains(normTitle))
+                            continue;
+                        open.add(mi);
+                        openMtgMap.put(pm.getEsMeetingId(), pm);
                     }
                 }
-                List<EsMeetingAgendaItem> candidates = new ArrayList<>(postponed);
-                candidates.addAll(others);
-                // Load presenters for each candidate item
-                for (EsMeetingAgendaItem ci : candidates) {
-                    prevPresentersByItem.put(ci.getEsMeetingAgendaItemId(),
-                            presenterDao.findByAgendaItemId(ci.getEsMeetingAgendaItemId()));
+                // Sort: POSTPONED first, then NOT_COVERED, then NEEDS_REVISION
+                open.sort((a, b) -> {
+                    int rankA = a.getStatus() == AgendaItemStatus.POSTPONED ? 0
+                            : a.getStatus() == AgendaItemStatus.NOT_COVERED ? 1 : 2;
+                    int rankB = b.getStatus() == AgendaItemStatus.POSTPONED ? 0
+                            : b.getStatus() == AgendaItemStatus.NOT_COVERED ? 1 : 2;
+                    return Integer.compare(rankA, rankB);
+                });
+                openItems = open;
+                openMeetingById = openMtgMap;
+
+                // ── Copy Section: last 2 previous meetings ──
+                copyMeetings = allPrevMeetings.size() > 2
+                        ? allPrevMeetings.subList(0, 2)
+                        : new ArrayList<>(allPrevMeetings);
+                for (EsMeeting cm : copyMeetings) {
+                    List<EsMeetingAgendaItem> cmItems = itemsByMtg
+                            .getOrDefault(cm.getEsMeetingId(), List.of()).stream()
+                            .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
+                            .collect(Collectors.toList());
+                    copyItemsByMeeting.put(cm.getEsMeetingId(), cmItems);
                 }
-                prevCandidates = candidates;
+
+                // ── Batch-load presenters for all candidate items ──
+                List<Long> allCandidateIds = new ArrayList<>();
+                for (EsMeetingAgendaItem oi : openItems)
+                    allCandidateIds.add(oi.getEsMeetingAgendaItemId());
+                for (EsMeeting cm : copyMeetings) {
+                    for (EsMeetingAgendaItem ci : copyItemsByMeeting.getOrDefault(cm.getEsMeetingId(), List.of())) {
+                        allCandidateIds.add(ci.getEsMeetingAgendaItemId());
+                    }
+                }
+                if (!allCandidateIds.isEmpty()) {
+                    for (EsAgendaItemPresenter p : presenterDao.findByAgendaItemIds(allCandidateIds)) {
+                        prevPresentersByItem
+                                .computeIfAbsent(p.getEsMeetingAgendaItemId(), k -> new ArrayList<>())
+                                .add(p);
+                    }
+                }
             }
         }
 
@@ -1637,7 +1688,7 @@ public class EsAgendaServlet extends HttpServlet {
                 EsMeetingAgendaItem item = items.get(i);
                 if (item.getStatus() == AgendaItemStatus.CANCELLED)
                     continue;
-                boolean isCancelledItem = false;
+                boolean isPostponedItem = item.getStatus() == AgendaItemStatus.POSTPONED;
                 String rowClass = "";
 
                 out.println("      <tr class=\"" + rowClass + "\">");
@@ -1645,7 +1696,7 @@ public class EsAgendaServlet extends HttpServlet {
                 // Controls column
                 if (canEdit) {
                     out.println("        <td class=\"col-controls no-print\">");
-                    if (!isCancelledItem) {
+                    if (true) {
                         // Move up
                         if (i > 0) {
                             out.println("          <form method=\"post\" action=\"" + contextPath
@@ -1681,20 +1732,20 @@ public class EsAgendaServlet extends HttpServlet {
                 // Topic / Time column
                 int itemMinutes = item.getTimeMinutes() != null ? item.getTimeMinutes() : 0;
                 String itemTimeRange = "";
-                if (cursor != null && !isCancelledItem) {
+                if (cursor != null && !isPostponedItem) {
                     ZonedDateTime itemStart = ZonedDateTime.of(cursor, meetingZone).withZoneSameInstant(viewerZone);
                     ZonedDateTime itemEnd = itemStart.plusMinutes(itemMinutes);
                     itemTimeRange = DISPLAY_TIME_FMT.format(itemStart) + "–" + DISPLAY_TIME_FMT.format(itemEnd);
                 }
 
-                if (canEdit && !isCancelledItem) {
+                if (canEdit) {
                     out.println("        <td class=\"col-topic click-to-edit\" onclick=\"esShowEdit('item-"
                             + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
                 } else {
                     out.println("        <td class=\"col-topic\">");
                 }
                 EsTopic linkedTopic = item.getEsTopicId() != null ? topicById.get(item.getEsTopicId()) : null;
-                if (linkedTopic != null && !(canEdit && !isCancelledItem)) {
+                if (linkedTopic != null && !canEdit) {
                     out.println("          <div class=\"agenda-item-title\"><a href=\"" + contextPath
                             + "/es/topic/" + item.getEsTopicId() + "\" class=\"agenda-topic-link\">"
                             + escapeHtml(orEmpty(item.getTitle())) + "</a></div>");
@@ -1705,7 +1756,7 @@ public class EsAgendaServlet extends HttpServlet {
                 if (!itemTimeRange.isEmpty()) {
                     out.println("          <div class=\"agenda-item-time\">" + escapeHtml(itemTimeRange) + "</div>");
                 }
-                if (item.getTimeMinutes() != null) {
+                if (item.getTimeMinutes() != null && !isPostponedItem) {
                     out.println("          <div class=\"agenda-item-duration no-print\">" + item.getTimeMinutes()
                             + " min</div>");
                 }
@@ -1713,7 +1764,7 @@ public class EsAgendaServlet extends HttpServlet {
 
                 // Agenda text column
                 out.println("        <td class=\"col-agenda\">");
-                if (canEdit && !isCancelledItem) {
+                if (canEdit) {
                     out.println("          <div id=\"item-" + item.getEsMeetingAgendaItemId()
                             + "-display\" class=\"click-to-edit\" onclick=\"esShowEdit('item-"
                             + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
@@ -1787,7 +1838,7 @@ public class EsAgendaServlet extends HttpServlet {
                     String pName = presenterDisplayName(p, presenterUsers);
                     String pStatusLabel = titleCase(p.getStatus().name());
                     String pId = "pres-" + p.getEsAgendaItemPresenterId();
-                    if (canEdit && !isCancelledItem) {
+                    if (canEdit) {
                         out.println("          <div class=\"agenda-presenter\">");
                         out.println(
                                 "            <span class=\"presenter-name click-to-edit\" onclick=\"esShowPresEdit('"
@@ -1859,8 +1910,8 @@ public class EsAgendaServlet extends HttpServlet {
                                 + escapeHtml(statusSuffix) + "</div>");
                     }
                 }
-                // Add Presenter UI (canEdit only, non-cancelled items)
-                if (canEdit && !isCancelledItem) {
+                // Add Presenter UI (canEdit only)
+                if (canEdit) {
                     String addPanelId = "add-pres-" + item.getEsMeetingAgendaItemId();
                     out.println("          <div class=\"no-print\" style=\"margin-top:0.3rem\">");
                     out.println("            <button type=\"button\" class=\"add-pres-btn\" onclick=\"esShowAddPres('"
@@ -2063,7 +2114,7 @@ public class EsAgendaServlet extends HttpServlet {
                                     ? "status-red"
                                     : "";
                     out.println("        <td class=\"col-status no-print\">");
-                    if (canEdit && !isCancelledItem) {
+                    if (canEdit) {
                         List<AgendaItemStatus> transitions = validItemTransitions(item.getStatus());
                         if (!transitions.isEmpty()) {
                             out.println("          <span class=\"agenda-item-status-badge " + statusColorClass
@@ -2108,8 +2159,9 @@ public class EsAgendaServlet extends HttpServlet {
 
                 out.println("      </tr>");
 
-                // Advance cursor
-                if (!isCancelledItem && cursor != null) {
+                // Advance cursor (skip postponed — their slot is no longer part of this
+                // meeting)
+                if (!isPostponedItem && cursor != null) {
                     cursor = cursor.plusMinutes(itemMinutes);
                 }
             }
@@ -2149,76 +2201,70 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("  </div>");
             }
 
-            // --- PREVIOUS MEETING ITEMS ---
-            if (canEdit && !prevCandidates.isEmpty()) {
-                out.println("  <div class=\"prev-items-section no-print\">");
-                out.println("    <div class=\"prev-items-heading\">Items from Previous Meetings</div>");
+            // --- OPEN ITEMS (carry-forward: POSTPONED / NOT_COVERED / NEEDS_REVISION) ---
+            if (canEdit && !openItems.isEmpty()) {
+                out.println("  <div class=\"open-items-section no-print\">");
+                out.println("    <div class=\"open-items-heading\">Open Items"
+                        + "<span class=\"open-items-subtext\"> — not addressed in a previous meeting and needs to be rescheduled</span></div>");
                 out.println("    <div class=\"agenda-table-container\">");
                 out.println("    <table class=\"prev-items-table\">");
                 out.println("      <thead><tr>");
-                out.println("        <th>Title</th>");
+                out.println("        <th>Topic / Title</th>");
                 out.println("        <th>Min</th>");
                 out.println("        <th>Status</th>");
                 out.println("        <th>From</th>");
                 out.println("        <th></th>");
                 out.println("      </tr></thead>");
                 out.println("      <tbody>");
-                for (EsMeetingAgendaItem ci : prevCandidates) {
-                    EsMeeting srcMtg = prevMeetingById.get(ci.getEsMeetingId());
+                for (EsMeetingAgendaItem oi : openItems) {
+                    EsMeeting srcMtg = openMeetingById.get(oi.getEsMeetingId());
                     String srcLabel = srcMtg != null && srcMtg.getScheduledStart() != null
                             ? DISPLAY_DATE_FMT.format(srcMtg.getScheduledStart().toLocalDate())
                             : "Previous";
-                    String ciStatusLabel = titleCase(ci.getStatus().name());
-                    String statusCls = ci.getStatus() == AgendaItemStatus.POSTPONED ? "prev-status-postponed"
-                            : (ci.getStatus() == AgendaItemStatus.NOT_COVERED
-                                    || ci.getStatus() == AgendaItemStatus.NEEDS_REVISION)
-                                            ? "prev-status-warn"
-                                            : "prev-status-neutral";
+                    String oiStatusLabel = titleCase(oi.getStatus().name());
+                    String statusCls = oi.getStatus() == AgendaItemStatus.POSTPONED ? "prev-status-postponed"
+                            : "prev-status-warn";
                     out.println("      <tr>");
-                    // Title / topic / presenters
                     out.println("        <td class=\"prev-item-title\">");
-                    EsTopic ciTopic = ci.getEsTopicId() != null ? topicById.get(ci.getEsTopicId()) : null;
-                    if (ciTopic != null) {
-                        out.println("          <a href=\"" + contextPath + "/es/topic/" + ci.getEsTopicId()
+                    EsTopic oiTopic = oi.getEsTopicId() != null ? topicById.get(oi.getEsTopicId()) : null;
+                    if (oiTopic != null) {
+                        out.println("          <a href=\"" + contextPath + "/es/topic/" + oi.getEsTopicId()
                                 + "\" class=\"agenda-topic-link\" target=\"_blank\">"
-                                + escapeHtml(ciTopic.getTopicName()) + "</a>");
-                        out.println("          <div>" + escapeHtml(ci.getTitle()) + "</div>");
+                                + escapeHtml(oiTopic.getTopicName()) + "</a>");
+                        if (oi.getTitle() != null && !oi.getTitle().isBlank())
+                            out.println("          <div>" + escapeHtml(oi.getTitle()) + "</div>");
                     } else {
-                        out.println("          " + escapeHtml(ci.getTitle()));
+                        out.println("          " + escapeHtml(oi.getTitle()));
                     }
-                    List<EsAgendaItemPresenter> ciPs = prevPresentersByItem
-                            .getOrDefault(ci.getEsMeetingAgendaItemId(), List.of()).stream()
+                    List<EsAgendaItemPresenter> oiPs = prevPresentersByItem
+                            .getOrDefault(oi.getEsMeetingAgendaItemId(), List.of()).stream()
                             .filter(p -> p.getStatus() != EsAgendaItemPresenter.PresenterStatus.REMOVED
                                     && p.getStatus() != EsAgendaItemPresenter.PresenterStatus.DECLINED)
                             .collect(Collectors.toList());
-                    if (!ciPs.isEmpty()) {
+                    if (!oiPs.isEmpty()) {
                         out.println("          <div class=\"prev-item-presenters\">");
-                        for (EsAgendaItemPresenter pp : ciPs) {
+                        for (EsAgendaItemPresenter pp : oiPs) {
                             out.println("            <span class=\"prev-presenter-chip\">"
                                     + escapeHtml(presenterDisplayName(pp, presenterUsers)) + "</span>");
                         }
                         out.println("          </div>");
                     }
                     out.println("        </td>");
-                    // Minutes
                     out.println("        <td class=\"prev-item-min\">"
-                            + (ci.getTimeMinutes() != null ? ci.getTimeMinutes() : "") + "</td>");
-                    // Status badge
+                            + (oi.getTimeMinutes() != null ? oi.getTimeMinutes() : "") + "</td>");
                     out.println("        <td><span class=\"prev-item-status " + statusCls + "\">"
-                            + escapeHtml(ciStatusLabel) + "</span></td>");
-                    // Source meeting date
+                            + escapeHtml(oiStatusLabel) + "</span></td>");
                     out.println("        <td class=\"prev-item-from\">" + escapeHtml(srcLabel) + "</td>");
-                    // Copy button
                     out.println("        <td class=\"prev-item-controls\">");
                     out.println("          <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
                     out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
                     out.println("            <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
                     out.println("            <input type=\"hidden\" name=\"sourceItemId\" value=\""
-                            + ci.getEsMeetingAgendaItemId() + "\">");
+                            + oi.getEsMeetingAgendaItemId() + "\">");
                     if (editOverride)
                         out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("            <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
+                    out.println("            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
                     out.println("          </form>");
                     out.println("        </td>");
                     out.println("      </tr>");
@@ -2226,10 +2272,91 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("      </tbody>");
                 out.println("    </table>");
                 out.println("    </div>"); // agenda-table-container
+                out.println("  </div>"); // open-items-section
+            }
+
+            // --- COPY FROM PREVIOUS MEETINGS (last 2) ---
+            if (canEdit && !copyMeetings.isEmpty()) {
+                out.println("  <div class=\"prev-items-section no-print\">");
+                out.println("    <div class=\"prev-items-heading\">Copy from Previous Meetings</div>");
+                for (EsMeeting cm : copyMeetings) {
+                    List<EsMeetingAgendaItem> cmItems = copyItemsByMeeting.getOrDefault(cm.getEsMeetingId(), List.of());
+                    if (cmItems.isEmpty())
+                        continue;
+                    String cmLabel = (seriesName != null ? seriesName + " \u00b7 " : "")
+                            + (cm.getScheduledStart() != null
+                                    ? DISPLAY_DATE_FMT.format(cm.getScheduledStart().toLocalDate())
+                                    : "Previous");
+                    out.println("    <div class=\"copy-prev-meeting\">");
+                    out.println("      <div class=\"copy-prev-meeting-heading\">" + escapeHtml(cmLabel) + "</div>");
+                    out.println("      <div class=\"agenda-table-container\">");
+                    out.println("      <table class=\"prev-items-table\">");
+                    out.println("        <thead><tr>");
+                    out.println("          <th>Topic / Title</th>");
+                    out.println("          <th>Min</th>");
+                    out.println("          <th>Status</th>");
+                    out.println("          <th></th>");
+                    out.println("        </tr></thead>");
+                    out.println("        <tbody>");
+                    for (EsMeetingAgendaItem ci : cmItems) {
+                        String ciStatusLabel = titleCase(ci.getStatus().name());
+                        String statusCls = ci.getStatus() == AgendaItemStatus.POSTPONED ? "prev-status-postponed"
+                                : (ci.getStatus() == AgendaItemStatus.NOT_COVERED
+                                        || ci.getStatus() == AgendaItemStatus.NEEDS_REVISION)
+                                                ? "prev-status-warn"
+                                                : "prev-status-neutral";
+                        out.println("        <tr>");
+                        out.println("          <td class=\"prev-item-title\">");
+                        EsTopic ciTopic = ci.getEsTopicId() != null ? topicById.get(ci.getEsTopicId()) : null;
+                        if (ciTopic != null) {
+                            out.println("            <a href=\"" + contextPath + "/es/topic/" + ci.getEsTopicId()
+                                    + "\" class=\"agenda-topic-link\" target=\"_blank\">"
+                                    + escapeHtml(ciTopic.getTopicName()) + "</a>");
+                            if (ci.getTitle() != null && !ci.getTitle().isBlank())
+                                out.println("            <div>" + escapeHtml(ci.getTitle()) + "</div>");
+                        } else {
+                            out.println("            " + escapeHtml(ci.getTitle()));
+                        }
+                        List<EsAgendaItemPresenter> ciPs = prevPresentersByItem
+                                .getOrDefault(ci.getEsMeetingAgendaItemId(), List.of()).stream()
+                                .filter(p -> p.getStatus() != EsAgendaItemPresenter.PresenterStatus.REMOVED
+                                        && p.getStatus() != EsAgendaItemPresenter.PresenterStatus.DECLINED)
+                                .collect(Collectors.toList());
+                        if (!ciPs.isEmpty()) {
+                            out.println("            <div class=\"prev-item-presenters\">");
+                            for (EsAgendaItemPresenter pp : ciPs) {
+                                out.println("              <span class=\"prev-presenter-chip\">"
+                                        + escapeHtml(presenterDisplayName(pp, presenterUsers)) + "</span>");
+                            }
+                            out.println("            </div>");
+                        }
+                        out.println("          </td>");
+                        out.println("          <td class=\"prev-item-min\">"
+                                + (ci.getTimeMinutes() != null ? ci.getTimeMinutes() : "") + "</td>");
+                        out.println("          <td><span class=\"prev-item-status " + statusCls + "\">"
+                                + escapeHtml(ciStatusLabel) + "</span></td>");
+                        out.println("          <td class=\"prev-item-controls\">");
+                        out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                                + meeting.getEsMeetingId() + "\">");
+                        out.println("              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                        out.println("              <input type=\"hidden\" name=\"sourceItemId\" value=\""
+                                + ci.getEsMeetingAgendaItemId() + "\">");
+                        if (editOverride)
+                            out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("              <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
+                        out.println("            </form>");
+                        out.println("          </td>");
+                        out.println("        </tr>");
+                    }
+                    out.println("        </tbody>");
+                    out.println("      </table>");
+                    out.println("      </div>"); // agenda-table-container
+                    out.println("    </div>"); // copy-prev-meeting
+                }
                 out.println("  </div>"); // prev-items-section
             }
 
-            // --- FOOTER: NEXT MEETING ---
             out.println("  <div class=\"agenda-footer\">");
             if (nextMeeting != null && nextMeeting.getScheduledStart() != null) {
                 String nextSeriesLabel = seriesName != null ? "Next " + seriesName + " Meeting" : "Next Meeting";
@@ -2554,10 +2681,19 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("      .agenda-duration-warning, .agenda-duration-info, .agenda-duration-ok { display: none; }");
         out.println("      .panel { border: none; box-shadow: none; background: transparent; }");
         out.println("    }");
-        // Previous meeting items section
+        // Previous / open meeting items sections
         out.println("    .prev-items-section { margin-top: 1.5rem; }");
         out.println(
                 "    .prev-items-heading { font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; padding-left: 0.25rem; }");
+        out.println(
+                "    .open-items-section { margin-top: 1.5rem; border-left: 3px solid #f59e0b; padding-left: 0.6rem; }");
+        out.println(
+                "    .open-items-heading { font-size: 0.78rem; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }");
+        out.println(
+                "    .open-items-subtext { font-size: 0.75rem; font-weight: 400; color: #78716c; text-transform: none; letter-spacing: 0; }");
+        out.println("    .copy-prev-meeting { margin-bottom: 1rem; }");
+        out.println(
+                "    .copy-prev-meeting-heading { font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 0.3rem; padding-left: 0.25rem; }");
         out.println(
                 "    .prev-items-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #f8fafd; }");
         out.println(
