@@ -503,6 +503,10 @@ public class AdminEsTopicServlet extends HttpServlet {
                                 + "&mode=edit\">Edit Topic</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/es/topic/" + topic.getEsTopicId()
                         + "\">View Public Page</a></p>");
+                if (meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE) {
+                    panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/meetings?meetingId="
+                            + meeting.getEsTopicMeetingId() + "\">Manage Meeting Members</a></p>");
+                }
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
                 panelOut.println("      </section>");
             });

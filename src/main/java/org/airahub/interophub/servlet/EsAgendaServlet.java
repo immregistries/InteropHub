@@ -102,6 +102,22 @@ public class EsAgendaServlet extends HttpServlet {
         User user = userOpt.orElse(null);
         String contextPath = request.getContextPath();
 
+        // If the link contains a loginHint, redirect unauthenticated visitors to the
+        // login page with the email pre-filled. The return URL was already saved by
+        // findAuthenticatedUser so the user lands back here after signing in.
+        String loginHint = trimToNull(request.getParameter("loginHint"));
+        if (loginHint != null && user == null) {
+            response.sendRedirect(contextPath + "/home?email="
+                    + URLEncoder.encode(loginHint, StandardCharsets.UTF_8));
+            return;
+        }
+        // If already logged in under a different email, surface a warning.
+        String loginHintMismatch = null;
+        if (loginHint != null && user != null
+                && !loginHint.trim().equalsIgnoreCase(user.getEmailNormalized())) {
+            loginHintMismatch = loginHint.trim();
+        }
+
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
         if (meetingId == null) {
             renderError(response, contextPath, "Missing or invalid meetingId parameter.");
@@ -147,7 +163,7 @@ public class EsAgendaServlet extends HttpServlet {
         String errorMsg = trimToNull(request.getParameter("err"));
 
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
-                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg);
+                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch);
     }
 
     // =========================================================================
@@ -1015,7 +1031,8 @@ public class EsAgendaServlet extends HttpServlet {
             if (baseUrl.endsWith("/")) {
                 baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
             }
-            String agendaLink = baseUrl + "/es/agenda?meetingId=" + meeting.getEsMeetingId();
+            String agendaLink = baseUrl + "/es/agenda?meetingId=" + meeting.getEsMeetingId()
+                    + "&loginHint=" + URLEncoder.encode(recipientEmail, StandardCharsets.UTF_8);
             String itemTitle = item.getTitle() != null ? item.getTitle() : "Agenda Item";
             String topicName = null;
             if (item.getEsTopicId() != null) {
@@ -1215,7 +1232,8 @@ public class EsAgendaServlet extends HttpServlet {
             Map<Long, List<EsAgendaItemPresenter>> presentersByItem,
             Map<Long, User> presenterUsers,
             boolean isEditor, boolean canEdit, boolean editOverride,
-            EsMeeting nextMeeting, String savedMsg, String errorMsg) throws IOException {
+            EsMeeting nextMeeting, String savedMsg, String errorMsg,
+            String loginHintMismatch) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -1462,6 +1480,15 @@ public class EsAgendaServlet extends HttpServlet {
             }
             if (errorMsg != null) {
                 out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");
+            }
+            if (loginHintMismatch != null) {
+                out.println("  <div class=\"agenda-msg-login-hint no-print\">");
+                out.println("    <strong>Wrong account?</strong> This invitation was sent to"
+                        + " <strong>" + escapeHtml(loginHintMismatch) + "</strong>."
+                        + " You are currently signed in as <strong>"
+                        + escapeHtml(user.getEmailNormalized()) + "</strong>."
+                        + " Sign in with the correct account to respond to this invitation.");
+                out.println("  </div>");
             }
 
             // --- YOUR AGENDA ITEMS BANNER ---
@@ -2959,6 +2986,7 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .inv-btn-accept:hover { background: #bbf7d0; }");
         out.println("    .inv-btn-decline { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; }");
         out.println("    .inv-btn-decline:hover { background: #fecaca; }");
+        out.println("    .agenda-msg-login-hint { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.88rem; color: #92400e; }");
     }
 
     // =========================================================================

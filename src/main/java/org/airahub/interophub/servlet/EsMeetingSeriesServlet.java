@@ -15,8 +15,10 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
@@ -45,11 +47,13 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final EsTopicMeetingDao topicMeetingDao;
     private final EsMeetingDao meetingDao;
+    private final EsTopicDao topicDao;
 
     public EsMeetingSeriesServlet() {
         this.authFlowService = new AuthFlowService();
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.meetingDao = new EsMeetingDao();
+        this.topicDao = new EsTopicDao();
     }
 
     @Override
@@ -70,6 +74,11 @@ public class EsMeetingSeriesServlet extends HttpServlet {
 
         List<EsMeeting> meetings = meetingDao.findAllBySeriesDesc(seriesId);
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        boolean isAdmin = authenticatedUser.isPresent() && authFlowService.isAdminUser(authenticatedUser.get());
+
+        EsTopic topic = series.getEsTopicId() != null
+                ? topicDao.findById(series.getEsTopicId()).orElse(null)
+                : null;
 
         // Determine timezone for display: prefer user setting, fall back to ET
         String viewerTzId = authenticatedUser
@@ -99,6 +108,11 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             out.println("  <div class=\"mseries-header\">");
             out.println("    <div class=\"mseries-breadcrumb\">");
             out.println("      <a href=\"" + contextPath + "/es/topics\">Topics</a>");
+            if (topic != null) {
+                out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
+                out.println("      <a href=\"" + contextPath + "/es/topic/" + topic.getEsTopicId() + "\">"
+                        + escapeHtml(topic.getTopicName() != null ? topic.getTopicName() : "") + "</a>");
+            }
             out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
             out.println("      <span>" + escapeHtml(seriesName) + "</span>");
             out.println("    </div>");
@@ -140,6 +154,18 @@ public class EsMeetingSeriesServlet extends HttpServlet {
                 }
             }
 
+            if (isAdmin) {
+                out.println("  <div class=\"mseries-admin-bar\">");
+                out.println("    Admin: ");
+                out.println("    <a href=\"" + contextPath + "/admin/es/meetings?meetingId=" + seriesId
+                        + "\">Meeting Admin</a>");
+                if (topic != null) {
+                    out.println("    &nbsp;&middot;&nbsp;");
+                    out.println("    <a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
+                            + "\">Topic Admin</a>");
+                }
+                out.println("  </div>");
+            }
             out.println("</main>");
             PageFooterRenderer.render(out);
             out.println("</body>");

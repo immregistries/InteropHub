@@ -353,6 +353,12 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
                 renderAgendasSection(panelOut, contextPath, meetingId, agendas);
 
+                if (topic != null) {
+                    panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
+                            + topic.getEsTopicId() + "\">View Topic Admin</a></p>");
+                }
+                panelOut.println("        <p><a href=\"" + contextPath + "/es/meetings?seriesId=" + meetingId
+                        + "\">View Public Meetings</a></p>");
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es/meetings\">Back to Meetings</a></p>");
                 panelOut.println("      </section>");
