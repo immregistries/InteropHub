@@ -5,7 +5,7 @@ import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.Properties;
 
-final class PageFooterRenderer {
+public final class PageFooterRenderer {
     private static final String VERSION = resolveVersion();
     private static final String APP_VERSION_PROPERTIES_PATH = "/interophub-version.properties";
     private static final String POM_PROPERTIES_PATH = "/META-INF/maven/org.airahub/interophub/pom.properties";

@@ -70,7 +70,6 @@ public class EsMeetingSeriesServlet extends HttpServlet {
 
         List<EsMeeting> meetings = meetingDao.findAllBySeriesDesc(seriesId);
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        boolean isAdmin = authenticatedUser.map(authFlowService::isAdminUser).orElse(false);
 
         // Determine timezone for display: prefer user setting, fall back to ET
         String viewerTzId = authenticatedUser

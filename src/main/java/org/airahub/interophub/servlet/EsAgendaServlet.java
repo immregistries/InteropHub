@@ -291,15 +291,6 @@ public class EsAgendaServlet extends HttpServlet {
         return false;
     }
 
-    private boolean canView(User user, EsMeeting meeting, boolean isEditor) {
-        MeetingStatus status = meeting.getStatus();
-        if (status == MeetingStatus.DRAFT) {
-            return isEditor;
-        }
-        // PROPOSED, FINALIZED, COMPLETED, CANCELLED — any logged-in user
-        return true;
-    }
-
     private boolean canEdit(User user, EsMeeting meeting, boolean editOverride, boolean isEditor) {
         if (!isEditor) {
             return false;
@@ -2606,24 +2597,6 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("<body><main class=\"container\">");
             out.println("<h1>Agenda Not Found</h1>");
             out.println("<p>" + escapeHtml(message) + "</p>");
-            out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main>");
-            PageFooterRenderer.render(out);
-            out.println("</body></html>");
-        }
-    }
-
-    private void renderAccessDenied(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-            out.println("<title>Access Denied - InteropHub</title>");
-            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
-            out.println("<body><main class=\"container\">");
-            out.println("<h1>Access Denied</h1>");
-            out.println("<p>You do not have permission to view this agenda.</p>");
             out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
             out.println("</main>");
             PageFooterRenderer.render(out);
