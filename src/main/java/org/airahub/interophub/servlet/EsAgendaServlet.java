@@ -40,10 +40,17 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.airahub.interophub.dao.HubSettingDao;
+import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EmailService;
+import org.airahub.interophub.service.EmailTemplates;
 
 public class EsAgendaServlet extends HttpServlet {
 
+    private static final Logger LOGGER = Logger.getLogger(EsAgendaServlet.class.getName());
     private static final DateTimeFormatter DATE_PARSE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter TIME_PARSE_FMT = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter DISPLAY_DATE_FMT = DateTimeFormatter.ofPattern("EEEE, MMMM d, yyyy");
@@ -69,6 +76,8 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingDao topicMeetingDao;
     private final UserDao userDao;
+    private final EmailService emailService;
+    private final HubSettingDao hubSettingDao;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -79,6 +88,8 @@ public class EsAgendaServlet extends HttpServlet {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.userDao = new UserDao();
+        this.emailService = new EmailService();
+        this.hubSettingDao = new HubSettingDao();
     }
 
     // =========================================================================
@@ -180,6 +191,16 @@ public class EsAgendaServlet extends HttpServlet {
         // Viewer timezone update does not require edit permission
         if ("updateViewerTimezone".equals(action)) {
             handleUpdateViewerTimezone(request, response, contextPath, user, meetingId, editOverride);
+            return;
+        }
+
+        // Presenter response actions (invitee responding to their own invitation)
+        if ("presenterAccept".equals(action)) {
+            handlePresenterAccept(request, response, contextPath, meeting, user, editOverride);
+            return;
+        }
+        if ("presenterDecline".equals(action)) {
+            handlePresenterDecline(request, response, contextPath, meeting, user, editOverride);
             return;
         }
 
@@ -862,9 +883,20 @@ public class EsAgendaServlet extends HttpServlet {
         if (displayName != null && !displayName.isBlank()) {
             p.setDisplayName(displayName);
         }
-        p.setPresenterRole(EsAgendaItemPresenter.PresenterRole.LEAD);
+        EsAgendaItemPresenter.PresenterRole role = EsAgendaItemPresenter.PresenterRole.LEAD;
+        String roleRaw = trimToNull(request.getParameter("presenterRole"));
+        if (roleRaw != null) {
+            try {
+                role = EsAgendaItemPresenter.PresenterRole.valueOf(roleRaw);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        p.setPresenterRole(role);
         p.setStatus(status);
         presenterDao.save(p);
+        if (status == EsAgendaItemPresenter.PresenterStatus.INVITED) {
+            sendPresenterInvitationEmail(email, displayName, item, meeting, role);
+        }
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
 
@@ -915,6 +947,93 @@ public class EsAgendaServlet extends HttpServlet {
         }
         presenterDao.updateRole(presenterId, role);
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handlePresenterAccept(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, User currentUser, boolean editOverride) throws IOException {
+        Long presenterId = parseId(trimToNull(request.getParameter("presenterId")));
+        if (presenterId == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        EsAgendaItemPresenter p = presenterDao.findById(presenterId).orElse(null);
+        if (p == null || !meeting.getEsMeetingId().equals(
+                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId).orElse(null))) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        if (currentUser.getUserId() == null || !currentUser.getUserId().equals(p.getUserId())) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "You can only respond to your own invitations.");
+            return;
+        }
+        String roleRaw = trimToNull(request.getParameter("presenterRole"));
+        if (roleRaw != null) {
+            try {
+                EsAgendaItemPresenter.PresenterRole newRole = EsAgendaItemPresenter.PresenterRole.valueOf(roleRaw);
+                presenterDao.updateRole(presenterId, newRole);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        presenterDao.acceptInvitation(presenterId);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handlePresenterDecline(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, User currentUser, boolean editOverride) throws IOException {
+        Long presenterId = parseId(trimToNull(request.getParameter("presenterId")));
+        if (presenterId == null) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        EsAgendaItemPresenter p = presenterDao.findById(presenterId).orElse(null);
+        if (p == null || !meeting.getEsMeetingId().equals(
+                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId).orElse(null))) {
+            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+            return;
+        }
+        if (currentUser.getUserId() == null || !currentUser.getUserId().equals(p.getUserId())) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "You can only respond to your own invitations.");
+            return;
+        }
+        String responseNote = trimToNull(request.getParameter("responseNote"));
+        presenterDao.declineInvitation(presenterId, responseNote);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void sendPresenterInvitationEmail(String recipientEmail, String recipientName,
+            EsMeetingAgendaItem item, EsMeeting meeting, EsAgendaItemPresenter.PresenterRole role) {
+        try {
+            HubSetting settings = hubSettingDao.findActive()
+                    .or(() -> hubSettingDao.findFirst())
+                    .orElse(null);
+            String baseUrl = (settings != null && settings.getExternalBaseUrl() != null
+                    && !settings.getExternalBaseUrl().isBlank())
+                            ? settings.getExternalBaseUrl().trim()
+                            : "http://localhost:8080/hub";
+            if (baseUrl.endsWith("/")) {
+                baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+            }
+            String agendaLink = baseUrl + "/es/agenda?meetingId=" + meeting.getEsMeetingId();
+            String itemTitle = item.getTitle() != null ? item.getTitle() : "Agenda Item";
+            String topicName = null;
+            if (item.getEsTopicId() != null) {
+                topicName = topicDao.findById(item.getEsTopicId())
+                        .map(t -> t.getTopicName()).orElse(null);
+            }
+            String roleLabel = titleCase(role != null ? role.name() : "LEAD");
+            String dateDisplay = meeting.getScheduledStart() != null
+                    ? DISPLAY_DATE_FMT.format(meeting.getScheduledStart().toLocalDate())
+                    : null;
+            String subject = EmailTemplates.presenterInvitationSubject(itemTitle);
+            String body = EmailTemplates.presenterInvitationBody(
+                    recipientName, itemTitle, topicName,
+                    meeting.getMeetingName(), dateDisplay, roleLabel, agendaLink);
+            emailService.send(recipientEmail, subject, body);
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Failed to send presenter invitation email to " + recipientEmail, ex);
+        }
     }
 
     private EsAgendaItemPresenter validatePresenterForMeeting(Long presenterId, EsMeeting meeting) {
@@ -1295,6 +1414,23 @@ public class EsAgendaServlet extends HttpServlet {
             }
         }
 
+        // Compute current user's INVITED presenter records for the response banner
+        Map<Long, EsMeetingAgendaItem> itemById = new LinkedHashMap<>();
+        for (EsMeetingAgendaItem i : items) {
+            itemById.put(i.getEsMeetingAgendaItemId(), i);
+        }
+        List<EsAgendaItemPresenter> myInvitations = new ArrayList<>();
+        if (user != null && user.getUserId() != null) {
+            for (List<EsAgendaItemPresenter> ps : presentersByItem.values()) {
+                for (EsAgendaItemPresenter inv : ps) {
+                    if (inv.getStatus() == EsAgendaItemPresenter.PresenterStatus.INVITED
+                            && user.getUserId().equals(inv.getUserId())) {
+                        myInvitations.add(inv);
+                    }
+                }
+            }
+        }
+
         try (PrintWriter out = response.getWriter()) {
             out.println("<!DOCTYPE html>");
             out.println("<html lang=\"en\">");
@@ -1326,6 +1462,57 @@ public class EsAgendaServlet extends HttpServlet {
             }
             if (errorMsg != null) {
                 out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");
+            }
+
+            // --- YOUR AGENDA ITEMS BANNER ---
+            if (!myInvitations.isEmpty()) {
+                out.println("  <div class=\"my-invitations-banner no-print\">");
+                out.println("    <div class=\"my-inv-heading\">&#128203; Your Agenda Items</div>");
+                out.println("    <div class=\"my-inv-subtext\">You have been added as a presenter. Please confirm or decline each item below.</div>");
+                for (EsAgendaItemPresenter inv : myInvitations) {
+                    EsMeetingAgendaItem invItem = itemById.get(inv.getEsMeetingAgendaItemId());
+                    if (invItem == null) continue;
+                    EsTopic invTopic = invItem.getEsTopicId() != null ? topicById.get(invItem.getEsTopicId()) : null;
+                    String invTitle = invItem.getTitle() != null ? invItem.getTitle() : "Agenda Item";
+                    String invRoleLabel = titleCase(inv.getPresenterRole() != null ? inv.getPresenterRole().name() : "LEAD");
+                    out.println("    <div class=\"my-inv-card\">");
+                    out.println("      <div class=\"my-inv-title\">");
+                    if (invTopic != null) {
+                        out.println("        <span class=\"my-inv-topic\">" + escapeHtml(invTopic.getTopicName()) + "</span>");
+                        out.println("        <span class=\"my-inv-sep\">&rsaquo;</span>");
+                    }
+                    out.println("        " + escapeHtml(invTitle));
+                    out.println("      </div>");
+                    out.println("      <div class=\"my-inv-meta\">Invited as: <strong>" + escapeHtml(invRoleLabel) + "</strong></div>");
+                    out.println("      <div class=\"my-inv-actions\">");
+                    // Accept form
+                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\" class=\"my-inv-form\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+                    out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterAccept\">");
+                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\"" + inv.getEsAgendaItemPresenterId() + "\">");
+                    if (editOverride) out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("          <label class=\"my-inv-role-label\">Role:");
+                    out.println("          <select name=\"presenterRole\" class=\"my-inv-role-select\">");
+                    for (EsAgendaItemPresenter.PresenterRole r : EsAgendaItemPresenter.PresenterRole.values()) {
+                        boolean sel = r == inv.getPresenterRole();
+                        out.println("            <option value=\"" + r.name() + "\"" + (sel ? " selected" : "") + ">" + escapeHtml(titleCase(r.name())) + "</option>");
+                    }
+                    out.println("          </select></label>");
+                    out.println("          <button type=\"submit\" class=\"inv-btn-accept\">&#10003; Accept</button>");
+                    out.println("        </form>");
+                    // Decline form
+                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\" class=\"my-inv-form\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+                    out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterDecline\">");
+                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\"" + inv.getEsAgendaItemPresenterId() + "\">");
+                    if (editOverride) out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("          <input type=\"text\" name=\"responseNote\" placeholder=\"Reason (optional)\" class=\"my-inv-note\">");
+                    out.println("          <button type=\"submit\" class=\"inv-btn-decline\">&#10007; Decline</button>");
+                    out.println("        </form>");
+                    out.println("      </div>");
+                    out.println("    </div>");
+                }
+                out.println("  </div>");
             }
 
             // --- HEADER ---
@@ -1920,6 +2107,21 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("          <div id=\"" + addPanelId
                             + "\" class=\"add-pres-panel no-print\" style=\"display:none\">");
 
+                    // --- Role Picker ---
+                    out.println("            <div class=\"role-picker-row\">");
+                    out.println("              <span class=\"role-picker-label\">Role:</span>");
+                    out.println("              <div class=\"role-picker-toggle\">");
+                    boolean firstRole = true;
+                    for (EsAgendaItemPresenter.PresenterRole presRole : EsAgendaItemPresenter.PresenterRole.values()) {
+                        String roleOptLabel = titleCase(presRole.name());
+                        String activeClass = firstRole ? " role-option-active" : "";
+                        out.println("                <button type=\"button\" class=\"role-option" + activeClass + "\""
+                                + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name() + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
+                        firstRole = false;
+                    }
+                    out.println("              </div>");
+                    out.println("            </div>");
+
                     // --- Quick Pick: Myself ---
                     if (user.getEmail() != null) {
                         String myEmailNorm = user.getEmail().trim().toLowerCase();
@@ -1948,6 +2150,7 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(myFullName) + "\">");
                             if (editOverride)
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                             out.println(
                                     "                <button type=\"submit\" class=\"quick-pick-chip quick-pick-self\">"
                                             + escapeHtml(myName) + " (me)</button>");
@@ -1998,6 +2201,7 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(qp.getDisplayName()) + "\">");
                             if (editOverride)
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                             out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
                                     + escapeHtml(qpName) + "</button>");
                             out.println("              </form>");
@@ -2045,6 +2249,7 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(ch.getEmail()) + "\">");
                                 if (editOverride)
                                     out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                                out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                                 out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
                                         + escapeHtml(champName) + "</button>");
                                 out.println("              </form>");
@@ -2068,6 +2273,7 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("                <input type=\"hidden\" name=\"userId\" id=\"" + userHiddenId + "\">");
                     if (editOverride)
                         out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                     out.println("                <input type=\"text\" id=\"" + userSearchId
                             + "\" list=\"pres-user-list\" placeholder=\"Search name or email...\" autocomplete=\"off\" class=\"pres-text-input\" oninput=\"esOnPresUserInput(this.value,'"
                             + userHiddenId + "')\">");
@@ -2087,6 +2293,7 @@ public class EsAgendaServlet extends HttpServlet {
                             + item.getEsMeetingAgendaItemId() + "\">");
                     if (editOverride)
                         out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                     out.println(
                             "                <input type=\"text\" name=\"displayName\" placeholder=\"Name\" class=\"pres-text-input\">");
                     out.println(
@@ -2441,6 +2648,15 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("function esHideAddPres(id) {");
             out.println("  document.getElementById(id).style.display='none';");
             out.println("}");
+            out.println("function esOnPresRoleChange(panelId,role,btn){");
+            out.println("  var panel=document.getElementById(panelId);");
+            out.println("  if(!panel) return;");
+            out.println("  panel.querySelectorAll('.pres-role-input').forEach(function(inp){inp.value=role;});");
+            out.println("  if(btn){var pp=btn.parentElement;if(pp){");
+            out.println("    pp.querySelectorAll('.role-option').forEach(function(b){b.classList.remove('role-option-active');});");
+            out.println("    btn.classList.add('role-option-active');");
+            out.println("  }}");
+            out.println("}");
             // User search datalist and lookup map
             if (canEdit && !allUsers.isEmpty()) {
                 out.print("const esPresUsers=[");
@@ -2716,6 +2932,33 @@ public class EsAgendaServlet extends HttpServlet {
         out.println(
                 "    .prev-copy-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; white-space: nowrap; }");
         out.println("    .prev-copy-btn:hover { background: #dcfce7; }");
+        // Role picker in add-presenter panel
+        out.println("    .role-picker-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid #e2e8f0; }");
+        out.println("    .role-picker-label { font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }");
+        out.println("    .role-picker-toggle { display: flex; flex-wrap: wrap; gap: 0.2rem; }");
+        out.println("    .role-option { padding: 0.15rem 0.5rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 10px; cursor: pointer; background: #f1f5f9; color: #475569; white-space: nowrap; }");
+        out.println("    .role-option:hover { background: #e2e8f0; }");
+        out.println("    .role-option-active { background: #0f766e; color: #fff; border-color: #0f766e; font-weight: 600; }");
+        out.println("    .role-option-active:hover { background: #0d6460; }");
+        // Your Agenda Items response banner
+        out.println("    .my-invitations-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1rem; }");
+        out.println("    .my-inv-heading { font-size: 1rem; font-weight: 700; color: #1e40af; margin-bottom: 0.2rem; }");
+        out.println("    .my-inv-subtext { font-size: 0.82rem; color: #3730a3; margin-bottom: 0.7rem; }");
+        out.println("    .my-inv-card { background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }");
+        out.println("    .my-inv-card:last-child { margin-bottom: 0; }");
+        out.println("    .my-inv-title { font-weight: 600; font-size: 0.95rem; color: #0f172a; margin-bottom: 0.2rem; }");
+        out.println("    .my-inv-topic { font-size: 0.82rem; color: #0f766e; font-weight: 600; }");
+        out.println("    .my-inv-sep { color: #94a3b8; margin: 0 0.25rem; }");
+        out.println("    .my-inv-meta { font-size: 0.82rem; color: #475569; margin-bottom: 0.5rem; }");
+        out.println("    .my-inv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }");
+        out.println("    .my-inv-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
+        out.println("    .my-inv-role-label { font-size: 0.82rem; color: #334155; display: flex; align-items: center; gap: 0.3rem; }");
+        out.println("    .my-inv-role-select { font-size: 0.82rem; padding: 0.15rem 0.3rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
+        out.println("    .my-inv-note { font-size: 0.82rem; padding: 0.15rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; min-width: 120px; }");
+        out.println("    .inv-btn-accept { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; font-weight: 600; }");
+        out.println("    .inv-btn-accept:hover { background: #bbf7d0; }");
+        out.println("    .inv-btn-decline { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; }");
+        out.println("    .inv-btn-decline:hover { background: #fecaca; }");
     }
 
     // =========================================================================

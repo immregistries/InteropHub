@@ -40,6 +40,40 @@ public final class EmailTemplates {
                 + loginLink + "\n";
     }
 
+    // -------------------------------------------------------------------------
+    // PRESENTER_INVITATION — notify a newly-added presenter
+    // -------------------------------------------------------------------------
+
+    public static String presenterInvitationSubject(String itemTitle) {
+        return "You've been added as a presenter: " + (itemTitle != null ? itemTitle : "Agenda Item");
+    }
+
+    public static String presenterInvitationBody(
+            String recipientName, String itemTitle, String topicName,
+            String meetingName, String meetingDateDisplay, String roleLabel,
+            String agendaLink) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi ").append(recipientName != null ? recipientName : "there").append(",\n\n");
+        body.append("You've been added as a presenter for the following agenda item:\n\n");
+        body.append("  ").append(itemTitle != null ? itemTitle : "Agenda Item").append("\n");
+        if (topicName != null && !topicName.isBlank()) {
+            body.append("  Topic: ").append(topicName).append("\n");
+        }
+        if (meetingName != null && !meetingName.isBlank()) {
+            body.append("  Meeting: ").append(meetingName).append("\n");
+        }
+        if (meetingDateDisplay != null && !meetingDateDisplay.isBlank()) {
+            body.append("  Date: ").append(meetingDateDisplay).append("\n");
+        }
+        if (roleLabel != null && !roleLabel.isBlank()) {
+            body.append("  Your role: ").append(roleLabel).append("\n");
+        }
+        body.append("\nPlease visit the agenda to confirm or decline your participation:\n");
+        body.append("  ").append(agendaLink).append("\n\n");
+        body.append("Thank you,\nInteropHub\n");
+        return body.toString();
+    }
+
     private EmailTemplates() {
     }
 }
