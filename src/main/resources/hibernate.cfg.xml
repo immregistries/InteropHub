@@ -52,5 +52,6 @@
     <mapping class="org.airahub.interophub.model.EsMeetingAgendaItem"/>
     <mapping class="org.airahub.interophub.model.EsAgendaItemPresenter"/>
     <mapping class="org.airahub.interophub.model.EsAgendaItemComment"/>
+    <mapping class="org.airahub.interophub.model.EmailSendLog"/>
   </session-factory>
 </hibernate-configuration>

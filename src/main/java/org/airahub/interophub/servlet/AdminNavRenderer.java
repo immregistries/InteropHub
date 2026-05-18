@@ -20,6 +20,7 @@ public final class AdminNavRenderer {
 
         renderGroup(out, "People and Collaboration", List.of(
                 navItem(contextPath + "/admin/users", "Registered Users"),
+                navItem(contextPath + "/admin/emails", "Emails"),
                 navItem(contextPath + "/admin/workspaces", "Workspaces")));
 
         renderGroup(out, "Content", List.of(

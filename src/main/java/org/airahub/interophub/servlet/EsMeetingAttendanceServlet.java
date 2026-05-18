@@ -16,16 +16,20 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.AuthService;
+import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EmailService;
+import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsNormalizer;
 
 public class EsMeetingAttendanceServlet extends HttpServlet {
@@ -39,6 +43,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final AuthService authService;
     private final EmailService emailService;
+    private final EmailSendLogDao emailSendLogDao;
 
     public EsMeetingAttendanceServlet() {
         this.topicDao = new EsTopicDao();
@@ -48,6 +53,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         this.authFlowService = new AuthFlowService();
         this.authService = new AuthService();
         this.emailService = new EmailService();
+        this.emailSendLogDao = new EmailSendLogDao();
     }
 
     @Override
@@ -278,8 +284,22 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             } else {
                 user = authService.registerUser(emailNormalized, firstName, lastName, organization, null);
             }
-            String magicLinkUrl = authFlowService.issueMagicLink(user, request, null);
-            emailService.sendWelcomeEmail(emailNormalized, magicLinkUrl);
+            AuthFlowService.IssuedMagicLink issued = authFlowService.issueMagicLinkWithMetadata(user, request, null);
+            String emailSubject = EmailTemplates.meetingMagicLinkSubject();
+            String emailBody = EmailTemplates.meetingMagicLinkBody(issued.getMagicLinkUrl());
+            EmailService.SendResult sendResult = emailService.send(emailNormalized, emailSubject, emailBody);
+
+            EmailSendLog logEntry = new EmailSendLog();
+            logEntry.setEmailReason(EmailReason.MEETING_MAGIC_LINK);
+            logEntry.setRecipientEmail(emailNormalized);
+            logEntry.setRecipientEmailNormalized(emailNormalized);
+            logEntry.setUserId(user.getUserId());
+            logEntry.setSubject(emailSubject);
+            logEntry.setBodyText(emailBody);
+            logEntry.setSmtpMessageId(sendResult.getSmtpMessageId());
+            logEntry.setSmtpProvider(sendResult.getSmtpProvider());
+            logEntry.setMagicId(issued.getMagicId());
+            emailSendLogDao.log(logEntry);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Could not send magic link email to " + emailNormalized, ex);
         }

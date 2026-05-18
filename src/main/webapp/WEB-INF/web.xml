@@ -186,6 +186,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminEmailLogServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEmailLogServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminEmailLogServlet</servlet-name>
+    <url-pattern>/admin/emails</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>ApiAuthExchangeServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.ApiAuthExchangeServlet</servlet-class>
   </servlet>

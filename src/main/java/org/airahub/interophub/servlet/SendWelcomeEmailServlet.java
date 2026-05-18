@@ -21,16 +21,20 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.LegalTermAcceptanceDao;
 import org.airahub.interophub.dao.LegalTermDao;
 import org.airahub.interophub.dao.MagicLinkSendEventDao;
+import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.LegalTerm;
 import org.airahub.interophub.model.LegalTermAcceptance;
 import org.airahub.interophub.model.MagicLinkSendEvent;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.AuthService;
+import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EmailService;
+import org.airahub.interophub.service.EmailTemplates;
 
 public class SendWelcomeEmailServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(SendWelcomeEmailServlet.class.getName());
@@ -44,6 +48,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final AuthService authService;
     private final EmailService emailService;
+    private final EmailSendLogDao emailSendLogDao;
     private final LegalTermDao legalTermDao;
     private final LegalTermAcceptanceDao legalTermAcceptanceDao;
     private final MagicLinkSendEventDao magicLinkSendEventDao;
@@ -52,6 +57,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         this.authFlowService = new AuthFlowService();
         this.authService = new AuthService();
         this.emailService = new EmailService();
+        this.emailSendLogDao = new EmailSendLogDao();
         this.legalTermDao = new LegalTermDao();
         this.legalTermAcceptanceDao = new LegalTermAcceptanceDao();
         this.magicLinkSendEventDao = new MagicLinkSendEventDao();
@@ -206,9 +212,9 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                         null,
                         null);
 
-                EmailService.SendWelcomeEmailResult sendResult = emailService.sendWelcomeEmailWithResult(
-                        normalizedEmail,
-                        issuedMagicLink.getMagicLinkUrl());
+                String emailSubject = EmailTemplates.magicLinkSubject();
+                String emailBody = EmailTemplates.magicLinkBody(issuedMagicLink.getMagicLinkUrl());
+                EmailService.SendResult sendResult = emailService.send(normalizedEmail, emailSubject, emailBody);
 
                 logMagicLinkSendEvent(
                         MagicLinkSendEvent.EventType.SMTP_SEND_SUCCEEDED,
@@ -222,6 +228,18 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                         sendResult.getSmtpProvider(),
                         null,
                         null);
+
+                EmailSendLog logEntry = new EmailSendLog();
+                logEntry.setEmailReason(EmailReason.MAGIC_LINK);
+                logEntry.setRecipientEmail(normalizedEmail);
+                logEntry.setRecipientEmailNormalized(normalizedEmail);
+                logEntry.setUserId(user.getUserId());
+                logEntry.setSubject(emailSubject);
+                logEntry.setBodyText(emailBody);
+                logEntry.setSmtpMessageId(sendResult.getSmtpMessageId());
+                logEntry.setSmtpProvider(sendResult.getSmtpProvider());
+                logEntry.setMagicId(issuedMagicLink.getMagicId());
+                emailSendLogDao.log(logEntry);
 
                 LOGGER.info("requestId=" + requestId + " sent welcome email for userId=" + user.getUserId()
                         + " magicId=" + issuedMagicLink.getMagicId()

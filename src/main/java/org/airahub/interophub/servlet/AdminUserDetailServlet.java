@@ -9,8 +9,10 @@ import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.MagicLinkSendEventDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.MagicLinkSendEvent;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
@@ -21,11 +23,13 @@ public class AdminUserDetailServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final UserDao userDao;
     private final MagicLinkSendEventDao magicLinkSendEventDao;
+    private final EmailSendLogDao emailSendLogDao;
 
     public AdminUserDetailServlet() {
         this.authFlowService = new AuthFlowService();
         this.userDao = new UserDao();
         this.magicLinkSendEventDao = new MagicLinkSendEventDao();
+        this.emailSendLogDao = new EmailSendLogDao();
     }
 
     @Override
@@ -50,12 +54,13 @@ public class AdminUserDetailServlet extends HttpServlet {
         }
 
         List<MagicLinkSendEvent> sendEvents = magicLinkSendEventDao.findRecentByUserId(userId, 50);
+        List<EmailSendLog> emailLogs = emailSendLogDao.findByUserId(userId, 50);
         boolean saved = "1".equals(request.getParameter("saved"));
-        renderPage(response, request.getContextPath(), targetUser.get(), sendEvents, saved);
+        renderPage(response, request.getContextPath(), targetUser.get(), sendEvents, emailLogs, saved);
     }
 
     private void renderPage(HttpServletResponse response, String contextPath, User user,
-            List<MagicLinkSendEvent> sendEvents, boolean saved) throws IOException {
+            List<MagicLinkSendEvent> sendEvents, List<EmailSendLog> emailLogs, boolean saved) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         try (PrintWriter out = response.getWriter()) {
@@ -129,6 +134,53 @@ public class AdminUserDetailServlet extends HttpServlet {
                         panelOut.println(
                                 "              <td>" + escapeHtml(orEmpty(event.getSmtpReplyCode())) + "</td>");
                         panelOut.println("              <td>" + escapeHtml(renderError(event)) + "</td>");
+                        panelOut.println("            </tr>");
+                    }
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
+                }
+
+                panelOut.println("        <h2>Email Log (Last 50)</h2>");
+                if (emailLogs.isEmpty()) {
+                    panelOut.println("        <p>No emails found for this user.</p>");
+                } else {
+                    panelOut.println("        <table class=\"data-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Sent At</th>");
+                    panelOut.println("              <th>Reason</th>");
+                    panelOut.println("              <th>Subject</th>");
+                    panelOut.println("              <th>To</th>");
+                    panelOut.println("              <th>SMTP Provider</th>");
+                    panelOut.println("              <th>Message ID</th>");
+                    panelOut.println("              <th>Body</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (EmailSendLog logEntry : emailLogs) {
+                        String sentAt = logEntry.getSentAt() != null
+                                ? DATETIME_FORMATTER.format(logEntry.getSentAt())
+                                : "";
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td>" + escapeHtml(sentAt) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(logEntry.getEmailReason())) + "</td>");
+                        panelOut.println("              <td>" + escapeHtml(orEmpty(logEntry.getSubject())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(logEntry.getRecipientEmail())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(logEntry.getSmtpProvider())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(orEmpty(logEntry.getSmtpMessageId())) + "</td>");
+                        panelOut.println("              <td>");
+                        if (logEntry.getBodyText() != null && !logEntry.getBodyText().isBlank()) {
+                            panelOut.println("                <details>");
+                            panelOut.println("                  <summary>View body</summary>");
+                            panelOut.println("                  <pre style=\"white-space:pre-wrap;\">"
+                                    + escapeHtml(logEntry.getBodyText()) + "</pre>");
+                            panelOut.println("                </details>");
+                        }
+                        panelOut.println("              </td>");
                         panelOut.println("            </tr>");
                     }
                     panelOut.println("          </tbody>");

@@ -26,10 +26,34 @@ public class EmailService {
     }
 
     /**
-     * Sends a quick test email to the given address using the currently saved
-     * hub settings. Bypasses the email-enabled flag because this is an
-     * explicit admin action.
+     * Sends an email with the given subject and body to the given address.
+     * This is the primary send method; all other send methods delegate here.
+     *
+     * @return SendResult containing smtpMessageId and smtpProvider from the SMTP
+     *         server
+     * @throws IllegalArgumentException if recipientEmail, subject, or bodyText are
+     *                                  blank
+     * @throws EmailSendException       if SMTP delivery fails
      */
+    public SendResult send(String recipientEmail, String subject, String bodyText) {
+        String normalizedEmail = normalizeEmail(recipientEmail);
+        if (normalizedEmail == null) {
+            throw new IllegalArgumentException("Recipient email is required.");
+        }
+        if (subject == null || subject.isBlank()) {
+            throw new IllegalArgumentException("Email subject is required.");
+        }
+        if (bodyText == null || bodyText.isBlank()) {
+            throw new IllegalArgumentException("Email body is required.");
+        }
+
+        HubSetting settings = hubSettingDao.findActive()
+                .or(() -> hubSettingDao.findFirst())
+                .orElseGet(this::createDefaultSettings);
+        validateSettings(settings);
+        return sendSmtpMessage(settings, normalizedEmail, subject, bodyText.trim());
+    }
+
     public void sendTestEmail(String recipientEmail) {
         String normalizedEmail = normalizeEmail(recipientEmail);
         if (normalizedEmail == null) {
@@ -40,39 +64,40 @@ public class EmailService {
                 .orElseThrow(() -> new IllegalStateException("No hub settings found. Save settings first."));
         validateSettings(settings);
         sendSmtpMessage(settings, normalizedEmail,
+                "Test email from InteropHub",
                 "This is a test email from InteropHub to confirm that SMTP delivery is working correctly.");
         LOGGER.info("Test email sent to " + normalizedEmail + ".");
     }
 
+    /**
+     * @deprecated Use {@link #send(String, String, String)} with
+     *             {@link org.airahub.interophub.service.EmailTemplates}.
+     */
+    @Deprecated
     public void sendWelcomeEmail(String recipientEmail) {
         HubSetting settings = hubSettingDao.findActive()
                 .or(() -> hubSettingDao.findFirst())
                 .orElseGet(this::createDefaultSettings);
         String loginLink = buildHomeLink(settings.getExternalBaseUrl());
-        sendWelcomeEmailWithResult(recipientEmail, loginLink);
+        send(recipientEmail, EmailTemplates.magicLinkSubject(), EmailTemplates.magicLinkBody(loginLink));
     }
 
+    /**
+     * @deprecated Use {@link #send(String, String, String)} with
+     *             {@link org.airahub.interophub.service.EmailTemplates}.
+     */
+    @Deprecated
     public void sendWelcomeEmail(String recipientEmail, String loginLink) {
-        sendWelcomeEmailWithResult(recipientEmail, loginLink);
+        send(recipientEmail, EmailTemplates.magicLinkSubject(), EmailTemplates.magicLinkBody(loginLink));
     }
 
-    public SendWelcomeEmailResult sendWelcomeEmailWithResult(String recipientEmail, String loginLink) {
-        String normalizedEmail = normalizeEmail(recipientEmail);
-        if (normalizedEmail == null) {
-            throw new IllegalArgumentException("Recipient email is required.");
-        }
-        if (loginLink == null || loginLink.isBlank()) {
-            throw new IllegalArgumentException("Login link is required.");
-        }
-
-        HubSetting settings = hubSettingDao.findActive()
-                .or(() -> hubSettingDao.findFirst())
-                .orElseGet(this::createDefaultSettings);
-
-        validateSettings(settings);
-
-        String trimmedLink = loginLink.trim();
-        return sendSmtpMessage(settings, normalizedEmail, trimmedLink);
+    /**
+     * @deprecated Use {@link #send(String, String, String)} with
+     *             {@link org.airahub.interophub.service.EmailTemplates}.
+     */
+    @Deprecated
+    public SendResult sendWelcomeEmailWithResult(String recipientEmail, String loginLink) {
+        return send(recipientEmail, EmailTemplates.magicLinkSubject(), EmailTemplates.magicLinkBody(loginLink));
     }
 
     private HubSetting createDefaultSettings() {
@@ -108,7 +133,7 @@ public class EmailService {
         }
     }
 
-    private SendWelcomeEmailResult sendSmtpMessage(HubSetting settings, String recipientEmail, String loginLink) {
+    private SendResult sendSmtpMessage(HubSetting settings, String recipientEmail, String subject, String bodyText) {
         Properties props = new Properties();
         props.put("mail.smtp.host", settings.getSmtpHost());
         props.put("mail.smtp.port", String.valueOf(settings.getSmtpPort()));
@@ -143,17 +168,13 @@ public class EmailService {
 
             message.setFrom(new InternetAddress(fromEmail, fromName, StandardCharsets.UTF_8.name()));
             message.setRecipient(Message.RecipientType.TO, new InternetAddress(recipientEmail));
-            message.setSubject("Welcome to InteropHub", StandardCharsets.UTF_8.name());
-
-            String textBody = "Welcome to InteropHub!\n\n"
-                    + "Use this sign-in link to continue:\n"
-                    + loginLink + "\n";
-            message.setText(textBody, StandardCharsets.UTF_8.name());
+            message.setSubject(subject, StandardCharsets.UTF_8.name());
+            message.setText(bodyText, StandardCharsets.UTF_8.name());
 
             Transport.send(message);
-            LOGGER.info("Welcome email sent to " + recipientEmail + ".");
+            LOGGER.info("Email sent to " + recipientEmail + ".");
 
-            SendWelcomeEmailResult result = new SendWelcomeEmailResult();
+            SendResult result = new SendResult();
             result.setSmtpMessageId(trimToNull(message.getMessageID()));
             result.setSmtpProvider(trimToNull(settings.getSmtpHost()));
             return result;
@@ -232,7 +253,7 @@ public class EmailService {
         return value.substring(0, maxLength);
     }
 
-    public static class SendWelcomeEmailResult {
+    public static class SendResult {
         private String smtpMessageId;
         private String smtpProvider;
 
@@ -251,6 +272,11 @@ public class EmailService {
         public void setSmtpProvider(String smtpProvider) {
             this.smtpProvider = smtpProvider;
         }
+    }
+
+    /** @deprecated Use {@link SendResult}. */
+    @Deprecated
+    public static class SendWelcomeEmailResult extends SendResult {
     }
 
     public static class EmailSendException extends IllegalStateException {
