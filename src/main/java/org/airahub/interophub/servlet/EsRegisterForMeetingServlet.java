@@ -4,16 +4,22 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
+import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignRegistrationDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
+import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignRegistration;
 import org.airahub.interophub.model.EsSubscription;
@@ -22,10 +28,13 @@ import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
 
 public class EsRegisterForMeetingServlet extends HttpServlet {
+
+    private static final Logger LOGGER = Logger.getLogger(EsRegisterForMeetingServlet.class.getName());
 
     private static final String ATTR_FIRST_NAME = "interophub.es.registration.firstName";
     private static final String ATTR_LAST_NAME = "interophub.es.registration.lastName";
@@ -42,6 +51,9 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
     private final EsCampaignRegistrationDao registrationDao;
     private final EsInterestService esInterestService;
     private final AuthFlowService authFlowService;
+    private final EsSubscriptionDao esSubscriptionDao;
+    private final EmailService emailService;
+    private final EmailSendLogDao emailSendLogDao;
 
     public EsRegisterForMeetingServlet() {
         this.campaignDao = new EsCampaignDao();
@@ -51,6 +63,9 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         this.registrationDao = new EsCampaignRegistrationDao();
         this.esInterestService = new EsInterestService();
         this.authFlowService = new AuthFlowService();
+        this.esSubscriptionDao = new EsSubscriptionDao();
+        this.emailService = new EmailService();
+        this.emailSendLogDao = new EmailSendLogDao();
     }
 
     @Override
@@ -116,6 +131,7 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         upsertMeetingRequest(resolution.meeting(), resolution.campaign(), email, emailNormalized);
         upsertTopicSubscription(resolution.topic().getEsTopicId(), resolution.campaign().getEsCampaignId(),
                 email, emailNormalized, findAuthenticatedUserId(request));
+        sendChampionNotifications(resolution.meeting(), resolution.topic(), firstName, lastName, email);
 
         if (generalUpdatesOptIn) {
             EsSubscription subscription = new EsSubscription();
@@ -139,6 +155,43 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
 
         response.sendRedirect(request.getContextPath() + "/register/complete/"
                 + URLEncoder.encode(resolution.campaign().getCampaignCode(), StandardCharsets.UTF_8));
+    }
+
+    private void sendChampionNotifications(EsTopicMeeting meeting, EsTopic topic,
+            String firstName, String lastName, String registrantEmail) {
+        try {
+            List<EsSubscription> champions = esSubscriptionDao.findChampionsByTopicId(topic.getEsTopicId());
+            if (champions.isEmpty()) {
+                return;
+            }
+            String meetingName = meeting.getMeetingName() != null ? meeting.getMeetingName() : "the meeting";
+            String subject = meetingName + " \u2013 New Registration: " + firstName + " " + lastName;
+            String body = firstName + " " + lastName + " (" + registrantEmail + ") has registered for "
+                    + meetingName + " and needs a calendar invite.";
+            for (EsSubscription champion : champions) {
+                try {
+                    EmailService.SendResult result = emailService.send(champion.getEmail(), subject, body);
+                    EmailSendLog log = new EmailSendLog();
+                    log.setEmailReason("MEETING_REGISTRATION_CHAMPION_NOTIFY");
+                    log.setRecipientEmail(champion.getEmail());
+                    log.setRecipientEmailNormalized(champion.getEmailNormalized());
+                    log.setUserId(champion.getUserId());
+                    log.setSubject(subject);
+                    log.setBodyText(body);
+                    log.setSmtpMessageId(result.getSmtpMessageId());
+                    log.setSmtpProvider(result.getSmtpProvider());
+                    emailSendLogDao.log(log);
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING,
+                            "Failed to send champion notification to " + champion.getEmailNormalized()
+                                    + " for meeting " + meeting.getEsTopicMeetingId(),
+                            ex);
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING,
+                    "Failed to look up champions for topic " + topic.getEsTopicId(), ex);
+        }
     }
 
     private void upsertMeetingRequest(EsTopicMeeting meeting, EsCampaign campaign, String email,
