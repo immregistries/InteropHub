@@ -56,18 +56,23 @@ public class MeetingCommunicationRecipientResolver {
         Map<String, RecipientBuilder> builders = new LinkedHashMap<>();
 
         // Load agenda items for this meeting (needed for topic IDs and presenter
-        // lookup)
+        // lookup). Exclude POSTPONED and CANCELLED items so their champions,
+        // subscribers, and presenters are not notified.
         List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId());
-        List<Long> topicIds = agendaItems.stream()
+        List<EsMeetingAgendaItem> activeAgendaItems = agendaItems.stream()
+                .filter(item -> item.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.POSTPONED
+                        && item.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED)
+                .collect(Collectors.toList());
+        List<Long> topicIds = activeAgendaItems.stream()
                 .map(EsMeetingAgendaItem::getEsTopicId)
                 .filter(id -> id != null)
                 .distinct()
                 .collect(Collectors.toList());
-        List<Long> agendaItemIds = agendaItems.stream()
+        List<Long> agendaItemIds = activeAgendaItems.stream()
                 .map(EsMeetingAgendaItem::getEsMeetingAgendaItemId)
                 .collect(Collectors.toList());
         // Map agenda item ID -> item title for enriching presenter recipients
-        Map<Long, String> agendaItemTitles = agendaItems.stream()
+        Map<Long, String> agendaItemTitles = activeAgendaItems.stream()
                 .collect(Collectors.toMap(
                         EsMeetingAgendaItem::getEsMeetingAgendaItemId,
                         EsMeetingAgendaItem::getTitle,

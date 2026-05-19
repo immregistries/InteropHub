@@ -70,4 +70,15 @@ public class PublicUrlService {
                 .filter(value -> !value.isBlank())
                 .orElse(DEFAULT_EXTERNAL_BASE_URL);
     }
+
+    public boolean isLocalhostMode() {
+        String url = resolveExternalBaseUrl();
+        try {
+            URI uri = URI.create(url);
+            String host = uri.getHost();
+            return "localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host);
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
 }

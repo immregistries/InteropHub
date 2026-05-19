@@ -80,11 +80,13 @@ public class MeetingCommunicationPreviewService {
             EsMeetingCommunication communication,
             EsMeeting meeting,
             List<CommunicationRecipientPreview> recipients) {
+        String rawBase = new PublicUrlService().resolveExternalBaseUrl();
+        String baseUrl = rawBase.endsWith("/") ? rawBase.substring(0, rawBase.length() - 1) : rawBase;
         // One sample per distinct primaryGroup, up to 5 total
         Map<RecipientGroup, CommunicationRenderedEmail> byGroup = new LinkedHashMap<>();
         for (CommunicationRecipientPreview r : recipients) {
             if (!byGroup.containsKey(r.getPrimaryGroup())) {
-                byGroup.put(r.getPrimaryGroup(), renderer.render(communication, meeting, r));
+                byGroup.put(r.getPrimaryGroup(), renderer.render(communication, meeting, r, baseUrl));
             }
             if (byGroup.size() >= 5) {
                 break;

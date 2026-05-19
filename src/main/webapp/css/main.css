@@ -1411,6 +1411,32 @@ a.doc-card {
   font-size: 0.95rem;
 }
 
+/* -------------------------
+   Local / Test Environment Ribbon
+   Diagonal banner in the top-right corner.
+   Rendered only when hub_settings.external_base_url resolves to localhost.
+   ------------------------- */
+.env-ribbon {
+  position: fixed;
+  top: 32px;
+  right: -42px;
+  width: 180px;
+  padding: 7px 0;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+  transform: rotate(45deg);
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 .attend-attendee-table th {
   background: #f1f5fb;
   font-weight: 600;

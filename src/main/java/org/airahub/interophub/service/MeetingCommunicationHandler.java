@@ -36,12 +36,16 @@ public interface MeetingCommunicationHandler {
 
     /**
      * Renders the plain-text email body for a single recipient.
+     *
+     * @param baseUrl the external base URL (no trailing slash) used to build
+     *                direct links in the email body
      */
     CommunicationRenderedEmail renderEmail(
             EsMeetingCommunication communication,
             EsMeeting meeting,
             CommunicationRecipientPreview recipient,
-            String resolvedSubject);
+            String resolvedSubject,
+            String baseUrl);
 
     /**
      * Returns the EmailReason constant to store in email_send_log.

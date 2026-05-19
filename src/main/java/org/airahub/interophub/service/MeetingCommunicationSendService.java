@@ -3,7 +3,9 @@ package org.airahub.interophub.service;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.airahub.interophub.dao.EmailSendLogDao;
@@ -16,6 +18,7 @@ import org.airahub.interophub.model.CommunicationRenderedEmail;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.HubSetting;
+import org.airahub.interophub.model.RecipientGroup;
 
 /**
  * Executes the actual email dispatch for a meeting communication.
@@ -122,6 +125,12 @@ public class MeetingCommunicationSendService {
                 .map(u -> u.endsWith("/") ? u.substring(0, u.length() - 1) : u)
                 .orElse("");
 
+        boolean localhostMode = new PublicUrlService().isLocalhostMode();
+        Set<RecipientGroup> localhostSentGroups = localhostMode
+                ? EnumSet.noneOf(RecipientGroup.class)
+                : null;
+        int localhostSkippedCount = 0;
+
         int successCount = 0;
         int failCount = 0;
         StringBuilder errors = new StringBuilder();
@@ -132,7 +141,20 @@ public class MeetingCommunicationSendService {
                     continue;
                 }
 
-                CommunicationRenderedEmail rendered = renderer.render(communication, meeting, recipient);
+                // In localhost mode, send only one email per recipient group so
+                // a test run produces a small number of representative samples
+                // rather than flooding the test inbox.
+                if (localhostMode) {
+                    RecipientGroup group = recipient.getPrimaryGroup();
+                    if (localhostSentGroups.contains(group)) {
+                        localhostSkippedCount++;
+                        successCount++; // count as success so we don't mark FAILED
+                        continue;
+                    }
+                    localhostSentGroups.add(group);
+                }
+
+                CommunicationRenderedEmail rendered = renderer.render(communication, meeting, recipient, baseUrl);
 
                 Long logId = emailSendLogDao.preInsert(
                         emailReason,
@@ -163,6 +185,12 @@ public class MeetingCommunicationSendService {
                     errors.append(msg).append("\n");
                 }
             }
+        }
+
+        if (localhostMode && localhostSkippedCount > 0) {
+            LOGGER.info("[LOCALHOST MODE] Communication id=" + communication.getEsMeetingCommunicationId()
+                    + " — skipped " + localhostSkippedCount + " duplicate-group recipients;"
+                    + " sent " + (successCount - localhostSkippedCount) + " representative sample(s).");
         }
 
         if (failCount == 0) {

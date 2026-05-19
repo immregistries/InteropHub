@@ -85,6 +85,7 @@ public class WelcomeServlet extends HttpServlet {
             out.println("</head>");
             if (adminUser) {
                 out.println("<body class=\"admin-page\">");
+                LocalEnvBannerRenderer.renderIfLocalhost(out);
                 out.println("  <main class=\"admin-shell\">");
                 out.println("    <aside class=\"admin-rail\">");
                 out.println("      <h1>Admin</h1>");
@@ -100,6 +101,7 @@ public class WelcomeServlet extends HttpServlet {
                 out.println("  </main>");
             } else {
                 out.println("<body>");
+                LocalEnvBannerRenderer.renderIfLocalhost(out);
                 out.println("  <main class=\"container\">");
                 renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
                         pendingRegistrationCount, false);

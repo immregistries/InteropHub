@@ -50,13 +50,17 @@ public class MeetingCommunicationRenderer {
 
     /**
      * Renders a single email for one recipient.
+     *
+     * @param baseUrl the external base URL (no trailing slash) used to build
+     *                direct links in the email body
      */
     public CommunicationRenderedEmail render(
             EsMeetingCommunication communication,
             EsMeeting meeting,
-            CommunicationRecipientPreview recipient) {
+            CommunicationRecipientPreview recipient,
+            String baseUrl) {
         String subject = resolveSubject(communication, meeting);
         return handlerFor(communication.getCommunicationType())
-                .renderEmail(communication, meeting, recipient, subject);
+                .renderEmail(communication, meeting, recipient, subject, baseUrl);
     }
 }

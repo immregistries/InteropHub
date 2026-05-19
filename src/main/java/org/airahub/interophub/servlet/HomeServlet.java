@@ -73,6 +73,7 @@ public class HomeServlet extends HttpServlet {
                         out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
                         out.println("</head>");
                         out.println("<body>");
+                        LocalEnvBannerRenderer.renderIfLocalhost(out);
                         out.println("  <main class=\"login-page\">");
                         out.println("    <section class=\"panel\">");
                         out.println("      <img class=\"banner\" src=\"" + contextPath

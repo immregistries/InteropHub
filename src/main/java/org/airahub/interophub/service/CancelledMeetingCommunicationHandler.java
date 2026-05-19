@@ -40,15 +40,17 @@ public class CancelledMeetingCommunicationHandler implements MeetingCommunicatio
             EsMeetingCommunication communication,
             EsMeeting meeting,
             CommunicationRecipientPreview recipient,
-            String resolvedSubject) {
-        String body = buildBody(communication, meeting, recipient);
+            String resolvedSubject,
+            String baseUrl) {
+        String body = buildBody(communication, meeting, recipient, baseUrl);
         return new CommunicationRenderedEmail(recipient, resolvedSubject, body);
     }
 
     private String buildBody(
             EsMeetingCommunication communication,
             EsMeeting meeting,
-            CommunicationRecipientPreview recipient) {
+            CommunicationRecipientPreview recipient,
+            String baseUrl) {
         StringBuilder sb = new StringBuilder();
         String greeting = recipient.getDisplayName() != null && !recipient.getDisplayName().isBlank()
                 ? "Hi " + recipient.getDisplayName() + ","
@@ -65,7 +67,9 @@ public class CancelledMeetingCommunicationHandler implements MeetingCommunicatio
         if (communication.getNoteToInclude() != null && !communication.getNoteToInclude().isBlank()) {
             sb.append("\n").append(communication.getNoteToInclude().trim()).append("\n");
         }
-        sb.append("\nWe apologize for any inconvenience. Please log in to InteropHub for updates.\n");
+        sb.append("\nWe apologize for any inconvenience. For more information: ")
+                .append(baseUrl).append("/es/agenda?meetingId=")
+                .append(meeting.getEsMeetingId()).append("\n");
         return sb.toString();
     }
 }
