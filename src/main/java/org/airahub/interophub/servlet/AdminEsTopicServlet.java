@@ -113,13 +113,16 @@ public class AdminEsTopicServlet extends HttpServlet {
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
         String[] neighborhoodValues = request.getParameterValues("neighborhood");
-        String neighborhood = neighborhoodValues != null
-                ? Arrays.stream(neighborhoodValues).map(String::trim).filter(v -> !v.isBlank())
-                        .collect(Collectors.joining(","))
-                : null;
-        if (neighborhood != null && neighborhood.isEmpty()) {
-            neighborhood = null;
+        String newNeighborhoodParam = trimToNull(request.getParameter("newNeighborhood"));
+        List<String> allNhList = new ArrayList<>();
+        if (neighborhoodValues != null) {
+            Arrays.stream(neighborhoodValues).map(String::trim).filter(v -> !v.isBlank()).forEach(allNhList::add);
         }
+        if (newNeighborhoodParam != null) {
+            Arrays.stream(newNeighborhoodParam.split(",")).map(String::trim).filter(v -> !v.isBlank())
+                    .forEach(allNhList::add);
+        }
+        String neighborhood = allNhList.isEmpty() ? null : String.join(",", allNhList);
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
         String priorityEhrRaw = trimToNull(request.getParameter("priorityEhr"));
         String priorityCdcRaw = trimToNull(request.getParameter("priorityCdc"));
@@ -541,6 +544,12 @@ public class AdminEsTopicServlet extends HttpServlet {
                 }
             }
         }
+        Set<String> knownNeighborhoodLower = allNeighborhoods.stream()
+                .map(nh -> nh.getNeighborhoodName().toLowerCase())
+                .collect(Collectors.toSet());
+        String unknownNeighborhoodText = selectedNeighborhoods.stream()
+                .filter(n -> !knownNeighborhoodLower.contains(n))
+                .collect(Collectors.joining(", "));
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out,
@@ -592,6 +601,12 @@ public class AdminEsTopicServlet extends HttpServlet {
                                         + escapeHtml(nhName) + "</label>");
                             }
                         }
+                        out.println(
+                                "        <label for=\"newNeighborhood\" style=\"margin-top: 0.75em;\">Add neighborhood not in list above:</label>");
+                        out.println(
+                                "        <input id=\"newNeighborhood\" name=\"newNeighborhood\" type=\"text\" value=\""
+                                        + escapeHtml(unknownNeighborhoodText)
+                                        + "\" placeholder=\"e.g. New Region\" />");
                         out.println("      </fieldset>");
 
                         out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
