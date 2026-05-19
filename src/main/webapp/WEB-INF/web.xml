@@ -535,4 +535,48 @@
     <url-pattern>/es/meetings</url-pattern>
   </servlet-mapping>
 
+  <servlet>
+    <servlet-name>EsMeetingCommunicationsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingCommunicationsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingCommunicationsServlet</servlet-name>
+    <url-pattern>/es/meeting-communications</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsMeetingCommunicationServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingCommunicationServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingCommunicationServlet</servlet-name>
+    <url-pattern>/es/meeting-communication</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsMeetingCommunicationPreviewServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingCommunicationPreviewServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingCommunicationPreviewServlet</servlet-name>
+    <url-pattern>/es/meeting-communication-preview</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsUnsubscribeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsUnsubscribeServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsUnsubscribeServlet</servlet-name>
+    <url-pattern>/es/unsubscribe</url-pattern>
+  </servlet-mapping>
+
+  <listener>
+    <listener-class>org.airahub.interophub.config.MeetingCommunicationSchedulerListener</listener-class>
+  </listener>
+
 </web-app>

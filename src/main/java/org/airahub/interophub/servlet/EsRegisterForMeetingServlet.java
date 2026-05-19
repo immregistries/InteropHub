@@ -170,6 +170,9 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
                     + meetingName + " and needs a calendar invite.";
             for (EsSubscription champion : champions) {
                 try {
+                    if (esSubscriptionDao.hasGeneralUnsubscribed(champion.getEmailNormalized())) {
+                        continue;
+                    }
                     EmailService.SendResult result = emailService.send(champion.getEmail(), subject, body);
                     EmailSendLog log = new EmailSendLog();
                     log.setEmailReason("MEETING_REGISTRATION_CHAMPION_NOTIFY");

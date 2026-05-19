@@ -466,6 +466,196 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                 LocalDateTime.now());
     }
 
+    /**
+     * Returns active CHAMPION subscriptions for any of the given topic IDs.
+     * Used when building the champion recipient group for a meeting communication.
+     */
+    public List<EsSubscription> findActiveChampionsByTopicIds(List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.esTopicId in :ids"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status = :champion",
+                    EsSubscription.class)
+                    .setParameterList("ids", topicIds)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("champion", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns active SUBSCRIBED subscriptions for any of the given topic IDs.
+     * Used when building the topic-subscriber recipient group for a meeting
+     * communication.
+     */
+    public List<EsSubscription> findActiveSubscribersByTopicIds(List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.esTopicId in :ids"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status = :subscribed",
+                    EsSubscription.class)
+                    .setParameterList("ids", topicIds)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("subscribed", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns all active (SUBSCRIBED or CHAMPION) subscriptions for a given email,
+     * joined with topic name for TOPIC subscriptions.
+     */
+    public List<ActiveSubscriptionRow> findAllActiveByEmailNormalized(String emailNormalized) {
+        if (emailNormalized == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Object[]> rows = session.createNativeQuery(
+                    "SELECT s.es_subscription_id, s.subscription_type, s.status, s.es_topic_id, t.topic_name"
+                            + " FROM es_subscription s"
+                            + " LEFT JOIN es_topic t ON s.es_topic_id = t.es_topic_id"
+                            + " WHERE s.email_normalized = :email"
+                            + " AND s.status IN ('SUBSCRIBED', 'CHAMPION')"
+                            + " ORDER BY s.subscription_type ASC, COALESCE(t.topic_name, '') ASC",
+                    Object[].class)
+                    .setParameter("email", emailNormalized)
+                    .getResultList();
+            List<ActiveSubscriptionRow> result = new java.util.ArrayList<>();
+            for (Object[] row : rows) {
+                result.add(new ActiveSubscriptionRow(
+                        ((Number) row[0]).longValue(),
+                        EsSubscription.SubscriptionType.valueOf((String) row[1]),
+                        EsSubscription.SubscriptionStatus.valueOf((String) row[2]),
+                        row[3] != null ? ((Number) row[3]).longValue() : null,
+                        (String) row[4]));
+            }
+            return result;
+        }
+    }
+
+    /**
+     * Sets all SUBSCRIBED or CHAMPION subscriptions for an email to UNSUBSCRIBED.
+     *
+     * @return number of rows updated
+     */
+    public int unsubscribeAllByEmailNormalized(String emailNormalized) {
+        if (emailNormalized == null) {
+            return 0;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int updated = session.createNativeMutationQuery(
+                        "UPDATE es_subscription SET status = 'UNSUBSCRIBED', unsubscribed_at = NOW()"
+                                + " WHERE email_normalized = :email"
+                                + " AND status IN ('SUBSCRIBED', 'CHAMPION')")
+                        .setParameter("email", emailNormalized)
+                        .executeUpdate();
+                tx.commit();
+                return updated;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    /**
+     * Deletes a single subscription row by its primary key.
+     *
+     * @return number of rows deleted (0 or 1)
+     */
+    public int removeById(Long esSubscriptionId) {
+        if (esSubscriptionId == null) {
+            return 0;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int deleted = session.createNativeMutationQuery(
+                        "DELETE FROM es_subscription WHERE es_subscription_id = :id")
+                        .setParameter("id", esSubscriptionId)
+                        .executeUpdate();
+                tx.commit();
+                return deleted;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    /**
+     * Returns true if the given email has a GENERAL_ES subscription with
+     * UNSUBSCRIBED status. Used as an email guard across all send paths.
+     */
+    public boolean hasGeneralUnsubscribed(String emailNormalized) {
+        if (emailNormalized == null) {
+            return false;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(s.esSubscriptionId) from EsSubscription s"
+                            + " where s.emailNormalized = :email"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status = :status",
+                    Long.class)
+                    .setParameter("email", emailNormalized)
+                    .setParameter("type", EsSubscription.SubscriptionType.GENERAL_ES)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.UNSUBSCRIBED)
+                    .getSingleResult();
+            return count != null && count > 0;
+        }
+    }
+
+    public static final class ActiveSubscriptionRow {
+        private final Long esSubscriptionId;
+        private final EsSubscription.SubscriptionType subscriptionType;
+        private final EsSubscription.SubscriptionStatus status;
+        private final Long esTopicId;
+        private final String topicName;
+
+        public ActiveSubscriptionRow(Long esSubscriptionId,
+                EsSubscription.SubscriptionType subscriptionType,
+                EsSubscription.SubscriptionStatus status,
+                Long esTopicId,
+                String topicName) {
+            this.esSubscriptionId = esSubscriptionId;
+            this.subscriptionType = subscriptionType;
+            this.status = status;
+            this.esTopicId = esTopicId;
+            this.topicName = topicName;
+        }
+
+        public Long getEsSubscriptionId() {
+            return esSubscriptionId;
+        }
+
+        public EsSubscription.SubscriptionType getSubscriptionType() {
+            return subscriptionType;
+        }
+
+        public EsSubscription.SubscriptionStatus getStatus() {
+            return status;
+        }
+
+        public Long getEsTopicId() {
+            return esTopicId;
+        }
+
+        public String getTopicName() {
+            return topicName;
+        }
+    }
+
     public static final class CampaignTopicSubscriptionCountRow {
         private final String topicName;
         private final Long subscriptionCount;

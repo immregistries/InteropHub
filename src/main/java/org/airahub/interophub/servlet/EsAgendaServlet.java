@@ -47,6 +47,7 @@ import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
+import org.airahub.interophub.service.MeetingCommunicationService;
 
 public class EsAgendaServlet extends HttpServlet {
 
@@ -78,6 +79,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final UserDao userDao;
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
+    private final MeetingCommunicationService meetingCommunicationService;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -90,6 +92,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.userDao = new UserDao();
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
+        this.meetingCommunicationService = new MeetingCommunicationService();
     }
 
     // =========================================================================
@@ -161,9 +164,11 @@ public class EsAgendaServlet extends HttpServlet {
 
         String savedMsg = request.getParameter("saved") != null ? "Changes saved." : null;
         String errorMsg = trimToNull(request.getParameter("err"));
+        String suggestBanner = buildSuggestBanner(contextPath, meeting.getEsMeetingId(),
+                trimToNull(request.getParameter("suggest")));
 
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
-                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch);
+                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch, suggestBanner);
     }
 
     // =========================================================================
@@ -774,7 +779,19 @@ public class EsAgendaServlet extends HttpServlet {
                 trimToNull(request.getParameter("cancellationReason")));
         // After finalize or complete, edit override no longer makes sense
         boolean keepEdit = targetStatus == MeetingStatus.FINALIZED ? false : editOverride;
-        redirectBack(response, contextPath, meeting.getEsMeetingId(), keepEdit);
+        // Auto-cancel pending communications when a meeting is cancelled
+        if (targetStatus == MeetingStatus.CANCELLED) {
+            meetingCommunicationService.cancelAllPendingForMeeting(
+                    meeting.getEsMeetingId(), user.getUserId());
+        }
+        // Suggest relevant communication type via redirect param
+        String suggestType = switch (targetStatus) {
+            case PROPOSED -> "PROPOSED_AGENDA";
+            case FINALIZED -> "FINAL_AGENDA";
+            case CANCELLED -> "CANCELLED";
+            default -> null;
+        };
+        redirectBackWithSuggest(response, contextPath, meeting.getEsMeetingId(), keepEdit, suggestType);
     }
 
     private boolean isValidMeetingStatusTransition(MeetingStatus from, MeetingStatus to) {
@@ -1047,7 +1064,9 @@ public class EsAgendaServlet extends HttpServlet {
             String body = EmailTemplates.presenterInvitationBody(
                     recipientName, itemTitle, topicName,
                     meeting.getMeetingName(), dateDisplay, roleLabel, agendaLink);
-            emailService.send(recipientEmail, subject, body);
+            if (!subscriptionDao.hasGeneralUnsubscribed(recipientEmail.trim().toLowerCase())) {
+                emailService.send(recipientEmail, subject, body);
+            }
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to send presenter invitation email to " + recipientEmail, ex);
         }
@@ -1213,6 +1232,34 @@ public class EsAgendaServlet extends HttpServlet {
         response.sendRedirect(url);
     }
 
+    private void redirectBackWithSuggest(HttpServletResponse response, String contextPath,
+            Long meetingId, boolean editOverride, String suggestType) throws IOException {
+        String url = contextPath + "/es/agenda?meetingId=" + meetingId + "&saved=1";
+        if (editOverride) {
+            url += "&edit=true";
+        }
+        if (suggestType != null) {
+            url += "&suggest=" + URLEncoder.encode(suggestType, StandardCharsets.UTF_8);
+        }
+        response.sendRedirect(url);
+    }
+
+    private String buildSuggestBanner(String contextPath, Long meetingId, String suggestType) {
+        if (suggestType == null || meetingId == null) {
+            return null;
+        }
+        String link = contextPath + "/es/meeting-communication?meetingId=" + meetingId
+                + "&suggestType=" + URLEncoder.encode(suggestType, StandardCharsets.UTF_8);
+        String label = switch (suggestType) {
+            case "PROPOSED_AGENDA" -> "Send Proposed Agenda communication";
+            case "FINAL_AGENDA" -> "Send Final Agenda communication";
+            case "CANCELLED" -> "Send Cancellation notice to attendees";
+            default -> null;
+        };
+        if (label == null) return null;
+        return "<a href=\"" + link + "\">" + label + "</a>";
+    }
+
     private void redirectBackWithError(HttpServletResponse response, String contextPath, Long meetingId,
             boolean editOverride, String errorMsg) throws IOException {
         String url = contextPath + "/es/agenda?meetingId=" + meetingId
@@ -1233,7 +1280,7 @@ public class EsAgendaServlet extends HttpServlet {
             Map<Long, User> presenterUsers,
             boolean isEditor, boolean canEdit, boolean editOverride,
             EsMeeting nextMeeting, String savedMsg, String errorMsg,
-            String loginHintMismatch) throws IOException {
+            String loginHintMismatch, String suggestBanner) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -1477,6 +1524,10 @@ public class EsAgendaServlet extends HttpServlet {
             // Messages
             if (savedMsg != null) {
                 out.println("  <div class=\"agenda-msg-success no-print\">" + escapeHtml(savedMsg) + "</div>");
+            }
+            if (suggestBanner != null) {
+                out.println("  <div class=\"agenda-msg-success no-print\" style=\"background:#cfe2ff;border-color:#9ec5fe\">"
+                        + suggestBanner + "</div>");
             }
             if (errorMsg != null) {
                 out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");

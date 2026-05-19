@@ -18,6 +18,21 @@ public final class EmailReason {
      */
     public static final String MEETING_MAGIC_LINK = "MEETING_MAGIC_LINK";
 
+    /** Meeting communication: call-for-topics blast. */
+    public static final String MEETING_COMMUNICATION_CALL_FOR_TOPICS = "MEETING_COMMUNICATION_CALL_FOR_TOPICS";
+
+    /** Meeting communication: proposed-agenda notification. */
+    public static final String MEETING_COMMUNICATION_PROPOSED_AGENDA = "MEETING_COMMUNICATION_PROPOSED_AGENDA";
+
+    /** Meeting communication: final-agenda notification. */
+    public static final String MEETING_COMMUNICATION_FINAL_AGENDA = "MEETING_COMMUNICATION_FINAL_AGENDA";
+
+    /** Meeting communication: reminder sent before the meeting. */
+    public static final String MEETING_COMMUNICATION_REMINDER = "MEETING_COMMUNICATION_REMINDER";
+
+    /** Meeting communication: cancellation notice. */
+    public static final String MEETING_COMMUNICATION_CANCELLED = "MEETING_COMMUNICATION_CANCELLED";
+
     private EmailReason() {
     }
 }

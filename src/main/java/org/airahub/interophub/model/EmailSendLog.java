@@ -48,6 +48,9 @@ public class EmailSendLog {
     @Column(name = "magic_id")
     private Long magicId;
 
+    @Column(name = "es_meeting_communication_id")
+    private Long esMeetingCommunicationId;
+
     @PrePersist
     protected void onCreate() {
         if (sentAt == null) {
@@ -141,5 +144,13 @@ public class EmailSendLog {
 
     public void setMagicId(Long magicId) {
         this.magicId = magicId;
+    }
+
+    public Long getEsMeetingCommunicationId() {
+        return esMeetingCommunicationId;
+    }
+
+    public void setEsMeetingCommunicationId(Long esMeetingCommunicationId) {
+        this.esMeetingCommunicationId = esMeetingCommunicationId;
     }
 }
