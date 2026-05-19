@@ -124,4 +124,22 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
             throw ex;
         }
     }
+
+    public List<String> findDistinctPolicyStatuses() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "SELECT DISTINCT t.policyStatus FROM EsTopic t WHERE t.policyStatus IS NOT NULL ORDER BY t.policyStatus",
+                    String.class)
+                    .getResultList();
+        }
+    }
+
+    public List<String> findDistinctTopicTypes() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "SELECT DISTINCT t.topicType FROM EsTopic t WHERE t.topicType IS NOT NULL ORDER BY t.topicType",
+                    String.class)
+                    .getResultList();
+        }
+    }
 }

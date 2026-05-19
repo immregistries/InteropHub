@@ -6,20 +6,25 @@ import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCommentDao;
+import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
+import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
@@ -107,7 +112,14 @@ public class AdminEsTopicServlet extends HttpServlet {
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
-        String neighborhood = trimToNull(request.getParameter("neighborhood"));
+        String[] neighborhoodValues = request.getParameterValues("neighborhood");
+        String neighborhood = neighborhoodValues != null
+                ? Arrays.stream(neighborhoodValues).map(String::trim).filter(v -> !v.isBlank())
+                        .collect(Collectors.joining(","))
+                : null;
+        if (neighborhood != null && neighborhood.isEmpty()) {
+            neighborhood = null;
+        }
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
         String priorityEhrRaw = trimToNull(request.getParameter("priorityEhr"));
         String priorityCdcRaw = trimToNull(request.getParameter("priorityCdc"));
@@ -517,6 +529,18 @@ public class AdminEsTopicServlet extends HttpServlet {
             String errorMessage, boolean isNew) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
+        List<EsNeighborhood> allNeighborhoods = new EsNeighborhoodDao().findAllActive();
+        List<String> policyStatuses = esTopicDao.findDistinctPolicyStatuses();
+        List<String> topicTypes = esTopicDao.findDistinctTopicTypes();
+        Set<String> selectedNeighborhoods = new HashSet<>();
+        if (topic.getNeighborhood() != null) {
+            for (String n : topic.getNeighborhood().split(",")) {
+                String trimmed = n.trim();
+                if (!trimmed.isEmpty()) {
+                    selectedNeighborhoods.add(trimmed.toLowerCase());
+                }
+            }
+        }
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out,
@@ -555,9 +579,20 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
                                 + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
 
-                        out.println("      <label for=\"neighborhood\">Neighborhood(s) (comma-separated)</label>");
-                        out.println("      <input id=\"neighborhood\" name=\"neighborhood\" type=\"text\" value=\""
-                                + escapeHtml(orEmpty(topic.getNeighborhood())) + "\" />");
+                        out.println("      <fieldset style=\"margin-bottom: 1em;\">");
+                        out.println("        <legend>Neighborhood(s)</legend>");
+                        if (allNeighborhoods.isEmpty()) {
+                            out.println("        <p><em>No neighborhoods defined.</em></p>");
+                        } else {
+                            for (EsNeighborhood nh : allNeighborhoods) {
+                                String nhName = nh.getNeighborhoodName();
+                                boolean nhChecked = selectedNeighborhoods.contains(nhName.toLowerCase());
+                                out.println("        <label><input type=\"checkbox\" name=\"neighborhood\" value=\""
+                                        + escapeHtml(nhName) + "\"" + (nhChecked ? " checked" : "") + " /> "
+                                        + escapeHtml(nhName) + "</label>");
+                            }
+                        }
+                        out.println("      </fieldset>");
 
                         out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
                         out.println(
@@ -581,16 +616,35 @@ public class AdminEsTopicServlet extends HttpServlet {
                                         + "\" />");
 
                         out.println("      <label for=\"stage\">Stage</label>");
-                        out.println("      <input id=\"stage\" name=\"stage\" type=\"text\" value=\""
-                                + escapeHtml(orEmpty(topic.getStage())) + "\" />");
+                        out.println("      <select id=\"stage\" name=\"stage\">");
+                        out.println("        <option value=\"\">\u2014 Select \u2014</option>");
+                        for (String stageOpt : new String[] { "Start", "Gather", "Draft", "Pilot", "Rollout", "Monitor",
+                                "Parked" }) {
+                            String sel = stageOpt.equalsIgnoreCase(orEmpty(topic.getStage())) ? " selected" : "";
+                            out.println(
+                                    "        <option value=\"" + stageOpt + "\"" + sel + ">" + stageOpt + "</option>");
+                        }
+                        out.println("      </select>");
 
                         out.println("      <label for=\"policyStatus\">Policy Status</label>");
-                        out.println("      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" value=\""
-                                + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
+                        out.println(
+                                "      <input id=\"policyStatus\" name=\"policyStatus\" type=\"text\" list=\"policyStatusList\" value=\""
+                                        + escapeHtml(orEmpty(topic.getPolicyStatus())) + "\" />");
+                        out.println("      <datalist id=\"policyStatusList\">");
+                        for (String ps : policyStatuses) {
+                            out.println("        <option value=\"" + escapeHtml(ps) + "\" />");
+                        }
+                        out.println("      </datalist>");
 
                         out.println("      <label for=\"topicType\">Topic Type</label>");
-                        out.println("      <input id=\"topicType\" name=\"topicType\" type=\"text\" value=\""
-                                + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
+                        out.println(
+                                "      <input id=\"topicType\" name=\"topicType\" type=\"text\" list=\"topicTypeList\" value=\""
+                                        + escapeHtml(orEmpty(topic.getTopicType())) + "\" />");
+                        out.println("      <datalist id=\"topicTypeList\">");
+                        for (String tt : topicTypes) {
+                            out.println("        <option value=\"" + escapeHtml(tt) + "\" />");
+                        }
+                        out.println("      </datalist>");
 
                         out.println("      <label for=\"confluenceUrl\">Confluence URL</label>");
                         out.println("      <input id=\"confluenceUrl\" name=\"confluenceUrl\" type=\"url\" value=\""
