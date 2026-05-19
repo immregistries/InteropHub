@@ -58,12 +58,11 @@ public class EsMeetingCommunicationsServlet extends HttpServlet {
                 panelOut.println("            <th>Status</th>");
                 panelOut.println("            <th>Scheduled Send</th>");
                 panelOut.println("            <th>Created At</th>");
-                panelOut.println("            <th>Actions</th>");
                 panelOut.println("          </tr></thead>");
                 panelOut.println("          <tbody>");
 
                 if (communications.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"6\">No communications found.</td></tr>");
+                    panelOut.println("            <tr><td colspan=\"5\">No communications found.</td></tr>");
                 }
 
                 for (EsMeetingCommunication comm : communications) {
@@ -80,15 +79,14 @@ public class EsMeetingCommunicationsServlet extends HttpServlet {
 
                     panelOut.println("            <tr>");
                     panelOut.println(
-                            "              <td><a href=\"" + contextPath + "/es/meeting-communication?meetingId="
+                            "              <td><a href=\"" + contextPath + "/es/agenda?meetingId="
                                     + comm.getEsMeetingId() + "\">" + escapeHtml(meetingName) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(comm.getCommunicationType().name()) + "</td>");
+                    panelOut.println("              <td><a href=\"" + contextPath
+                            + "/es/meeting-communication-preview?id=" + comm.getEsMeetingCommunicationId()
+                            + "\">" + escapeHtml(comm.getCommunicationType().name()) + "</a></td>");
                     panelOut.println("              <td>" + statusBadge + "</td>");
                     panelOut.println("              <td>" + escapeHtml(scheduledAt) + "</td>");
                     panelOut.println("              <td>" + escapeHtml(createdAt) + "</td>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/es/meeting-communication-preview?id=" + comm.getEsMeetingCommunicationId()
-                            + "\">Preview</a></td>");
                     panelOut.println("            </tr>");
                 }
 

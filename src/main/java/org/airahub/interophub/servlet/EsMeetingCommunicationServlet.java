@@ -76,8 +76,12 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println(
                         "        <h2>Communications — " + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/es/meeting-communications\">&larr; All Communications</a></p>");
+                panelOut.println("        <p>"
+                        + "<a href=\"" + contextPath + "/es/agenda?meetingId=" + meetingId
+                        + "\">&larr; Back to Meeting</a>"
+                        + " &nbsp;|&nbsp; "
+                        + "<a href=\"" + contextPath + "/es/meeting-communications\">All Communications</a>"
+                        + "</p>");
 
                 // Existing communications table
                 panelOut.println("        <h3>Existing Communications</h3>");

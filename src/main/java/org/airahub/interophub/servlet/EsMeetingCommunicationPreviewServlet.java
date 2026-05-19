@@ -70,8 +70,13 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
             AdminShellRenderer.render(out, "Communication Preview - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>Communication Preview</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/es/meeting-communication?meetingId="
-                        + comm.getEsMeetingId() + "\">&larr; Back to Meeting Communications</a></p>");
+                panelOut.println("        <p>"
+                        + "<a href=\"" + contextPath + "/es/agenda?meetingId=" + comm.getEsMeetingId()
+                        + "\">&larr; Back to Meeting</a>"
+                        + " &nbsp;|&nbsp; "
+                        + "<a href=\"" + contextPath + "/es/meeting-communication?meetingId=" + comm.getEsMeetingId()
+                        + "\">All Communications for this Meeting</a>"
+                        + "</p>");
 
                 // Summary
                 panelOut.println("        <table class=\"data-table\" style=\"max-width:600px\">");
