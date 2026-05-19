@@ -49,6 +49,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             } catch (NumberFormatException ignored) {
             }
         }
+        String dedupedParam = trimToNull(request.getParameter("deduped"));
+        int dedupedCount = 0;
+        if (dedupedParam != null) {
+            try {
+                dedupedCount = Integer.parseInt(dedupedParam);
+            } catch (NumberFormatException ignored) {
+            }
+        }
 
         // Stat card counts — always totals, never filtered by search
         long countRegistered = userDao.countActiveUsers();
@@ -69,7 +77,7 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             prospects = emailProspectDao.findRecentProspects(DEFAULT_LIMIT);
         }
 
-        renderPage(response, contextPath, search, linkedCount,
+        renderPage(response, contextPath, search, linkedCount, dedupedCount,
                 countRegistered, countActiveLogins, countProspects,
                 registrations, activeLogins, prospects);
     }
@@ -82,14 +90,16 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
         }
         String action = trimToNull(request.getParameter("action"));
         if ("linkAllProspects".equals(action)) {
-            int count = esInterestService.linkAllProspects();
-            response.sendRedirect(request.getContextPath() + "/admin/users?linked=" + count);
+            EsInterestService.LinkResult result = esInterestService.linkAllProspects();
+            response.sendRedirect(request.getContextPath() + "/admin/users?linked=" + result.getUsersProcessed()
+                    + "&deduped=" + result.getDuplicateSubscriptionsRemoved());
         } else {
             response.sendRedirect(request.getContextPath() + "/admin/users");
         }
     }
 
-    private void renderPage(HttpServletResponse response, String contextPath, String search, int linkedCount,
+    private void renderPage(HttpServletResponse response, String contextPath, String search,
+            int linkedCount, int dedupedCount,
             long countRegistered, long countActiveLogins, long countProspects,
             List<User> registrations, List<User> activeLogins,
             List<EmailProspectBrowseRow> prospects) throws IOException {
@@ -121,9 +131,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
 
                 // --- Success banner after link action ---
                 if (linkedCount > 0) {
+                    String bannerMsg = linkedCount + " user" + (linkedCount == 1 ? "" : "s")
+                            + " processed — anonymous records have been linked.";
+                    if (dedupedCount > 0) {
+                        bannerMsg += " " + dedupedCount + " duplicate subscription"
+                                + (dedupedCount == 1 ? "" : "s") + " merged.";
+                    }
                     panelOut.println("        <p class=\"success-banner\"><strong>"
-                            + escapeHtml(linkedCount + " user" + (linkedCount == 1 ? "" : "s")
-                                    + " processed — anonymous records have been linked.")
+                            + escapeHtml(bannerMsg)
                             + "</strong></p>");
                 }
 

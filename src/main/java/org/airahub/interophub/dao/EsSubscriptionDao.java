@@ -616,6 +616,82 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    /**
+     * Returns the IDs of duplicate subscription rows that should be deleted.
+     * For each group of (user_id, subscription_type, es_topic_id) with more than
+     * one row, the "losers" are those for which a strictly-better row exists in
+     * the same group. "Better" means: higher status (CHAMPION > SUBSCRIBED >
+     * UNSUBSCRIBED), then has unsubscribe_token_hash when the other does not,
+     * then lower es_subscription_id (older row wins).
+     *
+     * Only rows with user_id IS NOT NULL are considered.
+     */
+    public List<Long> findDuplicateIdsToDelete() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Object> rows = session.createNativeQuery(
+                    "SELECT s.es_subscription_id"
+                            + " FROM es_subscription s"
+                            + " WHERE s.user_id IS NOT NULL"
+                            + " AND EXISTS ("
+                            + "   SELECT 1 FROM es_subscription better"
+                            + "   WHERE better.user_id = s.user_id"
+                            + "     AND better.subscription_type = s.subscription_type"
+                            + "     AND (better.es_topic_id <=> s.es_topic_id)"
+                            + "     AND better.es_subscription_id <> s.es_subscription_id"
+                            + "     AND ("
+                            + "       FIELD(better.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "         > FIELD(s.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "       OR ("
+                            + "         FIELD(better.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "           = FIELD(s.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "         AND ("
+                            + "           (better.unsubscribe_token_hash IS NOT NULL"
+                            + "              AND s.unsubscribe_token_hash IS NULL)"
+                            + "           OR ("
+                            + "             (better.unsubscribe_token_hash IS NOT NULL)"
+                            + "               = (s.unsubscribe_token_hash IS NOT NULL)"
+                            + "             AND better.es_subscription_id < s.es_subscription_id"
+                            + "           )"
+                            + "         )"
+                            + "       )"
+                            + "     )"
+                            + " )",
+                    Object.class)
+                    .getResultList();
+            List<Long> ids = new java.util.ArrayList<>(rows.size());
+            for (Object o : rows) {
+                ids.add(((Number) o).longValue());
+            }
+            return ids;
+        }
+    }
+
+    /**
+     * Deletes duplicate subscription rows identified by
+     * {@link #findDuplicateIdsToDelete()}.
+     *
+     * @return number of rows deleted
+     */
+    public int deleteDuplicatesByIdList(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return 0;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                int deleted = session.createMutationQuery(
+                        "delete from EsSubscription s where s.esSubscriptionId in :ids")
+                        .setParameterList("ids", ids)
+                        .executeUpdate();
+                tx.commit();
+                return deleted;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
     public static final class ActiveSubscriptionRow {
         private final Long esSubscriptionId;
         private final EsSubscription.SubscriptionType subscriptionType;

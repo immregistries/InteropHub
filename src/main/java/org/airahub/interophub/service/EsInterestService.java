@@ -170,15 +170,59 @@ public class EsInterestService {
 
     /**
      * Bulk backfill: iterates every non-deleted registered user and links their
-     * anonymous records across all tracked tables. Safe to run multiple times
-     * (fully idempotent). Returns the number of users processed.
+     * anonymous records across all tracked tables, then removes duplicate
+     * subscriptions that may have been created or exposed by the link pass.
+     * Safe to run multiple times (fully idempotent).
+     *
+     * @return a {@link LinkResult} with the count of users processed and the
+     *         count of duplicate subscription rows removed.
      */
-    public int linkAllProspects() {
+    public LinkResult linkAllProspects() {
         List<User> users = userDao.findAllNonDeletedWithEmail();
         for (User user : users) {
             linkAnonymousRecordsByEmail(user.getUserId(), user.getEmailNormalized());
         }
-        return users.size();
+        int deduped = mergeAllDuplicateSubscriptions();
+        return new LinkResult(users.size(), deduped);
+    }
+
+    /**
+     * Finds and removes duplicate {@code es_subscription} rows for linked users.
+     * For each group of (user_id, subscription_type, es_topic_id) with more than
+     * one row, the winning row is the one with the highest status
+     * (CHAMPION &gt; SUBSCRIBED &gt; UNSUBSCRIBED), then the one with an
+     * unsubscribe token, then the oldest row. All other rows in the group are
+     * deleted.
+     *
+     * @return the number of duplicate rows removed
+     */
+    public int mergeAllDuplicateSubscriptions() {
+        List<Long> toDelete = subscriptionDao.findDuplicateIdsToDelete();
+        if (toDelete.isEmpty()) {
+            return 0;
+        }
+        return subscriptionDao.deleteDuplicatesByIdList(toDelete);
+    }
+
+    /**
+     * Holds the outcome of a {@link #linkAllProspects()} run.
+     */
+    public static final class LinkResult {
+        private final int usersProcessed;
+        private final int duplicateSubscriptionsRemoved;
+
+        public LinkResult(int usersProcessed, int duplicateSubscriptionsRemoved) {
+            this.usersProcessed = usersProcessed;
+            this.duplicateSubscriptionsRemoved = duplicateSubscriptionsRemoved;
+        }
+
+        public int getUsersProcessed() {
+            return usersProcessed;
+        }
+
+        public int getDuplicateSubscriptionsRemoved() {
+            return duplicateSubscriptionsRemoved;
+        }
     }
 
     // -------------------------------------------------------------------------
