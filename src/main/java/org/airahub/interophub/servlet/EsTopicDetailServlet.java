@@ -22,17 +22,24 @@ import org.airahub.interophub.service.AuthFlowService;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicRelationshipDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicRelationship;
 
 public class EsTopicDetailServlet extends HttpServlet {
 
@@ -49,6 +56,8 @@ public class EsTopicDetailServlet extends HttpServlet {
     private final EsTopicMeetingDao esTopicMeetingDao;
     private final EsMeetingAgendaItemDao agendaItemDao;
     private final EsMeetingDao esMeetingDao;
+    private final EsTopicRelationshipDao relationshipDao;
+    private final EsTopicCurationDao curationDao;
 
     public EsTopicDetailServlet() {
         this.authFlowService = new AuthFlowService();
@@ -62,6 +71,8 @@ public class EsTopicDetailServlet extends HttpServlet {
         this.esTopicMeetingDao = new EsTopicMeetingDao();
         this.agendaItemDao = new EsMeetingAgendaItemDao();
         this.esMeetingDao = new EsMeetingDao();
+        this.relationshipDao = new EsTopicRelationshipDao();
+        this.curationDao = new EsTopicCurationDao();
     }
 
     @Override
@@ -166,9 +177,34 @@ public class EsTopicDetailServlet extends HttpServlet {
         List<EsMeeting> topicAgendaMeetings = List.of();
         List<EsComment> topicComments = List.of();
 
+        // Load relationship and curation data (needed for public display and champion
+        // management)
+        List<EsTopicRelationship> outboundRels = relationshipDao.findByFromTopicId(topicId);
+        List<EsTopicRelationship> inboundRels = relationshipDao.findByToTopicId(topicId);
+        List<EsTopicCuration> curatedEntries = curationDao.findByCuratorTopicId(topicId);
+        List<EsTopicCuration> curatedByEntries = curationDao.findByCuratedTopicId(topicId);
+
+        boolean needsTopicData = !outboundRels.isEmpty() || !inboundRels.isEmpty()
+                || !curatedEntries.isEmpty() || !curatedByEntries.isEmpty() || showChampionView;
+        List<EsTopic> allTopics = List.of();
+        Map<Long, String> topicNameMap = Map.of();
+        if (needsTopicData) {
+            allTopics = esTopicDao.findAllOrderByTopicName();
+            Map<Long, String> nameMap = new HashMap<>();
+            for (EsTopic t : allTopics) {
+                nameMap.put(t.getEsTopicId(), t.getTopicName());
+            }
+            topicNameMap = nameMap;
+        }
+
+        List<String> existingCurationStatuses = List.of();
+
         if (showChampionView) {
             if (topicSubscriptions.isEmpty()) {
                 topicSubscriptions = subscriptionDao.findActiveByTopicId(topicId);
+            }
+            if (!curatedEntries.isEmpty()) {
+                existingCurationStatuses = curationDao.findDistinctCurationStatuses(topicId);
             }
             List<Long> subUserIds = topicSubscriptions.stream()
                     .map(EsSubscription::getUserId)
@@ -267,9 +303,20 @@ public class EsTopicDetailServlet extends HttpServlet {
             // Render the shared detail sheet HTML (no overlay in page mode)
             EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, false);
 
+            // Related topics display (public — visible to all visitors)
+            if (!outboundRels.isEmpty() || !inboundRels.isEmpty()) {
+                renderRelationshipsSection(out, contextPath, outboundRels, inboundRels, topicNameMap);
+            }
+
+            // Curated list display (public — visible to all visitors)
+            if (!curatedEntries.isEmpty() || !curatedByEntries.isEmpty()) {
+                renderCurationSection(out, contextPath, curatedEntries, curatedByEntries, topicNameMap);
+            }
+
             if (showChampionView) {
-                renderChampionSection(out, contextPath, topicSubscriptions, subscriberUsers,
-                        topicMeetingSeries, topicAgendaMeetings, topicComments);
+                renderChampionSection(out, contextPath, topicId, topicSubscriptions, subscriberUsers,
+                        topicMeetingSeries, topicAgendaMeetings, topicComments,
+                        outboundRels, curatedEntries, allTopics, existingCurationStatuses, topicNameMap);
             }
 
             out.println("  </div>");
@@ -360,10 +407,124 @@ public class EsTopicDetailServlet extends HttpServlet {
         return value == null ? "" : value;
     }
 
-    private void renderChampionSection(PrintWriter out, String contextPath,
+    private void renderRelationshipsSection(PrintWriter out, String contextPath,
+            List<EsTopicRelationship> outboundRels, List<EsTopicRelationship> inboundRels,
+            Map<Long, String> topicNameMap) {
+        // Build label → list-of-links map preserving insertion order
+        Map<String, List<String>> grouped = new LinkedHashMap<>();
+        for (EsTopicRelationship rel : outboundRels) {
+            String label = rel.getRelationshipType() != null
+                    ? rel.getRelationshipType().getLabel()
+                    : "related to";
+            String name = topicNameMap.getOrDefault(rel.getToTopicId(), "#" + rel.getToTopicId());
+            grouped.computeIfAbsent(label, k -> new ArrayList<>())
+                    .add("<a href=\"" + contextPath + "/es/topic/" + rel.getToTopicId()
+                            + "\" style=\"color:#0b6fb8;\">" + escapeHtml(name) + "</a>");
+        }
+        for (EsTopicRelationship rel : inboundRels) {
+            String label = rel.getRelationshipType() != null
+                    ? rel.getRelationshipType().getInverseLabel()
+                    : "related to";
+            String name = topicNameMap.getOrDefault(rel.getFromTopicId(), "#" + rel.getFromTopicId());
+            grouped.computeIfAbsent(label, k -> new ArrayList<>())
+                    .add("<a href=\"" + contextPath + "/es/topic/" + rel.getFromTopicId()
+                            + "\" style=\"color:#0b6fb8;\">" + escapeHtml(name) + "</a>");
+        }
+        if (grouped.isEmpty()) {
+            return;
+        }
+        out.println("    <div style=\"margin-top:1.5rem; background:#fff; border:1px solid #d5dde5;"
+                + " border-radius:8px; padding:1.25rem 1.5rem;\">");
+        out.println("      <h2 style=\"font-size:1rem; color:#0b6fb8; margin:0 0 1rem;"
+                + " font-weight:600; letter-spacing:0.01em; border-bottom:1px solid #d5dde5;"
+                + " padding-bottom:0.6rem;\">Related Topics</h2>");
+        for (Map.Entry<String, List<String>> entry : grouped.entrySet()) {
+            out.println("      <p style=\"margin:0.3rem 0; font-size:0.9rem;\">");
+            out.println("        <span style=\"color:#5b6673; font-size:0.82rem;"
+                    + " min-width:10rem; display:inline-block;\">" + escapeHtml(capitalize(entry.getKey()))
+                    + ":</span> ");
+            out.println("        " + String.join(", ", entry.getValue()));
+            out.println("      </p>");
+        }
+        out.println("    </div>");
+    }
+
+    private void renderCurationSection(PrintWriter out, String contextPath,
+            List<EsTopicCuration> curatedEntries, List<EsTopicCuration> curatedByEntries,
+            Map<Long, String> topicNameMap) {
+        String sectionStyle = "margin-top:1.5rem; background:#fff; border:1px solid #d5dde5;"
+                + " border-radius:8px; padding:1.25rem 1.5rem;";
+        String thStyle = "text-align:left; padding:0.45rem 0.75rem; border-bottom:1px solid #d5dde5;"
+                + " background:#eef2f7; font-size:0.82rem; font-weight:600; color:#5b6673;";
+        String cellStyle = "padding:0.4rem 0.75rem; border-bottom:1px solid #eef1f4; font-size:0.87rem;";
+
+        if (!curatedEntries.isEmpty()) {
+            out.println("    <div style=\"" + sectionStyle + "\">");
+            out.println("      <h2 style=\"font-size:1rem; color:#0b6fb8; margin:0 0 1rem;"
+                    + " font-weight:600; letter-spacing:0.01em; border-bottom:1px solid #d5dde5;"
+                    + " padding-bottom:0.6rem;\">Curated Topics</h2>");
+            out.println("      <table style=\"width:100%; border-collapse:collapse;\">");
+            out.println("        <thead><tr>");
+            out.println("          <th style=\"" + thStyle + "\">Topic</th>");
+            out.println("          <th style=\"" + thStyle + "\">Category</th>");
+            out.println("          <th style=\"" + thStyle + "\">Status</th>");
+            out.println("          <th style=\"" + thStyle + "\">Note</th>");
+            out.println("        </tr></thead><tbody>");
+            for (EsTopicCuration entry : curatedEntries) {
+                String canonicalName = topicNameMap.getOrDefault(entry.getCuratedTopicId(),
+                        "#" + entry.getCuratedTopicId());
+                boolean hasAlias = entry.getTopicAlias() != null && !entry.getTopicAlias().isBlank();
+                String displayName = hasAlias ? entry.getTopicAlias() : canonicalName;
+                out.println("        <tr>");
+                out.print("          <td style=\"" + cellStyle + "\">");
+                out.print("<a href=\"" + contextPath + "/es/topic/" + entry.getCuratedTopicId()
+                        + "\" style=\"color:#0b6fb8;\">" + escapeHtml(displayName) + "</a>");
+                if (hasAlias) {
+                    out.print(" <span style=\"color:#5b6673; font-size:0.82rem;\">("
+                            + escapeHtml(canonicalName) + ")</span>");
+                }
+                out.println("</td>");
+                out.println("          <td style=\"" + cellStyle + " color:#5b6673;\">"
+                        + escapeHtml(orEmpty(entry.getCategoryLabel())) + "</td>");
+                out.println("          <td style=\"" + cellStyle + "\">"
+                        + escapeHtml(orEmpty(entry.getCurationStatus())) + "</td>");
+                out.println("          <td style=\"" + cellStyle + " color:#5b6673; white-space:pre-wrap;\">"
+                        + escapeHtml(orEmpty(entry.getEditorialNote())) + "</td>");
+                out.println("        </tr>");
+            }
+            out.println("        </tbody></table>");
+            out.println("    </div>");
+        }
+
+        if (!curatedByEntries.isEmpty()) {
+            out.println("    <div style=\"" + sectionStyle + "\">");
+            out.println("      <h2 style=\"font-size:1rem; color:#0b6fb8; margin:0 0 0.75rem;"
+                    + " font-weight:600; letter-spacing:0.01em; border-bottom:1px solid #d5dde5;"
+                    + " padding-bottom:0.6rem;\">Included In</h2>");
+            out.println(
+                    "      <p style=\"font-size:0.88rem; color:#5b6673; margin:0 0 0.5rem;\">This topic appears in the following curated lists:</p>");
+            out.println("      <ul style=\"margin:0; padding-left:1.25rem;\">");
+            for (EsTopicCuration entry : curatedByEntries) {
+                String curatorName = topicNameMap.getOrDefault(entry.getCuratorTopicId(),
+                        "#" + entry.getCuratorTopicId());
+                out.println("        <li style=\"font-size:0.9rem; margin:0.25rem 0;\"><a href=\""
+                        + contextPath + "/es/topic/" + entry.getCuratorTopicId()
+                        + "\" style=\"color:#0b6fb8;\">" + escapeHtml(curatorName) + "</a></li>");
+            }
+            out.println("      </ul>");
+            out.println("    </div>");
+        }
+    }
+
+    private void renderChampionSection(PrintWriter out, String contextPath, Long topicId,
             List<EsSubscription> subscriptions, Map<Long, User> userMap,
             EsTopicMeeting series, List<EsMeeting> agendaMeetings,
-            List<EsComment> comments) {
+            List<EsComment> comments,
+            List<EsTopicRelationship> outboundRels,
+            List<EsTopicCuration> curatedEntries,
+            List<EsTopic> allTopics,
+            List<String> existingCurationStatuses,
+            Map<Long, String> topicNameMap) {
         String thStyle = "text-align:left; padding:0.45rem 0.75rem; border-bottom:1px solid #d5dde5;"
                 + " background:#eef2f7; font-size:0.82rem; font-weight:600; color:#5b6673;";
         String cellStyle = "padding:0.4rem 0.75rem; border-bottom:1px solid #eef1f4;";
@@ -499,7 +660,216 @@ public class EsTopicDetailServlet extends HttpServlet {
             out.println("          </tbody></table>");
         }
         out.println("      </section>");
+
+        // --- Manage Relationships ---
+        out.println("      <section style=\"margin-bottom:1.5rem; padding-top:0.25rem;\">");
+        out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                + " margin:0 0 0.5rem;\">Manage Relationships</h3>");
+        if (outboundRels.isEmpty()) {
+            out.println(
+                    "        <p style=\"color:#5b6673; font-size:0.88rem; margin:0 0 1rem;\">No outgoing relationships defined yet.</p>");
+        } else {
+            out.println(
+                    "        <table style=\"width:100%; border-collapse:collapse; font-size:0.87rem; margin-bottom:1rem;\">");
+            out.println("          <thead><tr>");
+            out.println("            <th style=\"" + thStyle + "\">Type</th>");
+            out.println("            <th style=\"" + thStyle + "\">Topic</th>");
+            out.println("            <th style=\"" + thStyle + "\"></th>");
+            out.println("          </tr></thead><tbody>");
+            for (EsTopicRelationship rel : outboundRels) {
+                String label = rel.getRelationshipType() != null
+                        ? rel.getRelationshipType().getLabel()
+                        : "related to";
+                String name = topicNameMap.getOrDefault(rel.getToTopicId(), "#" + rel.getToTopicId());
+                out.println("          <tr>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(label) + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\"><a href=\"" + contextPath
+                        + "/es/topic/" + rel.getToTopicId() + "\" style=\"color:#0b6fb8;\">" + escapeHtml(name)
+                        + "</a></td>");
+                out.println("            <td style=\"" + cellStyle + "\">");
+                out.println("              <form method=\"post\" action=\"" + contextPath
+                        + "/es/topics/relationship\" style=\"display:inline;\">");
+                out.println("                <input type=\"hidden\" name=\"action\" value=\"delete\"/>");
+                out.println("                <input type=\"hidden\" name=\"relationshipId\" value=\""
+                        + rel.getEsTopicRelationshipId() + "\"/>");
+                out.println("                <input type=\"hidden\" name=\"fromTopicId\" value=\"" + topicId + "\"/>");
+                out.println("                <button type=\"submit\" style=\"background:none; border:none;"
+                        + " color:#c0392b; cursor:pointer; font-size:0.82rem;\">Remove</button>");
+                out.println("              </form>");
+                out.println("            </td>");
+                out.println("          </tr>");
+            }
+            out.println("          </tbody></table>");
+        }
+        // Add relationship form
+        out.println("        <form method=\"post\" action=\"" + contextPath
+                + "/es/topics/relationship\" style=\"display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end; margin-top:0.25rem;\">");
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"add\"/>");
+        out.println("          <input type=\"hidden\" name=\"fromTopicId\" value=\"" + topicId + "\"/>");
+        out.println("          <div>");
+        out.println("            <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Relationship</label>");
+        out.println("            <select name=\"relationshipType\" style=\"font-size:0.87rem;"
+                + " padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px;\">");
+        for (EsTopicRelationship.RelationshipType type : EsTopicRelationship.RelationshipType.values()) {
+            boolean isDefault = type == EsTopicRelationship.RelationshipType.RELATED_TO;
+            out.println("              <option value=\"" + type.name() + "\""
+                    + (isDefault ? " selected" : "") + ">" + escapeHtml(type.getLabel()) + "</option>");
+        }
+        out.println("            </select>");
+        out.println("          </div>");
+        out.println("          <div>");
+        out.println("            <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Topic</label>");
+        out.println("            <select name=\"toTopicId\" style=\"font-size:0.87rem;"
+                + " padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; max-width:300px;\">");
+        for (EsTopic t : allTopics) {
+            if (!t.getEsTopicId().equals(topicId)) {
+                out.println("              <option value=\"" + t.getEsTopicId() + "\">" + escapeHtml(t.getTopicName())
+                        + "</option>");
+            }
+        }
+        out.println("            </select>");
+        out.println("          </div>");
+        out.println("          <button type=\"submit\" style=\"padding:0.38rem 0.85rem;"
+                + " background:#0b6fb8; color:#fff; border:none; border-radius:4px;"
+                + " font-size:0.87rem; cursor:pointer;\">Add Link</button>");
+        out.println("        </form>");
+        out.println("      </section>");
+
+        // --- Manage Curated List ---
+        out.println("      <section>");
+        out.println("        <h3 style=\"font-size:0.9rem; font-weight:600; color:#0f1720;"
+                + " margin:0 0 0.5rem;\">Manage Curated List</h3>");
+        if (curatedEntries.isEmpty()) {
+            out.println(
+                    "        <p style=\"color:#5b6673; font-size:0.88rem; margin:0 0 1rem;\">No topics in curated list yet.</p>");
+        } else {
+            out.println(
+                    "        <table style=\"width:100%; border-collapse:collapse; font-size:0.87rem; margin-bottom:1rem;\">");
+            out.println("          <thead><tr>");
+            out.println("            <th style=\"" + thStyle + "\">Topic</th>");
+            out.println("            <th style=\"" + thStyle + "\">Alias</th>");
+            out.println("            <th style=\"" + thStyle + "\">Category</th>");
+            out.println("            <th style=\"" + thStyle + "\">Status</th>");
+            out.println("            <th style=\"" + thStyle + "\">Order</th>");
+            out.println("            <th style=\"" + thStyle + "\"></th>");
+            out.println("          </tr></thead><tbody>");
+            for (EsTopicCuration entry : curatedEntries) {
+                String name = topicNameMap.getOrDefault(entry.getCuratedTopicId(), "#" + entry.getCuratedTopicId());
+                out.println("          <tr>");
+                out.println("            <td style=\"" + cellStyle + "\"><a href=\"" + contextPath
+                        + "/es/topic/" + entry.getCuratedTopicId() + "\" style=\"color:#0b6fb8;\">"
+                        + escapeHtml(name) + "</a></td>");
+                out.println("            <td style=\"" + cellStyle + "\">" + escapeHtml(orEmpty(entry.getTopicAlias()))
+                        + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\">"
+                        + escapeHtml(orEmpty(entry.getCategoryLabel())) + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\">"
+                        + escapeHtml(orEmpty(entry.getCurationStatus())) + "</td>");
+                out.println("            <td style=\"" + cellStyle + " text-align:center;\">"
+                        + orEmpty(entry.getDisplayOrder() == null ? null : String.valueOf(entry.getDisplayOrder()))
+                        + "</td>");
+                out.println("            <td style=\"" + cellStyle + "\">");
+                out.println("              <form method=\"post\" action=\"" + contextPath
+                        + "/es/topics/curation\" style=\"display:inline;\">");
+                out.println("                <input type=\"hidden\" name=\"action\" value=\"delete\"/>");
+                out.println("                <input type=\"hidden\" name=\"curationId\" value=\""
+                        + entry.getEsTopicCurationId() + "\"/>");
+                out.println(
+                        "                <input type=\"hidden\" name=\"curatorTopicId\" value=\"" + topicId + "\"/>");
+                out.println("                <button type=\"submit\" style=\"background:none; border:none;"
+                        + " color:#c0392b; cursor:pointer; font-size:0.82rem;\">Remove</button>");
+                out.println("              </form>");
+                out.println("            </td>");
+                out.println("          </tr>");
+            }
+            out.println("          </tbody></table>");
+        }
+        // Add curation entry form (collapsed by default)
+        out.println("        <details style=\"margin-top:0.5rem;\">");
+        out.println("          <summary style=\"font-size:0.87rem; font-weight:600;"
+                + " cursor:pointer; color:#0b6fb8;\">+ Add to curated list</summary>");
+        out.println("          <form method=\"post\" action=\"" + contextPath
+                + "/es/topics/curation\" style=\"margin-top:0.75rem; display:grid; gap:0.6rem;\">");
+        out.println("            <input type=\"hidden\" name=\"action\" value=\"add\"/>");
+        out.println("            <input type=\"hidden\" name=\"curatorTopicId\" value=\"" + topicId + "\"/>");
+        out.println("            <div style=\"display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;\">");
+        // topic select
+        out.println("              <div>");
+        out.println("                <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Topic *</label>");
+        out.println("                <select name=\"curatedTopicId\" style=\"font-size:0.87rem;"
+                + " padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; max-width:300px;\">");
+        for (EsTopic t : allTopics) {
+            if (!t.getEsTopicId().equals(topicId)) {
+                out.println("                  <option value=\"" + t.getEsTopicId() + "\">"
+                        + escapeHtml(t.getTopicName()) + "</option>");
+            }
+        }
+        out.println("                </select>");
+        out.println("              </div>");
+        // alias
+        out.println("              <div>");
+        out.println("                <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Alias</label>");
+        out.println("                <input type=\"text\" name=\"topicAlias\" maxlength=\"140\""
+                + " placeholder=\"Custom display name\""
+                + " style=\"font-size:0.87rem; padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; width:200px;\"/>");
+        out.println("              </div>");
+        // category
+        out.println("              <div>");
+        out.println("                <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Category</label>");
+        out.println("                <input type=\"text\" name=\"categoryLabel\" maxlength=\"80\""
+                + " placeholder=\"e.g. Core\""
+                + " style=\"font-size:0.87rem; padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; width:160px;\"/>");
+        out.println("              </div>");
+        // curation status with datalist
+        out.println("              <div>");
+        out.println("                <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Status</label>");
+        out.println("                <input type=\"text\" name=\"curationStatus\" maxlength=\"80\""
+                + " list=\"curation-status-list\" placeholder=\"e.g. Active\""
+                + " style=\"font-size:0.87rem; padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; width:160px;\"/>");
+        out.println("                <datalist id=\"curation-status-list\">");
+        for (String status : existingCurationStatuses) {
+            out.println("                  <option value=\"" + escapeHtml(status) + "\"/>");
+        }
+        out.println("                </datalist>");
+        out.println("              </div>");
+        // display order
+        out.println("              <div>");
+        out.println("                <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Order</label>");
+        out.println("                <input type=\"number\" name=\"displayOrder\" value=\"0\" min=\"0\""
+                + " style=\"font-size:0.87rem; padding:0.35rem 0.5rem; border:1px solid #d5dde5; border-radius:4px; width:70px;\"/>");
+        out.println("              </div>");
+        out.println("            </div>");
+        // editorial note full-width
+        out.println("            <div>");
+        out.println("              <label style=\"font-size:0.82rem; font-weight:600; color:#5b6673;"
+                + " display:block; margin-bottom:0.25rem;\">Editorial Note</label>");
+        out.println("              <textarea name=\"editorialNote\" rows=\"2\""
+                + " style=\"font-size:0.87rem; padding:0.4rem 0.5rem; border:1px solid #d5dde5;"
+                + " border-radius:4px; width:100%; resize:vertical;\"></textarea>");
+        out.println("            </div>");
+        out.println("            <div>");
+        out.println("              <button type=\"submit\" style=\"padding:0.38rem 0.85rem;"
+                + " background:#0b6fb8; color:#fff; border:none; border-radius:4px;"
+                + " font-size:0.87rem; cursor:pointer;\">Add to Curated List</button>");
+        out.println("            </div>");
+        out.println("          </form>");
+        out.println("        </details>");
+        out.println("      </section>");
         out.println("    </div>");
+    }
+
+    private String capitalize(String s) {
+        if (s == null || s.isEmpty()) {
+            return s;
+        }
+        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
     }
 
     private String escapeHtml(String value) {

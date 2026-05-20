@@ -346,6 +346,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicRelationshipServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicRelationshipServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicCurationServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicCurationServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicMeetingToggleServlet</servlet-class>
   </servlet>
@@ -483,6 +493,16 @@
   <servlet-mapping>
     <servlet-name>EsTopicFollowToggleServlet</servlet-name>
     <url-pattern>/es/topics/follow-toggle</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicRelationshipServlet</servlet-name>
+    <url-pattern>/es/topics/relationship</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicCurationServlet</servlet-name>
+    <url-pattern>/es/topics/curation</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
