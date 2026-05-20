@@ -86,6 +86,17 @@ public class EsTopicDetailServlet extends HttpServlet {
             return;
         }
 
+        // Curator navigation context — set when arriving from a curated-topics table
+        // link
+        Long curatorTopicId = null;
+        String curatorParamStr = request.getParameter("curator");
+        if (curatorParamStr != null && !curatorParamStr.isBlank()) {
+            try {
+                curatorTopicId = Long.parseLong(curatorParamStr.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
         Optional<EsCampaignTopicBrowseRow> topicOpt = esTopicDao.findActiveById(topicId);
         if (topicOpt.isEmpty()) {
             renderNotFound(response, contextPath, topicId);
@@ -185,7 +196,8 @@ public class EsTopicDetailServlet extends HttpServlet {
         List<EsTopicCuration> curatedByEntries = curationDao.findByCuratedTopicId(topicId);
 
         boolean needsTopicData = !outboundRels.isEmpty() || !inboundRels.isEmpty()
-                || !curatedEntries.isEmpty() || !curatedByEntries.isEmpty() || showChampionView;
+                || !curatedEntries.isEmpty() || !curatedByEntries.isEmpty() || showChampionView
+                || curatorTopicId != null;
         List<EsTopic> allTopics = List.of();
         Map<Long, String> topicNameMap = Map.of();
         if (needsTopicData) {
@@ -195,6 +207,31 @@ public class EsTopicDetailServlet extends HttpServlet {
                 nameMap.put(t.getEsTopicId(), t.getTopicName());
             }
             topicNameMap = nameMap;
+        }
+
+        // Build curator nav context if the visitor arrived via a curated-topics link
+        CuratorNavContext curatorNav = null;
+        if (curatorTopicId != null) {
+            List<EsTopicCuration> curatorList = curationDao.findByCuratorTopicId(curatorTopicId);
+            int pos = -1;
+            for (int i = 0; i < curatorList.size(); i++) {
+                if (topicId.equals(curatorList.get(i).getCuratedTopicId())) {
+                    pos = i;
+                    break;
+                }
+            }
+            if (pos >= 0) {
+                String curatorName = topicNameMap.getOrDefault(curatorTopicId, "#" + curatorTopicId);
+                EsTopicCuration currentEntry = curatorList.get(pos);
+                String currentDisplayName = (currentEntry.getTopicAlias() != null
+                        && !currentEntry.getTopicAlias().isBlank())
+                                ? currentEntry.getTopicAlias()
+                                : topicNameMap.getOrDefault(topicId, "#" + topicId);
+                EsTopicCuration prevEntry = pos > 0 ? curatorList.get(pos - 1) : null;
+                EsTopicCuration nextEntry = pos < curatorList.size() - 1 ? curatorList.get(pos + 1) : null;
+                curatorNav = new CuratorNavContext(curatorTopicId, curatorName,
+                        prevEntry, currentDisplayName, nextEntry);
+            }
         }
 
         List<String> existingCurationStatuses = List.of();
@@ -279,6 +316,10 @@ public class EsTopicDetailServlet extends HttpServlet {
             out.println("  <div class=\"estd-shell\">");
             out.println("    <a href=\"" + contextPath + "/es/topics\" class=\"estd-back\">\u2190 All Topics</a>");
 
+            if (curatorNav != null) {
+                renderCuratorNavWidget(out, contextPath, curatorNav, topicNameMap);
+            }
+
             // Hidden article row with all data-* attributes — JS reads these to populate
             // the sheet
             out.println("    <article class=\"es-topic-row\" hidden"
@@ -310,7 +351,7 @@ public class EsTopicDetailServlet extends HttpServlet {
 
             // Curated list display (public — visible to all visitors)
             if (!curatedEntries.isEmpty() || !curatedByEntries.isEmpty()) {
-                renderCurationSection(out, contextPath, curatedEntries, curatedByEntries, topicNameMap);
+                renderCurationSection(out, contextPath, topicId, curatedEntries, curatedByEntries, topicNameMap);
             }
 
             if (showChampionView) {
@@ -449,7 +490,7 @@ public class EsTopicDetailServlet extends HttpServlet {
         out.println("    </div>");
     }
 
-    private void renderCurationSection(PrintWriter out, String contextPath,
+    private void renderCurationSection(PrintWriter out, String contextPath, Long pageTopicId,
             List<EsTopicCuration> curatedEntries, List<EsTopicCuration> curatedByEntries,
             Map<Long, String> topicNameMap) {
         String sectionStyle = "margin-top:1.5rem; background:#fff; border:1px solid #d5dde5;"
@@ -478,6 +519,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                 out.println("        <tr>");
                 out.print("          <td style=\"" + cellStyle + "\">");
                 out.print("<a href=\"" + contextPath + "/es/topic/" + entry.getCuratedTopicId()
+                        + "?curator=" + pageTopicId
                         + "\" style=\"color:#0b6fb8;\">" + escapeHtml(displayName) + "</a>");
                 if (hasAlias) {
                     out.print(" <span style=\"color:#5b6673; font-size:0.82rem;\">("
@@ -513,6 +555,69 @@ public class EsTopicDetailServlet extends HttpServlet {
             }
             out.println("      </ul>");
             out.println("    </div>");
+        }
+    }
+
+    private void renderCuratorNavWidget(PrintWriter out, String contextPath,
+            CuratorNavContext nav, Map<Long, String> topicNameMap) {
+        out.println("    <div style=\"margin-bottom:1rem; background:#eef4fb;"
+                + " border:1px solid #b8d4ee; border-radius:8px; padding:0.65rem 1rem;"
+                + " display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;\">");
+        out.println("      <span style=\"font-size:0.75rem; color:#5b6673; font-weight:600;"
+                + " text-transform:uppercase; letter-spacing:0.04em;"
+                + " white-space:nowrap;\">Curated list:</span>");
+        out.println("      <a href=\"" + contextPath + "/es/topic/" + nav.curatorTopicId + "\""
+                + " style=\"font-size:0.88rem; color:#0b6fb8; font-weight:600;"
+                + " text-decoration:none;\">" + escapeHtml(nav.curatorTopicName) + "</a>");
+        out.println("      <span style=\"color:#c5d0da; margin:0 0.2rem;\">|</span>");
+        if (nav.prevEntry != null) {
+            String prevName = (nav.prevEntry.getTopicAlias() != null
+                    && !nav.prevEntry.getTopicAlias().isBlank())
+                            ? nav.prevEntry.getTopicAlias()
+                            : topicNameMap.getOrDefault(nav.prevEntry.getCuratedTopicId(),
+                                    "#" + nav.prevEntry.getCuratedTopicId());
+            out.println("      <a href=\"" + contextPath + "/es/topic/"
+                    + nav.prevEntry.getCuratedTopicId() + "?curator=" + nav.curatorTopicId
+                    + "\" style=\"font-size:0.87rem; color:#0b6fb8; text-decoration:none;\""
+                    + " title=\"" + escapeHtml(prevName) + "\">\u2190 "
+                    + escapeHtml(prevName) + "</a>");
+        } else {
+            out.println("      <span style=\"font-size:0.87rem; color:#c5d0da;\">\u2190</span>");
+        }
+        out.println("      <span style=\"font-size:0.87rem; font-weight:600; color:#0f1720;"
+                + " padding:0.15rem 0.5rem; background:#dbe9f5; border-radius:4px;\">"
+                + escapeHtml(nav.currentDisplayName) + "</span>");
+        if (nav.nextEntry != null) {
+            String nextName = (nav.nextEntry.getTopicAlias() != null
+                    && !nav.nextEntry.getTopicAlias().isBlank())
+                            ? nav.nextEntry.getTopicAlias()
+                            : topicNameMap.getOrDefault(nav.nextEntry.getCuratedTopicId(),
+                                    "#" + nav.nextEntry.getCuratedTopicId());
+            out.println("      <a href=\"" + contextPath + "/es/topic/"
+                    + nav.nextEntry.getCuratedTopicId() + "?curator=" + nav.curatorTopicId
+                    + "\" style=\"font-size:0.87rem; color:#0b6fb8; text-decoration:none;\""
+                    + " title=\"" + escapeHtml(nextName) + "\">" + escapeHtml(nextName)
+                    + " \u2192</a>");
+        } else {
+            out.println("      <span style=\"font-size:0.87rem; color:#c5d0da;\">\u2192</span>");
+        }
+        out.println("    </div>");
+    }
+
+    private static final class CuratorNavContext {
+        final Long curatorTopicId;
+        final String curatorTopicName;
+        final EsTopicCuration prevEntry;
+        final String currentDisplayName;
+        final EsTopicCuration nextEntry;
+
+        CuratorNavContext(Long curatorTopicId, String curatorTopicName,
+                EsTopicCuration prevEntry, String currentDisplayName, EsTopicCuration nextEntry) {
+            this.curatorTopicId = curatorTopicId;
+            this.curatorTopicName = curatorTopicName;
+            this.prevEntry = prevEntry;
+            this.currentDisplayName = currentDisplayName;
+            this.nextEntry = nextEntry;
         }
     }
 
