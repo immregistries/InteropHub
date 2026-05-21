@@ -974,7 +974,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                         + " display:block; margin-bottom:0.2rem;'>Agenda Cadence (days)</label>"
                                                         + "<input type='number' name='agendaCadenceDays'"
                                                         + " value='"
-                                                        + (entry.getAgendaCadenceDays() == null ? "" : entry.getAgendaCadenceDays())
+                                                        + (entry.getAgendaCadenceDays() == null ? ""
+                                                                        : entry.getAgendaCadenceDays())
                                                         + "'"
                                                         + " min='0' style='font-size:0.87rem; padding:0.3rem 0.5rem; border:1px solid #d5dde5;"
                                                         + " border-radius:4px; width:90px;'/></div>");

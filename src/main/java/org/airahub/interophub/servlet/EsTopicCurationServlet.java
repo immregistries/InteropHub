@@ -171,7 +171,8 @@ public class EsTopicCurationServlet extends HttpServlet {
 
     private Integer parseIntOrZeroToNull(String value) {
         try {
-            if (value == null || value.isBlank()) return null;
+            if (value == null || value.isBlank())
+                return null;
             int v = Integer.parseInt(value.trim());
             return v > 0 ? v : null;
         } catch (NumberFormatException ex) {

@@ -47,7 +47,10 @@ public class EsTopicCuration {
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 
-    /** Number of days within which this topic must appear on an agenda; null = not specified. */
+    /**
+     * Number of days within which this topic must appear on an agenda; null = not
+     * specified.
+     */
     @Column(name = "agenda_cadence_days")
     private Integer agendaCadenceDays;
 
