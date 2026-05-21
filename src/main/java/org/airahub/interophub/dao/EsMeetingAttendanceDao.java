@@ -84,4 +84,19 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
             throw ex;
         }
     }
+
+    public List<EsMeetingAttendance> findByEsMeetingId(Long esMeetingId) {
+        if (esMeetingId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeetingAttendance a"
+                            + " where a.esMeetingId = :meetingId"
+                            + " order by a.firstName, a.lastName",
+                    EsMeetingAttendance.class)
+                    .setParameter("meetingId", esMeetingId)
+                    .getResultList();
+        }
+    }
 }

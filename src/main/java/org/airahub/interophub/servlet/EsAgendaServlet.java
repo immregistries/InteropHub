@@ -47,6 +47,7 @@ import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
+import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 
 public class EsAgendaServlet extends HttpServlet {
@@ -80,6 +81,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
+    private final EsInterestService esInterestService;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -93,6 +95,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
+        this.esInterestService = new EsInterestService();
     }
 
     // =========================================================================
@@ -163,12 +166,55 @@ public class EsAgendaServlet extends HttpServlet {
         EsMeeting nextMeeting = findNextMeeting(meeting);
 
         String savedMsg = request.getParameter("saved") != null ? "Changes saved." : null;
+        if (savedMsg == null && "1".equals(request.getParameter("topicsSaved"))) {
+            savedMsg = "Topic interests saved.";
+        }
         String errorMsg = trimToNull(request.getParameter("err"));
         String suggestBanner = buildSuggestBanner(contextPath, meeting.getEsMeetingId(),
                 trimToNull(request.getParameter("suggest")));
 
+        // Topic interest section — determine attendee email and existing subscriptions.
+        // Read the session attribute (set by EsMeetingAttendanceServlet after check-in)
+        // and remove it immediately to prevent stale state on back-navigation.
+        String lastAttendedEmail = null;
+        {
+            jakarta.servlet.http.HttpSession sess = request.getSession(false);
+            if (sess != null) {
+                lastAttendedEmail = (String) sess.getAttribute("interophub.lastAttendedEmail");
+                sess.removeAttribute("interophub.lastAttendedEmail");
+            }
+        }
+        String attendeeEmailForInterest = user != null ? user.getEmailNormalized() : lastAttendedEmail;
+
+        // Collect agenda topic IDs (linked, non-cancelled) for subscription lookup.
+        List<Long> agendaTopicIds = items.stream()
+                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
+                .map(EsMeetingAgendaItem::getEsTopicId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        Map<Long, EsSubscription> subsByTopicId = new java.util.LinkedHashMap<>();
+        if (attendeeEmailForInterest != null && !agendaTopicIds.isEmpty()) {
+            List<EsSubscription> emailSubs = subscriptionDao.findByEmailNormalizedAndType(
+                    attendeeEmailForInterest, EsSubscription.SubscriptionType.TOPIC);
+            for (EsSubscription sub : emailSubs) {
+                if (sub.getEsTopicId() != null && agendaTopicIds.contains(sub.getEsTopicId())) {
+                    subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
+                }
+            }
+            if (user != null && user.getUserId() != null) {
+                List<EsSubscription> userSubs = subscriptionDao.findByUserId(user.getUserId());
+                for (EsSubscription sub : userSubs) {
+                    if (sub.getEsTopicId() != null && agendaTopicIds.contains(sub.getEsTopicId())) {
+                        subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
+                    }
+                }
+            }
+        }
+
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
-                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch, suggestBanner);
+                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch, suggestBanner,
+                attendeeEmailForInterest, subsByTopicId, agendaTopicIds);
     }
 
     // =========================================================================
@@ -178,6 +224,14 @@ public class EsAgendaServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
+
+        // updateTopicInterest is allowed for anonymous attendees (identified via
+        // hidden attendeeEmail form field set during check-in redirect).
+        String actionEarly = trimToNull(request.getParameter("action"));
+        if ("updateTopicInterest".equals(actionEarly)) {
+            handleUpdateTopicInterest(request, response);
+            return;
+        }
 
         Optional<User> userOpt = requireLogin(request, response);
         if (userOpt.isEmpty()) {
@@ -764,16 +818,22 @@ public class EsAgendaServlet extends HttpServlet {
                     "Invalid meeting status transition: " + current + " → " + targetStatus);
             return;
         }
-        // Finalization requires all non-CANCELLED items to be ACCEPTED
+        // Finalization requires no items still in DRAFT or PROPOSED
         if (targetStatus == MeetingStatus.FINALIZED) {
             boolean blocked = items.stream()
-                    .filter(i -> i.getStatus() != AgendaItemStatus.CANCELLED)
-                    .anyMatch(i -> i.getStatus() != AgendaItemStatus.ACCEPTED);
+                    .anyMatch(i -> i.getStatus() == AgendaItemStatus.DRAFT
+                            || i.getStatus() == AgendaItemStatus.PROPOSED);
             if (blocked) {
                 redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
-                        "This meeting cannot be finalized until all active agenda items are accepted.");
+                        "This meeting cannot be finalized until all draft and proposed agenda items are resolved.");
                 return;
             }
+        }
+        // Completion requires meeting to have already started
+        if (targetStatus == MeetingStatus.COMPLETED && !isMeetingStarted(meeting)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "This meeting cannot be marked complete before it has started.");
+            return;
         }
         applyMeetingStatusTransition(meeting, targetStatus,
                 trimToNull(request.getParameter("cancellationReason")));
@@ -804,6 +864,8 @@ public class EsAgendaServlet extends HttpServlet {
                         || to == MeetingStatus.CANCELLED;
             case FINALIZED:
                 return to == MeetingStatus.COMPLETED || to == MeetingStatus.CANCELLED;
+            case COMPLETED:
+                return to == MeetingStatus.FINALIZED;
             default:
                 return false;
         }
@@ -818,6 +880,8 @@ public class EsAgendaServlet extends HttpServlet {
             case FINALIZED:
                 if (meeting.getStatus() == MeetingStatus.PROPOSED) {
                     meetingDao.finalizeMeeting(meeting.getEsMeetingId());
+                } else if (meeting.getStatus() == MeetingStatus.COMPLETED) {
+                    meetingDao.uncompleteMeeting(meeting.getEsMeetingId());
                 } else {
                     meeting.setStatus(MeetingStatus.FINALIZED);
                     meeting.setFinalizedAt(LocalDateTime.now());
@@ -991,7 +1055,8 @@ public class EsAgendaServlet extends HttpServlet {
         }
         EsAgendaItemPresenter p = presenterDao.findById(presenterId).orElse(null);
         if (p == null || !meeting.getEsMeetingId().equals(
-                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId).orElse(null))) {
+                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId)
+                        .orElse(null))) {
             redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
             return;
         }
@@ -1021,7 +1086,8 @@ public class EsAgendaServlet extends HttpServlet {
         }
         EsAgendaItemPresenter p = presenterDao.findById(presenterId).orElse(null);
         if (p == null || !meeting.getEsMeetingId().equals(
-                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId).orElse(null))) {
+                agendaItemDao.findById(p.getEsMeetingAgendaItemId()).map(EsMeetingAgendaItem::getEsMeetingId)
+                        .orElse(null))) {
             redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
             return;
         }
@@ -1256,7 +1322,8 @@ public class EsAgendaServlet extends HttpServlet {
             case "CANCELLED" -> "Send Cancellation notice to attendees";
             default -> null;
         };
-        if (label == null) return null;
+        if (label == null)
+            return null;
         return "<a href=\"" + link + "\">" + label + "</a>";
     }
 
@@ -1280,7 +1347,9 @@ public class EsAgendaServlet extends HttpServlet {
             Map<Long, User> presenterUsers,
             boolean isEditor, boolean canEdit, boolean editOverride,
             EsMeeting nextMeeting, String savedMsg, String errorMsg,
-            String loginHintMismatch, String suggestBanner) throws IOException {
+            String loginHintMismatch, String suggestBanner,
+            String attendeeEmailForInterest, Map<Long, EsSubscription> subsByTopicId,
+            List<Long> agendaTopicIds) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -1526,8 +1595,9 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("  <div class=\"agenda-msg-success no-print\">" + escapeHtml(savedMsg) + "</div>");
             }
             if (suggestBanner != null) {
-                out.println("  <div class=\"agenda-msg-success no-print\" style=\"background:#cfe2ff;border-color:#9ec5fe\">"
-                        + suggestBanner + "</div>");
+                out.println(
+                        "  <div class=\"agenda-msg-success no-print\" style=\"background:#cfe2ff;border-color:#9ec5fe\">"
+                                + suggestBanner + "</div>");
             }
             if (errorMsg != null) {
                 out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");
@@ -1546,46 +1616,62 @@ public class EsAgendaServlet extends HttpServlet {
             if (!myInvitations.isEmpty()) {
                 out.println("  <div class=\"my-invitations-banner no-print\">");
                 out.println("    <div class=\"my-inv-heading\">&#128203; Your Agenda Items</div>");
-                out.println("    <div class=\"my-inv-subtext\">You have been added as a presenter. Please confirm or decline each item below.</div>");
+                out.println(
+                        "    <div class=\"my-inv-subtext\">You have been added as a presenter. Please confirm or decline each item below.</div>");
                 for (EsAgendaItemPresenter inv : myInvitations) {
                     EsMeetingAgendaItem invItem = itemById.get(inv.getEsMeetingAgendaItemId());
-                    if (invItem == null) continue;
+                    if (invItem == null)
+                        continue;
                     EsTopic invTopic = invItem.getEsTopicId() != null ? topicById.get(invItem.getEsTopicId()) : null;
                     String invTitle = invItem.getTitle() != null ? invItem.getTitle() : "Agenda Item";
-                    String invRoleLabel = titleCase(inv.getPresenterRole() != null ? inv.getPresenterRole().name() : "LEAD");
+                    String invRoleLabel = titleCase(
+                            inv.getPresenterRole() != null ? inv.getPresenterRole().name() : "LEAD");
                     out.println("    <div class=\"my-inv-card\">");
                     out.println("      <div class=\"my-inv-title\">");
                     if (invTopic != null) {
-                        out.println("        <span class=\"my-inv-topic\">" + escapeHtml(invTopic.getTopicName()) + "</span>");
+                        out.println("        <span class=\"my-inv-topic\">" + escapeHtml(invTopic.getTopicName())
+                                + "</span>");
                         out.println("        <span class=\"my-inv-sep\">&rsaquo;</span>");
                     }
                     out.println("        " + escapeHtml(invTitle));
                     out.println("      </div>");
-                    out.println("      <div class=\"my-inv-meta\">Invited as: <strong>" + escapeHtml(invRoleLabel) + "</strong></div>");
+                    out.println("      <div class=\"my-inv-meta\">Invited as: <strong>" + escapeHtml(invRoleLabel)
+                            + "</strong></div>");
                     out.println("      <div class=\"my-inv-actions\">");
                     // Accept form
-                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\" class=\"my-inv-form\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+                    out.println("        <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"my-inv-form\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
                     out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterAccept\">");
-                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\"" + inv.getEsAgendaItemPresenterId() + "\">");
-                    if (editOverride) out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\""
+                            + inv.getEsAgendaItemPresenterId() + "\">");
+                    if (editOverride)
+                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println("          <label class=\"my-inv-role-label\">Role:");
                     out.println("          <select name=\"presenterRole\" class=\"my-inv-role-select\">");
                     for (EsAgendaItemPresenter.PresenterRole r : EsAgendaItemPresenter.PresenterRole.values()) {
                         boolean sel = r == inv.getPresenterRole();
-                        out.println("            <option value=\"" + r.name() + "\"" + (sel ? " selected" : "") + ">" + escapeHtml(titleCase(r.name())) + "</option>");
+                        out.println("            <option value=\"" + r.name() + "\"" + (sel ? " selected" : "") + ">"
+                                + escapeHtml(titleCase(r.name())) + "</option>");
                     }
                     out.println("          </select></label>");
                     out.println("          <button type=\"submit\" class=\"inv-btn-accept\">&#10003; Accept</button>");
                     out.println("        </form>");
                     // Decline form
-                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\" class=\"my-inv-form\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+                    out.println("        <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"my-inv-form\">");
+                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
                     out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterDecline\">");
-                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\"" + inv.getEsAgendaItemPresenterId() + "\">");
-                    if (editOverride) out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("          <input type=\"text\" name=\"responseNote\" placeholder=\"Reason (optional)\" class=\"my-inv-note\">");
-                    out.println("          <button type=\"submit\" class=\"inv-btn-decline\">&#10007; Decline</button>");
+                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\""
+                            + inv.getEsAgendaItemPresenterId() + "\">");
+                    if (editOverride)
+                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println(
+                            "          <input type=\"text\" name=\"responseNote\" placeholder=\"Reason (optional)\" class=\"my-inv-note\">");
+                    out.println(
+                            "          <button type=\"submit\" class=\"inv-btn-decline\">&#10007; Decline</button>");
                     out.println("        </form>");
                     out.println("      </div>");
                     out.println("    </div>");
@@ -1740,8 +1826,10 @@ public class EsAgendaServlet extends HttpServlet {
                     : List.of();
             boolean finalizeBlocked = statusTransitions.contains(MeetingStatus.FINALIZED)
                     && items.stream()
-                            .filter(it -> it.getStatus() != AgendaItemStatus.CANCELLED)
-                            .anyMatch(it -> it.getStatus() != AgendaItemStatus.ACCEPTED);
+                            .anyMatch(it -> it.getStatus() == AgendaItemStatus.DRAFT
+                                    || it.getStatus() == AgendaItemStatus.PROPOSED);
+            boolean completionAllowed = !statusTransitions.contains(MeetingStatus.COMPLETED)
+                    || isMeetingStarted(meeting);
             out.println("    <div class=\"agenda-meta-row no-print\">");
             out.println("      <span class=\"agenda-meta-label\">Status:</span>");
             if (!statusTransitions.isEmpty()) {
@@ -1769,6 +1857,14 @@ public class EsAgendaServlet extends HttpServlet {
                         } else {
                             out.println(
                                     "          <button type=\"submit\" onclick=\"return confirm('Finalize this meeting?')\">Finalize</button>");
+                        }
+                    } else if (ts == MeetingStatus.COMPLETED) {
+                        if (!completionAllowed) {
+                            out.println(
+                                    "          <button type=\"submit\" disabled title=\"Meeting has not started yet\">Complete</button>");
+                        } else {
+                            out.println(
+                                    "          <button type=\"submit\" onclick=\"return confirm('Mark this meeting as complete?')\">Complete</button>");
                         }
                     } else if (ts == MeetingStatus.CANCELLED) {
                         out.println(
@@ -2194,7 +2290,8 @@ public class EsAgendaServlet extends HttpServlet {
                         String roleOptLabel = titleCase(presRole.name());
                         String activeClass = firstRole ? " role-option-active" : "";
                         out.println("                <button type=\"button\" class=\"role-option" + activeClass + "\""
-                                + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name() + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
+                                + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name()
+                                + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
                         firstRole = false;
                     }
                     out.println("              </div>");
@@ -2228,7 +2325,8 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(myFullName) + "\">");
                             if (editOverride)
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                            out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                            out.println(
+                                    "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                             out.println(
                                     "                <button type=\"submit\" class=\"quick-pick-chip quick-pick-self\">"
                                             + escapeHtml(myName) + " (me)</button>");
@@ -2279,7 +2377,8 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(qp.getDisplayName()) + "\">");
                             if (editOverride)
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                            out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                            out.println(
+                                    "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                             out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
                                     + escapeHtml(qpName) + "</button>");
                             out.println("              </form>");
@@ -2327,7 +2426,8 @@ public class EsAgendaServlet extends HttpServlet {
                                         + escapeHtml(ch.getEmail()) + "\">");
                                 if (editOverride)
                                     out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                                out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                                out.println(
+                                        "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                                 out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
                                         + escapeHtml(champName) + "</button>");
                                 out.println("              </form>");
@@ -2351,7 +2451,8 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("                <input type=\"hidden\" name=\"userId\" id=\"" + userHiddenId + "\">");
                     if (editOverride)
                         out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                    out.println(
+                            "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                     out.println("                <input type=\"text\" id=\"" + userSearchId
                             + "\" list=\"pres-user-list\" placeholder=\"Search name or email...\" autocomplete=\"off\" class=\"pres-text-input\" oninput=\"esOnPresUserInput(this.value,'"
                             + userHiddenId + "')\">");
@@ -2371,7 +2472,8 @@ public class EsAgendaServlet extends HttpServlet {
                             + item.getEsMeetingAgendaItemId() + "\">");
                     if (editOverride)
                         out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                    out.println(
+                            "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                     out.println(
                             "                <input type=\"text\" name=\"displayName\" placeholder=\"Name\" class=\"pres-text-input\">");
                     out.println(
@@ -2642,6 +2744,12 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("  </div>"); // prev-items-section
             }
 
+            // --- TOPIC INTEREST SECTION ---
+            if (attendeeEmailForInterest != null && !agendaTopicIds.isEmpty()) {
+                renderTopicInterestSection(out, contextPath, meeting, items, topicById,
+                        agendaTopicIds, subsByTopicId, attendeeEmailForInterest, user);
+            }
+
             out.println("  <div class=\"agenda-footer\">");
             if (nextMeeting != null && nextMeeting.getScheduledStart() != null) {
                 String nextSeriesLabel = seriesName != null ? "Next " + seriesName + " Meeting" : "Next Meeting";
@@ -2731,7 +2839,8 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("  if(!panel) return;");
             out.println("  panel.querySelectorAll('.pres-role-input').forEach(function(inp){inp.value=role;});");
             out.println("  if(btn){var pp=btn.parentElement;if(pp){");
-            out.println("    pp.querySelectorAll('.role-option').forEach(function(b){b.classList.remove('role-option-active');});");
+            out.println(
+                    "    pp.querySelectorAll('.role-option').forEach(function(b){b.classList.remove('role-option-active');});");
             out.println("    btn.classList.add('role-option-active');");
             out.println("  }}");
             out.println("}");
@@ -3011,33 +3120,62 @@ public class EsAgendaServlet extends HttpServlet {
                 "    .prev-copy-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; white-space: nowrap; }");
         out.println("    .prev-copy-btn:hover { background: #dcfce7; }");
         // Role picker in add-presenter panel
-        out.println("    .role-picker-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid #e2e8f0; }");
-        out.println("    .role-picker-label { font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }");
+        out.println(
+                "    .role-picker-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid #e2e8f0; }");
+        out.println(
+                "    .role-picker-label { font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }");
         out.println("    .role-picker-toggle { display: flex; flex-wrap: wrap; gap: 0.2rem; }");
-        out.println("    .role-option { padding: 0.15rem 0.5rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 10px; cursor: pointer; background: #f1f5f9; color: #475569; white-space: nowrap; }");
+        out.println(
+                "    .role-option { padding: 0.15rem 0.5rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 10px; cursor: pointer; background: #f1f5f9; color: #475569; white-space: nowrap; }");
         out.println("    .role-option:hover { background: #e2e8f0; }");
-        out.println("    .role-option-active { background: #0f766e; color: #fff; border-color: #0f766e; font-weight: 600; }");
+        out.println(
+                "    .role-option-active { background: #0f766e; color: #fff; border-color: #0f766e; font-weight: 600; }");
         out.println("    .role-option-active:hover { background: #0d6460; }");
         // Your Agenda Items response banner
-        out.println("    .my-invitations-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1rem; }");
-        out.println("    .my-inv-heading { font-size: 1rem; font-weight: 700; color: #1e40af; margin-bottom: 0.2rem; }");
+        out.println(
+                "    .my-invitations-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1rem; }");
+        out.println(
+                "    .my-inv-heading { font-size: 1rem; font-weight: 700; color: #1e40af; margin-bottom: 0.2rem; }");
         out.println("    .my-inv-subtext { font-size: 0.82rem; color: #3730a3; margin-bottom: 0.7rem; }");
-        out.println("    .my-inv-card { background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }");
+        out.println(
+                "    .my-inv-card { background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }");
         out.println("    .my-inv-card:last-child { margin-bottom: 0; }");
-        out.println("    .my-inv-title { font-weight: 600; font-size: 0.95rem; color: #0f172a; margin-bottom: 0.2rem; }");
+        out.println(
+                "    .my-inv-title { font-weight: 600; font-size: 0.95rem; color: #0f172a; margin-bottom: 0.2rem; }");
         out.println("    .my-inv-topic { font-size: 0.82rem; color: #0f766e; font-weight: 600; }");
         out.println("    .my-inv-sep { color: #94a3b8; margin: 0 0.25rem; }");
         out.println("    .my-inv-meta { font-size: 0.82rem; color: #475569; margin-bottom: 0.5rem; }");
         out.println("    .my-inv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }");
         out.println("    .my-inv-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
-        out.println("    .my-inv-role-label { font-size: 0.82rem; color: #334155; display: flex; align-items: center; gap: 0.3rem; }");
-        out.println("    .my-inv-role-select { font-size: 0.82rem; padding: 0.15rem 0.3rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
-        out.println("    .my-inv-note { font-size: 0.82rem; padding: 0.15rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; min-width: 120px; }");
-        out.println("    .inv-btn-accept { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; font-weight: 600; }");
+        out.println(
+                "    .my-inv-role-label { font-size: 0.82rem; color: #334155; display: flex; align-items: center; gap: 0.3rem; }");
+        out.println(
+                "    .my-inv-role-select { font-size: 0.82rem; padding: 0.15rem 0.3rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
+        out.println(
+                "    .my-inv-note { font-size: 0.82rem; padding: 0.15rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; min-width: 120px; }");
+        out.println(
+                "    .inv-btn-accept { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; font-weight: 600; }");
         out.println("    .inv-btn-accept:hover { background: #bbf7d0; }");
-        out.println("    .inv-btn-decline { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; }");
+        out.println(
+                "    .inv-btn-decline { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; }");
         out.println("    .inv-btn-decline:hover { background: #fecaca; }");
-        out.println("    .agenda-msg-login-hint { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.88rem; color: #92400e; }");
+        out.println(
+                "    .agenda-msg-login-hint { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.88rem; color: #92400e; }");
+        // Topic interest section
+        out.println(
+                "    .es-topic-interest { margin-top: 1.5rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem 1.25rem; }");
+        out.println(
+                "    .es-topic-interest-heading { font-size: 1rem; font-weight: 700; color: #166534; margin: 0 0 0.3rem; }");
+        out.println("    .es-topic-interest-notice { font-size: 0.85rem; color: #166534; margin: 0 0 0.3rem; }");
+        out.println("    .es-topic-interest-desc { font-size: 0.85rem; color: #475569; margin: 0 0 0.6rem; }");
+        out.println("    .es-topic-interest-list { list-style: none; padding: 0; margin: 0 0 0.75rem; }");
+        out.println("    .es-topic-interest-item { padding: 0.2rem 0; }");
+        out.println(
+                "    .es-topic-interest-label { font-size: 0.9rem; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }");
+        out.println("    .es-champion-badge { font-size: 0.75rem; color: #7c3aed; font-weight: 600; }");
+        out.println(
+                "    .es-topic-interest-save { padding: 0.35rem 1rem; font-size: 0.88rem; background: #16a34a; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; }");
+        out.println("    .es-topic-interest-save:hover { background: #15803d; }");
     }
 
     // =========================================================================
@@ -3153,9 +3291,25 @@ public class EsAgendaServlet extends HttpServlet {
                 return List.of(MeetingStatus.FINALIZED, MeetingStatus.COMPLETED, MeetingStatus.CANCELLED);
             case FINALIZED:
                 return List.of(MeetingStatus.COMPLETED, MeetingStatus.CANCELLED);
+            case COMPLETED:
+                return List.of(MeetingStatus.FINALIZED);
             default:
                 return List.of();
         }
+    }
+
+    private boolean isMeetingStarted(EsMeeting meeting) {
+        LocalDateTime start = meeting.getScheduledStart();
+        String tzId = meeting.getTimezoneId();
+        if (tzId != null) {
+            try {
+                ZoneId zone = ZoneId.of(tzId);
+                return !ZonedDateTime.now(zone).isBefore(start.atZone(zone));
+            } catch (Exception ex) {
+                // fall through to raw comparison
+            }
+        }
+        return !LocalDateTime.now().isBefore(start);
     }
 
     private static Long parseId(String value) {
@@ -3189,4 +3343,191 @@ public class EsAgendaServlet extends HttpServlet {
     private static String orEmpty(String value) {
         return value != null ? value : "";
     }
+
+    // =========================================================================
+    // Topic interest helpers
+    // =========================================================================
+
+    /**
+     * Handles POST action=updateTopicInterest.
+     * Allowed for both authenticated users and anonymous attendees (identified
+     * by a hidden attendeeEmail form field echoed from the topic interest form).
+     */
+    private void handleUpdateTopicInterest(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+        String contextPath = request.getContextPath();
+        Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
+        if (meetingId == null) {
+            response.sendRedirect(contextPath + "/es/agenda");
+            return;
+        }
+
+        // Determine the attendee's normalized email.
+        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
+        String emailNormalized;
+        if (userOpt.isPresent()) {
+            emailNormalized = userOpt.get().getEmailNormalized();
+        } else {
+            emailNormalized = trimToNull(request.getParameter("attendeeEmail"));
+            if (emailNormalized == null) {
+                response.sendRedirect(contextPath + "/es/agenda?meetingId=" + meetingId);
+                return;
+            }
+        }
+
+        // Collect topic IDs that were shown to the user (hidden topicInterestAll
+        // fields).
+        String[] allIds = request.getParameterValues("topicInterestAll");
+        Set<Long> allShownTopicIds = new HashSet<>();
+        if (allIds != null) {
+            for (String id : allIds) {
+                Long tid = parseId(id);
+                if (tid != null) {
+                    allShownTopicIds.add(tid);
+                }
+            }
+        }
+
+        // Collect the topic IDs the user checked.
+        String[] checkedIds = request.getParameterValues("topicInterest");
+        Set<Long> checkedTopicIds = new HashSet<>();
+        if (checkedIds != null) {
+            for (String id : checkedIds) {
+                Long tid = parseId(id);
+                if (tid != null) {
+                    checkedTopicIds.add(tid);
+                }
+            }
+        }
+
+        if (!allShownTopicIds.isEmpty()) {
+            // Load existing TOPIC subscriptions for this email.
+            List<EsSubscription> existingSubs = subscriptionDao.findByEmailNormalizedAndType(
+                    emailNormalized, EsSubscription.SubscriptionType.TOPIC);
+            Map<Long, EsSubscription> existingByTopic = new java.util.LinkedHashMap<>();
+            for (EsSubscription sub : existingSubs) {
+                if (sub.getEsTopicId() != null && allShownTopicIds.contains(sub.getEsTopicId())) {
+                    existingByTopic.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
+                }
+            }
+
+            for (Long topicId : allShownTopicIds) {
+                EsSubscription existing = existingByTopic.get(topicId);
+                // Never touch CHAMPION subscriptions.
+                if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+                    continue;
+                }
+                boolean checked = checkedTopicIds.contains(topicId);
+                if (checked) {
+                    EsSubscription newSub = new EsSubscription();
+                    newSub.setEmail(emailNormalized);
+                    newSub.setEmailNormalized(emailNormalized);
+                    newSub.setSubscriptionType(EsSubscription.SubscriptionType.TOPIC);
+                    newSub.setEsTopicId(topicId);
+                    newSub.setStatus(EsSubscription.SubscriptionStatus.SUBSCRIBED);
+                    if (userOpt.isPresent()) {
+                        newSub.setUserId(userOpt.get().getUserId());
+                    }
+                    esInterestService.subscribeOrUpdate(newSub);
+                } else if (existing != null
+                        && existing.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
+                    subscriptionDao.setTopicSubscriptionStatus(
+                            existing.getEsSubscriptionId(),
+                            EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
+                            LocalDateTime.now());
+                }
+            }
+        }
+
+        // Clear the attended-email session attribute now that the form has been
+        // processed.
+        jakarta.servlet.http.HttpSession sess = request.getSession(false);
+        if (sess != null) {
+            sess.removeAttribute("interophub.lastAttendedEmail");
+        }
+
+        response.sendRedirect(contextPath + "/es/agenda?meetingId=" + meetingId + "&topicsSaved=1");
+    }
+
+    /**
+     * Renders the "Topics of Interest" section onto the agenda page.
+     * Shown to any visitor who either has a session-linked email (anonymous
+     * attendee)
+     * or is authenticated.
+     */
+    private void renderTopicInterestSection(PrintWriter out, String contextPath, EsMeeting meeting,
+            List<EsMeetingAgendaItem> items, Map<Long, EsTopic> topicById,
+            List<Long> agendaTopicIds, Map<Long, EsSubscription> subsByTopicId,
+            String attendeeEmail, User user) {
+        // Collect items that are topic-linked and not cancelled, preserving agenda
+        // order.
+        List<EsMeetingAgendaItem> topicItems = items.stream()
+                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
+                .collect(Collectors.toList());
+        if (topicItems.isEmpty()) {
+            return;
+        }
+
+        out.println("  <div class=\"es-topic-interest no-print\">");
+        out.println("    <h2 class=\"es-topic-interest-heading\">Topics of Interest</h2>");
+        if (user == null) {
+            out.println("    <p class=\"es-topic-interest-notice\">You're registered as <strong>"
+                    + escapeHtml(attendeeEmail) + "</strong>.</p>");
+        }
+        out.println("    <p class=\"es-topic-interest-desc\">Check the topics you'd like to follow:</p>");
+        out.println("    <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+        out.println("      <input type=\"hidden\" name=\"action\" value=\"updateTopicInterest\">");
+        out.println("      <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
+        if (user == null) {
+            out.println("      <input type=\"hidden\" name=\"attendeeEmail\" value=\""
+                    + escapeHtml(attendeeEmail) + "\">");
+        }
+        out.println("      <ul class=\"es-topic-interest-list\">");
+        for (EsMeetingAgendaItem item : topicItems) {
+            Long topicId = item.getEsTopicId();
+            EsTopic topic = topicById.get(topicId);
+            if (topic == null) {
+                continue;
+            }
+            EsSubscription sub = subsByTopicId.get(topicId);
+            boolean isChampion = sub != null && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
+            boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
+                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
+            out.println("        <li class=\"es-topic-interest-item\">");
+            // Hidden field to track which topics were shown (needed for unsubscribe logic).
+            out.println("          <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
+            out.println("          <label class=\"es-topic-interest-label\">");
+            out.print("            <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
+                    + (isChecked ? " checked" : "") + "> ");
+            out.print(escapeHtml(topic.getTopicName()));
+            if (isChampion) {
+                out.print(" <span class=\"es-champion-badge\">(champion)</span>");
+            }
+            out.println();
+            out.println("          </label>");
+            out.println("        </li>");
+        }
+        out.println("      </ul>");
+        out.println("      <button type=\"submit\" class=\"es-topic-interest-save\">Save Topic Interests</button>");
+        out.println("    </form>");
+        out.println("  </div>");
+    }
+
+    /**
+     * Merge helper: returns the subscription with higher status rank.
+     * Priority: CHAMPION > SUBSCRIBED > others.
+     */
+    private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {
+        if (a.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+            return a;
+        }
+        if (b.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+            return b;
+        }
+        if (a.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
+            return a;
+        }
+        return b;
+    }
+
 }

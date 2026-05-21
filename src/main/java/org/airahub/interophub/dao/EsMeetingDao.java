@@ -179,6 +179,38 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Reverts a completed meeting back to FINALIZED status, clearing completedAt.
+     * Preserves the original finalizedAt timestamp.
+     *
+     * @return number of rows updated (0 or 1)
+     */
+    public int uncompleteMeeting(Long esMeetingId) {
+        if (esMeetingId == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update EsMeeting m set m.status = :status"
+                            + ", m.completedAt = null"
+                            + " where m.esMeetingId = :id"
+                            + " and m.status = :completed")
+                    .setParameter("status", EsMeeting.MeetingStatus.FINALIZED)
+                    .setParameter("id", esMeetingId)
+                    .setParameter("completed", EsMeeting.MeetingStatus.COMPLETED)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
+    /**
      * Returns all meetings for a given es_topic_meeting, ordered by scheduledStart
      * ascending.
      */

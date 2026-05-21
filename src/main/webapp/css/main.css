@@ -1347,6 +1347,48 @@ a.doc-card {
   flex-shrink: 0;
 }
 
+/* Topics of interest section inside attendance form */
+.attend-topic-interest {
+  margin-top: 0.75rem;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.attend-topic-interest-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #166534;
+}
+
+.attend-topic-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.attend-topic-item {
+  padding: 0.2rem 0;
+}
+
+.attend-topic-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: #1e293b;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.attend-champion-badge {
+  font-size: 0.75rem;
+  color: #7c3aed;
+  font-weight: 600;
+}
+
 .attend-hope-textarea {
   width: 100%;
   padding: 0.75rem 0.85rem;

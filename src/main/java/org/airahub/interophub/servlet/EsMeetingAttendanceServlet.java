@@ -31,6 +31,16 @@ import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
+import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.service.EsInterestService;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
+import java.util.stream.Collectors;
 
 public class EsMeetingAttendanceServlet extends HttpServlet {
 
@@ -40,6 +50,9 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     private final EsTopicMeetingDao topicMeetingDao;
     private final EsMeetingDao meetingDao;
     private final EsMeetingAttendanceDao attendanceDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
+    private final EsSubscriptionDao subscriptionDao;
+    private final EsInterestService esInterestService;
     private final AuthFlowService authFlowService;
     private final AuthService authService;
     private final EmailService emailService;
@@ -50,6 +63,9 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.meetingDao = new EsMeetingDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
+        this.subscriptionDao = new EsSubscriptionDao();
+        this.esInterestService = new EsInterestService();
         this.authFlowService = new AuthFlowService();
         this.authService = new AuthService();
         this.emailService = new EmailService();
@@ -58,13 +74,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        String topicCode = parseTopicCode(request);
-        if (topicCode == null) {
+        ParsedPath parsed = parseTopicCode(request);
+        if (parsed == null) {
             renderNotFound(response, request.getContextPath(), "Meeting link is incomplete.");
             return;
         }
 
-        MeetingResolution resolution = resolveMeeting(topicCode);
+        MeetingResolution resolution = resolveMeeting(parsed);
         if (!resolution.valid()) {
             renderNotFound(response, request.getContextPath(), resolution.errorMessage());
             return;
@@ -74,27 +90,38 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         boolean submitted = "1".equals(request.getParameter("submitted"));
         boolean anonymousMode = "1".equals(request.getParameter("anon"));
 
+        String emailForSubs = authenticatedUser.map(User::getEmailNormalized).orElse(null);
+        Long userIdForSubs = authenticatedUser.map(User::getUserId).orElse(null);
+        TopicInterestData topicData = loadTopicInterestData(resolution, emailForSubs, userIdForSubs);
+
         renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
-                anonymousMode, null, null, null, null, null, false, submitted);
+                anonymousMode, null, null, null, null, null, false, topicData, submitted);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
 
-        String topicCode = parseTopicCode(request);
-        if (topicCode == null) {
+        ParsedPath parsed = parseTopicCode(request);
+        if (parsed == null) {
             renderNotFound(response, request.getContextPath(), "Meeting link is incomplete.");
             return;
         }
 
-        MeetingResolution resolution = resolveMeeting(topicCode);
+        MeetingResolution resolution = resolveMeeting(parsed);
         if (!resolution.valid()) {
             renderNotFound(response, request.getContextPath(), resolution.errorMessage());
             return;
         }
 
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+
+        // Pre-compute topic data for form re-renders (best-effort email for
+        // pre-checking boxes)
+        String previewEmail = authenticatedUser.map(User::getEmailNormalized)
+                .orElse(EsNormalizer.normalizeEmail(trimToNull(request.getParameter("email"))));
+        Long previewUserId = authenticatedUser.map(User::getUserId).orElse(null);
+        TopicInterestData topicData = loadTopicInterestData(resolution, previewEmail, previewUserId);
 
         // Determine whether the user is submitting in "anonymous" mode
         // (either not logged in, or clicked "register under different info")
@@ -109,7 +136,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                     trimToNull(request.getParameter("lastName")),
                     trimToNull(request.getParameter("email")),
                     trimToNull(request.getParameter("organization")),
-                    false, false);
+                    false, topicData, false);
             return;
         }
 
@@ -146,13 +173,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (firstName == null || firstName.isBlank()) {
             renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "First name is required.",
-                    firstName, lastName, email, organization, false, false);
+                    firstName, lastName, email, organization, false, topicData, false);
             return;
         }
         if (anonymousMode && (email == null || email.isBlank())) {
             renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "Email address is required.",
-                    firstName, lastName, email, organization, false, false);
+                    firstName, lastName, email, organization, false, topicData, false);
             return;
         }
 
@@ -163,7 +190,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (emailNormalized == null) {
             renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "A valid email address is required.",
-                    firstName, lastName, email, organization, false, false);
+                    firstName, lastName, email, organization, false, topicData, false);
             return;
         }
 
@@ -201,13 +228,25 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             record.setHopeText(hopeText);
         }
 
+        // Link to the explicit meeting (if provided via
+        // /attend/{topicCode}/{meetingKey})
+        // or to today's auto-detected meeting (if any).
+        Long esTopicMeetingId = resolution.meeting().getEsTopicMeetingId();
+        Optional<EsMeeting> resolvedMeeting;
+        if (resolution.explicitMeeting() != null) {
+            resolvedMeeting = Optional.of(resolution.explicitMeeting());
+        } else {
+            resolvedMeeting = findTodaysMeeting(esTopicMeetingId);
+        }
+        resolvedMeeting.ifPresent(m -> record.setEsMeetingId(m.getEsMeetingId()));
+
         try {
             attendanceDao.saveOrUpdate(record);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to save meeting attendance", ex);
             renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "Could not save your attendance. Please try again.",
-                    firstName, lastName, email, organization, false, false);
+                    firstName, lastName, email, organization, false, topicData, false);
             return;
         }
 
@@ -216,8 +255,14 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                     resolution.topic().getTopicCode());
         }
 
-        String agendaUrl = pickAgendaUrl(request.getContextPath(),
-                resolution.meeting().getEsTopicMeetingId());
+        // Process topic interest subscriptions from the attendance form.
+        processTopicInterest(request, emailNormalized, userId, topicData);
+
+        // Store normalized email in session so the agenda page can show the
+        // topic-interest section for this anonymous (or authenticated) attendee.
+        request.getSession().setAttribute("interophub.lastAttendedEmail", emailNormalized);
+
+        String agendaUrl = buildAgendaUrl(request.getContextPath(), resolvedMeeting, esTopicMeetingId);
         response.sendRedirect(agendaUrl);
     }
 
@@ -226,18 +271,17 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     // -------------------------------------------------------------------------
 
     /**
-     * Picks the best EsMeeting agenda URL for the given series (esTopicMeetingId)
-     * based on today's date and current time.
+     * Finds today's best matching EsMeeting for the given series
+     * (esTopicMeetingId).
      * Priority:
-     * 1. Meetings on today's date (by scheduledStart date)
-     * 2. If only one today → use it
-     * 3. If multiple today → prefer one where now is between start and end
-     * 4. Otherwise → pick the one with scheduledStart closest to now (absolute)
-     * Falls back to the series list page if no today meetings exist.
+     * 1. Only one meeting today → return it
+     * 2. Multiple today → prefer one where now is between start and end
+     * 3. Otherwise → pick the one with scheduledStart closest to now (absolute)
+     * Returns empty if no today meetings exist.
      */
-    private String pickAgendaUrl(String contextPath, Long esTopicMeetingId) {
+    private Optional<EsMeeting> findTodaysMeeting(Long esTopicMeetingId) {
         if (esTopicMeetingId == null) {
-            return contextPath + "/es/topics";
+            return Optional.empty();
         }
         LocalDateTime now = LocalDateTime.now();
         LocalDate today = now.toLocalDate();
@@ -248,10 +292,10 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                         && m.getStatus() != EsMeeting.MeetingStatus.CANCELLED)
                 .toList();
         if (todayMeetings.isEmpty()) {
-            return contextPath + "/es/meetings?seriesId=" + esTopicMeetingId;
+            return Optional.empty();
         }
         if (todayMeetings.size() == 1) {
-            return contextPath + "/es/agenda?meetingId=" + todayMeetings.get(0).getEsMeetingId();
+            return Optional.of(todayMeetings.get(0));
         }
         // Multiple today: prefer one where now is between start and end
         Optional<EsMeeting> inProgress = todayMeetings.stream()
@@ -259,15 +303,27 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                         && (m.getScheduledEnd() == null || m.getScheduledEnd().isAfter(now)))
                 .findFirst();
         if (inProgress.isPresent()) {
-            return contextPath + "/es/agenda?meetingId=" + inProgress.get().getEsMeetingId();
+            return inProgress;
         }
         // Closest by absolute difference of scheduledStart to now
-        EsMeeting closest = todayMeetings.stream()
+        return todayMeetings.stream()
                 .filter(m -> m.getScheduledStart() != null)
                 .min(Comparator.comparingLong(m -> Math.abs(
-                        java.time.Duration.between(m.getScheduledStart(), now).toMinutes())))
-                .orElse(todayMeetings.get(0));
-        return contextPath + "/es/agenda?meetingId=" + closest.getEsMeetingId();
+                        java.time.Duration.between(m.getScheduledStart(), now).toMinutes())));
+    }
+
+    /**
+     * Builds the agenda redirect URL given a resolved meeting (or empty) and
+     * the series ID as a fallback.
+     */
+    private String buildAgendaUrl(String contextPath, Optional<EsMeeting> meeting, Long esTopicMeetingId) {
+        if (meeting.isPresent()) {
+            return contextPath + "/es/agenda?meetingId=" + meeting.get().getEsMeetingId();
+        }
+        if (esTopicMeetingId != null) {
+            return contextPath + "/es/meetings?seriesId=" + esTopicMeetingId;
+        }
+        return contextPath + "/es/topics";
     }
 
     // -------------------------------------------------------------------------
@@ -312,7 +368,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     private void renderPage(HttpServletResponse response, String contextPath, MeetingResolution resolution,
             User authenticatedUser, boolean anonymousMode, String errorMessage,
             String firstName, String lastName, String email, String organization,
-            boolean generalUpdatesOptIn, boolean submitted) throws IOException {
+            boolean generalUpdatesOptIn, TopicInterestData topicData, boolean submitted) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String topicCodeEncoded = URLEncoder.encode(resolution.topic().getTopicCode(), StandardCharsets.UTF_8);
@@ -426,6 +482,9 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             out.println("        </label>");
             out.println("      </div>");
 
+            // Topics of interest (if agenda is known for this meeting)
+            renderTopicInterestFields(out, topicData);
+
             // Hope text (optional)
             out.println(
                     "      <label for=\"hopeText\">What are you hoping to get out of the meeting today? (optional)</label>");
@@ -528,20 +587,34 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     // Path + resolution helpers
     // -------------------------------------------------------------------------
 
-    private String parseTopicCode(HttpServletRequest request) {
+    /**
+     * Parses the path info into a (topicCode, optional meetingKey) pair.
+     * Accepts:
+     * /topicCode → ParsedPath(topicCode, null)
+     * /topicCode/meetingKey → ParsedPath(topicCode, meetingKey)
+     * Returns null for any other format (missing, empty, 3+ segments).
+     */
+    private ParsedPath parseTopicCode(HttpServletRequest request) {
         String pathInfo = request.getPathInfo();
         if (pathInfo == null || pathInfo.isBlank() || !pathInfo.startsWith("/")) {
             return null;
         }
         String trimmed = pathInfo.substring(1);
-        if (trimmed.contains("/")) {
-            return null;
+        String[] parts = trimmed.split("/", -1);
+        if (parts.length == 1) {
+            String topicCode = trimToNull(parts[0]);
+            return topicCode != null ? new ParsedPath(topicCode, null) : null;
         }
-        return trimToNull(trimmed);
+        if (parts.length == 2) {
+            String topicCode = trimToNull(parts[0]);
+            String meetingKey = trimToNull(parts[1]);
+            return (topicCode != null && meetingKey != null) ? new ParsedPath(topicCode, meetingKey) : null;
+        }
+        return null;
     }
 
-    private MeetingResolution resolveMeeting(String topicCode) {
-        Optional<EsTopic> topicOpt = topicDao.findByTopicCode(topicCode);
+    private MeetingResolution resolveMeeting(ParsedPath parsed) {
+        Optional<EsTopic> topicOpt = topicDao.findByTopicCode(parsed.topicCode());
         if (topicOpt.isEmpty()) {
             return MeetingResolution.invalid("No meeting was found for this link.");
         }
@@ -551,20 +624,37 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (meetingOpt.isEmpty()) {
             return MeetingResolution.invalid("No active meeting is configured for this topic.");
         }
-        return MeetingResolution.valid(topic, meetingOpt.get());
+        EsTopicMeeting topicMeeting = meetingOpt.get();
+        if (parsed.meetingKey() == null) {
+            return MeetingResolution.valid(topic, topicMeeting, null);
+        }
+        // Explicit meeting key: validate the meeting belongs to this series.
+        Optional<EsMeeting> explicitOpt = meetingDao.findByMeetingKey(parsed.meetingKey());
+        if (explicitOpt.isEmpty()) {
+            return MeetingResolution.invalid("The meeting link is not valid.");
+        }
+        EsMeeting explicit = explicitOpt.get();
+        if (!topicMeeting.getEsTopicMeetingId().equals(explicit.getEsTopicMeetingId())) {
+            return MeetingResolution.invalid("The meeting link is not valid for this topic.");
+        }
+        return MeetingResolution.valid(topic, topicMeeting, explicit);
     }
 
     // -------------------------------------------------------------------------
     // Small utility records
     // -------------------------------------------------------------------------
 
-    private record MeetingResolution(boolean valid, EsTopic topic, EsTopicMeeting meeting, String errorMessage) {
-        static MeetingResolution valid(EsTopic topic, EsTopicMeeting meeting) {
-            return new MeetingResolution(true, topic, meeting, null);
+    private record ParsedPath(String topicCode, String meetingKey) {
+    }
+
+    private record MeetingResolution(boolean valid, EsTopic topic, EsTopicMeeting meeting,
+            EsMeeting explicitMeeting, String errorMessage) {
+        static MeetingResolution valid(EsTopic topic, EsTopicMeeting meeting, EsMeeting explicitMeeting) {
+            return new MeetingResolution(true, topic, meeting, explicitMeeting, null);
         }
 
         static MeetingResolution invalid(String message) {
-            return new MeetingResolution(false, null, null, message);
+            return new MeetingResolution(false, null, null, null, message);
         }
     }
 
@@ -594,5 +684,206 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    // -------------------------------------------------------------------------
+    // Topic interest helpers
+    // -------------------------------------------------------------------------
+
+    private TopicInterestData loadTopicInterestData(MeetingResolution resolution,
+            String emailNormalized, Long userId) {
+        Long esTopicMeetingId = resolution.meeting().getEsTopicMeetingId();
+        EsMeeting meeting;
+        if (resolution.explicitMeeting() != null) {
+            meeting = resolution.explicitMeeting();
+        } else {
+            Optional<EsMeeting> today = findTodaysMeeting(esTopicMeetingId);
+            if (today.isEmpty()) {
+                return TopicInterestData.empty();
+            }
+            meeting = today.get();
+        }
+
+        List<EsMeetingAgendaItem> allItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId());
+        List<EsMeetingAgendaItem> agendaItems = allItems.stream()
+                .filter(i -> i.getEsTopicId() != null
+                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED)
+                .collect(Collectors.toList());
+
+        if (agendaItems.isEmpty()) {
+            return new TopicInterestData(meeting, List.of(), Map.of(), Map.of());
+        }
+
+        Map<Long, EsTopic> topicById = new LinkedHashMap<>();
+        for (EsMeetingAgendaItem item : agendaItems) {
+            topicDao.findById(item.getEsTopicId()).ifPresent(t -> topicById.put(t.getEsTopicId(), t));
+        }
+
+        Map<Long, EsSubscription> subsByTopicId = new LinkedHashMap<>();
+        if (emailNormalized != null) {
+            List<EsSubscription> emailSubs = subscriptionDao.findByEmailNormalizedAndType(
+                    emailNormalized, EsSubscription.SubscriptionType.TOPIC);
+            for (EsSubscription sub : emailSubs) {
+                if (sub.getEsTopicId() != null && topicById.containsKey(sub.getEsTopicId())) {
+                    subsByTopicId.merge(sub.getEsTopicId(), sub,
+                            EsMeetingAttendanceServlet::preferHigherRankSub);
+                }
+            }
+            if (userId != null) {
+                List<EsSubscription> userSubs = subscriptionDao.findByUserIdAndType(
+                        userId, EsSubscription.SubscriptionType.TOPIC);
+                for (EsSubscription sub : userSubs) {
+                    if (sub.getEsTopicId() != null && topicById.containsKey(sub.getEsTopicId())) {
+                        subsByTopicId.merge(sub.getEsTopicId(), sub,
+                                EsMeetingAttendanceServlet::preferHigherRankSub);
+                    }
+                }
+            }
+        }
+
+        return new TopicInterestData(meeting, agendaItems, topicById, subsByTopicId);
+    }
+
+    private void processTopicInterest(HttpServletRequest request,
+            String emailNormalized, Long userId, TopicInterestData topicData) {
+        if (topicData == null || topicData.agendaItems().isEmpty()) {
+            return;
+        }
+        String[] allIds = request.getParameterValues("topicInterestAll");
+        if (allIds == null || allIds.length == 0) {
+            return;
+        }
+        Set<Long> allShownTopicIds = new HashSet<>();
+        for (String id : allIds) {
+            Long tid = parseId(id);
+            if (tid != null)
+                allShownTopicIds.add(tid);
+        }
+        Set<Long> checkedTopicIds = new HashSet<>();
+        String[] checkedIds = request.getParameterValues("topicInterest");
+        if (checkedIds != null) {
+            for (String id : checkedIds) {
+                Long tid = parseId(id);
+                if (tid != null)
+                    checkedTopicIds.add(tid);
+            }
+        }
+
+        // Reload existing subs using the real (post-normalization) email
+        Map<Long, EsSubscription> existingByTopic = new LinkedHashMap<>();
+        List<EsSubscription> existingSubs = subscriptionDao.findByEmailNormalizedAndType(
+                emailNormalized, EsSubscription.SubscriptionType.TOPIC);
+        for (EsSubscription sub : existingSubs) {
+            if (sub.getEsTopicId() != null && allShownTopicIds.contains(sub.getEsTopicId())) {
+                existingByTopic.merge(sub.getEsTopicId(), sub,
+                        EsMeetingAttendanceServlet::preferHigherRankSub);
+            }
+        }
+        if (userId != null) {
+            List<EsSubscription> userSubs = subscriptionDao.findByUserIdAndType(
+                    userId, EsSubscription.SubscriptionType.TOPIC);
+            for (EsSubscription sub : userSubs) {
+                if (sub.getEsTopicId() != null && allShownTopicIds.contains(sub.getEsTopicId())) {
+                    existingByTopic.merge(sub.getEsTopicId(), sub,
+                            EsMeetingAttendanceServlet::preferHigherRankSub);
+                }
+            }
+        }
+
+        for (Long topicId : allShownTopicIds) {
+            EsSubscription existing = existingByTopic.get(topicId);
+            // Never touch CHAMPION subscriptions
+            if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+                continue;
+            }
+            boolean checked = checkedTopicIds.contains(topicId);
+            if (checked) {
+                EsSubscription newSub = new EsSubscription();
+                newSub.setEmail(emailNormalized);
+                newSub.setEmailNormalized(emailNormalized);
+                newSub.setSubscriptionType(EsSubscription.SubscriptionType.TOPIC);
+                newSub.setEsTopicId(topicId);
+                newSub.setStatus(EsSubscription.SubscriptionStatus.SUBSCRIBED);
+                if (userId != null) {
+                    newSub.setUserId(userId);
+                }
+                esInterestService.subscribeOrUpdate(newSub);
+            } else if (existing != null
+                    && existing.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
+                subscriptionDao.setTopicSubscriptionStatus(
+                        existing.getEsSubscriptionId(),
+                        EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
+                        LocalDateTime.now());
+            }
+        }
+    }
+
+    private void renderTopicInterestFields(PrintWriter out, TopicInterestData topicData) {
+        if (topicData == null || topicData.agendaItems().isEmpty()) {
+            return;
+        }
+        out.println("      <div class=\"attend-topic-interest\">");
+        out.println("        <p class=\"attend-topic-interest-label\">Topics on today&rsquo;s agenda"
+                + " &mdash; check any you&rsquo;d like to follow:</p>");
+        out.println("        <ul class=\"attend-topic-list\">");
+        for (EsMeetingAgendaItem item : topicData.agendaItems()) {
+            EsTopic topic = topicData.topicById().get(item.getEsTopicId());
+            if (topic == null)
+                continue;
+            Long topicId = topic.getEsTopicId();
+            EsSubscription sub = topicData.subsByTopicId().get(topicId);
+            boolean isChampion = sub != null
+                    && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
+            boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
+                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
+            out.println("          <li class=\"attend-topic-item\">");
+            out.println("            <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
+            out.println("            <label class=\"attend-topic-label\">");
+            out.print("              <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
+                    + (isChecked ? " checked" : "") + "> ");
+            out.print(escapeHtml(topic.getTopicName()));
+            if (isChampion) {
+                out.print(" <span class=\"attend-champion-badge\">(champion)</span>");
+            }
+            out.println();
+            out.println("            </label>");
+            out.println("          </li>");
+        }
+        out.println("        </ul>");
+        out.println("      </div>");
+    }
+
+    private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {
+        if (a.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION)
+            return a;
+        if (b.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION)
+            return b;
+        if (a.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED)
+            return a;
+        return b;
+    }
+
+    private static Long parseId(String value) {
+        if (value == null || value.isBlank())
+            return null;
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Topic interest data record
+    // -------------------------------------------------------------------------
+
+    private record TopicInterestData(
+            EsMeeting resolvedMeeting,
+            List<EsMeetingAgendaItem> agendaItems,
+            Map<Long, EsTopic> topicById,
+            Map<Long, EsSubscription> subsByTopicId) {
+        static TopicInterestData empty() {
+            return new TopicInterestData(null, List.of(), Map.of(), Map.of());
+        }
     }
 }

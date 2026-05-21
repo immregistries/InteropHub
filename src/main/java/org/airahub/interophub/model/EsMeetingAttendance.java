@@ -23,6 +23,9 @@ public class EsMeetingAttendance {
     @Column(name = "es_topic_meeting_id", nullable = false)
     private Long esTopicMeetingId;
 
+    @Column(name = "es_meeting_id")
+    private Long esMeetingId;
+
     @Column(name = "attendance_date", nullable = false)
     private LocalDate attendanceDate;
 
@@ -81,6 +84,14 @@ public class EsMeetingAttendance {
 
     public void setEsTopicMeetingId(Long esTopicMeetingId) {
         this.esTopicMeetingId = esTopicMeetingId;
+    }
+
+    public Long getEsMeetingId() {
+        return esMeetingId;
+    }
+
+    public void setEsMeetingId(Long esMeetingId) {
+        this.esMeetingId = esMeetingId;
     }
 
     public LocalDate getAttendanceDate() {
