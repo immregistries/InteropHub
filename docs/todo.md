@@ -59,6 +59,7 @@
 - derived from
 - feeds into
 - duplicate of
+- organizes
 
 ## Topic Clustering
 - Identity / Matching
