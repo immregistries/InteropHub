@@ -279,6 +279,18 @@ public class EsAgendaServlet extends HttpServlet {
             return;
         }
 
+        // Meeting status transitions only require editor role, not full canEdit
+        // (allows transitioning out of COMPLETED or FINALIZED without edit override)
+        if ("updateMeetingStatus".equals(action)) {
+            if (!isEditor) {
+                redirectBackWithError(response, contextPath, meetingId, editOverride,
+                        "You do not have permission to edit this agenda.");
+                return;
+            }
+            handleUpdateMeetingStatus(request, response, contextPath, meeting, items, user, editOverride);
+            return;
+        }
+
         // All other actions require edit permission
         if (!canEdit) {
             redirectBackWithError(response, contextPath, meetingId, editOverride,
@@ -325,9 +337,6 @@ public class EsAgendaServlet extends HttpServlet {
                 break;
             case "updateItemStatus":
                 handleUpdateItemStatus(request, response, contextPath, meeting, editOverride);
-                break;
-            case "updateMeetingStatus":
-                handleUpdateMeetingStatus(request, response, contextPath, meeting, items, user, editOverride);
                 break;
             case "addPresenter":
                 handleAddPresenter(request, response, contextPath, meeting, user, editOverride);
