@@ -29,8 +29,10 @@ import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
@@ -82,6 +84,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
     private final EsInterestService esInterestService;
+    private final EsMeetingAttendanceDao attendanceDao;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -96,6 +99,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
         this.esInterestService = new EsInterestService();
+        this.attendanceDao = new EsMeetingAttendanceDao();
     }
 
     // =========================================================================
@@ -212,9 +216,19 @@ public class EsAgendaServlet extends HttpServlet {
             }
         }
 
+        // --- ATTENDANCE window check and data load ---
+        ZoneId attendanceCheckZone = safeZoneId(meeting.getTimezoneId(), "America/New_York");
+        boolean isWithinAttendanceWindow = meeting.getScheduledStart() != null
+                && ZonedDateTime.now(attendanceCheckZone)
+                        .isAfter(ZonedDateTime.of(meeting.getScheduledStart(), attendanceCheckZone).minusMinutes(15));
+        List<EsMeetingAttendance> meetingAttendees = isWithinAttendanceWindow
+                ? attendanceDao.findByEsMeetingId(meetingId)
+                : List.of();
+
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
                 isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch, suggestBanner,
-                attendeeEmailForInterest, subsByTopicId, agendaTopicIds);
+                attendeeEmailForInterest, subsByTopicId, agendaTopicIds,
+                isWithinAttendanceWindow, meetingAttendees);
     }
 
     // =========================================================================
@@ -1358,7 +1372,8 @@ public class EsAgendaServlet extends HttpServlet {
             EsMeeting nextMeeting, String savedMsg, String errorMsg,
             String loginHintMismatch, String suggestBanner,
             String attendeeEmailForInterest, Map<Long, EsSubscription> subsByTopicId,
-            List<Long> agendaTopicIds) throws IOException {
+            List<Long> agendaTopicIds,
+            boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -2010,6 +2025,61 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("      </div>");
                     }
                     out.println("    </div>");
+                }
+                out.println("  </div>");
+            }
+
+            // --- ATTENDANCE SECTION ---
+            if (isWithinAttendanceWindow) {
+                boolean viewerIsRegistered = attendeeEmailForInterest != null
+                        && meetingAttendees.stream()
+                                .anyMatch(a -> attendeeEmailForInterest.equalsIgnoreCase(a.getEmailNormalized()));
+
+                // Build the /attend/ URL using the topic code from the meeting series topic
+                EsTopic meetingSeriesTopic = (topicMeeting != null && topicMeeting.getEsTopicId() != null)
+                        ? topicById.get(topicMeeting.getEsTopicId())
+                        : null;
+                String attendUrl = null;
+                if (meetingSeriesTopic != null && meetingSeriesTopic.getTopicCode() != null) {
+                    attendUrl = contextPath + "/attend/"
+                            + URLEncoder.encode(meetingSeriesTopic.getTopicCode(), StandardCharsets.UTF_8);
+                    if (meeting.getMeetingKey() != null) {
+                        attendUrl += "/" + URLEncoder.encode(meeting.getMeetingKey(), StandardCharsets.UTF_8);
+                    }
+                }
+
+                out.println("  <div class=\"agenda-attendance panel\">");
+                out.println("    <h3 class=\"agenda-section-heading\">Attendance</h3>");
+                if (!viewerIsRegistered) {
+                    out.println(
+                            "    <p class=\"agenda-attendance-prompt\">Haven't signed in for this meeting yet?</p>");
+                    if (attendUrl != null) {
+                        out.println("    <p><a href=\"" + escapeHtml(attendUrl)
+                                + "\" class=\"agenda-attend-link\">Sign in for this meeting &rarr;</a></p>");
+                    }
+                } else {
+                    if (!meetingAttendees.isEmpty()) {
+                        out.println("    <ul class=\"agenda-attendance-list\">");
+                        for (EsMeetingAttendance a : meetingAttendees) {
+                            String name = escapeHtml(a.getFirstName()
+                                    + (a.getLastName() != null && !a.getLastName().isBlank()
+                                            ? " " + a.getLastName()
+                                            : ""));
+                            String org = (a.getOrganization() != null && !a.getOrganization().isBlank())
+                                    ? escapeHtml(a.getOrganization())
+                                    : null;
+                            out.println("      <li class=\"agenda-attendee-row\">"
+                                    + name
+                                    + (org != null
+                                            ? " &mdash; <span class=\"agenda-attendee-org\">" + org + "</span>"
+                                            : "")
+                                    + "</li>");
+                        }
+                        out.println("    </ul>");
+                    }
+                    out.println("    <p class=\"agenda-attendance-count\">"
+                            + meetingAttendees.size() + " registered attendee"
+                            + (meetingAttendees.size() == 1 ? "" : "s") + "</p>");
                 }
                 out.println("  </div>");
             }
@@ -2946,7 +3016,18 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-description { margin-bottom: 1rem; padding: 1rem; }");
         out.println(
                 "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
+        out.println("    .agenda-attendance { margin-bottom: 1rem; padding: 1rem; }");
+        out.println("    .agenda-attendance-prompt { font-size: 0.95rem; color: #475569; margin: 0 0 0.5rem 0; }");
+        out.println("    .agenda-attend-link { font-weight: 600; color: #1d4ed8; text-decoration: none; }");
+        out.println("    .agenda-attend-link:hover { text-decoration: underline; }");
+        out.println("    .agenda-attendance-list { list-style: none; padding: 0; margin: 0.4rem 0 0.6rem 0; }");
+        out.println(
+                "    .agenda-attendee-row { padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }");
+        out.println("    .agenda-attendee-org { color: #64748b; }");
+        out.println(
+                "    .agenda-attendance-count { font-size: 0.85rem; color: #64748b; margin: 0; font-style: italic; }");
         out.println("    .agenda-muted { color: #94a3b8; font-size: 0.9rem; }");
+        ;
         out.println("    .agenda-online-meeting { margin-top: 0.6rem; }");
         out.println(
                 "    .agenda-join-link { font-weight: 600; color: #0f766e; text-decoration: none; font-size: 0.95rem; }");
@@ -3091,6 +3172,7 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("      .agenda-table td { padding: 4pt 6pt; }");
         out.println("      .agenda-table tr { page-break-inside: avoid; }");
         out.println("      .agenda-duration-warning, .agenda-duration-info, .agenda-duration-ok { display: none; }");
+        out.println("      .agenda-attendance { display: none; }");
         out.println("      .panel { border: none; box-shadow: none; background: transparent; }");
         out.println("    }");
         // Previous / open meeting items sections
