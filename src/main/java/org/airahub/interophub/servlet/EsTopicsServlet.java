@@ -24,7 +24,15 @@ import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
+import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.model.EsCampaign;
+import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
+import java.util.HashMap;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopicMeetingMember;
@@ -64,6 +72,10 @@ public class EsTopicsServlet extends HttpServlet {
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsTopicReviewService reviewService;
     private final EsCommentDao commentDao;
+    private final EsMeetingDao esMeetingDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
+
+    private static final DateTimeFormatter AGENDA_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
 
     public EsTopicsServlet() {
         this.authFlowService = new AuthFlowService();
@@ -75,6 +87,8 @@ public class EsTopicsServlet extends HttpServlet {
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.reviewService = new EsTopicReviewService();
         this.commentDao = new EsCommentDao();
+        this.esMeetingDao = new EsMeetingDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
     }
 
     @Override
@@ -158,6 +172,32 @@ public class EsTopicsServlet extends HttpServlet {
         Map<String, Integer> stageCounts = buildStageCounts(filteredRows);
         Map<String, Integer> neighborhoodCounts = buildNeighborhoodCounts(filteredRows, neighborhoods,
                 activeNeighborhoodLookup);
+
+        // Load upcoming meeting appearances for all topics (2 queries, bulk)
+        Map<Long, List<EsMeeting>> topicUpcomingMeetings = new HashMap<>();
+        {
+            List<EsMeeting> upcomingMeetings = esMeetingDao.findUpcoming(1000);
+            if (!upcomingMeetings.isEmpty()) {
+                List<Long> upcomingMeetingIds = upcomingMeetings.stream()
+                        .map(EsMeeting::getEsMeetingId)
+                        .collect(Collectors.toList());
+                Map<Long, EsMeeting> meetingById = upcomingMeetings.stream()
+                        .collect(Collectors.toMap(EsMeeting::getEsMeetingId, m -> m));
+                List<EsMeetingAgendaItem> allItems = agendaItemDao.findByMeetingIds(upcomingMeetingIds);
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                for (EsMeetingAgendaItem item : allItems) {
+                    if (item.getEsTopicId() == null || item.getEsMeetingId() == null)
+                        continue;
+                    String key = item.getEsTopicId() + ":" + item.getEsMeetingId();
+                    if (!seen.add(key))
+                        continue;
+                    EsMeeting m = meetingById.get(item.getEsMeetingId());
+                    if (m != null) {
+                        topicUpcomingMeetings.computeIfAbsent(item.getEsTopicId(), k -> new ArrayList<>()).add(m);
+                    }
+                }
+            }
+        }
 
         String selectedNeighborhood = findMatchingNeighborhoodName(neighborhoodParam, neighborhoods,
                 activeNeighborhoodLookup);
@@ -294,7 +334,8 @@ public class EsTopicsServlet extends HttpServlet {
                 } else {
                     renderTopicList(out, pageRows, scoreByTopicId, userCommentsByTopicId,
                             canReview && !VIEW_MEETINGS.equalsIgnoreCase(view),
-                            followedTopicIds, meetingByTopicId, membershipByMeetingId);
+                            followedTopicIds, meetingByTopicId, membershipByMeetingId,
+                            topicUpcomingMeetings);
                 }
             }
 
@@ -540,7 +581,8 @@ public class EsTopicsServlet extends HttpServlet {
             Map<Long, Integer> scoreByTopicId, Map<Long, List<String>> userCommentsByTopicId,
             boolean showReviewControls, Set<Long> followedTopicIds,
             Map<Long, EsCampaignMeetingBrowseRow> meetingByTopicId,
-            Map<Long, EsTopicMeetingMember> membershipByMeetingId) {
+            Map<Long, EsTopicMeetingMember> membershipByMeetingId,
+            Map<Long, List<EsMeeting>> topicUpcomingMeetings) {
         out.println("      <section class=\"es-stage-group\">");
         out.println("        <div class=\"es-topic-list\">");
         for (EsCampaignTopicBrowseRow row : rows) {
@@ -560,6 +602,7 @@ public class EsTopicsServlet extends HttpServlet {
                     ? ""
                     : membership.getMembershipStatus().name();
             boolean meetingRegistered = "REQUESTED".equals(membershipStatus) || "APPROVED".equals(membershipStatus);
+            List<EsMeeting> upcomingForTopic = topicUpcomingMeetings.getOrDefault(row.getEsTopicId(), List.of());
 
             out.println("          <article class=\"es-topic-row es-review-topic-row" + (reviewed ? " is-reviewed" : "")
                     + (meetingRegistered ? " is-meeting-registered" : "") + "\""
@@ -579,7 +622,8 @@ public class EsTopicsServlet extends HttpServlet {
                     + " data-meeting-description=\""
                     + escapeHtml(meeting == null ? "" : orEmpty(meeting.getMeetingDescription())) + "\""
                     + " data-meeting-status=\"" + escapeHtml(membershipStatus) + "\""
-                    + " data-current-score=\"" + (reviewed ? savedScore : "") + "\"> ");
+                    + " data-current-score=\"" + (reviewed ? savedScore : "") + "\""
+                    + " data-agenda-meetings=\"" + escapeHtml(toJsonAgendaMeetings(upcomingForTopic)) + "\"> ");
 
             if (showReviewControls) {
                 out.println("            <div class=\"es-review-score-wrap\">");
@@ -1144,5 +1188,24 @@ public class EsTopicsServlet extends HttpServlet {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    private String toJsonAgendaMeetings(List<EsMeeting> meetings) {
+        if (meetings == null || meetings.isEmpty()) {
+            return "[]";
+        }
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < meetings.size(); i++) {
+            EsMeeting m = meetings.get(i);
+            if (i > 0)
+                sb.append(',');
+            String date = m.getScheduledStart() != null ? m.getScheduledStart().format(AGENDA_DATE_FMT) : "";
+            sb.append("{\"id\":").append(m.getEsMeetingId());
+            sb.append(",\"name\":\"").append(escapeJson(orEmpty(m.getMeetingName()))).append("\"");
+            sb.append(",\"date\":\"").append(escapeJson(date)).append("\"");
+            sb.append('}');
+        }
+        sb.append(']');
+        return sb.toString();
     }
 }

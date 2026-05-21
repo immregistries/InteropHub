@@ -19,6 +19,7 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -199,7 +200,34 @@ public class EsTopicDetailServlet extends HttpServlet {
                 Map<Long, User> subscriberUsers = Map.of();
                 EsTopicMeeting topicMeetingSeries = null;
                 List<EsMeeting> topicAgendaMeetings = List.of();
+                List<EsMeeting> upcomingMeetings = List.of();
                 List<EsComment> topicComments = List.of();
+
+                // Load meeting appearances for all visitors (upcoming for public section;
+                // all non-cancelled for champion section)
+                {
+                        List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
+                        if (!agendaItems.isEmpty()) {
+                                List<Long> agendaMeetingIds = agendaItems.stream()
+                                                .map(EsMeetingAgendaItem::getEsMeetingId)
+                                                .distinct()
+                                                .collect(Collectors.toList());
+                                List<EsMeeting> tempMeetings = new ArrayList<>();
+                                for (Long mid : agendaMeetingIds) {
+                                        EsMeeting m = esMeetingDao.findById(mid).orElse(null);
+                                        if (m != null && m.getStatus() != EsMeeting.MeetingStatus.CANCELLED) {
+                                                tempMeetings.add(m);
+                                        }
+                                }
+                                tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart));
+                                topicAgendaMeetings = tempMeetings;
+                                LocalDateTime now = LocalDateTime.now();
+                                upcomingMeetings = tempMeetings.stream()
+                                                .filter(m -> m.getScheduledStart() != null
+                                                                && m.getScheduledStart().isAfter(now))
+                                                .collect(Collectors.toList());
+                        }
+                }
 
                 // Load relationship and curation data (needed for public display and champion
                 // management)
@@ -267,20 +295,6 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 .collect(Collectors.toMap(User::getUserId, u -> u));
                         }
                         topicMeetingSeries = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
-                        List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
-                        List<Long> agendaMeetingIds = agendaItems.stream()
-                                        .map(EsMeetingAgendaItem::getEsMeetingId)
-                                        .distinct()
-                                        .collect(Collectors.toList());
-                        List<EsMeeting> tempMeetings = new ArrayList<>();
-                        for (Long mid : agendaMeetingIds) {
-                                EsMeeting m = esMeetingDao.findById(mid).orElse(null);
-                                if (m != null && m.getStatus() != EsMeeting.MeetingStatus.CANCELLED) {
-                                        tempMeetings.add(m);
-                                }
-                        }
-                        tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart));
-                        topicAgendaMeetings = tempMeetings;
                         topicComments = commentDao.findByTopicId(topicId);
                 }
 
@@ -357,6 +371,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + escapeHtml(meeting == null ? "" : orEmpty(meeting.getMeetingDescription()))
                                         + "\""
                                         + " data-meeting-status=\"" + escapeHtml(membershipStatus) + "\""
+                                        + " data-agenda-meetings=\""
+                                        + escapeHtml(toJsonAgendaMeetings(upcomingMeetings)) + "\""
                                         + "></article>");
 
                         // Render the shared detail sheet HTML (no overlay in page mode)
@@ -467,6 +483,28 @@ public class EsTopicDetailServlet extends HttpServlet {
 
         private String orEmpty(String value) {
                 return value == null ? "" : value;
+        }
+
+        private static final DateTimeFormatter AGENDA_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
+
+        private String toJsonAgendaMeetings(List<EsMeeting> meetings) {
+                if (meetings == null || meetings.isEmpty()) {
+                        return "[]";
+                }
+                StringBuilder sb = new StringBuilder("[");
+                for (int i = 0; i < meetings.size(); i++) {
+                        EsMeeting m = meetings.get(i);
+                        if (i > 0)
+                                sb.append(',');
+                        String date = m.getScheduledStart() != null ? m.getScheduledStart().format(AGENDA_DATE_FMT)
+                                        : "";
+                        sb.append("{\"id\":").append(m.getEsMeetingId());
+                        sb.append(",\"name\":\"").append(escapeJson(orEmpty(m.getMeetingName()))).append("\"");
+                        sb.append(",\"date\":\"").append(escapeJson(date)).append("\"");
+                        sb.append('}');
+                }
+                sb.append(']');
+                return sb.toString();
         }
 
         private void renderRelationshipsSection(PrintWriter out, String contextPath,

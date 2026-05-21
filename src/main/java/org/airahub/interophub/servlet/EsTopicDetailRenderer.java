@@ -35,6 +35,10 @@ public class EsTopicDetailRenderer {
                                 "      <p><a id=\"es-detail-meetings-link\" href=\"#\" hidden>View all scheduled meetings \u2192</a></p>");
                 out.println(
                                 "      <p><a id=\"es-detail-permalink\" href=\"#\" hidden>View full details page \u2197</a></p>");
+                out.println("      <div id=\"es-detail-appearances\" hidden style=\"margin-bottom:0.75rem;\">");
+                out.println("        <p style=\"font-size:0.85rem; font-weight:600; color:#0f1720; margin:0 0 0.35rem;\">Upcoming Meetings</p>");
+                out.println("        <ul id=\"es-detail-appearances-list\" style=\"margin:0; padding-left:1.1rem; display:grid; gap:0.25rem; font-size:0.87rem;\"></ul>");
+                out.println("      </div>");
                 if (canInteract) {
                         out.println("      <div id=\"es-detail-follow-wrap\" class=\"es-detail-comments-wrap\" hidden>");
                         out.println("        <div class=\"es-detail-actions\">");
@@ -100,6 +104,7 @@ public class EsTopicDetailRenderer {
                 out.println("      var detailConfluence = document.getElementById('es-detail-confluence-url');");
                 out.println("      var detailMeetingsLink = document.getElementById('es-detail-meetings-link');");
                 out.println("      var detailPermalink = document.getElementById('es-detail-permalink');");
+                out.println("      var detailAppearances = document.getElementById('es-detail-appearances');");
                 out.println("      var detailCommentsWrap = document.getElementById('es-detail-comments-wrap');");
                 out.println("      var detailCommentsList = document.getElementById('es-detail-comments-list');");
                 out.println("      var detailFollowWrap = document.getElementById('es-detail-follow-wrap');");
@@ -185,6 +190,25 @@ public class EsTopicDetailRenderer {
                 out.println("          } else {");
                 out.println("            detailPermalink.hidden = true;");
                 out.println("          }");
+                out.println("        }");
+
+                out.println("        var agendaMeetings = [];");
+                out.println("        try { agendaMeetings = JSON.parse(row.getAttribute('data-agenda-meetings') || '[]'); } catch(e) { agendaMeetings = []; }");
+                out.println("        if (Array.isArray(agendaMeetings) && agendaMeetings.length > 0 && detailAppearances) {");
+                out.println("          var appearList = document.getElementById('es-detail-appearances-list');");
+                out.println("          if (appearList) {");
+                out.println("            appearList.innerHTML = '';");
+                out.println("            agendaMeetings.forEach(function(m) {");
+                out.println("              var li = document.createElement('li');");
+                out.println("              var text = m.name || 'Meeting';");
+                out.println("              if (m.date) { text = m.date + ' \\u2014 ' + text; }");
+                out.println("              li.textContent = text;");
+                out.println("              appearList.appendChild(li);");
+                out.println("            });");
+                out.println("          }");
+                out.println("          detailAppearances.hidden = false;");
+                out.println("        } else if (detailAppearances) {");
+                out.println("          detailAppearances.hidden = true;");
                 out.println("        }");
 
                 out.println("        if (canInteract && detailFollowWrap && detailFollowToggle) {");
