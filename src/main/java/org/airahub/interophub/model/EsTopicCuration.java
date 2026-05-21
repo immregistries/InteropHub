@@ -47,6 +47,10 @@ public class EsTopicCuration {
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 
+    /** Number of days within which this topic must appear on an agenda; null = not specified. */
+    @Column(name = "agenda_cadence_days")
+    private Integer agendaCadenceDays;
+
     @Column(name = "created_by_user_id", nullable = false)
     private Long createdByUserId;
 
@@ -135,6 +139,14 @@ public class EsTopicCuration {
 
     public void setDisplayOrder(Integer displayOrder) {
         this.displayOrder = displayOrder;
+    }
+
+    public Integer getAgendaCadenceDays() {
+        return agendaCadenceDays;
+    }
+
+    public void setAgendaCadenceDays(Integer agendaCadenceDays) {
+        this.agendaCadenceDays = agendaCadenceDays;
     }
 
     public Long getCreatedByUserId() {

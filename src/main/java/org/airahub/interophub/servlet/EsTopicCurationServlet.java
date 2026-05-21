@@ -71,6 +71,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             entry.setEditorialNote(trimToNull(request.getParameter("editorialNote")));
             entry.setCurationStatus(trimToNull(request.getParameter("curationStatus")));
             entry.setDisplayOrder(parseIntOrDefault(request.getParameter("displayOrder"), 0));
+            entry.setAgendaCadenceDays(parseIntOrZeroToNull(request.getParameter("agendaCadenceDays")));
             entry.setCreatedByUserId(user.getUserId());
             try {
                 curationDao.save(entry);
@@ -103,6 +104,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             entry.setEditorialNote(trimToNull(request.getParameter("editorialNote")));
             entry.setCurationStatus(trimToNull(request.getParameter("curationStatus")));
             entry.setDisplayOrder(parseIntOrDefault(request.getParameter("displayOrder"), entry.getDisplayOrder()));
+            entry.setAgendaCadenceDays(parseIntOrZeroToNull(request.getParameter("agendaCadenceDays")));
             curationDao.saveOrUpdate(entry);
             response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId());
 
@@ -164,6 +166,16 @@ public class EsTopicCurationServlet extends HttpServlet {
             return value == null ? defaultValue : Integer.parseInt(value.trim());
         } catch (NumberFormatException ex) {
             return defaultValue;
+        }
+    }
+
+    private Integer parseIntOrZeroToNull(String value) {
+        try {
+            if (value == null || value.isBlank()) return null;
+            int v = Integer.parseInt(value.trim());
+            return v > 0 ? v : null;
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 }

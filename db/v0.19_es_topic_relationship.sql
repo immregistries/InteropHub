@@ -31,6 +31,7 @@ CREATE TABLE es_topic_curation (
   editorial_note         TEXT NULL,                            -- why it's in the list / status notes
   curation_status        VARCHAR(80)  NULL,                    -- free-text; UI offers datalist of existing values
   display_order          INT NOT NULL DEFAULT 0,
+  agenda_cadence_days    INT NULL,                             -- if set >0, topic is considered stale if not on an agenda in the last N days
   created_by_user_id     BIGINT NOT NULL,
   created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
