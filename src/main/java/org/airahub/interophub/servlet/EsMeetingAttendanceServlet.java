@@ -707,7 +707,8 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         List<EsMeetingAgendaItem> allItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId());
         List<EsMeetingAgendaItem> agendaItems = allItems.stream()
                 .filter(i -> i.getEsTopicId() != null
-                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED)
+                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED
+                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.POSTPONED)
                 .collect(Collectors.toList());
 
         if (agendaItems.isEmpty()) {

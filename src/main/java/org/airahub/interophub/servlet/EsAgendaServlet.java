@@ -191,9 +191,11 @@ public class EsAgendaServlet extends HttpServlet {
         }
         String attendeeEmailForInterest = user != null ? user.getEmailNormalized() : lastAttendedEmail;
 
-        // Collect agenda topic IDs (linked, non-cancelled) for subscription lookup.
+        // Collect agenda topic IDs (linked, non-cancelled, non-postponed) for
+        // subscription lookup.
         List<Long> agendaTopicIds = items.stream()
-                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
+                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED
+                        && i.getStatus() != AgendaItemStatus.POSTPONED)
                 .map(EsMeetingAgendaItem::getEsTopicId)
                 .distinct()
                 .collect(Collectors.toList());
