@@ -50,6 +50,12 @@ public class EmailService {
         HubSetting settings = hubSettingDao.findActive()
                 .or(() -> hubSettingDao.findFirst())
                 .orElseGet(this::createDefaultSettings);
+        if (!Boolean.TRUE.equals(settings.getEmailEnabled())) {
+            LOGGER.info("Email sending is disabled (email_enabled=false). Skipping send to " + normalizedEmail + ".");
+            SendResult result = new SendResult();
+            result.setSuppressed(true);
+            return result;
+        }
         validateSettings(settings);
         return sendSmtpMessage(settings, normalizedEmail, subject, bodyText.trim());
     }
@@ -62,6 +68,10 @@ public class EmailService {
         HubSetting settings = hubSettingDao.findActive()
                 .or(() -> hubSettingDao.findFirst())
                 .orElseThrow(() -> new IllegalStateException("No hub settings found. Save settings first."));
+        if (!Boolean.TRUE.equals(settings.getEmailEnabled())) {
+            throw new IllegalStateException(
+                    "Email sending is currently disabled. Enable it in hub settings to send test emails.");
+        }
         validateSettings(settings);
         sendSmtpMessage(settings, normalizedEmail,
                 "Test email from InteropHub",
@@ -113,6 +123,7 @@ public class EmailService {
         settings.setSmtpSsl(Boolean.FALSE);
         settings.setSmtpFromEmail("no-reply@interophub.local");
         settings.setSmtpFromName("InteropHub");
+        settings.setEmailEnabled(Boolean.TRUE);
         return hubSettingDao.saveOrUpdate(settings);
     }
 
@@ -256,6 +267,7 @@ public class EmailService {
     public static class SendResult {
         private String smtpMessageId;
         private String smtpProvider;
+        private boolean suppressed;
 
         public String getSmtpMessageId() {
             return smtpMessageId;
@@ -271,6 +283,15 @@ public class EmailService {
 
         public void setSmtpProvider(String smtpProvider) {
             this.smtpProvider = smtpProvider;
+        }
+
+        /** True when email sending is disabled and no SMTP attempt was made. */
+        public boolean isSuppressed() {
+            return suppressed;
+        }
+
+        public void setSuppressed(boolean suppressed) {
+            this.suppressed = suppressed;
         }
     }
 

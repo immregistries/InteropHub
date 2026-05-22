@@ -244,7 +244,11 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 LOGGER.info("requestId=" + requestId + " sent welcome email for userId=" + user.getUserId()
                         + " magicId=" + issuedMagicLink.getMagicId()
                         + " email=" + normalizedEmail);
-                renderEmailSent(out, contextPath, email);
+                if (sendResult.isSuppressed() && isLocalhostUrl(issuedMagicLink.getMagicLinkUrl())) {
+                    renderDevModeLink(out, contextPath, issuedMagicLink.getMagicLinkUrl());
+                } else {
+                    renderEmailSent(out, contextPath, email);
+                }
             } catch (IllegalArgumentException ex) {
                 LOGGER.log(Level.INFO, "Could not complete registration request: {0}", ex.getMessage());
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
@@ -309,6 +313,23 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         out.println("    <p>We sent a welcome email to <strong>" + escapeHtml(email) + "</strong>.</p>");
         out.println("    <p>Check your inbox and use the sign-in link in that message to continue.</p>");
         out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
+    }
+
+    private void renderDevModeLink(PrintWriter out, String contextPath, String magicLinkUrl) {
+        out.println("    <h1>Sign-In Link</h1>");
+        out.println("    <div style=\"border:2px solid #e6a817;background:#fffbf0;padding:1rem;border-radius:4px;\">");
+        out.println(
+                "      <p><strong>Dev mode:</strong> email sending is disabled. Your sign-in link is shown here instead.</p>");
+        out.println("      <p><a href=\"" + escapeHtml(magicLinkUrl) + "\">" + escapeHtml(magicLinkUrl) + "</a></p>");
+        out.println(
+                "      <p style=\"font-size:0.85em;color:#666;\">This panel only appears when email is disabled and the base URL is localhost.</p>");
+        out.println("    </div>");
+        out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
+    }
+
+    private boolean isLocalhostUrl(String url) {
+        return url != null
+                && (url.startsWith("http://localhost") || url.startsWith("https://localhost"));
     }
 
     private void renderProfileForm(PrintWriter out, String contextPath, String email, String firstName,

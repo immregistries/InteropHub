@@ -33,6 +33,7 @@ CREATE TABLE hub_settings (
   smtp_ssl           TINYINT(1) NOT NULL DEFAULT 0,
   smtp_from_email    VARCHAR(254) NOT NULL,
   smtp_from_name     VARCHAR(160) NOT NULL,
+  email_enabled      TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'When 0, all outbound email is silently suppressed (no SMTP attempt).',
   created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (setting_id),
@@ -51,7 +52,8 @@ INSERT INTO hub_settings (
   smtp_starttls,
   smtp_ssl,
   smtp_from_email,
-  smtp_from_name
+  smtp_from_name,
+  email_enabled
 ) VALUES (
   1,
   'http://localhost:8080/hub',
@@ -63,7 +65,8 @@ INSERT INTO hub_settings (
   1,
   0,
   'no-reply@interophub.local',
-  'InteropHub'
+  'InteropHub',
+  1
 );
 
 -- -------------------------

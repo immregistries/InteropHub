@@ -11,11 +11,12 @@
 UPDATE hub_settings
 SET
   active            = 1,
+  email_enabled     = 0,
   external_base_url = 'http://localhost:8080/hub',
   smtp_host         = 'sandbox.smtp.mailtrap.io',
   smtp_port         = 587,
-  smtp_username     = 'd1ab59b8e6b528',
-  smtp_password     = '5fa9c8b967f462',
+  smtp_username     = '',
+  smtp_password     = '',
   smtp_auth         = 1,
   smtp_starttls     = 1,
   smtp_ssl          = 0,

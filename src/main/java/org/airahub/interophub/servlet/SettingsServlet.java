@@ -113,6 +113,7 @@ public class SettingsServlet extends HttpServlet {
     private HubSetting createDefaultSettings() {
         HubSetting settings = new HubSetting();
         settings.setActive(Boolean.TRUE);
+        settings.setEmailEnabled(Boolean.TRUE);
         settings.setExternalBaseUrl("http://localhost:8080/hub");
         settings.setSmtpHost("sandbox.smtp.mailtrap.io");
         settings.setSmtpPort(2525);
@@ -128,11 +129,12 @@ public class SettingsServlet extends HttpServlet {
 
     private void populateFromRequest(HubSetting settings, HttpServletRequest request) {
         settings.setActive(isChecked(request, "active"));
+        settings.setEmailEnabled(isChecked(request, "emailEnabled"));
         settings.setExternalBaseUrl(required(request.getParameter("externalBaseUrl"), "External base URL"));
         settings.setSmtpHost(required(request.getParameter("smtpHost"), "SMTP host"));
         settings.setSmtpPort(parsePort(request.getParameter("smtpPort")));
-        settings.setSmtpUsername(required(request.getParameter("smtpUsername"), "SMTP username"));
-        settings.setSmtpPassword(required(request.getParameter("smtpPassword"), "SMTP password"));
+        settings.setSmtpUsername(trimOrEmpty(request.getParameter("smtpUsername")));
+        settings.setSmtpPassword(trimOrEmpty(request.getParameter("smtpPassword")));
         settings.setSmtpAuth(isChecked(request, "smtpAuth"));
         settings.setSmtpStarttls(isChecked(request, "smtpStarttls"));
         settings.setSmtpSsl(isChecked(request, "smtpSsl"));
@@ -155,6 +157,10 @@ public class SettingsServlet extends HttpServlet {
 
     private boolean isChecked(HttpServletRequest request, String fieldName) {
         return request.getParameter(fieldName) != null;
+    }
+
+    private String trimOrEmpty(String rawValue) {
+        return rawValue == null ? "" : rawValue.trim();
     }
 
     private String required(String rawValue, String label) {
@@ -193,6 +199,10 @@ public class SettingsServlet extends HttpServlet {
                         + "/admin/settings\" method=\"post\">");
                 out.println("      <label><input type=\"checkbox\" name=\"active\""
                         + checked(settings.getActive()) + " /> Active</label>");
+                out.println("      <label><input type=\"checkbox\" name=\"emailEnabled\""
+                        + checked(settings.getEmailEnabled()) + " /> Email Sending Enabled</label>");
+                out.println(
+                        "      <p style=\"font-size:0.85em;color:#666;\">When unchecked, all outbound email is suppressed silently. No SMTP connection is attempted.</p>");
                 out.println("      <label for=\"externalBaseUrl\">External Base URL</label>");
                 out.println("      <input id=\"externalBaseUrl\" name=\"externalBaseUrl\" type=\"text\" value=\""
                         + escapeHtml(orEmpty(settings.getExternalBaseUrl())) + "\" />");

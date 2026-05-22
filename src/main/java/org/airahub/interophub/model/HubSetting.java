@@ -51,6 +51,9 @@ public class HubSetting {
     @Column(name = "smtp_from_name", nullable = false, length = 160)
     private String smtpFromName;
 
+    @Column(name = "email_enabled", nullable = false)
+    private Boolean emailEnabled;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -75,6 +78,9 @@ public class HubSetting {
         }
         if (smtpSsl == null) {
             smtpSsl = Boolean.FALSE;
+        }
+        if (emailEnabled == null) {
+            emailEnabled = Boolean.TRUE;
         }
     }
 
@@ -177,6 +183,14 @@ public class HubSetting {
 
     public void setSmtpFromName(String smtpFromName) {
         this.smtpFromName = smtpFromName;
+    }
+
+    public Boolean getEmailEnabled() {
+        return emailEnabled;
+    }
+
+    public void setEmailEnabled(Boolean emailEnabled) {
+        this.emailEnabled = emailEnabled;
     }
 
     public LocalDateTime getCreatedAt() {
