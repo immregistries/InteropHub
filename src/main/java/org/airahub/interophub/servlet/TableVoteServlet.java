@@ -144,6 +144,7 @@ public class TableVoteServlet extends HttpServlet {
             out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
             out.println("</head>");
             out.println("<body>");
+            LocalEnvBannerRenderer.renderIfLocalhost(out);
             out.println("  <main class=\"es-topics-page\">");
             out.println("    <section class=\"es-topics-header\">");
             out.println("      <h1>" + escapeHtml(pageTitle) + "</h1>");

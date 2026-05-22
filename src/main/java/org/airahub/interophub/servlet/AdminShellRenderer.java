@@ -20,7 +20,6 @@ final class AdminShellRenderer {
         out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
         out.println("</head>");
         out.println("<body class=\"admin-page\">");
-        LocalEnvBannerRenderer.renderIfLocalhost(out);
         out.println("  <main class=\"admin-shell\">");
         out.println("    <aside class=\"admin-rail\">");
         out.println("      <h1>Admin</h1>");

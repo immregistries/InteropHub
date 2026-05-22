@@ -14,6 +14,7 @@ public final class PageFooterRenderer {
     }
 
     static void render(PrintWriter out) {
+        LocalEnvBannerRenderer.renderIfLocalhost(out);
         out.println("  <footer class=\"legal-footer\">");
         out.println(
                 "    <p><strong>American Immunization Registry Association (AIRA)</strong> supports collaboration, standards, and shared solutions that strengthen immunization information systems and improve the use of vaccination data to protect public health. <a href=\"https://www.immregistries.org/\">https://www.immregistries.org/</a></p>");
