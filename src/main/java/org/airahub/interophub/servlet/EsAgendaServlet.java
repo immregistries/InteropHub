@@ -2129,6 +2129,8 @@ public class EsAgendaServlet extends HttpServlet {
                 if (item.getStatus() == AgendaItemStatus.CANCELLED)
                     continue;
                 boolean isPostponedItem = item.getStatus() == AgendaItemStatus.POSTPONED;
+                if (isPostponedItem && !isEditor)
+                    continue;
                 String rowClass = "";
 
                 out.println("      <tr class=\"" + rowClass + "\">");
