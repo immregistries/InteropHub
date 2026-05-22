@@ -374,6 +374,7 @@ public class EsUnsubscribeServlet extends HttpServlet {
         out.println("  </style>");
         out.println("</head>");
         out.println("<body>");
+        LocalEnvBannerRenderer.renderIfLocalhost(out);
     }
 
     private void writePageFooter(PrintWriter out) {

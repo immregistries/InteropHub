@@ -341,6 +341,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("  </style>");
                         out.println("</head>");
                         out.println("<body>");
+                        LocalEnvBannerRenderer.renderIfLocalhost(out);
                         out.println("  <div class=\"estd-shell\">");
                         out.println("    <a href=\"" + contextPath
                                         + "/es/topics\" class=\"estd-back\">\u2190 All Topics</a>");
@@ -423,6 +424,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                 try (PrintWriter out = response.getWriter()) {
                         out.println("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"/>");
                         out.println("<title>Topic Not Found - InteropHub</title></head><body>");
+                        LocalEnvBannerRenderer.renderIfLocalhost(out);
                         out.println("<p>Topic not found.</p>");
                         out.println("<p><a href=\"" + contextPath + "/es/topics\">\u2190 Back to Topics</a></p>");
                         out.println("</body></html>");

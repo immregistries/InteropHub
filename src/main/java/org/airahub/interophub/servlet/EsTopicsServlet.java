@@ -302,6 +302,7 @@ public class EsTopicsServlet extends HttpServlet {
             out.println("  </style>");
             out.println("</head>");
             out.println("<body>");
+            LocalEnvBannerRenderer.renderIfLocalhost(out);
             out.println("  <div class=\"estp-shell\">");
             out.println("    <div class=\"estp-layout\">");
 
