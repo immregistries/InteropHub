@@ -142,6 +142,7 @@ public class EsAgendaServlet extends HttpServlet {
 
         List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
         boolean isEditor = user != null && isEditor(user, meeting, items);
+        boolean isAdmin = user != null && authFlowService.isAdminUser(user);
 
         // Seed default agenda items when empty and meeting is editable
         if (items.isEmpty() && meeting.getStatus() != MeetingStatus.COMPLETED
@@ -225,10 +226,45 @@ public class EsAgendaServlet extends HttpServlet {
                 ? attendanceDao.findByEsMeetingId(meetingId)
                 : List.of();
 
+        // --- Topic engagement metadata (only within attendance window) ---
+        Map<Long, TopicEngagementSummary> engagementByTopicId = Map.of();
+        if (isWithinAttendanceWindow && !agendaTopicIds.isEmpty()) {
+            Map<Long, Long> followerCountByTopicId = subscriptionDao.countActiveByTopicIds(agendaTopicIds);
+            List<String> attendeeEmails = meetingAttendees.stream()
+                    .map(EsMeetingAttendance::getEmailNormalized)
+                    .distinct()
+                    .collect(Collectors.toList());
+            Map<Long, Long> attendeeFollowerCountByTopicId = new LinkedHashMap<>();
+            if (!attendeeEmails.isEmpty()) {
+                List<EsSubscription> attendeeSubs = subscriptionDao
+                        .findActiveByEmailsNormalizedAndTopicIds(attendeeEmails, agendaTopicIds);
+                Map<Long, Set<String>> emailsByTopic = new LinkedHashMap<>();
+                for (EsSubscription s : attendeeSubs) {
+                    emailsByTopic.computeIfAbsent(s.getEsTopicId(), k -> new HashSet<>())
+                            .add(s.getEmailNormalized());
+                }
+                for (Long tid : agendaTopicIds) {
+                    attendeeFollowerCountByTopicId.put(tid,
+                            (long) emailsByTopic.getOrDefault(tid, Set.of()).size());
+                }
+            }
+            Map<Long, TopicEngagementSummary> eng = new LinkedHashMap<>();
+            for (Long tid : agendaTopicIds) {
+                boolean viewerFollows = subsByTopicId.containsKey(tid)
+                        && subsByTopicId.get(tid).getStatus() != EsSubscription.SubscriptionStatus.UNSUBSCRIBED;
+                eng.put(tid, new TopicEngagementSummary(
+                        followerCountByTopicId.getOrDefault(tid, 0L),
+                        attendeeFollowerCountByTopicId.getOrDefault(tid, 0L),
+                        viewerFollows));
+            }
+            engagementByTopicId = eng;
+        }
+
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
-                isEditor, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch, suggestBanner,
+                isEditor, isAdmin, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch,
+                suggestBanner,
                 attendeeEmailForInterest, subsByTopicId, agendaTopicIds,
-                isWithinAttendanceWindow, meetingAttendees);
+                isWithinAttendanceWindow, meetingAttendees, engagementByTopicId);
     }
 
     // =========================================================================
@@ -1368,12 +1404,13 @@ public class EsAgendaServlet extends HttpServlet {
             EsMeeting meeting, List<EsMeetingAgendaItem> items,
             Map<Long, List<EsAgendaItemPresenter>> presentersByItem,
             Map<Long, User> presenterUsers,
-            boolean isEditor, boolean canEdit, boolean editOverride,
+            boolean isEditor, boolean isAdmin, boolean canEdit, boolean editOverride,
             EsMeeting nextMeeting, String savedMsg, String errorMsg,
             String loginHintMismatch, String suggestBanner,
             String attendeeEmailForInterest, Map<Long, EsSubscription> subsByTopicId,
             List<Long> agendaTopicIds,
-            boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees) throws IOException {
+            boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees,
+            Map<Long, TopicEngagementSummary> engagementByTopicId) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -1925,6 +1962,13 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("    </div>");
             }
 
+            if (isAdmin) {
+                out.println("    <div class=\"agenda-meta-row no-print\">");
+                out.println("      <a href=\"" + contextPath + "/es/agenda/confluence?meetingId="
+                        + meeting.getEsMeetingId() + "\">Confluence export</a>");
+                out.println("    </div>");
+            }
+
             out.println("  </div>"); // end agenda-meta
 
             // --- DESCRIPTION / MEETING INFORMATION ---
@@ -2194,6 +2238,19 @@ public class EsAgendaServlet extends HttpServlet {
                 } else {
                     out.println("          <div class=\"agenda-item-title\">" + escapeHtml(orEmpty(item.getTitle()))
                             + "</div>");
+                }
+                if (isWithinAttendanceWindow && linkedTopic != null) {
+                    TopicEngagementSummary eng = engagementByTopicId.get(item.getEsTopicId());
+                    if (eng != null) {
+                        StringBuilder engLine = new StringBuilder();
+                        if (eng.viewerFollows) {
+                            engLine.append(
+                                    "<span class=\"agenda-topic-following-indicator\">&#9733; Following</span> &middot; ");
+                        }
+                        engLine.append(eng.totalFollowerCount).append(" following &middot; ")
+                                .append(eng.attendeeFollowerCount).append(" here today");
+                        out.println("          <div class=\"agenda-topic-engagement\">" + engLine + "</div>");
+                    }
                 }
                 if (!itemTimeRange.isEmpty()) {
                     out.println("          <div class=\"agenda-item-time\">" + escapeHtml(itemTimeRange) + "</div>");
@@ -3070,6 +3127,9 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-topic-link:hover { text-decoration: underline; }");
         out.println("    .agenda-item-linked-topic { font-size: 0.78rem; color: #0f766e; margin-bottom: 0.2rem; }");
         out.println("    .agenda-item-linked-topic a { color: #0f766e; }");
+        out.println(
+                "    .agenda-topic-engagement { font-size: 0.78rem; color: #64748b; margin-top: 2px; line-height: 1.4; }");
+        out.println("    .agenda-topic-following-indicator { color: #0f766e; font-weight: 600; }");
         out.println("    .agenda-item-time { font-size: 0.82rem; color: #475569; margin-top: 2px; }");
         out.println("    .agenda-item-duration { font-size: 0.78rem; color: #94a3b8; }");
         out.println(
@@ -3621,6 +3681,18 @@ public class EsAgendaServlet extends HttpServlet {
             return a;
         }
         return b;
+    }
+
+    private static final class TopicEngagementSummary {
+        final long totalFollowerCount;
+        final long attendeeFollowerCount;
+        final boolean viewerFollows;
+
+        TopicEngagementSummary(long totalFollowerCount, long attendeeFollowerCount, boolean viewerFollows) {
+            this.totalFollowerCount = totalFollowerCount;
+            this.attendeeFollowerCount = attendeeFollowerCount;
+            this.viewerFollows = viewerFollows;
+        }
     }
 
 }

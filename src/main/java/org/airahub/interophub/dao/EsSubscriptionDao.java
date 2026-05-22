@@ -1,6 +1,8 @@
 package org.airahub.interophub.dao;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.time.LocalDateTime;
@@ -505,6 +507,60 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     .setParameterList("ids", topicIds)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
                     .setParameter("subscribed", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns a map of topic ID to active (SUBSCRIBED or CHAMPION) follower count
+     * for each of the given topic IDs. Topics with no followers are omitted.
+     */
+    public Map<Long, Long> countActiveByTopicIds(List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return Map.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Object[]> rows = session.createQuery(
+                    "select s.esTopicId, count(s) from EsSubscription s"
+                            + " where s.esTopicId in :topicIds"
+                            + " and s.status in (:statuses)"
+                            + " group by s.esTopicId",
+                    Object[].class)
+                    .setParameterList("topicIds", topicIds)
+                    .setParameterList("statuses", List.of(
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .getResultList();
+            Map<Long, Long> result = new LinkedHashMap<>();
+            for (Object[] row : rows) {
+                result.put((Long) row[0], (Long) row[1]);
+            }
+            return result;
+        }
+    }
+
+    /**
+     * Returns active (SUBSCRIBED or CHAMPION) topic subscriptions for any of the
+     * given emails and topic IDs. Used to count meeting attendees following each
+     * agenda topic.
+     */
+    public List<EsSubscription> findActiveByEmailsNormalizedAndTopicIds(
+            List<String> emailsNormalized, List<Long> topicIds) {
+        if (emailsNormalized == null || emailsNormalized.isEmpty()
+                || topicIds == null || topicIds.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.emailNormalized in :emails"
+                            + " and s.esTopicId in :topicIds"
+                            + " and s.status in (:statuses)",
+                    EsSubscription.class)
+                    .setParameterList("emails", emailsNormalized)
+                    .setParameterList("topicIds", topicIds)
+                    .setParameterList("statuses", List.of(
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            EsSubscription.SubscriptionStatus.CHAMPION))
                     .getResultList();
         }
     }

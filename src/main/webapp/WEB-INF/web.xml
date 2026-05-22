@@ -546,6 +546,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>EsAgendaConfluenceServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsAgendaConfluenceServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsAgendaConfluenceServlet</servlet-name>
+    <url-pattern>/es/agenda/confluence</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>EsMeetingSeriesServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsMeetingSeriesServlet</servlet-class>
   </servlet>
