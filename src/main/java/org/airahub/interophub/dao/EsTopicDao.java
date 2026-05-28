@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.service.DandelionSyncService;
 
 public class EsTopicDao extends GenericDao<EsTopic, Long> {
 
@@ -116,6 +117,7 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
             tx = session.beginTransaction();
             EsTopic merged = (EsTopic) session.merge(topic);
             tx.commit();
+            new DandelionSyncService().enqueueTopicUpsert(merged.getEsTopicId());
             return merged;
         } catch (Exception ex) {
             if (tx != null) {

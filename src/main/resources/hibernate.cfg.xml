@@ -56,5 +56,7 @@
     <mapping class="org.airahub.interophub.model.EsMeetingCommunication"/>
     <mapping class="org.airahub.interophub.model.EsTopicRelationship"/>
     <mapping class="org.airahub.interophub.model.EsTopicCuration"/>
+    <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
+    <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
   </session-factory>
 </hibernate-configuration>

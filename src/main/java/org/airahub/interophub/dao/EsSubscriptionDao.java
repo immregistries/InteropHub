@@ -8,6 +8,7 @@ import java.util.Set;
 import java.time.LocalDateTime;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.service.DandelionSyncService;
 
 public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
 
@@ -316,6 +317,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
             try {
                 EsSubscription merged = (EsSubscription) session.merge(subscription);
                 tx.commit();
+                new DandelionSyncService().enqueueSubscriptionState(merged.getEsSubscriptionId());
                 return merged;
             } catch (Exception ex) {
                 tx.rollback();
@@ -382,6 +384,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                         .setParameter("id", esSubscriptionId)
                         .executeUpdate();
                 tx.commit();
+                if (updated > 0) {
+                    new DandelionSyncService().enqueueSubscriptionState(esSubscriptionId);
+                }
                 return updated;
             } catch (Exception ex) {
                 tx.rollback();
@@ -420,6 +425,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                         .setParameter("id", esSubscriptionId)
                         .executeUpdate();
                 tx.commit();
+                if (updated > 0) {
+                    new DandelionSyncService().enqueueSubscriptionState(esSubscriptionId);
+                }
                 return updated;
             } catch (Exception ex) {
                 tx.rollback();
@@ -448,6 +456,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                         .setParameter("id", esSubscriptionId)
                         .executeUpdate();
                 tx.commit();
+                if (updated > 0) {
+                    new DandelionSyncService().enqueueSubscriptionState(esSubscriptionId);
+                }
                 return updated;
             } catch (Exception ex) {
                 tx.rollback();

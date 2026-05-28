@@ -475,6 +475,16 @@
     <url-pattern>/admin/es/meetings</url-pattern>
   </servlet-mapping>
 
+  <servlet>
+    <servlet-name>AdminDandelionSyncServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminDandelionSyncServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminDandelionSyncServlet</servlet-name>
+    <url-pattern>/admin/es/dandelion-sync</url-pattern>
+  </servlet-mapping>
+
   <servlet-mapping>
     <servlet-name>AdminEsNeighborhoodServlet</servlet-name>
     <url-pattern>/admin/es/neighborhoods</url-pattern>
@@ -607,6 +617,10 @@
 
   <listener>
     <listener-class>org.airahub.interophub.config.MeetingCommunicationSchedulerListener</listener-class>
+  </listener>
+
+  <listener>
+    <listener-class>org.airahub.interophub.config.DandelionSyncSchedulerListener</listener-class>
   </listener>
 
 </web-app>

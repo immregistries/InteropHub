@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.DandelionSyncService;
 
 public class UserDao extends GenericDao<User, Long> {
     public UserDao() {
@@ -29,6 +30,7 @@ public class UserDao extends GenericDao<User, Long> {
             tx = session.beginTransaction();
             User merged = (User) session.merge(user);
             tx.commit();
+            new DandelionSyncService().enqueueContactUpsert(merged.getUserId());
             return merged;
         } catch (Exception ex) {
             if (tx != null) {
