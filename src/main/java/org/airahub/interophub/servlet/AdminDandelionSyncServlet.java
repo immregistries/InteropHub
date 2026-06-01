@@ -57,6 +57,9 @@ public class AdminDandelionSyncServlet extends HttpServlet {
             } else if ("process-now".equals(action)) {
                 processResult = syncService.processPendingQueue();
                 message = summarizeProcess(processResult);
+            } else if ("requeue-projects".equals(action)) {
+                int requeuedProjects = syncService.requeueAllProjects();
+                message = "Requeued all project items for replay: " + requeuedProjects + ".";
             } else if ("requeue-failures".equals(action)) {
                 DandelionSyncService.RequeueResult result = syncService.requeueFailuresInDependencyOrder();
                 message = "Requeued failed items: "
@@ -188,12 +191,17 @@ public class AdminDandelionSyncServlet extends HttpServlet {
                         + "/admin/es/dandelion-sync\"><input type=\"hidden\" name=\"action\" value=\"process-now\" />"
                         + "<button type=\"submit\">Process Pending Now</button></form>");
                 panelOut.println("          <form method=\"post\" action=\"" + contextPath
+                    + "/admin/es/dandelion-sync\"><input type=\"hidden\" name=\"action\" value=\"requeue-projects\" />"
+                    + "<button type=\"submit\">Requeue All Projects</button></form>");
+                panelOut.println("          <form method=\"post\" action=\"" + contextPath
                         + "/admin/es/dandelion-sync\"><input type=\"hidden\" name=\"action\" value=\"requeue-failures\" />"
                         + "<button type=\"submit\">Requeue Failed (Safe Order)</button></form>");
                 panelOut.println("          <form method=\"post\" action=\"" + contextPath
                         + "/admin/es/dandelion-sync\"><input type=\"hidden\" name=\"action\" value=\"full-sync\" />"
                         + "<button type=\"submit\">Queue Full Sync</button></form>");
                 panelOut.println("        </div>");
+                panelOut.println(
+                    "        <p style=\"margin-top:0.25rem;color:#555;\">Project replay resets all project queue rows to pending so project details and project tags can be resent.</p>");
 
                 panelOut.println("        <section>");
                 panelOut.println("          <h3>Recent Failures</h3>");

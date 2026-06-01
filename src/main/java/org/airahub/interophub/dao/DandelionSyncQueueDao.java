@@ -139,6 +139,30 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
         }
     }
 
+    public int requeueAllByEntityType(DandelionSyncQueueItem.EntityType entityType) {
+        if (entityType == null) {
+            return 0;
+        }
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            int updated = session.createMutationQuery(
+                    "update DandelionSyncQueueItem q"
+                            + " set q.status = :pending, q.attemptCount = 0, q.lastError = null, q.sentAt = null"
+                            + " where q.entityType = :entityType")
+                    .setParameter("pending", DandelionSyncQueueItem.QueueStatus.PENDING)
+                    .setParameter("entityType", entityType)
+                    .executeUpdate();
+            tx.commit();
+            return updated;
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public void markSent(Long syncQueueId, LocalDateTime sentAt) {
         if (syncQueueId == null) {
             return;

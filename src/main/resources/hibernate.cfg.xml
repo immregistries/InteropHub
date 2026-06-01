@@ -38,6 +38,7 @@
     <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
     <mapping class="org.airahub.interophub.model.EsTopic"/>
     <mapping class="org.airahub.interophub.model.EsNeighborhood"/>
+    <mapping class="org.airahub.interophub.model.EsTopicNeighborhood"/>
     <mapping class="org.airahub.interophub.model.EsCampaign"/>
     <mapping class="org.airahub.interophub.model.EsCampaignTopic"/>
     <mapping class="org.airahub.interophub.model.EsInterest"/>

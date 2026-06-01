@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
@@ -11,6 +12,7 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
@@ -19,10 +21,12 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsNeighborhoodDao esNeighborhoodDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
 
     public AdminEsNeighborhoodServlet() {
         this.authFlowService = new AuthFlowService();
         this.esNeighborhoodDao = new EsNeighborhoodDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
     }
 
     @Override
@@ -228,6 +232,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         List<EsNeighborhood> neighborhoods = esNeighborhoodDao.findAllOrdered();
+        Map<Long, Long> usageCounts = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId();
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Neighborhoods Admin - InteropHub", contextPath, panelOut -> {
@@ -263,6 +268,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 panelOut.println("              <th>Code</th>");
                 panelOut.println("              <th>Display Order</th>");
                 panelOut.println("              <th>Active</th>");
+                panelOut.println("              <th>Active Topics</th>");
                 panelOut.println("            </tr>");
                 panelOut.println("          </thead>");
                 panelOut.println("          <tbody>");
@@ -281,11 +287,13 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                     panelOut.println(
                             "              <td>" + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No")
                                     + "</td>");
+                    Long usageCount = usageCounts.getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
+                    panelOut.println("              <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
                     panelOut.println("            </tr>");
                 }
                 if (neighborhoods.isEmpty()) {
                     panelOut.println("            <tr>");
-                    panelOut.println("              <td colspan=\"4\">No neighborhoods found.</td>");
+                    panelOut.println("              <td colspan=\"5\">No neighborhoods found.</td>");
                     panelOut.println("            </tr>");
                 }
                 panelOut.println("          </tbody>");
@@ -300,6 +308,8 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
     private void renderDetails(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
+        long activeTopicCount = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId()
+                .getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Neighborhood Details - InteropHub", contextPath, panelOut -> {
@@ -319,6 +329,8 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         + "</p>");
                 panelOut.println("          <p><strong>Active:</strong> "
                         + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No") + "</p>");
+                panelOut.println("          <p><strong>Active Topic Usage:</strong> "
+                        + escapeHtml(String.valueOf(activeTopicCount)) + "</p>");
                 panelOut.println("        </section>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/neighborhoods?esNeighborhoodId="
                         + neighborhood.getEsNeighborhoodId() + "&mode=edit\">Edit Neighborhood</a></p>");

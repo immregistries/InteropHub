@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpSession;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsSubscription;
@@ -40,12 +41,14 @@ public class EsCampaignTopicsServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsTopicDao topicDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsInterestService esInterestService;
 
     public EsCampaignTopicsServlet() {
         this.campaignDao = new EsCampaignDao();
         this.topicDao = new EsTopicDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.esInterestService = new EsInterestService();
     }
 
@@ -215,6 +218,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
 
     private BrowseState loadBrowseState(EsCampaign campaign, HttpSession session) {
         List<EsCampaignTopicBrowseRow> rows = topicDao.findAllActiveBrowseRowsOrdered();
+        applyCanonicalNeighborhoods(rows);
         List<Long> topicIds = rows.stream()
                 .map(EsCampaignTopicBrowseRow::getEsTopicId)
                 .collect(Collectors.toList());
@@ -644,12 +648,21 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             List<EsCampaignTopicBrowseRow> rows) {
         Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = new LinkedHashMap<>();
         for (EsCampaignTopicBrowseRow row : rows) {
-            String neighborhood = normalizeNeighborhood(row.getNeighborhood());
             String stage = normalizeStage(row.getStage());
-            grouped
-                    .computeIfAbsent(neighborhood, ignored -> createOrderedStageMap())
-                    .computeIfAbsent(stage, ignored -> new ArrayList<>())
-                    .add(row);
+            List<String> neighborhoods = parseNeighborhoodTokens(row.getNeighborhood());
+            if (neighborhoods.isEmpty()) {
+                grouped
+                        .computeIfAbsent(OTHER_LABEL, ignored -> createOrderedStageMap())
+                        .computeIfAbsent(stage, ignored -> new ArrayList<>())
+                        .add(row);
+                continue;
+            }
+            for (String neighborhood : neighborhoods) {
+                grouped
+                        .computeIfAbsent(neighborhood, ignored -> createOrderedStageMap())
+                        .computeIfAbsent(stage, ignored -> new ArrayList<>())
+                        .add(row);
+            }
         }
 
         List<String> neighborhoodNames = new ArrayList<>(grouped.keySet());
@@ -690,6 +703,27 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         }
         String trimmed = neighborhood.trim();
         return trimmed.isEmpty() ? OTHER_LABEL : trimmed;
+    }
+
+    private List<String> parseNeighborhoodTokens(String neighborhoodRaw) {
+        String normalized = trimToNull(neighborhoodRaw);
+        if (normalized == null) {
+            return List.of();
+        }
+        String[] parts = normalized.split(",");
+        List<String> values = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String part : parts) {
+            String label = normalizeNeighborhood(part);
+            if (OTHER_LABEL.equalsIgnoreCase(label)) {
+                continue;
+            }
+            String key = label.toLowerCase();
+            if (seen.add(key)) {
+                values.add(label);
+            }
+        }
+        return values;
     }
 
     private String normalizeStage(String stage) {
@@ -846,6 +880,18 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void applyCanonicalNeighborhoods(List<EsCampaignTopicBrowseRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<Long> topicIds = rows.stream().map(EsCampaignTopicBrowseRow::getEsTopicId).collect(Collectors.toList());
+        Map<Long, List<String>> namesByTopicId = topicNeighborhoodDao.findNeighborhoodNamesByTopicIds(topicIds);
+        for (EsCampaignTopicBrowseRow row : rows) {
+            List<String> names = namesByTopicId.get(row.getEsTopicId());
+            row.setNeighborhood(names == null || names.isEmpty() ? null : String.join(", ", names));
+        }
     }
 
     private String orEmpty(String value) {

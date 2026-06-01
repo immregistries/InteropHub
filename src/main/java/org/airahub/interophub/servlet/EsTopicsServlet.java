@@ -22,6 +22,7 @@ import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
@@ -67,6 +68,7 @@ public class EsTopicsServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsTopicReviewService reviewService;
     private final EsCommentDao commentDao;
@@ -82,6 +84,7 @@ public class EsTopicsServlet extends HttpServlet {
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.reviewService = new EsTopicReviewService();
         this.commentDao = new EsCommentDao();
@@ -116,6 +119,7 @@ public class EsTopicsServlet extends HttpServlet {
 
         List<EsNeighborhood> neighborhoods = esNeighborhoodDao.findAllActive();
         List<EsCampaignTopicBrowseRow> allRows = esTopicDao.findAllActiveBrowseRowsOrdered();
+        applyCanonicalNeighborhoods(allRows);
         List<Long> allTopicIds = allRows.stream().map(EsCampaignTopicBrowseRow::getEsTopicId)
                 .collect(Collectors.toList());
 
@@ -1163,6 +1167,20 @@ public class EsTopicsServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void applyCanonicalNeighborhoods(List<EsCampaignTopicBrowseRow> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return;
+        }
+        List<Long> topicIds = rows.stream()
+                .map(EsCampaignTopicBrowseRow::getEsTopicId)
+                .collect(Collectors.toList());
+        Map<Long, List<String>> namesByTopicId = topicNeighborhoodDao.findNeighborhoodNamesByTopicIds(topicIds);
+        for (EsCampaignTopicBrowseRow row : rows) {
+            List<String> names = namesByTopicId.get(row.getEsTopicId());
+            row.setNeighborhood(names == null || names.isEmpty() ? null : String.join(", ", names));
+        }
     }
 
     private String orEmpty(String value) {

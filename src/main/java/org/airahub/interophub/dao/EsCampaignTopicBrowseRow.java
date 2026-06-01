@@ -6,7 +6,7 @@ public class EsCampaignTopicBrowseRow {
     private final String description;
     private final String topicType;
     private final String policyStatus;
-    private final String neighborhood;
+    private String neighborhood;
     private final String stage;
     private final Integer displayOrder;
     private final String confluenceUrl;
@@ -47,6 +47,10 @@ public class EsCampaignTopicBrowseRow {
 
     public String getNeighborhood() {
         return neighborhood;
+    }
+
+    public void setNeighborhood(String neighborhood) {
+        this.neighborhood = neighborhood;
     }
 
     public String getStage() {

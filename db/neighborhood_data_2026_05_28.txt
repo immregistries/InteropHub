@@ -1,0 +1,127 @@
+mysql> select es_neighborhood_id, neighborhood_code, neighborhood_name from es_neighborhood;
++--------------------+-------------------+-------------------+
+| es_neighborhood_id | neighborhood_code | neighborhood_name |
++--------------------+-------------------+-------------------+
+|                  1 | advanced-access   | Advanced Access   |
+|                  2 | cds               | CDS               |
+|                  3 | consumer-access   | Consumer Access   |
+|                  4 | data-quality      | Data Quality      |
+|                  5 | fhir              | FHIR              |
+|                  6 | hl7-v2            | HL7 v2            |
+|                  7 | inventory         | Inventory         |
+|                  8 | modularity        | Modularity        |
+|                  9 | national          | National          |
+|                 10 | school            | School            |
+|                 11 | support           | Support           |
+|                 12 | tefca             | TEFCA             |
+|                 13 | terminology       | Terminology       |
++--------------------+-------------------+-------------------+
+13 rows in set (0.00 sec)
+
+mysql> select es_topic_id, neighborhood from es_topic;
++-------------+-----------------------------------+
+| es_topic_id | neighborhood                      |
++-------------+-----------------------------------+
+|           1 | CDS,FHIR,Support                  |
+|           2 | Consumer Access                   |
+|           3 | Data Quality                      |
+|           4 | Inventory, Modularity             |
+|           5 | Consumer Access                   |
+|           6 | Advanced Access                   |
+|           7 | HL7 v2, CDS, FHIR                 |
+|           8 | National                          |
+|           9 | Modularity,Support                |
+|          10 | Advanced Access,FHIR              |
+|          11 | Data Quality                      |
+|          12 | Inventory                         |
+|          13 | Support, CDS, FHIR, Modularity    |
+|          14 | Advanced Access,FHIR              |
+|          15 | Terminology, Modularity           |
+|          16 | Inventory                         |
+|          17 | Consumer Access                   |
+|          18 | Advanced Access                   |
+|          19 | Consumer Access,FHIR              |
+|          20 | HL7 v2, CDS                       |
+|          21 | Modularity,Support                |
+|          22 | HL7 v2                            |
+|          23 | Data Quality                      |
+|          24 | TEFCA,Terminology                 |
+|          25 | HL7 v2, CDS                       |
+|          26 | HL7 v2, CDS                       |
+|          27 | Advanced Access                   |
+|          28 | FHIR,Terminology                  |
+|          29 | Inventory                         |
+|          30 | Advanced Access                   |
+|          31 | FHIR,Terminology                  |
+|          32 | Consumer Access, FHIR             |
+|          33 | Advanced Access, FHIR             |
+|          34 | Inventory, FHIR                   |
+|          35 | Data Quality                      |
+|          36 | HL7 v2                            |
+|          37 | School,auxiliary                  |
+|          38 | HL7 v2                            |
+|          39 | Inventory                         |
+|          40 | Consumer Access                   |
+|          41 | Support, FHIR, HL7 v2, Modularity |
+|          42 | HL7 v2, FHIR                      |
+|          43 | Consumer Access,FHIR              |
+|          44 | HL7 v2                            |
+|          45 | HL7 v2                            |
+|          46 | National                          |
+|          47 | Advanced Access                   |
+|          48 | HL7 v2                            |
+|          49 | Consumer Access                   |
+|          50 | Advanced Access                   |
+|          51 | HL7 v2                            |
+|          52 | HL7 v2                            |
+|          53 | HL7 v2, CDS                       |
+|          54 | Advanced Access, CDS, FHIR        |
+|          55 | National                          |
+|          56 | Advanced Access                   |
+|          57 | HL7 v2                            |
+|          58 | National                          |
+|          59 | Advanced Access                   |
+|          60 | Auxiliary                         |
+|          61 | Advanced Access                   |
+|          62 | HL7 v2                            |
+|          63 | Auxiliary                         |
+|          64 | Auxiliary                         |
+|          65 | HL7 v2                            |
+|          66 | HL7 v2                            |
+|          67 | HL7 v2                            |
+|          68 | HL7 v2                            |
+|          69 | HL7 v2                            |
+|          70 | Advanced Access, FHIR             |
+|          71 | Auxiliary                         |
+|          72 | Consumer Access                   |
+|          73 | Inventory                         |
+|          74 | FHIR,National                     |
+|          75 | TEFCA, FHIR                       |
+|          76 | TEFCA, FHIR                       |
+|          77 | Auxiliary, School, HL7 v2         |
+|          78 | TEFCA, FHIR                       |
+|          79 | TEFCA, FHIR                       |
+|          80 | Support                           |
+|          81 | Support                           |
+|          82 | HL7 v2, FHIR, TEFCA               |
+|          83 | Terminology                       |
+|          84 | FHIR, TEFCA, CDS                  |
+|          85 | HL7 v2                            |
+|          86 | Support                           |
+|          87 | HL7 v2                            |
+|          88 | Auxiliary                         |
+|          89 | Support                           |
+|          90 | FHIR                              |
+|          91 | HL7 v2                            |
+|          92 | Auxillary                         |
+|          93 | Auxillary                         |
+|          94 | Support                           |
+|          95 | Inventory                         |
+|          96 | FHIR                              |
+|          97 | HL7 v2                            |
+|          98 | HL7 v2                            |
+|          99 | Consumer Access,FHIR,HL7 v2       |
+|         100 | Consumer Access,HL7 v2            |
+|         101 | Data Quality,FHIR,HL7 v2          |
+|         102 | Data Quality                      |
++-------------+-----------------------------------+

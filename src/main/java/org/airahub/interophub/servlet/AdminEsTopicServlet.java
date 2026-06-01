@@ -6,8 +6,7 @@ import java.net.URI;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,6 +19,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.UserDao;
@@ -40,6 +40,7 @@ public class AdminEsTopicServlet extends HttpServlet {
     private final EsTopicMeetingDao esTopicMeetingDao;
     private final EsCommentDao esCommentDao;
     private final EsSubscriptionDao esSubscriptionDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final UserDao userDao;
 
     public AdminEsTopicServlet() {
@@ -48,6 +49,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         this.esTopicMeetingDao = new EsTopicMeetingDao();
         this.esCommentDao = new EsCommentDao();
         this.esSubscriptionDao = new EsSubscriptionDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.userDao = new UserDao();
     }
 
@@ -77,7 +79,7 @@ public class AdminEsTopicServlet extends HttpServlet {
 
             EsTopicMeeting meeting = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, topic, meeting, null, false);
+                renderEditForm(response, contextPath, topic, meeting, null, false, null);
                 return;
             }
 
@@ -92,7 +94,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             blank.setPriorityEhr(0);
             blank.setPriorityCdc(0);
             blank.setStatus(EsTopic.EsTopicStatus.ACTIVE);
-            renderEditForm(response, contextPath, blank, null, null, true);
+            renderEditForm(response, contextPath, blank, null, null, true, null);
             return;
         }
 
@@ -112,17 +114,7 @@ public class AdminEsTopicServlet extends HttpServlet {
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
-        String[] neighborhoodValues = request.getParameterValues("neighborhood");
-        String newNeighborhoodParam = trimToNull(request.getParameter("newNeighborhood"));
-        List<String> allNhList = new ArrayList<>();
-        if (neighborhoodValues != null) {
-            Arrays.stream(neighborhoodValues).map(String::trim).filter(v -> !v.isBlank()).forEach(allNhList::add);
-        }
-        if (newNeighborhoodParam != null) {
-            Arrays.stream(newNeighborhoodParam.split(",")).map(String::trim).filter(v -> !v.isBlank())
-                    .forEach(allNhList::add);
-        }
-        String neighborhood = allNhList.isEmpty() ? null : String.join(",", allNhList);
+        Set<Long> selectedNeighborhoodIds = parseNeighborhoodIds(request.getParameterValues("esNeighborhoodId"));
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
         String priorityEhrRaw = trimToNull(request.getParameter("priorityEhr"));
         String priorityCdcRaw = trimToNull(request.getParameter("priorityCdc"));
@@ -152,7 +144,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setTopicCode(topicCodeVal);
                 newTopic.setTopicName(required(topicName, "Topic name"));
                 newTopic.setDescription(description);
-                newTopic.setNeighborhood(neighborhood);
+                newTopic.setNeighborhood(null);
                 newTopic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
                 newTopic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
                 newTopic.setPriorityCdc(parseRequiredInt(priorityCdcRaw, "Priority CDC"));
@@ -164,6 +156,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setCreatedByUserId(adminUser.get().getUserId());
 
                 EsTopic saved = esTopicDao.saveOrUpdate(newTopic);
+                topicNeighborhoodDao.replaceTopicNeighborhoods(saved.getEsTopicId(), selectedNeighborhoodIds);
 
                 if (meetingEnabled) {
                     newMeeting = new EsTopicMeeting();
@@ -182,7 +175,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setTopicCode(topicCodeParam);
                 newTopic.setTopicName(topicName);
                 newTopic.setDescription(description);
-                newTopic.setNeighborhood(neighborhood);
+                newTopic.setNeighborhood(null);
                 newTopic.setStage(stage);
                 newTopic.setPolicyStatus(policyStatus);
                 newTopic.setTopicType(topicType);
@@ -216,7 +209,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                     newMeeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
                 }
                 renderEditForm(response, contextPath, newTopic, meetingEnabled ? newMeeting : null, ex.getMessage(),
-                        true);
+                        true, selectedNeighborhoodIds);
             }
             return;
         }
@@ -239,7 +232,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         try {
             topic.setTopicName(required(topicName, "Topic name"));
             topic.setDescription(description);
-            topic.setNeighborhood(neighborhood);
+            topic.setNeighborhood(null);
             topic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
             topic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
             topic.setPriorityCdc(parseRequiredInt(priorityCdcRaw, "Priority CDC"));
@@ -250,6 +243,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setStatus(parseStatus(required(statusRaw, "Status")));
 
             esTopicDao.saveOrUpdate(topic);
+            topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), selectedNeighborhoodIds);
 
             if (meetingEnabled) {
                 if (meeting == null) {
@@ -273,7 +267,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         } catch (Exception ex) {
             topic.setTopicName(topicName);
             topic.setDescription(description);
-            topic.setNeighborhood(neighborhood);
+            topic.setNeighborhood(null);
             topic.setStage(stage);
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
@@ -309,7 +303,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 meeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
             }
 
-            renderEditForm(response, contextPath, topic, meetingEnabled ? meeting : null, ex.getMessage(), false);
+            renderEditForm(response, contextPath, topic, meetingEnabled ? meeting : null, ex.getMessage(), false,
+                    selectedNeighborhoodIds);
         }
     }
 
@@ -386,6 +381,8 @@ public class AdminEsTopicServlet extends HttpServlet {
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
         Map<Long, User> usersById = loadUsersById(comments);
         Map<Long, User> subUsersById = loadUsersByIdFromSubscriptions(subscriptions);
+        String neighborhoodsDisplay = String.join(", ",
+                topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "ES Topic Details - InteropHub", contextPath, panelOut -> {
@@ -402,7 +399,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                         "          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topic.getDescription()))
                                 + "</p>");
                 panelOut.println(
-                        "          <p><strong>Neighborhood:</strong> " + escapeHtml(orEmpty(topic.getNeighborhood()))
+                        "          <p><strong>Neighborhood:</strong> " + escapeHtml(orEmpty(neighborhoodsDisplay))
                                 + "</p>");
                 panelOut.println("          <p><strong>Priority IIS:</strong> "
                         + escapeHtml(String.valueOf(topic.getPriorityIis()))
@@ -529,27 +526,19 @@ public class AdminEsTopicServlet extends HttpServlet {
     }
 
     private void renderEditForm(HttpServletResponse response, String contextPath, EsTopic topic, EsTopicMeeting meeting,
-            String errorMessage, boolean isNew) throws IOException {
+            String errorMessage, boolean isNew, Set<Long> selectedNeighborhoodIdsOverride) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
         List<EsNeighborhood> allNeighborhoods = new EsNeighborhoodDao().findAllActive();
         List<String> policyStatuses = esTopicDao.findDistinctPolicyStatuses();
         List<String> topicTypes = esTopicDao.findDistinctTopicTypes();
-        Set<String> selectedNeighborhoods = new HashSet<>();
-        if (topic.getNeighborhood() != null) {
-            for (String n : topic.getNeighborhood().split(",")) {
-                String trimmed = n.trim();
-                if (!trimmed.isEmpty()) {
-                    selectedNeighborhoods.add(trimmed.toLowerCase());
-                }
-            }
+        Set<Long> selectedNeighborhoodIds = selectedNeighborhoodIdsOverride;
+        if (selectedNeighborhoodIds == null) {
+            selectedNeighborhoodIds = topic.getEsTopicId() == null
+                    ? Set.of()
+                    : topicNeighborhoodDao.findNeighborhoodIdsByTopicId(topic.getEsTopicId());
         }
-        Set<String> knownNeighborhoodLower = allNeighborhoods.stream()
-                .map(nh -> nh.getNeighborhoodName().toLowerCase())
-                .collect(Collectors.toSet());
-        String unknownNeighborhoodText = selectedNeighborhoods.stream()
-                .filter(n -> !knownNeighborhoodLower.contains(n))
-                .collect(Collectors.joining(", "));
+        final Set<Long> selectedNeighborhoodIdsFinal = selectedNeighborhoodIds;
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out,
@@ -592,21 +581,20 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("        <legend>Neighborhood(s)</legend>");
                         if (allNeighborhoods.isEmpty()) {
                             out.println("        <p><em>No neighborhoods defined.</em></p>");
+                            out.println("        <p><a href=\"" + contextPath
+                                    + "/admin/es/neighborhoods?mode=new\">Create a neighborhood</a> and then return to this topic.</p>");
                         } else {
                             for (EsNeighborhood nh : allNeighborhoods) {
-                                String nhName = nh.getNeighborhoodName();
-                                boolean nhChecked = selectedNeighborhoods.contains(nhName.toLowerCase());
-                                out.println("        <label><input type=\"checkbox\" name=\"neighborhood\" value=\""
-                                        + escapeHtml(nhName) + "\"" + (nhChecked ? " checked" : "") + " /> "
-                                        + escapeHtml(nhName) + "</label>");
+                                Long nhId = nh.getEsNeighborhoodId();
+                                boolean nhChecked = nhId != null && selectedNeighborhoodIdsFinal.contains(nhId);
+                                out.println("        <label><input type=\"checkbox\" name=\"esNeighborhoodId\" value=\""
+                                        + escapeHtml(String.valueOf(nhId)) + "\"" + (nhChecked ? " checked" : "")
+                                        + " /> "
+                                        + escapeHtml(orEmpty(nh.getNeighborhoodName())) + "</label>");
                             }
                         }
-                        out.println(
-                                "        <label for=\"newNeighborhood\" style=\"margin-top: 0.75em;\">Add neighborhood not in list above:</label>");
-                        out.println(
-                                "        <input id=\"newNeighborhood\" name=\"newNeighborhood\" type=\"text\" value=\""
-                                        + escapeHtml(unknownNeighborhoodText)
-                                        + "\" placeholder=\"e.g. New Region\" />");
+                        out.println("        <p style=\"margin-top: 0.75em;\"><a href=\"" + contextPath
+                                + "/admin/es/neighborhoods\">Manage neighborhoods</a></p>");
                         out.println("      </fieldset>");
 
                         out.println("      <label for=\"priorityIis\">Priority IIS (required)</label>");
@@ -745,6 +733,20 @@ public class AdminEsTopicServlet extends HttpServlet {
         } catch (Exception ex) {
             return null;
         }
+    }
+
+    private Set<Long> parseNeighborhoodIds(String[] values) {
+        if (values == null || values.length == 0) {
+            return Set.of();
+        }
+        Set<Long> ids = new LinkedHashSet<>();
+        for (String value : values) {
+            Long id = parseId(trimToNull(value));
+            if (id != null) {
+                ids.add(id);
+            }
+        }
+        return ids;
     }
 
     private Integer parseRequiredInt(String value, String label) {

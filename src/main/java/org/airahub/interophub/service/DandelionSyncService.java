@@ -7,16 +7,20 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.airahub.interophub.dao.DandelionSyncConfigDao;
 import org.airahub.interophub.dao.DandelionSyncQueueDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.DandelionSyncConfig;
@@ -35,6 +39,7 @@ public class DandelionSyncService {
 
     private final DandelionSyncConfigDao configDao;
     private final DandelionSyncQueueDao queueDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicDao topicDao;
     private final UserDao userDao;
     private final EsSubscriptionDao subscriptionDao;
@@ -43,6 +48,7 @@ public class DandelionSyncService {
     public DandelionSyncService() {
         this.configDao = new DandelionSyncConfigDao();
         this.queueDao = new DandelionSyncQueueDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicDao = new EsTopicDao();
         this.userDao = new UserDao();
         this.subscriptionDao = new EsSubscriptionDao();
@@ -145,6 +151,10 @@ public class DandelionSyncService {
         int contacts = queueDao.requeueFailedByEntityType(DandelionSyncQueueItem.EntityType.CONTACT);
         int assignments = queueDao.requeueFailedByEntityType(DandelionSyncQueueItem.EntityType.ASSIGNMENT);
         return new RequeueResult(topics, contacts, assignments);
+    }
+
+    public int requeueAllProjects() {
+        return queueDao.requeueAllByEntityType(DandelionSyncQueueItem.EntityType.TOPIC);
     }
 
     public ProcessResult processPendingQueue() {
@@ -260,6 +270,7 @@ public class DandelionSyncService {
             json.put("description", nullableJson(topic.getDescription()));
             json.put("projectHandle", projectHandle == null ? JSONObject.NULL : projectHandle);
             json.put("projectStatus", projectStatus);
+            json.put("projectTags", toJsonArray(resolveProjectTags(topic.getEsTopicId())));
             payloadItems.put(json);
             batchItems.add(new BatchItem(item, externalProjectId(topic.getEsTopicId())));
         }
@@ -499,6 +510,26 @@ public class DandelionSyncService {
 
     private Object nullableJson(String value) {
         return value == null ? JSONObject.NULL : value;
+    }
+
+    private List<String> resolveProjectTags(Long topicId) {
+        List<String> tags = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (String canonical : topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topicId)) {
+            String canonicalKey = canonical.toLowerCase(Locale.ROOT);
+            if (seen.add(canonicalKey)) {
+                tags.add(canonical);
+            }
+        }
+        return tags;
+    }
+
+    private JSONArray toJsonArray(List<String> values) {
+        JSONArray jsonArray = new JSONArray();
+        for (String value : values) {
+            jsonArray.put(value);
+        }
+        return jsonArray;
     }
 
     private String externalProjectId(Long topicId) {

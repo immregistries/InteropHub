@@ -27,7 +27,8 @@ Example root: `/api/v1/sync`
       "projectName": "Annual Partner Plan",
       "description": "",
       "projectHandle": "annual-partner-plan",
-      "projectStatus": "Active"
+      "projectStatus": "Active",
+      "projectTags": ["Quarterly Planning", "Customer Success"]
     }
   ]
 }
@@ -39,11 +40,14 @@ Example root: `/api/v1/sync`
 - `projectStatus`: required, must be one of: `Active`, `Paused`, `Complete`, `Closed`.
 - `projectHandle`: required for non-closed projects; may be empty only when status is `Closed`.
 - `description`: optional.
+- `projectTags`: optional string array. When present, Dandelion reconciles project-tag mappings to exactly the supplied list.
 
 ### Omit vs Empty
 - Omitted field: preserve existing value.
 - Present with `""` or `null`: clear value when field is clearable.
 - Non-clearable fields (such as `projectName`, `projectStatus`) reject empty values.
+- `projectTags` omitted: preserve existing tag mappings.
+- `projectTags: []`: remove all tag mappings for the project.
 
 ## Endpoint 2: Upsert Contacts
 `POST /api/v1/sync/contacts/upsert`

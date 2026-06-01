@@ -13,6 +13,7 @@ import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.model.EsCampaign;
@@ -48,6 +49,7 @@ public class EsTopicDetailServlet extends HttpServlet {
 
         private final AuthFlowService authFlowService;
         private final EsTopicDao esTopicDao;
+        private final EsTopicNeighborhoodDao topicNeighborhoodDao;
         private final EsCampaignDao campaignDao;
         private final EsCampaignTopicDao campaignTopicDao;
         private final EsSubscriptionDao subscriptionDao;
@@ -63,6 +65,7 @@ public class EsTopicDetailServlet extends HttpServlet {
         public EsTopicDetailServlet() {
                 this.authFlowService = new AuthFlowService();
                 this.esTopicDao = new EsTopicDao();
+                this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
                 this.campaignDao = new EsCampaignDao();
                 this.campaignTopicDao = new EsCampaignTopicDao();
                 this.subscriptionDao = new EsSubscriptionDao();
@@ -301,7 +304,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                 String topicName = orEmpty(topic.getTopicName());
                 String description = orEmpty(topic.getDescription());
                 String normalizedStage = orEmpty(topic.getStage());
-                String normalizedNeighborhood = orEmpty(topic.getNeighborhood());
+                String normalizedNeighborhood = String.join(", ",
+                                topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
 
                 response.setContentType("text/html;charset=UTF-8");
                 try (PrintWriter out = response.getWriter()) {
