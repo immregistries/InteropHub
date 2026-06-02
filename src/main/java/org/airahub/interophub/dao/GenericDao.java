@@ -21,12 +21,18 @@ public class GenericDao<T, ID extends Serializable> {
         Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             tx = session.beginTransaction();
-            session.persist(entity);
+            T merged = session.merge(entity);
             tx.commit();
-            return entity;
+            return merged;
         } catch (Exception ex) {
             if (tx != null) {
-                tx.rollback();
+                try {
+                    tx.rollback();
+                } catch (Exception rollbackEx) {
+                    LOGGER.log(Level.WARNING,
+                            "Rollback failed while saving entity: " + entityClass.getSimpleName(),
+                            rollbackEx);
+                }
             }
             LOGGER.log(Level.SEVERE, "Failed to save entity: " + entityClass.getSimpleName(), ex);
             throw ex;

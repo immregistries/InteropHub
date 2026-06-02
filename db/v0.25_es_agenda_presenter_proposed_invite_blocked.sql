@@ -1,0 +1,5 @@
+-- v0.25: introduce PROPOSED / INVITE_BLOCKED presenter lifecycle states
+
+ALTER TABLE es_agenda_item_presenter
+  MODIFY COLUMN status ENUM('PROPOSED','INVITED','INVITE_BLOCKED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED')
+    NOT NULL DEFAULT 'PROPOSED';

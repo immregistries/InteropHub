@@ -33,6 +33,9 @@ public final class EmailReason {
     /** Meeting communication: cancellation notice. */
     public static final String MEETING_COMMUNICATION_CANCELLED = "MEETING_COMMUNICATION_CANCELLED";
 
+    /** Agenda presenter invitation. */
+    public static final String PRESENTER_INVITATION = "PRESENTER_INVITATION";
+
     private EmailReason() {
     }
 }

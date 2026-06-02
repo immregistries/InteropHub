@@ -24,7 +24,9 @@ public class EsAgendaItemPresenter {
     }
 
     public enum PresenterStatus {
+        PROPOSED,
         INVITED,
+        INVITE_BLOCKED,
         ACCEPTED,
         DECLINED,
         NEEDS_CHANGES,
@@ -79,7 +81,7 @@ public class EsAgendaItemPresenter {
         }
         updatedAt = now;
         if (status == null) {
-            status = PresenterStatus.INVITED;
+            status = PresenterStatus.PROPOSED;
         }
         if (presenterRole == null) {
             presenterRole = PresenterRole.LEAD;

@@ -853,7 +853,7 @@ CREATE TABLE es_agenda_item_presenter (
   email_normalized             VARCHAR(254) NOT NULL,
   display_name                 VARCHAR(160) NULL,
   presenter_role               ENUM('LEAD','SUPPORTING','FACILITATOR','REQUESTED_REVIEWER') NOT NULL DEFAULT 'LEAD',
-  status                       ENUM('INVITED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED') NOT NULL DEFAULT 'INVITED',
+  status                       ENUM('PROPOSED','INVITED','INVITE_BLOCKED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED') NOT NULL DEFAULT 'PROPOSED',
   response_note                TEXT NULL,
   responded_at                 DATETIME NULL,
   created_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -890,9 +890,9 @@ CREATE TABLE es_agenda_item_comment (
 -- -------------------------
 -- EMAIL SEND LOG
 -- -------------------------
--- Business-level audit trail of every email successfully sent by InteropHub.
--- One row per delivered email (not per SMTP lifecycle event).
--- Stores reason, subject, and body so admins can see what was sent and why.
+-- Business-level audit trail of every outbound email attempt from InteropHub.
+-- One row per send attempt (including suppressed/blocked outcomes).
+-- Stores reason, subject, and body so admins can see what was attempted and why.
 -- Magic link emails are dual-recorded here and in auth_magic_link_send_event.
 CREATE TABLE email_send_log (
   email_log_id                 BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
