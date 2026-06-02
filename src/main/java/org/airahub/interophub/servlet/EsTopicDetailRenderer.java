@@ -18,7 +18,7 @@ public class EsTopicDetailRenderer {
          *                      when false, the overlay is omitted (full-page mode).
          */
         public static void renderDetailSheetHtml(PrintWriter out, boolean canInteract, boolean canReview,
-                        boolean renderOverlay) {
+                        boolean renderOverlay, String contextPath) {
                 if (renderOverlay) {
                         out.println("    <div id=\"es-detail-overlay\" class=\"es-detail-overlay\" hidden></div>");
                 }
@@ -53,6 +53,11 @@ public class EsTopicDetailRenderer {
                         out.println("          <button type=\"button\" id=\"es-detail-meeting-toggle\"></button>");
                         out.println("        </div>");
                         out.println("      </div>");
+                }
+                if (!canInteract && contextPath != null) {
+                        out.println("      <p style=\"font-size:0.9rem; color:#475569; margin:0.75rem 0;\"><a href=\""
+                                        + contextPath
+                                        + "/home\" style=\"font-weight:600; color:#1d4ed8; text-decoration:none;\">Sign in</a> to follow this topic and request to join meetings.</p>");
                 }
                 out.println("      <div id=\"es-detail-comments-wrap\" class=\"es-detail-comments-wrap\" hidden>");
                 out.println("        <ul id=\"es-detail-comments-list\" class=\"es-detail-comments-list\" hidden></ul>");

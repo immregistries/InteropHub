@@ -381,7 +381,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + "></article>");
 
                         // Render the shared detail sheet HTML (no overlay in page mode)
-                        EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, false);
+                        EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, false, contextPath);
 
                         // Related topics display (public — visible to all visitors)
                         if (!outboundRels.isEmpty() || !inboundRels.isEmpty()) {

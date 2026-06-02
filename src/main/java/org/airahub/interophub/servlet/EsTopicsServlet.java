@@ -342,7 +342,7 @@ public class EsTopicsServlet extends HttpServlet {
                 }
             }
 
-            renderDetailSheet(out, authenticatedUser.isPresent(), canReview);
+            renderDetailSheet(out, authenticatedUser.isPresent(), canReview, contextPath);
             out.println("      </main>");
             out.println("    </div>");
             out.println("  </div>");
@@ -662,8 +662,8 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("      </section>");
     }
 
-    private void renderDetailSheet(PrintWriter out, boolean canInteract, boolean canReview) {
-        EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, true);
+    private void renderDetailSheet(PrintWriter out, boolean canInteract, boolean canReview, String contextPath) {
+        EsTopicDetailRenderer.renderDetailSheetHtml(out, canInteract, canReview, true, contextPath);
     }
 
     private void renderPageScript(PrintWriter out, String contextPath, String campaignCode,

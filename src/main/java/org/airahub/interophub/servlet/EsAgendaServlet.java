@@ -2214,6 +2214,11 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println(
                             "    <span id=\"description-display\" class=\"agenda-muted click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to add\">No meeting information provided. Click to add.</span>");
                 }
+                if (user == null) {
+                    out.println("    <p class=\"agenda-login-prompt\">"
+                            + "<a href=\"" + contextPath + "/home\" class=\"agenda-attend-link\">Sign in</a> "
+                            + "to get a personalized experience.</p>");
+                }
                 if (canEdit) {
                     out.println(
                             "    <div id=\"description-form\" class=\"no-print\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.6rem\">");
@@ -3413,6 +3418,8 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-description { margin-bottom: 1rem; padding: 1rem; }");
         out.println(
                 "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
+        out.println(
+                "    .agenda-login-prompt { font-size: 0.95rem; color: #475569; margin: 0.75rem 0 0 0; }");
         out.println("    .agenda-attendance { margin-bottom: 1rem; padding: 1rem; }");
         out.println("    .agenda-attendance-prompt { font-size: 0.95rem; color: #475569; margin: 0 0 0.5rem 0; }");
         out.println("    .agenda-attend-link { font-weight: 600; color: #1d4ed8; text-decoration: none; }");
