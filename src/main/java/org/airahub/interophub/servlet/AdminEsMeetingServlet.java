@@ -323,7 +323,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         }
 
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Meeting Members - InteropHub", contextPath, panelOut -> {
+            AdminShellRenderer.render(out, "Meeting - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>" + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
 
@@ -336,6 +336,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
                             + escapeHtml(attendanceAbsoluteUrl) + "\">" + escapeHtml(attendanceAbsoluteUrl)
                             + "</a> (<a href=\"" + escapeHtml(attendanceQrUrl) + "\">qr code</a>)</p>");
                 }
+
+                renderAgendasSection(panelOut, contextPath, meetingId, agendas, nextScheduledByMeetingId);
 
                 if (!requested.isEmpty()) {
                     panelOut.println("        <h3>Requested (" + requested.size() + ")</h3>");
@@ -366,8 +368,6 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     panelOut.println("        <p>No members found for this meeting.</p>");
                 }
 
-                renderAgendasSection(panelOut, contextPath, meetingId, agendas, nextScheduledByMeetingId);
-
                 if (topic != null) {
                     panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
                             + topic.getEsTopicId() + "\">View Topic Admin</a></p>");
@@ -383,6 +383,11 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
     private void renderAgendasSection(PrintWriter out, String contextPath, Long meetingId,
             List<EsMeeting> agendas, Map<Long, EsMeetingCommunication> nextScheduledByMeetingId) {
+        LocalDateTime cutoff = LocalDateTime.now().minusDays(14);
+        List<EsMeeting> visibleAgendas = agendas.stream()
+                .filter(a -> a.getScheduledStart() == null || !a.getScheduledStart().isBefore(cutoff))
+                .collect(Collectors.toList());
+
         out.println("        <h3>Agendas</h3>");
         out.println("        <table class=\"data-table\">");
         out.println("          <thead>");
@@ -395,7 +400,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         out.println("            </tr>");
         out.println("          </thead>");
         out.println("          <tbody>");
-        for (EsMeeting agenda : agendas) {
+        for (EsMeeting agenda : visibleAgendas) {
             String dateStr = agenda.getScheduledStart() != null
                     ? DATE_ONLY_FORMAT.format(agenda.getScheduledStart())
                     : "";
@@ -411,7 +416,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
             out.println("              <td>&mdash;</td>");
             out.println("            </tr>");
         }
-        if (agendas.isEmpty()) {
+        if (visibleAgendas.isEmpty()) {
             out.println("            <tr>");
             out.println("              <td colspan=\"5\">No agendas yet.</td>");
             out.println("            </tr>");
