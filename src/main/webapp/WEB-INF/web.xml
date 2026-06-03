@@ -398,6 +398,26 @@
   <servlet>
     <servlet-name>EsRegistrationCompleteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsRegistrationCompleteServlet</servlet-class>
+
+    <servlet>
+      <servlet-name>AdminEsSurveyServlet</servlet-name>
+      <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyServlet</servlet-class>
+    </servlet>
+
+    <servlet>
+      <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
+      <servlet-class>org.airahub.interophub.servlet.AdminEsTopicMeetingSurveyServlet</servlet-class>
+    </servlet>
+
+    <servlet>
+      <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
+      <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyResultsServlet</servlet-class>
+    </servlet>
+
+    <servlet>
+      <servlet-name>EsSurveyServlet</servlet-name>
+      <servlet-class>org.airahub.interophub.servlet.EsSurveyServlet</servlet-class>
+    </servlet>
   </servlet>
 
   <servlet-mapping>
@@ -423,6 +443,26 @@
   <servlet-mapping>
     <servlet-name>EsRegistrationCompleteServlet</servlet-name>
     <url-pattern>/register/complete/*</url-pattern>
+
+    <servlet-mapping>
+      <servlet-name>AdminEsSurveyServlet</servlet-name>
+      <url-pattern>/admin/es/surveys</url-pattern>
+    </servlet-mapping>
+
+    <servlet-mapping>
+      <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
+      <url-pattern>/admin/es/meeting-survey</url-pattern>
+    </servlet-mapping>
+
+    <servlet-mapping>
+      <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
+      <url-pattern>/admin/es/survey-results</url-pattern>
+    </servlet-mapping>
+
+    <servlet-mapping>
+      <servlet-name>EsSurveyServlet</servlet-name>
+      <url-pattern>/es/survey</url-pattern>
+    </servlet-mapping>
   </servlet-mapping>
 
   <servlet-mapping>

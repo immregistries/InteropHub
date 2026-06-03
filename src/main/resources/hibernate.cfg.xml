@@ -59,5 +59,10 @@
     <mapping class="org.airahub.interophub.model.EsTopicCuration"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
+    <mapping class="org.airahub.interophub.model.EsSurvey"/>
+    <mapping class="org.airahub.interophub.model.EsSurveyQuestion"/>
+    <mapping class="org.airahub.interophub.model.EsTopicMeetingSurvey"/>
+    <mapping class="org.airahub.interophub.model.EsSurveyResponse"/>
+    <mapping class="org.airahub.interophub.model.EsSurveyAnswer"/>
   </session-factory>
 </hibernate-configuration>

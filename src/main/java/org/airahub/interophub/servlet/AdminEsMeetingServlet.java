@@ -27,6 +27,7 @@ import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.dao.EsTopicMeetingSurveyDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.EsTopic;
@@ -34,6 +35,9 @@ import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicMeetingMember.MembershipStatus;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.model.EsSurvey;
+import org.airahub.interophub.model.EsTopicMeetingSurvey;
+import org.airahub.interophub.service.EsSurveyService;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.PublicUrlService;
@@ -52,6 +56,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private final PublicUrlService publicUrlService;
     private final EsMeetingDao esMeetingDao;
     private final MeetingCommunicationService meetingCommunicationService;
+    private final EsTopicMeetingSurveyDao topicMeetingSurveyDao;
+    private final EsSurveyService esSurveyService;
 
     public AdminEsMeetingServlet() {
         this.authFlowService = new AuthFlowService();
@@ -62,6 +68,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
         this.publicUrlService = new PublicUrlService();
         this.esMeetingDao = new EsMeetingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
+        this.topicMeetingSurveyDao = new EsTopicMeetingSurveyDao();
+        this.esSurveyService = new EsSurveyService();
     }
 
     @Override
@@ -278,6 +286,53 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
+                panelOut.println("      </section>");
+                // Meeting Surveys section
+                panelOut.println("      <hr>");
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Meeting Survey Assignments</h2>");
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/es/meeting-survey?action=new\" class=\"button\">+ New Assignment</a>"
+                        + " &nbsp; <a href=\"" + contextPath + "/admin/es/meeting-survey\">All Assignments</a>"
+                        + " &nbsp; <a href=\"" + contextPath + "/admin/es/surveys\">Manage Surveys</a></p>");
+                List<EsTopicMeetingSurvey> assignments = topicMeetingSurveyDao.findAllOrdered();
+                panelOut.println("        <table class=\"data-table\">");
+                panelOut.println("          <thead><tr>"
+                        + "<th>ID</th><th>Meeting ID</th><th>Survey</th>"
+                        + "<th>Start</th><th>End</th><th>Status</th><th>Responses</th><th>Actions</th>"
+                        + "</tr></thead>");
+                panelOut.println("          <tbody>");
+                for (EsTopicMeetingSurvey a : assignments) {
+                    EsSurvey s = esSurveyService.getSurvey(a.getEsSurveyId()).orElse(null);
+                    long responseCount = 0;
+                    try {
+                        responseCount = new org.airahub.interophub.dao.EsSurveyResponseDao()
+                                .countByTopicMeetingSurveyId(a.getEsTopicMeetingSurveyId());
+                    } catch (Exception ignore) {
+                    }
+                    String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
+                            + a.getEsTopicMeetingSurveyId();
+                    String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
+                            + a.getEsTopicMeetingSurveyId();
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <td>" + a.getEsTopicMeetingSurveyId() + "</td>");
+                    panelOut.println("              <td>" + a.getEsTopicMeetingId() + "</td>");
+                    panelOut.println("              <td>"
+                            + escapeHtml(s != null ? s.getSurveyName() : "?") + "</td>");
+                    panelOut.println("              <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
+                    panelOut.println("              <td>" + escapeHtml(a.getEndDate().toString()) + "</td>");
+                    panelOut.println("              <td>"
+                            + escapeHtml(a.getStatus() != null ? a.getStatus().name() : "") + "</td>");
+                    panelOut.println("              <td>" + responseCount + "</td>");
+                    panelOut.println("              <td><a href=\"" + editUrl + "\">Edit</a>"
+                            + " | <a href=\"" + resultsUrl + "\">Results</a></td>");
+                    panelOut.println("            </tr>");
+                }
+                if (assignments.isEmpty()) {
+                    panelOut.println("            <tr><td colspan=\"8\">No survey assignments found.</td></tr>");
+                }
+                panelOut.println("          </tbody>");
+                panelOut.println("        </table>");
                 panelOut.println("      </section>");
             });
         }

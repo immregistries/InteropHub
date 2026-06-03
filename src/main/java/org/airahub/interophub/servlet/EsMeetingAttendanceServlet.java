@@ -36,6 +36,8 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.model.EsTopicMeetingSurvey;
+import org.airahub.interophub.service.EsSurveyService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -57,6 +59,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     private final AuthService authService;
     private final EmailService emailService;
     private final EmailSendLogDao emailSendLogDao;
+    private final EsSurveyService esSurveyService;
 
     public EsMeetingAttendanceServlet() {
         this.topicDao = new EsTopicDao();
@@ -70,6 +73,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         this.authService = new AuthService();
         this.emailService = new EmailService();
         this.emailSendLogDao = new EmailSendLogDao();
+        this.esSurveyService = new EsSurveyService();
     }
 
     @Override
@@ -263,6 +267,19 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         request.getSession().setAttribute("interophub.lastAttendedEmail", emailNormalized);
 
         String agendaUrl = buildAgendaUrl(request.getContextPath(), resolvedMeeting, esTopicMeetingId);
+        response.sendRedirect(agendaUrl);
+        try {
+            Optional<EsTopicMeetingSurvey> pendingSurvey = esSurveyService.findPendingSurveyForAttendance(record,
+                    authenticatedUser.orElse(null));
+            if (pendingSurvey.isPresent()) {
+                response.sendRedirect(request.getContextPath() + "/es/survey?assignmentId="
+                        + pendingSurvey.get().getEsTopicMeetingSurveyId());
+                return;
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING, "Survey check failed, continuing to agenda", ex);
+        }
+
         response.sendRedirect(agendaUrl);
     }
 
