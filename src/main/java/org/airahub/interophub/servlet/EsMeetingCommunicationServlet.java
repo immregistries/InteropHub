@@ -3,6 +3,9 @@ package org.airahub.interophub.servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +27,7 @@ import org.airahub.interophub.service.MeetingCommunicationService;
 public class EsMeetingCommunicationServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String DEFAULT_TIMEZONE = "America/New_York";
 
     /** Allowed timezones for the form. */
     private static final Set<String> ALLOWED_TIMEZONES = Set.of(
@@ -94,9 +98,7 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
                             "            <th>Type</th><th>Status</th><th>Scheduled Send</th><th>Created</th><th></th>");
                     panelOut.println("          </tr></thead><tbody>");
                     for (EsMeetingCommunication comm : communications) {
-                        String scheduledAt = comm.getScheduledSendAt() != null
-                                ? DATETIME_FMT.format(comm.getScheduledSendAt())
-                                : "—";
+                        String scheduledAt = formatScheduledSendInCommunicationTimezone(comm);
                         String createdAt = comm.getCreatedAt() != null
                                 ? DATETIME_FMT.format(comm.getCreatedAt())
                                 : "";
@@ -214,18 +216,21 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
         communication.setCommunicationType(communicationType);
         communication.setCreatedByUserId(adminUser.get().getUserId());
 
+        String timezoneId = trimToNull(request.getParameter("timezoneId"));
+        String effectiveTimezoneId = DEFAULT_TIMEZONE;
+        if (timezoneId != null && ALLOWED_TIMEZONES.contains(timezoneId)) {
+            effectiveTimezoneId = timezoneId;
+        }
+        communication.setTimezoneId(effectiveTimezoneId);
+
         String scheduledSendAtParam = trimToNull(request.getParameter("scheduledSendAt"));
         if (scheduledSendAtParam != null) {
             try {
                 // datetime-local format: yyyy-MM-ddTHH:mm
-                communication.setScheduledSendAt(LocalDateTime.parse(scheduledSendAtParam));
+                LocalDateTime scheduledLocal = LocalDateTime.parse(scheduledSendAtParam);
+                communication.setScheduledSendAt(toUtcLocalDateTime(scheduledLocal, effectiveTimezoneId));
             } catch (Exception ignored) {
             }
-        }
-
-        String timezoneId = trimToNull(request.getParameter("timezoneId"));
-        if (timezoneId != null && ALLOWED_TIMEZONES.contains(timezoneId)) {
-            communication.setTimezoneId(timezoneId);
         }
 
         communication.setSubjectOverride(trimToNull(request.getParameter("subjectOverride")));
@@ -314,6 +319,31 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static ZoneId safeZoneId(String tzId) {
+        if (tzId != null && ALLOWED_TIMEZONES.contains(tzId)) {
+            return ZoneId.of(tzId);
+        }
+        return ZoneId.of(DEFAULT_TIMEZONE);
+    }
+
+    private static LocalDateTime toUtcLocalDateTime(LocalDateTime localDateTime, String timezoneId) {
+        ZoneId sourceZone = safeZoneId(timezoneId);
+        return localDateTime.atZone(sourceZone)
+                .withZoneSameInstant(ZoneOffset.UTC)
+                .toLocalDateTime();
+    }
+
+    private static String formatScheduledSendInCommunicationTimezone(EsMeetingCommunication communication) {
+        if (communication.getScheduledSendAt() == null) {
+            return "—";
+        }
+        ZoneId targetZone = safeZoneId(communication.getTimezoneId());
+        ZonedDateTime local = communication.getScheduledSendAt()
+                .atZone(ZoneOffset.UTC)
+                .withZoneSameInstant(targetZone);
+        return DATETIME_FMT.format(local) + " " + targetZone.getId();
     }
 
     private static String escapeHtml(String value) {

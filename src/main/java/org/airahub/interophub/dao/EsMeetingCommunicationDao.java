@@ -1,7 +1,9 @@
 package org.airahub.interophub.dao;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.EsMeetingCommunication.CommunicationStatus;
@@ -37,6 +39,31 @@ public class EsMeetingCommunicationDao extends GenericDao<EsMeetingCommunication
                     EsMeetingCommunication.class)
                     .setParameter("mid", esMeetingId)
                     .getResultList();
+        }
+    }
+
+    /**
+     * Returns the next communication scheduled to send for a meeting.
+     *
+     * "Next" is the earliest row in SCHEDULED status with a non-null
+     * scheduledSendAt.
+     */
+    public Optional<EsMeetingCommunication> findNextScheduledByMeetingId(Long esMeetingId) {
+        if (esMeetingId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeetingCommunication c"
+                            + " where c.esMeetingId = :mid"
+                            + " and c.status = :scheduled"
+                            + " and c.scheduledSendAt is not null"
+                            + " order by c.scheduledSendAt asc",
+                    EsMeetingCommunication.class)
+                    .setParameter("mid", esMeetingId)
+                    .setParameter("scheduled", CommunicationStatus.SCHEDULED)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
         }
     }
 
@@ -124,7 +151,7 @@ public class EsMeetingCommunicationDao extends GenericDao<EsMeetingCommunication
                                 + " WHERE es_meeting_communication_id = :id"
                                 + "   AND status = 'SCHEDULED'")
                         .setParameter("id", esMeetingCommunicationId)
-                        .setParameter("now", LocalDateTime.now())
+                        .setParameter("now", LocalDateTime.now(ZoneOffset.UTC))
                         .executeUpdate();
                 tx.commit();
                 return updated;
@@ -167,7 +194,7 @@ public class EsMeetingCommunicationDao extends GenericDao<EsMeetingCommunication
         if (esMeetingCommunicationId == null) {
             return;
         }
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             org.hibernate.Transaction tx = session.beginTransaction();
             try {

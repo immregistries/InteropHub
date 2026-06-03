@@ -1,6 +1,7 @@
 package org.airahub.interophub.service;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.dao.EsMeetingCommunicationDao;
@@ -79,7 +80,7 @@ public class MeetingCommunicationService {
         if (communication.getScheduledSendAt() == null) {
             throw new IllegalArgumentException("scheduledSendAt is required to schedule a communication.");
         }
-        LocalDateTime minimum = LocalDateTime.now().plusMinutes(MIN_SCHEDULE_MINUTES);
+        LocalDateTime minimum = LocalDateTime.now(ZoneOffset.UTC).plusMinutes(MIN_SCHEDULE_MINUTES);
         if (communication.getScheduledSendAt().isBefore(minimum)) {
             throw new IllegalArgumentException(
                     "scheduledSendAt must be at least " + MIN_SCHEDULE_MINUTES
@@ -109,7 +110,7 @@ public class MeetingCommunicationService {
                     "Cannot cancel a communication in status: " + status);
         }
         communication.setStatus(CommunicationStatus.CANCELLED);
-        communication.setCancelledAt(LocalDateTime.now());
+        communication.setCancelledAt(LocalDateTime.now(ZoneOffset.UTC));
         communication.setCancelledByUserId(cancelledByUserId);
         communication.setCancellationReason(reason);
         return dao.saveOrUpdate(communication);
@@ -123,6 +124,10 @@ public class MeetingCommunicationService {
         return dao.findByMeetingId(esMeetingId);
     }
 
+    public Optional<EsMeetingCommunication> findNextScheduledByMeetingId(Long esMeetingId) {
+        return dao.findNextScheduledByMeetingId(esMeetingId);
+    }
+
     public List<EsMeetingCommunication> findAllRecent(int limit) {
         return dao.findAllRecent(limit);
     }
@@ -132,6 +137,6 @@ public class MeetingCommunicationService {
      * Called automatically when a meeting is cancelled.
      */
     public int cancelAllPendingForMeeting(Long esMeetingId, Long cancelledByUserId) {
-        return dao.cancelPendingForMeeting(esMeetingId, cancelledByUserId, LocalDateTime.now());
+        return dao.cancelPendingForMeeting(esMeetingId, cancelledByUserId, LocalDateTime.now(ZoneOffset.UTC));
     }
 }

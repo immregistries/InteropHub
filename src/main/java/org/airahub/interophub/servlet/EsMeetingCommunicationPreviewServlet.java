@@ -2,6 +2,9 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -24,6 +27,7 @@ import org.airahub.interophub.service.MeetingCommunicationService;
 public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String DEFAULT_TIMEZONE = "America/New_York";
 
     private final AuthFlowService authFlowService;
     private final MeetingCommunicationPreviewService previewService;
@@ -86,9 +90,7 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
                         : "Unknown");
                 row(panelOut, "Type", escapeHtml(comm.getCommunicationType().name()));
                 row(panelOut, "Status", escapeHtml(comm.getStatus().name()));
-                row(panelOut, "Scheduled Send",
-                        comm.getScheduledSendAt() != null ? escapeHtml(DATETIME_FMT.format(comm.getScheduledSendAt()))
-                                : "—");
+                row(panelOut, "Scheduled Send", escapeHtml(formatScheduledSendInCommunicationTimezone(comm)));
                 row(panelOut, "Recipients", String.valueOf(preview.getTotalRecipientCount()));
                 row(panelOut, "Include General Members", comm.isIncludeGeneralMembers() ? "Yes" : "No");
                 row(panelOut, "Include Topic Subscribers", comm.isIncludeTopicSubscribers() ? "Yes" : "No");
@@ -254,6 +256,28 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String formatScheduledSendInCommunicationTimezone(EsMeetingCommunication communication) {
+        if (communication.getScheduledSendAt() == null) {
+            return "—";
+        }
+        ZoneId targetZone = safeZoneId(communication.getTimezoneId());
+        ZonedDateTime local = communication.getScheduledSendAt()
+                .atZone(ZoneOffset.UTC)
+                .withZoneSameInstant(targetZone);
+        return DATETIME_FMT.format(local) + " " + targetZone.getId();
+    }
+
+    private static ZoneId safeZoneId(String timezoneId) {
+        if (timezoneId != null && !timezoneId.isBlank()) {
+            try {
+                return ZoneId.of(timezoneId);
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return ZoneId.of(DEFAULT_TIMEZONE);
     }
 
     private static String escapeHtml(String value) {

@@ -7,6 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -25,19 +28,21 @@ import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicMeetingMember.MembershipStatus;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.PublicUrlService;
 
 public class AdminEsMeetingServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_ONLY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
-    private static final DateTimeFormatter TIME_ONLY_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final String DEFAULT_TIMEZONE = "America/New_York";
 
     private final AuthFlowService authFlowService;
     private final EsTopicMeetingDao meetingDao;
@@ -46,6 +51,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private final UserDao userDao;
     private final PublicUrlService publicUrlService;
     private final EsMeetingDao esMeetingDao;
+    private final MeetingCommunicationService meetingCommunicationService;
 
     public AdminEsMeetingServlet() {
         this.authFlowService = new AuthFlowService();
@@ -55,6 +61,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         this.userDao = new UserDao();
         this.publicUrlService = new PublicUrlService();
         this.esMeetingDao = new EsMeetingDao();
+        this.meetingCommunicationService = new MeetingCommunicationService();
     }
 
     @Override
@@ -306,6 +313,14 @@ public class AdminEsMeetingServlet extends HttpServlet {
                 : null;
 
         List<EsMeeting> agendas = esMeetingDao.findByEsTopicMeetingId(meetingId);
+        Map<Long, EsMeetingCommunication> nextScheduledByMeetingId = new LinkedHashMap<>();
+        for (EsMeeting agenda : agendas) {
+            if (agenda.getEsMeetingId() == null) {
+                continue;
+            }
+            meetingCommunicationService.findNextScheduledByMeetingId(agenda.getEsMeetingId())
+                    .ifPresent(c -> nextScheduledByMeetingId.put(agenda.getEsMeetingId(), c));
+        }
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Meeting Members - InteropHub", contextPath, panelOut -> {
@@ -351,7 +366,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     panelOut.println("        <p>No members found for this meeting.</p>");
                 }
 
-                renderAgendasSection(panelOut, contextPath, meetingId, agendas);
+                renderAgendasSection(panelOut, contextPath, meetingId, agendas, nextScheduledByMeetingId);
 
                 if (topic != null) {
                     panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
@@ -367,14 +382,14 @@ public class AdminEsMeetingServlet extends HttpServlet {
     }
 
     private void renderAgendasSection(PrintWriter out, String contextPath, Long meetingId,
-            List<EsMeeting> agendas) {
+            List<EsMeeting> agendas, Map<Long, EsMeetingCommunication> nextScheduledByMeetingId) {
         out.println("        <h3>Agendas</h3>");
         out.println("        <table class=\"data-table\">");
         out.println("          <thead>");
         out.println("            <tr>");
         out.println("              <th>Meeting Name</th>");
         out.println("              <th>Date</th>");
-        out.println("              <th>Start Time</th>");
+        out.println("              <th>Communication</th>");
         out.println("              <th>Status</th>");
         out.println("              <th>Actions</th>");
         out.println("            </tr>");
@@ -384,18 +399,13 @@ public class AdminEsMeetingServlet extends HttpServlet {
             String dateStr = agenda.getScheduledStart() != null
                     ? DATE_ONLY_FORMAT.format(agenda.getScheduledStart())
                     : "";
-            String timeStr = agenda.getScheduledStart() != null
-                    ? TIME_ONLY_FORMAT.format(agenda.getScheduledStart())
-                    : "";
-            if (agenda.getTimezoneId() != null && !agenda.getTimezoneId().isBlank()) {
-                timeStr += " " + escapeHtml(agenda.getTimezoneId());
-            }
             out.println("            <tr>");
             out.println("              <td><a href=\"" + contextPath + "/es/agenda?meetingId=" + agenda.getEsMeetingId()
                     + "\">"
                     + escapeHtml(orEmpty(agenda.getMeetingName())) + "</a></td>");
             out.println("              <td>" + escapeHtml(dateStr) + "</td>");
-            out.println("              <td>" + escapeHtml(timeStr) + "</td>");
+            renderCommunicationCell(out, contextPath, agenda,
+                    nextScheduledByMeetingId.get(agenda.getEsMeetingId()));
             out.println("              <td>" + escapeHtml(agenda.getStatus() != null ? agenda.getStatus().name() : "")
                     + "</td>");
             out.println("              <td>&mdash;</td>");
@@ -414,6 +424,67 @@ public class AdminEsMeetingServlet extends HttpServlet {
         out.println("          <label>Date: <input type=\"date\" name=\"agendaDate\" required></label>");
         out.println("          <button type=\"submit\">Create Agenda</button>");
         out.println("        </form>");
+    }
+
+    private void renderCommunicationCell(PrintWriter out, String contextPath, EsMeeting agenda,
+            EsMeetingCommunication nextScheduledCommunication) {
+        if (agenda.getEsMeetingId() == null) {
+            out.println("              <td>&mdash;</td>");
+            return;
+        }
+
+        if (nextScheduledCommunication != null) {
+            String type = nextScheduledCommunication.getCommunicationType() != null
+                    ? nextScheduledCommunication.getCommunicationType().name()
+                    : "SCHEDULED";
+            String scheduledSend = formatScheduledSendInCommunicationTimezone(nextScheduledCommunication);
+            out.println("              <td><a href=\"" + contextPath
+                    + "/es/meeting-communication-preview?id="
+                    + nextScheduledCommunication.getEsMeetingCommunicationId() + "\">Next: "
+                    + escapeHtml(type) + " at " + escapeHtml(scheduledSend) + "</a></td>");
+            return;
+        }
+
+        String scheduleUrl = contextPath + "/es/meeting-communication?meetingId=" + agenda.getEsMeetingId();
+        String suggestType = suggestTypeForMeetingStatus(agenda.getStatus());
+        if (suggestType != null) {
+            scheduleUrl += "&suggestType=" + encodeQueryComponent(suggestType);
+        }
+        out.println("              <td><a href=\"" + scheduleUrl + "\">Schedule communication</a></td>");
+    }
+
+    private String suggestTypeForMeetingStatus(EsMeeting.MeetingStatus status) {
+        if (status == null) {
+            return null;
+        }
+        return switch (status) {
+            case PROPOSED -> "PROPOSED_AGENDA";
+            case FINALIZED -> "FINAL_AGENDA";
+            case CANCELLED -> "CANCELLED";
+            default -> null;
+        };
+    }
+
+    private String formatScheduledSendInCommunicationTimezone(EsMeetingCommunication communication) {
+        if (communication.getScheduledSendAt() == null) {
+            return "";
+        }
+        ZoneId targetZone = safeZoneId(communication.getTimezoneId());
+        ZonedDateTime local = communication.getScheduledSendAt()
+                .atZone(ZoneOffset.UTC)
+                .withZoneSameInstant(targetZone);
+        return DATE_FORMAT.format(local) + " " + targetZone.getId();
+    }
+
+    private ZoneId safeZoneId(String timezoneId) {
+        if (timezoneId != null && !timezoneId.isBlank()) {
+            try {
+                return ZoneId.of(timezoneId);
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return ZoneId.of(DEFAULT_TIMEZONE);
     }
 
     private void renderMemberTable(PrintWriter out, String contextPath, Long meetingId,

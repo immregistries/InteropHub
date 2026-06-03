@@ -3,6 +3,7 @@ package org.airahub.interophub.service;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -87,7 +88,7 @@ public class MeetingCommunicationSendService {
      * each one via {@link #send(EsMeetingCommunication)}.
      */
     public void processDue() {
-        List<EsMeetingCommunication> due = communicationDao.findDueToSend(LocalDateTime.now());
+        List<EsMeetingCommunication> due = communicationDao.findDueToSend(LocalDateTime.now(ZoneOffset.UTC));
         for (EsMeetingCommunication communication : due) {
             try {
                 send(communication);
@@ -194,7 +195,7 @@ public class MeetingCommunicationSendService {
         }
 
         if (failCount == 0) {
-            communicationDao.markSent(communication.getEsMeetingCommunicationId(), LocalDateTime.now());
+            communicationDao.markSent(communication.getEsMeetingCommunicationId(), LocalDateTime.now(ZoneOffset.UTC));
             LOGGER.info("Communication id=" + communication.getEsMeetingCommunicationId()
                     + " sent to " + successCount + " recipients.");
         } else if (successCount == 0) {
@@ -204,7 +205,7 @@ public class MeetingCommunicationSendService {
                     + " failed — 0/" + (successCount + failCount) + " emails delivered.");
         } else {
             // Partial success: mark as SENT but record the errors
-            communicationDao.markSent(communication.getEsMeetingCommunicationId(), LocalDateTime.now());
+            communicationDao.markSent(communication.getEsMeetingCommunicationId(), LocalDateTime.now(ZoneOffset.UTC));
             LOGGER.warning("Communication id=" + communication.getEsMeetingCommunicationId()
                     + " partially sent: " + successCount + " ok, " + failCount + " failed. Errors: "
                     + errors);
