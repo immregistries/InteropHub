@@ -427,6 +427,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
                             + topic.getEsTopicId() + "\">View Topic Admin</a></p>");
                 }
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/meeting-polls?esTopicMeetingId="
+                        + meetingId + "\">Manage Meeting Polls</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/es/meetings?seriesId=" + meetingId
                         + "\">View Public Meetings</a></p>");
                 panelOut.println(

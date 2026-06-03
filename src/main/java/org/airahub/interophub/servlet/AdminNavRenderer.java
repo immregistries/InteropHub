@@ -31,6 +31,7 @@ public final class AdminNavRenderer {
                 navItem(contextPath + "/admin/es/campaigns", "Campaigns"),
                 navItem(contextPath + "/admin/es/topics", "ES Topics"),
                 navItem(contextPath + "/admin/es/meetings", "Meetings"),
+                navItem(contextPath + "/admin/es/meeting-polls", "Meeting Polls"),
                 navItem(contextPath + "/admin/es/surveys", "Surveys"),
                 navItem(contextPath + "/admin/es/meeting-survey", "Meeting Surveys"),
                 navItem(contextPath + "/admin/es/dandelion-sync", "Dandelion Sync"),

@@ -326,6 +326,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsMeetingPollsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsMeetingPollsServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsMeetingPollServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsMeetingPollServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsNeighborhoodServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsNeighborhoodServlet</servlet-class>
   </servlet>
@@ -398,26 +408,31 @@
   <servlet>
     <servlet-name>EsRegistrationCompleteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsRegistrationCompleteServlet</servlet-class>
+  </servlet>
 
-    <servlet>
-      <servlet-name>AdminEsSurveyServlet</servlet-name>
-      <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyServlet</servlet-class>
-    </servlet>
+  <servlet>
+    <servlet-name>AdminEsSurveyServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyServlet</servlet-class>
+  </servlet>
 
-    <servlet>
-      <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
-      <servlet-class>org.airahub.interophub.servlet.AdminEsTopicMeetingSurveyServlet</servlet-class>
-    </servlet>
+  <servlet>
+    <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicMeetingSurveyServlet</servlet-class>
+  </servlet>
 
-    <servlet>
-      <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
-      <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyResultsServlet</servlet-class>
-    </servlet>
+  <servlet>
+    <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsSurveyResultsServlet</servlet-class>
+  </servlet>
 
-    <servlet>
-      <servlet-name>EsSurveyServlet</servlet-name>
-      <servlet-class>org.airahub.interophub.servlet.EsSurveyServlet</servlet-class>
-    </servlet>
+  <servlet>
+    <servlet-name>EsSurveyServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsSurveyServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsMeetingPollServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingPollServlet</servlet-class>
   </servlet>
 
   <servlet-mapping>
@@ -443,26 +458,31 @@
   <servlet-mapping>
     <servlet-name>EsRegistrationCompleteServlet</servlet-name>
     <url-pattern>/register/complete/*</url-pattern>
+  </servlet-mapping>
 
-    <servlet-mapping>
-      <servlet-name>AdminEsSurveyServlet</servlet-name>
-      <url-pattern>/admin/es/surveys</url-pattern>
-    </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>AdminEsSurveyServlet</servlet-name>
+    <url-pattern>/admin/es/surveys</url-pattern>
+  </servlet-mapping>
 
-    <servlet-mapping>
-      <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
-      <url-pattern>/admin/es/meeting-survey</url-pattern>
-    </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>AdminEsTopicMeetingSurveyServlet</servlet-name>
+    <url-pattern>/admin/es/meeting-survey</url-pattern>
+  </servlet-mapping>
 
-    <servlet-mapping>
-      <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
-      <url-pattern>/admin/es/survey-results</url-pattern>
-    </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>AdminEsSurveyResultsServlet</servlet-name>
+    <url-pattern>/admin/es/survey-results</url-pattern>
+  </servlet-mapping>
 
-    <servlet-mapping>
-      <servlet-name>EsSurveyServlet</servlet-name>
-      <url-pattern>/es/survey</url-pattern>
-    </servlet-mapping>
+  <servlet-mapping>
+    <servlet-name>EsSurveyServlet</servlet-name>
+    <url-pattern>/es/survey</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingPollServlet</servlet-name>
+    <url-pattern>/es/meeting-poll</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
@@ -513,6 +533,16 @@
   <servlet-mapping>
     <servlet-name>AdminEsMeetingServlet</servlet-name>
     <url-pattern>/admin/es/meetings</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsMeetingPollsServlet</servlet-name>
+    <url-pattern>/admin/es/meeting-polls</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsMeetingPollServlet</servlet-name>
+    <url-pattern>/admin/es/meeting-poll</url-pattern>
   </servlet-mapping>
 
   <servlet>

@@ -48,6 +48,9 @@
     <mapping class="org.airahub.interophub.model.EsCampaignRegistration"/>
     <mapping class="org.airahub.interophub.model.EsTopicMeeting"/>
     <mapping class="org.airahub.interophub.model.EsTopicMeetingMember"/>
+    <mapping class="org.airahub.interophub.model.EsTopicMeetingPoll"/>
+    <mapping class="org.airahub.interophub.model.EsTopicMeetingPollOption"/>
+    <mapping class="org.airahub.interophub.model.EsTopicMeetingPollResponse"/>
     <mapping class="org.airahub.interophub.model.EsMeetingAttendance"/>
     <mapping class="org.airahub.interophub.model.EsMeeting"/>
     <mapping class="org.airahub.interophub.model.EsMeetingAgendaItem"/>
