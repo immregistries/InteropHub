@@ -14,7 +14,6 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Arrays;
 import java.util.List;
@@ -33,9 +32,7 @@ import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
-import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.UserDao;
-import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
@@ -52,7 +49,6 @@ import java.util.logging.Logger;
 import org.airahub.interophub.dao.HubSettingDao;
 import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.service.AuthFlowService;
-import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsInterestService;
@@ -87,7 +83,6 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingDao topicMeetingDao;
     private final UserDao userDao;
-    private final EmailSendLogDao emailSendLogDao;
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
@@ -104,7 +99,6 @@ public class EsAgendaServlet extends HttpServlet {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.userDao = new UserDao();
-        this.emailSendLogDao = new EmailSendLogDao();
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
@@ -402,9 +396,6 @@ public class EsAgendaServlet extends HttpServlet {
                 break;
             case "addPresenter":
                 handleAddPresenter(request, response, contextPath, meeting, user, editOverride);
-                break;
-            case "invitePresenter":
-                handleInvitePresenter(request, response, contextPath, meeting, editOverride);
                 break;
             case "acceptPresenter":
                 handleAcceptPresenter(request, response, contextPath, meeting, editOverride);
@@ -1042,7 +1033,7 @@ public class EsAgendaServlet extends HttpServlet {
                 && emailNormalized.equals(currentUser.getEmail().trim().toLowerCase());
         EsAgendaItemPresenter.PresenterStatus status = isAddingSelf
                 ? EsAgendaItemPresenter.PresenterStatus.ACCEPTED
-                : EsAgendaItemPresenter.PresenterStatus.PROPOSED;
+                : EsAgendaItemPresenter.PresenterStatus.INVITED;
 
         EsAgendaItemPresenter p = new EsAgendaItemPresenter();
         p.setEsMeetingAgendaItemId(itemId);
@@ -1065,60 +1056,9 @@ public class EsAgendaServlet extends HttpServlet {
         p.setPresenterRole(role);
         p.setStatus(status);
         presenterDao.save(p);
-        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
-    }
-
-    private void handleInvitePresenter(HttpServletRequest request, HttpServletResponse response,
-            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
-        Long presenterId = parseId(trimToNull(request.getParameter("presenterId")));
-        EsAgendaItemPresenter presenter = validatePresenterForMeeting(presenterId, meeting);
-        if (presenter == null) {
-            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
-            return;
+        if (status == EsAgendaItemPresenter.PresenterStatus.INVITED) {
+            sendPresenterInvitationEmail(email, displayName, item, meeting, role);
         }
-        if (presenter.getStatus() == EsAgendaItemPresenter.PresenterStatus.ACCEPTED
-                || presenter.getStatus() == EsAgendaItemPresenter.PresenterStatus.DECLINED
-                || presenter.getStatus() == EsAgendaItemPresenter.PresenterStatus.REMOVED) {
-            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
-                    "This presenter cannot be invited in the current status.");
-            return;
-        }
-
-        EsMeetingAgendaItem item = agendaItemDao.findById(presenter.getEsMeetingAgendaItemId()).orElse(null);
-        if (item == null) {
-            redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
-            return;
-        }
-
-        String recipientName = trimToNull(presenter.getDisplayName());
-        if (recipientName == null && presenter.getUserId() != null) {
-            recipientName = userDao.findById(presenter.getUserId())
-                    .map(User::getFullName)
-                    .map(EsAgendaServlet::trimToNull)
-                    .orElse(null);
-        }
-
-        if (presenter.getEmailNormalized() != null
-                && subscriptionDao.hasGeneralUnsubscribed(presenter.getEmailNormalized())) {
-            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
-                    "This presenter has opted out of General ES emails, so an invite email cannot be sent.");
-            return;
-        }
-
-        InvitationAttemptResult result = sendPresenterInvitationEmail(
-                presenter.getEmail(),
-                presenter.getEmailNormalized(),
-                recipientName,
-                presenter.getUserId(),
-                item,
-                meeting,
-                presenter.getPresenterRole(),
-                presenter.getStatus());
-
-        presenter.setStatus(result.status());
-        presenter.setResponseNote(result.statusNote());
-        presenterDao.save(presenter);
-
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
 
@@ -1226,10 +1166,8 @@ public class EsAgendaServlet extends HttpServlet {
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
 
-    private InvitationAttemptResult sendPresenterInvitationEmail(String recipientEmail, String recipientEmailNormalized,
-            String recipientName, Long userId,
-            EsMeetingAgendaItem item, EsMeeting meeting, EsAgendaItemPresenter.PresenterRole role,
-            EsAgendaItemPresenter.PresenterStatus currentStatus) {
+    private void sendPresenterInvitationEmail(String recipientEmail, String recipientName,
+            EsMeetingAgendaItem item, EsMeeting meeting, EsAgendaItemPresenter.PresenterRole role) {
         try {
             HubSetting settings = hubSettingDao.findActive()
                     .or(() -> hubSettingDao.findFirst())
@@ -1257,53 +1195,12 @@ public class EsAgendaServlet extends HttpServlet {
             String body = EmailTemplates.presenterInvitationBody(
                     recipientName, itemTitle, topicName,
                     meeting.getMeetingName(), dateDisplay, roleLabel, agendaLink);
-
-            EmailSendLog log = new EmailSendLog();
-            log.setEmailReason(EmailReason.PRESENTER_INVITATION);
-            log.setRecipientEmail(recipientEmail);
-            log.setRecipientEmailNormalized(recipientEmailNormalized);
-            log.setUserId(userId);
-            log.setSubject(subject);
-
-            if (subscriptionDao.hasGeneralUnsubscribed(recipientEmailNormalized)) {
-                log.setBodyText("[NOT SENT] Recipient unsubscribed from General ES emails.\n\n" + body);
-                emailSendLogDao.log(log);
-                return new InvitationAttemptResult(
-                        currentStatus,
-                        "Invitation email not sent because this presenter has unsubscribed from General ES emails.");
+            if (!subscriptionDao.hasGeneralUnsubscribed(recipientEmail.trim().toLowerCase())) {
+                emailService.send(recipientEmail, subject, body);
             }
-
-            EmailService.SendResult sendResult = emailService.send(recipientEmail, subject, body);
-            if (sendResult.isSuppressed()) {
-                log.setBodyText("[NOT SENT] Email sending is currently disabled in hub settings.\n\n" + body);
-                emailSendLogDao.log(log);
-                return new InvitationAttemptResult(
-                        currentStatus,
-                        "Invitation email not sent because email sending is disabled.");
-            }
-
-            log.setBodyText(body);
-            log.setSmtpMessageId(sendResult.getSmtpMessageId());
-            log.setSmtpProvider(sendResult.getSmtpProvider());
-            emailSendLogDao.log(log);
-            return new InvitationAttemptResult(EsAgendaItemPresenter.PresenterStatus.INVITED, null);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to send presenter invitation email to " + recipientEmail, ex);
-            EmailSendLog log = new EmailSendLog();
-            log.setEmailReason(EmailReason.PRESENTER_INVITATION);
-            log.setRecipientEmail(recipientEmail);
-            log.setRecipientEmailNormalized(recipientEmailNormalized);
-            log.setUserId(userId);
-            log.setSubject("Presenter invitation failed");
-            log.setBodyText("[FAILED] " + trimToNull(ex.getMessage()));
-            emailSendLogDao.log(log);
-            return new InvitationAttemptResult(
-                    EsAgendaItemPresenter.PresenterStatus.INVITE_BLOCKED,
-                    "Invitation email failed to send. Please retry.");
         }
-    }
-
-    private record InvitationAttemptResult(EsAgendaItemPresenter.PresenterStatus status, String statusNote) {
     }
 
     private EsAgendaItemPresenter validatePresenterForMeeting(Long presenterId, EsMeeting meeting) {
@@ -1385,7 +1282,7 @@ public class EsAgendaServlet extends HttpServlet {
             newItem.setProposedByUserId(user.getUserId());
         }
         EsMeetingAgendaItem saved = agendaItemDao.save(newItem);
-        // Copy active presenters, applying ACCEPTED for self and PROPOSED for others
+        // Copy active presenters, applying ACCEPTED for self and INVITED for others
         if (saved != null && saved.getEsMeetingAgendaItemId() != null) {
             String myEmailNorm = user.getEmail() != null ? user.getEmail().trim().toLowerCase() : null;
             for (EsAgendaItemPresenter srcP : presenterDao.findByAgendaItemId(sourceItemId)) {
@@ -1408,7 +1305,7 @@ public class EsAgendaServlet extends HttpServlet {
                 np.setPresenterRole(srcP.getPresenterRole());
                 np.setStatus(isSelf
                         ? EsAgendaItemPresenter.PresenterStatus.ACCEPTED
-                        : EsAgendaItemPresenter.PresenterStatus.PROPOSED);
+                        : EsAgendaItemPresenter.PresenterStatus.INVITED);
                 presenterDao.save(np);
             }
         }
@@ -1594,8 +1491,6 @@ public class EsAgendaServlet extends HttpServlet {
             }
             allUsers = userDao.findAllOrderByName();
         }
-
-        Map<String, Boolean> generalUnsubscribedByEmail = new HashMap<>();
 
         // Previous meeting items for "open items" and "copy from previous" panels
         // (canEdit only)
@@ -2214,11 +2109,6 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println(
                             "    <span id=\"description-display\" class=\"agenda-muted click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to add\">No meeting information provided. Click to add.</span>");
                 }
-                if (user == null) {
-                    out.println("    <p class=\"agenda-login-prompt\">"
-                            + "<a href=\"" + contextPath + "/home\" class=\"agenda-attend-link\">Sign in</a> "
-                            + "to get a personalized experience.</p>");
-                }
                 if (canEdit) {
                     out.println(
                             "    <div id=\"description-form\" class=\"no-print\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.6rem\">");
@@ -2592,39 +2482,6 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("                </select></label>");
                         out.println("                <button type=\"submit\" class=\"pres-btn\">Save Role</button>");
                         out.println("              </form>");
-                        boolean isGeneralUnsubscribed = p.getEmailNormalized() != null
-                                && generalUnsubscribedByEmail.computeIfAbsent(
-                                        p.getEmailNormalized(), subscriptionDao::hasGeneralUnsubscribed);
-                        // Invite form (explicit action for proposed/blocked states)
-                        if (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.PROPOSED
-                                || p.getStatus() == EsAgendaItemPresenter.PresenterStatus.INVITE_BLOCKED
-                                || p.getStatus() == EsAgendaItemPresenter.PresenterStatus.INVITED) {
-                            if (isGeneralUnsubscribed) {
-                                out.println(
-                                        "              <span class=\"presenter-status\" style=\"display:inline-block;margin-right:0.35rem\">Email opted out</span>");
-                            } else {
-                                String inviteLabel = p.getStatus() == EsAgendaItemPresenter.PresenterStatus.INVITED
-                                        ? "Re-send Invite"
-                                        : (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.INVITE_BLOCKED
-                                                ? "Retry Invite"
-                                                : "Send Invite");
-                                out.println("              <form method=\"post\" action=\"" + contextPath
-                                        + "/es/agenda\" style=\"display:inline\">");
-                                out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
-                                        + meeting.getEsMeetingId() + "\">");
-                                out.println(
-                                        "                <input type=\"hidden\" name=\"action\" value=\"invitePresenter\">");
-                                out.println("                <input type=\"hidden\" name=\"presenterId\" value=\""
-                                        + p.getEsAgendaItemPresenterId() + "\">");
-                                if (editOverride) {
-                                    out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                                }
-                                out.println(
-                                        "                <button type=\"submit\" class=\"pres-btn\">" + inviteLabel
-                                                + "</button>");
-                                out.println("              </form>");
-                            }
-                        }
                         // Accept form (if not already accepted)
                         if (p.getStatus() != EsAgendaItemPresenter.PresenterStatus.ACCEPTED) {
                             out.println("              <form method=\"post\" action=\"" + contextPath
@@ -2782,7 +2639,7 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("            </div>");
                     }
 
-                    // --- Quick Pick: Topic Champions / Support ---
+                    // --- Quick Pick: Topic Champions ---
                     if (item.getEsTopicId() != null) {
                         List<EsSubscription> champs = championsByTopic.getOrDefault(item.getEsTopicId(), List.of());
                         List<EsSubscription> champPicks = new ArrayList<>();
@@ -2798,7 +2655,7 @@ public class EsAgendaServlet extends HttpServlet {
                         }
                         if (!champPicks.isEmpty()) {
                             out.println("            <div class=\"quick-pick-section\">");
-                            out.println("              <div class=\"quick-pick-label\">Topic Champions/Support:</div>");
+                            out.println("              <div class=\"quick-pick-label\">Topic Champions:</div>");
                             for (EsSubscription ch : champPicks) {
                                 String champName = ch.getEmail();
                                 if (ch.getUserId() != null) {
@@ -3205,15 +3062,13 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
                         out.println("              <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
-                        out.println(
-                                "              <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
+                        out.println("              <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
                         out.println("              <input type=\"hidden\" name=\"title\" value=\""
                                 + escapeHtml(row.topicName) + "\">");
                         if (editOverride) {
                             out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         }
-                        out.println(
-                                "              <button type=\"submit\" class=\"curated-quick-add-btn\">Add to Agenda</button>");
+                        out.println("              <button type=\"submit\" class=\"curated-quick-add-btn\">Add to Agenda</button>");
                         out.println("            </form>");
                     }
                     out.println("          </td>");
@@ -3418,8 +3273,6 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-description { margin-bottom: 1rem; padding: 1rem; }");
         out.println(
                 "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
-        out.println(
-                "    .agenda-login-prompt { font-size: 0.95rem; color: #475569; margin: 0.75rem 0 0 0; }");
         out.println("    .agenda-attendance { margin-bottom: 1rem; padding: 1rem; }");
         out.println("    .agenda-attendance-prompt { font-size: 0.95rem; color: #475569; margin: 0 0 0.5rem 0; }");
         out.println("    .agenda-attend-link { font-weight: 600; color: #1d4ed8; text-decoration: none; }");
@@ -3618,16 +3471,16 @@ public class EsAgendaServlet extends HttpServlet {
                 "    .prev-copy-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; white-space: nowrap; }");
         out.println("    .prev-copy-btn:hover { background: #dcfce7; }");
         out.println(
-                "    .curated-cadence-section { margin-top: 1.4rem; border-left: 3px solid #dc2626; padding-left: 0.6rem; }");
+            "    .curated-cadence-section { margin-top: 1.4rem; border-left: 3px solid #dc2626; padding-left: 0.6rem; }");
         out.println(
-                "    .curated-cadence-heading { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }");
+            "    .curated-cadence-heading { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }");
         out.println("    .curated-cadence-subtext { font-size: 0.8rem; color: #7f1d1d; margin-bottom: 0.45rem; }");
         out.println(
-                "    .curated-cadence-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #fff5f5; border: 1px solid #fecaca; }");
+            "    .curated-cadence-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #fff5f5; border: 1px solid #fecaca; }");
         out.println(
-                "    .curated-cadence-table th { background: #fee2e2; color: #7f1d1d; font-weight: 700; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #fecaca; text-align: left; white-space: nowrap; }");
+            "    .curated-cadence-table th { background: #fee2e2; color: #7f1d1d; font-weight: 700; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #fecaca; text-align: left; white-space: nowrap; }");
         out.println(
-                "    .curated-cadence-table td { padding: 0.42rem 0.5rem; border-bottom: 1px solid #fecaca; vertical-align: top; }");
+            "    .curated-cadence-table td { padding: 0.42rem 0.5rem; border-bottom: 1px solid #fecaca; vertical-align: top; }");
         out.println("    .curated-cadence-table tr:last-child td { border-bottom: none; }");
         out.println("    .curated-row-ok td { background: #ffffff; }");
         out.println("    .curated-row-due-soon td { background: #fffbeb; }");
@@ -3636,13 +3489,13 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .curated-days-ago { color: #64748b; font-size: 0.78rem; }");
         out.println("    .curated-never { color: #b91c1c; font-weight: 700; }");
         out.println(
-                "    .curated-status { font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 4px; display: inline-block; white-space: nowrap; }");
+            "    .curated-status { font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 4px; display: inline-block; white-space: nowrap; }");
         out.println("    .curated-status-critical { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }");
         out.println("    .curated-status-warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }");
         out.println("    .curated-status-ok { background: #dcfce7; border: 1px solid #86efac; color: #166534; }");
         out.println("    .curated-action-cell { white-space: nowrap; }");
         out.println(
-                "    .curated-quick-add-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; font-weight: 700; }");
+            "    .curated-quick-add-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; font-weight: 700; }");
         out.println("    .curated-quick-add-btn:hover { background: #fecaca; }");
         out.println("    .curated-on-agenda { color: #166534; font-size: 0.78rem; font-weight: 600; }");
         // Role picker in add-presenter panel
@@ -3939,8 +3792,8 @@ public class EsAgendaServlet extends HttpServlet {
 
             for (Long topicId : allShownTopicIds) {
                 EsSubscription existing = existingByTopic.get(topicId);
-                // Never touch CHAMPION or SUPPORT subscriptions.
-                if (existing != null && isChampionEquivalentStatus(existing.getStatus())) {
+                // Never touch CHAMPION subscriptions.
+                if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
                     continue;
                 }
                 boolean checked = checkedTopicIds.contains(topicId);
@@ -4016,9 +3869,9 @@ public class EsAgendaServlet extends HttpServlet {
                 continue;
             }
             EsSubscription sub = subsByTopicId.get(topicId);
-            boolean isChampionEquivalent = sub != null && isChampionEquivalentStatus(sub.getStatus());
+            boolean isChampion = sub != null && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
             boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                    || isChampionEquivalentStatus(sub.getStatus()));
+                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
             out.println("        <li class=\"es-topic-interest-item\">");
             // Hidden field to track which topics were shown (needed for unsubscribe logic).
             out.println("          <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
@@ -4026,11 +3879,8 @@ public class EsAgendaServlet extends HttpServlet {
             out.print("            <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
                     + (isChecked ? " checked" : "") + "> ");
             out.print(escapeHtml(topic.getTopicName()));
-            if (isChampionEquivalent) {
-                String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT
-                        ? "(support)"
-                        : "(champion)";
-                out.print(" <span class=\"es-champion-badge\">" + roleLabel + "</span>");
+            if (isChampion) {
+                out.print(" <span class=\"es-champion-badge\">(champion)</span>");
             }
             out.println();
             out.println("          </label>");
@@ -4044,24 +3894,19 @@ public class EsAgendaServlet extends HttpServlet {
 
     /**
      * Merge helper: returns the subscription with higher status rank.
-     * Priority: CHAMPION/SUPPORT > SUBSCRIBED > others.
+     * Priority: CHAMPION > SUBSCRIBED > others.
      */
     private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {
-        if (isChampionEquivalentStatus(a.getStatus())) {
+        if (a.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
             return a;
         }
-        if (isChampionEquivalentStatus(b.getStatus())) {
+        if (b.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
             return b;
         }
         if (a.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
             return a;
         }
         return b;
-    }
-
-    private static boolean isChampionEquivalentStatus(EsSubscription.SubscriptionStatus status) {
-        return status == EsSubscription.SubscriptionStatus.CHAMPION
-                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String cadenceLabel(int cadenceDays) {
