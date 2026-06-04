@@ -69,7 +69,7 @@ public class ReminderCommunicationHandler implements MeetingCommunicationHandler
                 }
                 break;
             case TOPIC_CHAMPION:
-                sb.append("This is a reminder about the upcoming meeting for topics you champion:\n\n");
+                sb.append("This is a reminder about the upcoming meeting for topics you champion/support:\n\n");
                 if (!recipient.getTopicNames().isEmpty()) {
                     sb.append("  Your topic(s):\n");
                     for (String topic : recipient.getTopicNames()) {

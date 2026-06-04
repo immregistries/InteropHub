@@ -12,6 +12,15 @@ import org.airahub.interophub.service.DandelionSyncService;
 
 public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
 
+    private static final List<EsSubscription.SubscriptionStatus> ACTIVE_TOPIC_STATUSES = List.of(
+            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+            EsSubscription.SubscriptionStatus.CHAMPION,
+            EsSubscription.SubscriptionStatus.SUPPORT);
+
+    private static final List<EsSubscription.SubscriptionStatus> CHAMPION_EQUIVALENT_STATUSES = List.of(
+            EsSubscription.SubscriptionStatus.CHAMPION,
+            EsSubscription.SubscriptionStatus.SUPPORT);
+
     public EsSubscriptionDao() {
         super(EsSubscription.class);
     }
@@ -93,7 +102,8 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns active (SUBSCRIBED or CHAMPION) subscriptions for a specific topic.
+     * Returns active (SUBSCRIBED, CHAMPION, or SUPPORT) subscriptions for a
+     * specific topic.
      */
     public List<EsSubscription> findActiveByTopicId(Long esTopicId) {
         if (esTopicId == null) {
@@ -106,9 +116,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                             + " order by s.createdAt asc",
                     EsSubscription.class)
                     .setParameter("topicId", esTopicId)
-                    .setParameterList("statuses", List.of(
-                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
                     .getResultList();
         }
     }
@@ -169,9 +177,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     Long.class)
                     .setParameter("email", emailNormalized)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
-                    .setParameterList("statuses", List.of(
-                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
                     .setParameterList("topicIds", topicIds)
                     .getResultList();
             return Set.copyOf(result);
@@ -209,9 +215,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
 
             var query = session.createQuery(hql.toString(), Long.class)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
-                    .setParameterList("statuses", List.of(
-                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
                     .setParameterList("topicIds", topicIds);
             if (hasUser) {
                 query.setParameter("userId", userId);
@@ -345,9 +349,27 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns all CHAMPION subscriptions for a specific topic.
+     * Returns all CHAMPION or SUPPORT subscriptions for a specific topic.
      */
     public List<EsSubscription> findChampionsByTopicId(Long esTopicId) {
+        if (esTopicId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.esTopicId = :topicId"
+                            + " and s.status in :statuses order by s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("topicId", esTopicId)
+                    .setParameterList("statuses", CHAMPION_EQUIVALENT_STATUSES)
+                    .getResultList();
+        }
+    }
+
+    /**
+     * Returns SUPPORT subscriptions for a specific topic.
+     */
+    public List<EsSubscription> findSupportsByTopicId(Long esTopicId) {
         if (esTopicId == null) {
             return List.of();
         }
@@ -357,7 +379,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                             + " and s.status = :status order by s.createdAt asc",
                     EsSubscription.class)
                     .setParameter("topicId", esTopicId)
-                    .setParameter("status", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.SUPPORT)
                     .getResultList();
         }
     }
@@ -480,8 +502,10 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns active CHAMPION subscriptions for any of the given topic IDs.
-     * Used when building the champion recipient group for a meeting communication.
+     * Returns active CHAMPION or SUPPORT subscriptions for any of the given topic
+     * IDs.
+     * Used when building the champion-equivalent recipient group for a meeting
+     * communication.
      */
     public List<EsSubscription> findActiveChampionsByTopicIds(List<Long> topicIds) {
         if (topicIds == null || topicIds.isEmpty()) {
@@ -491,11 +515,11 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
             return session.createQuery(
                     "from EsSubscription s where s.esTopicId in :ids"
                             + " and s.subscriptionType = :type"
-                            + " and s.status = :champion",
+                            + " and s.status in :statuses",
                     EsSubscription.class)
                     .setParameterList("ids", topicIds)
                     .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
-                    .setParameter("champion", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .setParameterList("statuses", CHAMPION_EQUIVALENT_STATUSES)
                     .getResultList();
         }
     }
@@ -523,8 +547,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns a map of topic ID to active (SUBSCRIBED or CHAMPION) follower count
-     * for each of the given topic IDs. Topics with no followers are omitted.
+     * Returns a map of topic ID to active (SUBSCRIBED, CHAMPION, or SUPPORT)
+     * follower count for each of the given topic IDs. Topics with no followers are
+     * omitted.
      */
     public Map<Long, Long> countActiveByTopicIds(List<Long> topicIds) {
         if (topicIds == null || topicIds.isEmpty()) {
@@ -538,9 +563,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                             + " group by s.esTopicId",
                     Object[].class)
                     .setParameterList("topicIds", topicIds)
-                    .setParameterList("statuses", List.of(
-                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
                     .getResultList();
             Map<Long, Long> result = new LinkedHashMap<>();
             for (Object[] row : rows) {
@@ -551,9 +574,9 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Returns active (SUBSCRIBED or CHAMPION) topic subscriptions for any of the
-     * given emails and topic IDs. Used to count meeting attendees following each
-     * agenda topic.
+     * Returns active (SUBSCRIBED, CHAMPION, or SUPPORT) topic subscriptions for
+     * any of the given emails and topic IDs. Used to count meeting attendees
+     * following each agenda topic.
      */
     public List<EsSubscription> findActiveByEmailsNormalizedAndTopicIds(
             List<String> emailsNormalized, List<Long> topicIds) {
@@ -569,16 +592,14 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                     EsSubscription.class)
                     .setParameterList("emails", emailsNormalized)
                     .setParameterList("topicIds", topicIds)
-                    .setParameterList("statuses", List.of(
-                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                            EsSubscription.SubscriptionStatus.CHAMPION))
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
                     .getResultList();
         }
     }
 
     /**
-     * Returns all active (SUBSCRIBED or CHAMPION) subscriptions for a given email,
-     * joined with topic name for TOPIC subscriptions.
+     * Returns all active (SUBSCRIBED, CHAMPION, or SUPPORT) subscriptions for a
+     * given email, joined with topic name for TOPIC subscriptions.
      */
     public List<ActiveSubscriptionRow> findAllActiveByEmailNormalized(String emailNormalized) {
         if (emailNormalized == null) {
@@ -590,7 +611,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                             + " FROM es_subscription s"
                             + " LEFT JOIN es_topic t ON s.es_topic_id = t.es_topic_id"
                             + " WHERE s.email_normalized = :email"
-                            + " AND s.status IN ('SUBSCRIBED', 'CHAMPION')"
+                            + " AND s.status IN ('SUBSCRIBED', 'CHAMPION', 'SUPPORT')"
                             + " ORDER BY s.subscription_type ASC, COALESCE(t.topic_name, '') ASC",
                     Object[].class)
                     .setParameter("email", emailNormalized)
@@ -609,7 +630,8 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
-     * Sets all SUBSCRIBED or CHAMPION subscriptions for an email to UNSUBSCRIBED.
+     * Sets all SUBSCRIBED, CHAMPION, or SUPPORT subscriptions for an email to
+     * UNSUBSCRIBED.
      *
      * @return number of rows updated
      */
@@ -623,7 +645,7 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                 int updated = session.createNativeMutationQuery(
                         "UPDATE es_subscription SET status = 'UNSUBSCRIBED', unsubscribed_at = NOW()"
                                 + " WHERE email_normalized = :email"
-                                + " AND status IN ('SUBSCRIBED', 'CHAMPION')")
+                                + " AND status IN ('SUBSCRIBED', 'CHAMPION', 'SUPPORT')")
                         .setParameter("email", emailNormalized)
                         .executeUpdate();
                 tx.commit();
@@ -687,9 +709,10 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
      * Returns the IDs of duplicate subscription rows that should be deleted.
      * For each group of (user_id, subscription_type, es_topic_id) with more than
      * one row, the "losers" are those for which a strictly-better row exists in
-     * the same group. "Better" means: higher status (CHAMPION > SUBSCRIBED >
-     * UNSUBSCRIBED), then has unsubscribe_token_hash when the other does not,
-     * then lower es_subscription_id (older row wins).
+     * the same group. "Better" means: higher status
+     * (CHAMPION/SUPPORT > SUBSCRIBED > UNSUBSCRIBED), then has
+     * unsubscribe_token_hash when the other does not, then lower
+     * es_subscription_id (older row wins).
      *
      * Only rows with user_id IS NOT NULL are considered.
      */
@@ -706,11 +729,27 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
                             + "     AND (better.es_topic_id <=> s.es_topic_id)"
                             + "     AND better.es_subscription_id <> s.es_subscription_id"
                             + "     AND ("
-                            + "       FIELD(better.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
-                            + "         > FIELD(s.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "       CASE"
+                            + "         WHEN better.status IN ('CHAMPION','SUPPORT') THEN 3"
+                            + "         WHEN better.status = 'SUBSCRIBED' THEN 2"
+                            + "         ELSE 1"
+                            + "       END"
+                            + "         > CASE"
+                            + "         WHEN s.status IN ('CHAMPION','SUPPORT') THEN 3"
+                            + "         WHEN s.status = 'SUBSCRIBED' THEN 2"
+                            + "         ELSE 1"
+                            + "       END"
                             + "       OR ("
-                            + "         FIELD(better.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
-                            + "           = FIELD(s.status,'UNSUBSCRIBED','SUBSCRIBED','CHAMPION')"
+                            + "         CASE"
+                            + "           WHEN better.status IN ('CHAMPION','SUPPORT') THEN 3"
+                            + "           WHEN better.status = 'SUBSCRIBED' THEN 2"
+                            + "           ELSE 1"
+                            + "         END"
+                            + "           = CASE"
+                            + "           WHEN s.status IN ('CHAMPION','SUPPORT') THEN 3"
+                            + "           WHEN s.status = 'SUBSCRIBED' THEN 2"
+                            + "           ELSE 1"
+                            + "         END"
                             + "         AND ("
                             + "           (better.unsubscribe_token_hash IS NOT NULL"
                             + "              AND s.unsubscribe_token_hash IS NULL)"

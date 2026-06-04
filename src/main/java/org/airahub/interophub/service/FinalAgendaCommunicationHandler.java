@@ -69,7 +69,7 @@ public class FinalAgendaCommunicationHandler implements MeetingCommunicationHand
                 }
                 break;
             case TOPIC_CHAMPION:
-                sb.append("As a topic champion, the final agenda has been published for:\n\n");
+                sb.append("As a topic champion/support lead, the final agenda has been published for:\n\n");
                 if (!recipient.getTopicNames().isEmpty()) {
                     sb.append("  Your topic(s):\n");
                     for (String topic : recipient.getTopicNames()) {

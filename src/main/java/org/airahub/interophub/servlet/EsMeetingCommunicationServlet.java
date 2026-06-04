@@ -171,7 +171,7 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
                         isGroupDefaulted(suggestType, "GENERAL"), suggestType);
                 renderCheckbox(panelOut, "includeTopicSubscribers", "Topic subscribers",
                         isGroupDefaulted(suggestType, "SUBSCRIBER"), suggestType);
-                renderCheckbox(panelOut, "includeTopicChampions", "Topic champions",
+                renderCheckbox(panelOut, "includeTopicChampions", "Topic champions/support",
                         isGroupDefaulted(suggestType, "CHAMPION"), suggestType);
                 renderCheckbox(panelOut, "includePresenters", "Agenda presenters",
                         isGroupDefaulted(suggestType, "PRESENTER"), suggestType);

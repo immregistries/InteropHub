@@ -2782,7 +2782,7 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("            </div>");
                     }
 
-                    // --- Quick Pick: Topic Champions ---
+                    // --- Quick Pick: Topic Champions / Support ---
                     if (item.getEsTopicId() != null) {
                         List<EsSubscription> champs = championsByTopic.getOrDefault(item.getEsTopicId(), List.of());
                         List<EsSubscription> champPicks = new ArrayList<>();
@@ -2798,7 +2798,7 @@ public class EsAgendaServlet extends HttpServlet {
                         }
                         if (!champPicks.isEmpty()) {
                             out.println("            <div class=\"quick-pick-section\">");
-                            out.println("              <div class=\"quick-pick-label\">Topic Champions:</div>");
+                            out.println("              <div class=\"quick-pick-label\">Topic Champions/Support:</div>");
                             for (EsSubscription ch : champPicks) {
                                 String champName = ch.getEmail();
                                 if (ch.getUserId() != null) {
@@ -3939,8 +3939,8 @@ public class EsAgendaServlet extends HttpServlet {
 
             for (Long topicId : allShownTopicIds) {
                 EsSubscription existing = existingByTopic.get(topicId);
-                // Never touch CHAMPION subscriptions.
-                if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+                // Never touch CHAMPION or SUPPORT subscriptions.
+                if (existing != null && isChampionEquivalentStatus(existing.getStatus())) {
                     continue;
                 }
                 boolean checked = checkedTopicIds.contains(topicId);
@@ -4016,9 +4016,9 @@ public class EsAgendaServlet extends HttpServlet {
                 continue;
             }
             EsSubscription sub = subsByTopicId.get(topicId);
-            boolean isChampion = sub != null && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
+            boolean isChampionEquivalent = sub != null && isChampionEquivalentStatus(sub.getStatus());
             boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
+                    || isChampionEquivalentStatus(sub.getStatus()));
             out.println("        <li class=\"es-topic-interest-item\">");
             // Hidden field to track which topics were shown (needed for unsubscribe logic).
             out.println("          <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
@@ -4026,8 +4026,11 @@ public class EsAgendaServlet extends HttpServlet {
             out.print("            <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
                     + (isChecked ? " checked" : "") + "> ");
             out.print(escapeHtml(topic.getTopicName()));
-            if (isChampion) {
-                out.print(" <span class=\"es-champion-badge\">(champion)</span>");
+            if (isChampionEquivalent) {
+                String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT
+                        ? "(support)"
+                        : "(champion)";
+                out.print(" <span class=\"es-champion-badge\">" + roleLabel + "</span>");
             }
             out.println();
             out.println("          </label>");
@@ -4041,19 +4044,24 @@ public class EsAgendaServlet extends HttpServlet {
 
     /**
      * Merge helper: returns the subscription with higher status rank.
-     * Priority: CHAMPION > SUBSCRIBED > others.
+     * Priority: CHAMPION/SUPPORT > SUBSCRIBED > others.
      */
     private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {
-        if (a.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+        if (isChampionEquivalentStatus(a.getStatus())) {
             return a;
         }
-        if (b.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+        if (isChampionEquivalentStatus(b.getStatus())) {
             return b;
         }
         if (a.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
             return a;
         }
         return b;
+    }
+
+    private static boolean isChampionEquivalentStatus(EsSubscription.SubscriptionStatus status) {
+        return status == EsSubscription.SubscriptionStatus.CHAMPION
+                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String cadenceLabel(int cadenceDays) {

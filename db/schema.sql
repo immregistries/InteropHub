@@ -702,7 +702,7 @@ CREATE TABLE es_subscription (
   email_normalized        VARCHAR(254) NOT NULL,
   es_topic_id             BIGINT UNSIGNED NULL,   -- NULL = GENERAL_ES subscription
   subscription_type       ENUM('GENERAL_ES','TOPIC') NOT NULL,
-  status                  ENUM('SUBSCRIBED','CHAMPION','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',  -- CHAMPION only valid for TOPIC type
+  status                  ENUM('SUBSCRIBED','CHAMPION','SUPPORT','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',  -- CHAMPION/SUPPORT only valid for TOPIC type
   source_campaign_id      BIGINT UNSIGNED NULL,   -- which campaign produced this subscription
   unsubscribe_token_hash  BINARY(32) NULL,        -- SHA-256(raw token); for email-link unsubscribe
   created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

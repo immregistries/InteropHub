@@ -139,10 +139,15 @@ public class EsTopicCurationServlet extends HttpServlet {
 
     private boolean isChampionOf(User user, Long topicId) {
         List<EsSubscription> subs = subscriptionDao.findActiveByTopicId(topicId);
-        return subs.stream().anyMatch(s -> EsSubscription.SubscriptionStatus.CHAMPION.equals(s.getStatus())
+        return subs.stream().anyMatch(s -> isChampionEquivalentStatus(s.getStatus())
                 && (user.getUserId() != null && user.getUserId().equals(s.getUserId())
                         || (user.getEmailNormalized() != null
                                 && user.getEmailNormalized().equals(s.getEmailNormalized()))));
+    }
+
+    private boolean isChampionEquivalentStatus(EsSubscription.SubscriptionStatus status) {
+        return status == EsSubscription.SubscriptionStatus.CHAMPION
+                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String trimToNull(String value) {

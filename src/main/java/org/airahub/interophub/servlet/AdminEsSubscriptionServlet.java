@@ -78,27 +78,30 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
             response.sendRedirect(contextPath + "/admin/es/topics");
             return;
         }
-        switch (action) {
-            case "SUBSCRIBED":
-                esSubscriptionDao.setTopicSubscriptionStatus(
-                        subscriptionId, EsSubscription.SubscriptionStatus.SUBSCRIBED, null);
-                break;
-            case "CHAMPION":
-                esSubscriptionDao.setTopicSubscriptionStatus(
-                        subscriptionId, EsSubscription.SubscriptionStatus.CHAMPION, null);
-                break;
-            case "UNSUBSCRIBED":
-                esSubscriptionDao.setTopicSubscriptionStatus(
-                        subscriptionId, EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
-                        LocalDateTime.now());
-                break;
-            default:
-                break;
+
+        Optional<EsSubscription> subOpt = esSubscriptionDao.findById(subscriptionId);
+        if (subOpt.isEmpty()) {
+            response.sendRedirect(contextPath + "/admin/es/topics");
+            return;
+        }
+
+        EsSubscription current = subOpt.get();
+        boolean isTopic = current.getSubscriptionType() == EsSubscription.SubscriptionType.TOPIC;
+        EsSubscription.SubscriptionStatus targetStatus = parseActionStatus(action);
+        int updated = 0;
+        if (targetStatus != null
+                && canTransitionTo(current.getStatus(), targetStatus, isTopic)) {
+            updated = esSubscriptionDao.setTopicSubscriptionStatus(
+                    subscriptionId,
+                    targetStatus,
+                    targetStatus == EsSubscription.SubscriptionStatus.UNSUBSCRIBED
+                            ? LocalDateTime.now()
+                            : null);
         }
 
         StringBuilder redirect = new StringBuilder(contextPath)
                 .append("/admin/es/subscription?subscriptionId=").append(subscriptionId)
-                .append("&saved=true");
+                .append("&saved=").append(updated > 0 ? "true" : "false");
         if (topicIdParam != null) {
             redirect.append("&topicId=").append(topicIdParam);
         }
@@ -155,15 +158,30 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
                 }
                 panelOut.println(
                         "            <div class=\"login-form\" style=\"display:flex;gap:0.5rem;flex-wrap:wrap;\">");
-                String disabledSubscribed = status == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                        ? " disabled"
-                        : "";
-                String disabledChampion = status == EsSubscription.SubscriptionStatus.CHAMPION
-                        ? " disabled"
-                        : "";
-                String disabledUnsubscribed = status == EsSubscription.SubscriptionStatus.UNSUBSCRIBED
-                        ? " disabled"
-                        : "";
+                String disabledSubscribed = !canTransitionTo(
+                        status,
+                        EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                        isTopic)
+                                ? " disabled"
+                                : "";
+                String disabledChampion = !canTransitionTo(
+                        status,
+                        EsSubscription.SubscriptionStatus.CHAMPION,
+                        isTopic)
+                                ? " disabled"
+                                : "";
+                String disabledSupport = !canTransitionTo(
+                        status,
+                        EsSubscription.SubscriptionStatus.SUPPORT,
+                        isTopic)
+                                ? " disabled"
+                                : "";
+                String disabledUnsubscribed = !canTransitionTo(
+                        status,
+                        EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
+                        isTopic)
+                                ? " disabled"
+                                : "";
                 panelOut.println(
                         "              <button type=\"submit\" name=\"action\" value=\"SUBSCRIBED\""
                                 + disabledSubscribed + ">Set Subscribed</button>");
@@ -171,6 +189,9 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
                     panelOut.println(
                             "              <button type=\"submit\" name=\"action\" value=\"CHAMPION\""
                                     + disabledChampion + ">Set Champion</button>");
+                    panelOut.println(
+                            "              <button type=\"submit\" name=\"action\" value=\"SUPPORT\""
+                                    + disabledSupport + ">Set Support</button>");
                 }
                 panelOut.println(
                         "              <button type=\"submit\" name=\"action\" value=\"UNSUBSCRIBED\""
@@ -246,11 +267,37 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
                 return "Subscribed";
             case CHAMPION:
                 return "Champion";
+            case SUPPORT:
+                return "Support";
             case UNSUBSCRIBED:
                 return "Unsubscribed";
             default:
                 return status.name();
         }
+    }
+
+    private EsSubscription.SubscriptionStatus parseActionStatus(String action) {
+        if (action == null) {
+            return null;
+        }
+        try {
+            return EsSubscription.SubscriptionStatus.valueOf(action);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private boolean canTransitionTo(EsSubscription.SubscriptionStatus from,
+            EsSubscription.SubscriptionStatus to,
+            boolean isTopic) {
+        if (to == null || from == to) {
+            return false;
+        }
+        if (!isTopic && (to == EsSubscription.SubscriptionStatus.CHAMPION
+                || to == EsSubscription.SubscriptionStatus.SUPPORT)) {
+            return false;
+        }
+        return true;
     }
 
     private Long parseId(String value) {

@@ -24,6 +24,7 @@ public class EsSubscription {
     public enum SubscriptionStatus {
         SUBSCRIBED,
         CHAMPION,
+        SUPPORT,
         UNSUBSCRIBED
     }
 

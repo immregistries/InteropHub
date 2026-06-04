@@ -110,7 +110,8 @@ public class MeetingCommunicationRecipientResolver {
             }
         }
 
-        // Source 3: Topic Champions (CHAMPION status, topics on agenda)
+        // Source 3: Topic Champions/Support (CHAMPION or SUPPORT status, topics on
+        // agenda)
         if (communication.isIncludeTopicChampions() && !topicIds.isEmpty()) {
             List<EsSubscription> champions = subscriptionDao.findActiveChampionsByTopicIds(topicIds);
             for (EsSubscription s : champions) {

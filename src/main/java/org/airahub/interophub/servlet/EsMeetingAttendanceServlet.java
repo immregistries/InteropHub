@@ -810,8 +810,8 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
         for (Long topicId : allShownTopicIds) {
             EsSubscription existing = existingByTopic.get(topicId);
-            // Never touch CHAMPION subscriptions
-            if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+            // Never touch CHAMPION or SUPPORT subscriptions.
+            if (existing != null && isChampionEquivalentStatus(existing.getStatus())) {
                 continue;
             }
             boolean checked = checkedTopicIds.contains(topicId);
@@ -850,18 +850,21 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                 continue;
             Long topicId = topic.getEsTopicId();
             EsSubscription sub = topicData.subsByTopicId().get(topicId);
-            boolean isChampion = sub != null
-                    && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
+            boolean isChampionEquivalent = sub != null
+                    && isChampionEquivalentStatus(sub.getStatus());
             boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
+                    || isChampionEquivalentStatus(sub.getStatus()));
             out.println("          <li class=\"attend-topic-item\">");
             out.println("            <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
             out.println("            <label class=\"attend-topic-label\">");
             out.print("              <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
                     + (isChecked ? " checked" : "") + "> ");
             out.print(escapeHtml(topic.getTopicName()));
-            if (isChampion) {
-                out.print(" <span class=\"attend-champion-badge\">(champion)</span>");
+            if (isChampionEquivalent) {
+                String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT
+                        ? "(support)"
+                        : "(champion)";
+                out.print(" <span class=\"attend-champion-badge\">" + roleLabel + "</span>");
             }
             out.println();
             out.println("            </label>");
@@ -872,13 +875,18 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     }
 
     private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {
-        if (a.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION)
+        if (isChampionEquivalentStatus(a.getStatus()))
             return a;
-        if (b.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION)
+        if (isChampionEquivalentStatus(b.getStatus()))
             return b;
         if (a.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED)
             return a;
         return b;
+    }
+
+    private static boolean isChampionEquivalentStatus(EsSubscription.SubscriptionStatus status) {
+        return status == EsSubscription.SubscriptionStatus.CHAMPION
+                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private static Long parseId(String value) {

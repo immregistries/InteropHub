@@ -190,7 +190,7 @@ public class EsInterestService {
      * Finds and removes duplicate {@code es_subscription} rows for linked users.
      * For each group of (user_id, subscription_type, es_topic_id) with more than
      * one row, the winning row is the one with the highest status
-     * (CHAMPION &gt; SUBSCRIBED &gt; UNSUBSCRIBED), then the one with an
+     * (CHAMPION/SUPPORT &gt; SUBSCRIBED &gt; UNSUBSCRIBED), then the one with an
      * unsubscribe token, then the oldest row. All other rows in the group are
      * deleted.
      *

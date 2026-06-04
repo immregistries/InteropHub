@@ -59,7 +59,8 @@ public class CallForTopicsCommunicationHandler implements MeetingCommunicationHa
 
         switch (recipient.getPrimaryGroup()) {
             case TOPIC_CHAMPION:
-                sb.append("As a topic champion, you are invited to submit a topic for the upcoming meeting:\n\n");
+                sb.append(
+                        "As a topic champion/support lead, you are invited to submit a topic for the upcoming meeting:\n\n");
                 break;
             case GENERAL_MEETING_MEMBER:
             default:

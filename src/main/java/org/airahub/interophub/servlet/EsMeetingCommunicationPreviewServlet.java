@@ -94,7 +94,7 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
                 row(panelOut, "Recipients", String.valueOf(preview.getTotalRecipientCount()));
                 row(panelOut, "Include General Members", comm.isIncludeGeneralMembers() ? "Yes" : "No");
                 row(panelOut, "Include Topic Subscribers", comm.isIncludeTopicSubscribers() ? "Yes" : "No");
-                row(panelOut, "Include Topic Champions", comm.isIncludeTopicChampions() ? "Yes" : "No");
+                row(panelOut, "Include Topic Champions/Support", comm.isIncludeTopicChampions() ? "Yes" : "No");
                 row(panelOut, "Include Presenters", comm.isIncludePresenters() ? "Yes" : "No");
                 if (comm.getSubjectOverride() != null) {
                     row(panelOut, "Subject Override", escapeHtml(comm.getSubjectOverride()));

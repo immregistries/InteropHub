@@ -237,9 +237,12 @@ public class EsUnsubscribeServlet extends HttpServlet {
                         }
                         String label = row.getTopicName() != null ? row.getTopicName()
                                 : "Topic #" + row.getEsTopicId();
-                        String badge = row.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION
-                                ? " <span class=\"es-champion-badge\">Champion</span>"
-                                : "";
+                        String badge = "";
+                        if (row.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
+                            badge = " <span class=\"es-champion-badge\">Champion</span>";
+                        } else if (row.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT) {
+                            badge = " <span class=\"es-champion-badge\">Support</span>";
+                        }
                         out.println("          <label class=\"es-unsubscribe-row\">");
                         out.println("            <input type=\"checkbox\" name=\"sub_" + row.getEsSubscriptionId()
                                 + "\" value=\"1\" checked />");

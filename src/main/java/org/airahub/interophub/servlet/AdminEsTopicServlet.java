@@ -471,8 +471,11 @@ public class AdminEsTopicServlet extends HttpServlet {
                                 + escapeHtml(subUser == null ? "" : orEmpty(subUser.getFullName())) + "</td>");
                         panelOut.println("                <td>"
                                 + escapeHtml(subUser == null ? "" : orEmpty(subUser.getOrganization())) + "</td>");
-                        String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION ? "Champion"
-                                : "Subscribed";
+                        String roleLabel = switch (sub.getStatus()) {
+                            case CHAMPION -> "Champion";
+                            case SUPPORT -> "Support";
+                            default -> "Subscribed";
+                        };
                         panelOut.println("                <td>" + escapeHtml(roleLabel) + "</td>");
                         panelOut.println("              </tr>");
                     }

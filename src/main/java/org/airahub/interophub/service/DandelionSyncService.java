@@ -485,7 +485,8 @@ public class DandelionSyncService {
 
     private boolean isActiveAssignment(EsSubscription subscription) {
         return subscription.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                || subscription.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
+                || subscription.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION
+                || subscription.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String mapProjectStatus(EsTopic.EsTopicStatus status) {

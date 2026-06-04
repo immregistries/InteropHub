@@ -191,7 +191,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         final Long curUserId = authenticatedUser.get().getUserId();
                         final String curEmail = authenticatedEmailNormalized;
                         showChampionView = topicSubscriptions.stream()
-                                        .anyMatch(s -> EsSubscription.SubscriptionStatus.CHAMPION.equals(s.getStatus())
+                                        .anyMatch(s -> isChampionEquivalentStatus(s.getStatus())
                                                         && (s.getUserId() != null && curUserId.equals(s.getUserId())
                                                                         || (curEmail != null && curEmail.equals(
                                                                                         s.getEmailNormalized()))));
@@ -731,13 +731,13 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 + " border-radius:8px; padding:1.25rem 1.5rem;\">");
                 out.println("      <h2 style=\"font-size:1rem; color:#0b6fb8; margin:0 0 1.25rem;"
                                 + " font-weight:600; letter-spacing:0.01em; border-bottom:1px solid #d5dde5;"
-                                + " padding-bottom:0.6rem;\">Champion &amp; Admin View</h2>");
+                                + " padding-bottom:0.6rem;\">Champion/Support &amp; Admin View</h2>");
 
                 // --- Followers ---
                 List<EsSubscription> sortedSubs = new ArrayList<>(subscriptions);
                 sortedSubs.sort((a, b) -> {
-                        boolean aIsChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(a.getStatus());
-                        boolean bIsChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(b.getStatus());
+                        boolean aIsChamp = isChampionEquivalentStatus(a.getStatus());
+                        boolean bIsChamp = isChampionEquivalentStatus(b.getStatus());
                         if (aIsChamp != bIsChamp) {
                                 return aIsChamp ? -1 : 1;
                         }
@@ -767,8 +767,12 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("          </tr></thead><tbody>");
                         for (EsSubscription s : sortedSubs) {
                                 User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
-                                boolean isChamp = EsSubscription.SubscriptionStatus.CHAMPION.equals(s.getStatus());
-                                String role = isChamp ? "Champion" : "Follower";
+                                boolean isChamp = isChampionEquivalentStatus(s.getStatus());
+                                String role = switch (s.getStatus()) {
+                                        case CHAMPION -> "Champion";
+                                        case SUPPORT -> "Support";
+                                        default -> "Follower";
+                                };
                                 String name = u != null
                                                 ? (orEmpty(u.getFirstName()) + " " + orEmpty(u.getLastName())).trim()
                                                 : "";
@@ -1161,6 +1165,11 @@ public class EsTopicDetailServlet extends HttpServlet {
                 out.println("        </details>");
                 out.println("      </section>");
                 out.println("    </div>");
+        }
+
+        private boolean isChampionEquivalentStatus(EsSubscription.SubscriptionStatus status) {
+                return status == EsSubscription.SubscriptionStatus.CHAMPION
+                                || status == EsSubscription.SubscriptionStatus.SUPPORT;
         }
 
         private String capitalize(String s) {

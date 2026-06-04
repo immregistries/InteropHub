@@ -131,7 +131,7 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         upsertMeetingRequest(resolution.meeting(), resolution.campaign(), email, emailNormalized);
         upsertTopicSubscription(resolution.topic().getEsTopicId(), resolution.campaign().getEsCampaignId(),
                 email, emailNormalized, findAuthenticatedUserId(request));
-        sendChampionNotifications(resolution.meeting(), resolution.topic(), firstName, lastName, email);
+        sendChampionOrSupportNotifications(resolution.meeting(), resolution.topic(), firstName, lastName, email);
 
         if (generalUpdatesOptIn) {
             EsSubscription subscription = new EsSubscription();
@@ -157,28 +157,35 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
                 + URLEncoder.encode(resolution.campaign().getCampaignCode(), StandardCharsets.UTF_8));
     }
 
-    private void sendChampionNotifications(EsTopicMeeting meeting, EsTopic topic,
+    private void sendChampionOrSupportNotifications(EsTopicMeeting meeting, EsTopic topic,
             String firstName, String lastName, String registrantEmail) {
         try {
-            List<EsSubscription> champions = esSubscriptionDao.findChampionsByTopicId(topic.getEsTopicId());
-            if (champions.isEmpty()) {
+            List<EsSubscription> recipients = esSubscriptionDao.findSupportsByTopicId(topic.getEsTopicId());
+            String recipientRole = "support";
+            String emailReason = "MEETING_REGISTRATION_SUPPORT_NOTIFY";
+            if (recipients.isEmpty()) {
+                recipients = esSubscriptionDao.findChampionsByTopicId(topic.getEsTopicId());
+                recipientRole = "champion";
+                emailReason = "MEETING_REGISTRATION_CHAMPION_NOTIFY";
+            }
+            if (recipients.isEmpty()) {
                 return;
             }
             String meetingName = meeting.getMeetingName() != null ? meeting.getMeetingName() : "the meeting";
             String subject = meetingName + " \u2013 New Registration: " + firstName + " " + lastName;
             String body = firstName + " " + lastName + " (" + registrantEmail + ") has registered for "
                     + meetingName + " and needs a calendar invite.";
-            for (EsSubscription champion : champions) {
+            for (EsSubscription recipient : recipients) {
                 try {
-                    if (esSubscriptionDao.hasGeneralUnsubscribed(champion.getEmailNormalized())) {
+                    if (esSubscriptionDao.hasGeneralUnsubscribed(recipient.getEmailNormalized())) {
                         continue;
                     }
-                    EmailService.SendResult result = emailService.send(champion.getEmail(), subject, body);
+                    EmailService.SendResult result = emailService.send(recipient.getEmail(), subject, body);
                     EmailSendLog log = new EmailSendLog();
-                    log.setEmailReason("MEETING_REGISTRATION_CHAMPION_NOTIFY");
-                    log.setRecipientEmail(champion.getEmail());
-                    log.setRecipientEmailNormalized(champion.getEmailNormalized());
-                    log.setUserId(champion.getUserId());
+                    log.setEmailReason(emailReason);
+                    log.setRecipientEmail(recipient.getEmail());
+                    log.setRecipientEmailNormalized(recipient.getEmailNormalized());
+                    log.setUserId(recipient.getUserId());
                     log.setSubject(subject);
                     log.setBodyText(body);
                     log.setSmtpMessageId(result.getSmtpMessageId());
@@ -186,14 +193,15 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
                     emailSendLogDao.log(log);
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING,
-                            "Failed to send champion notification to " + champion.getEmailNormalized()
+                            "Failed to send " + recipientRole + " notification to "
+                                    + recipient.getEmailNormalized()
                                     + " for meeting " + meeting.getEsTopicMeetingId(),
                             ex);
                 }
             }
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING,
-                    "Failed to look up champions for topic " + topic.getEsTopicId(), ex);
+                    "Failed to look up support/champion recipients for topic " + topic.getEsTopicId(), ex);
         }
     }
 
