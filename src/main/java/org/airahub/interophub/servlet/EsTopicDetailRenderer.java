@@ -207,7 +207,15 @@ public class EsTopicDetailRenderer {
                 out.println("              var li = document.createElement('li');");
                 out.println("              var text = m.name || 'Meeting';");
                 out.println("              if (m.date) { text = m.date + ' \\u2014 ' + text; }");
-                out.println("              li.textContent = text;");
+                out.println("              if (m.id) {");
+                out.println("                var link = document.createElement('a');");
+                out.println("                link.href = '" + contextPath
+                                + "/es/agenda?meetingId=' + encodeURIComponent(m.id);");
+                out.println("                link.textContent = text;");
+                out.println("                li.appendChild(link);");
+                out.println("              } else {");
+                out.println("                li.textContent = text;");
+                out.println("              }");
                 out.println("              appearList.appendChild(li);");
                 out.println("            });");
                 out.println("          }");

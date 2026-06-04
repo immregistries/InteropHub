@@ -20,6 +20,7 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -205,10 +206,12 @@ public class EsTopicDetailServlet extends HttpServlet {
                 List<EsMeeting> topicAgendaMeetings = List.of();
                 List<EsMeeting> upcomingMeetings = List.of();
                 List<EsComment> topicComments = List.of();
+                Optional<EsTopicMeeting> topicMeetingSeriesOpt = esTopicMeetingDao.findByTopicId(topicId);
 
                 // Load meeting appearances for all visitors (upcoming for public section;
                 // all non-cancelled for champion section)
                 {
+                        LocalDate today = LocalDate.now();
                         List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
                         if (!agendaItems.isEmpty()) {
                                 List<Long> agendaMeetingIds = agendaItems.stream()
@@ -224,10 +227,33 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 }
                                 tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart));
                                 topicAgendaMeetings = tempMeetings;
-                                LocalDateTime now = LocalDateTime.now();
                                 upcomingMeetings = tempMeetings.stream()
                                                 .filter(m -> m.getScheduledStart() != null
-                                                                && m.getScheduledStart().isAfter(now))
+                                                                && !m.getScheduledStart().toLocalDate().isBefore(today))
+                                                .collect(Collectors.toList());
+                        }
+
+                        // Merge in meetings hosted directly by this topic's own meeting series.
+                        if (topicMeetingSeriesOpt.isPresent()) {
+                                List<EsMeeting> directMeetings = esMeetingDao
+                                                .findByEsTopicMeetingId(
+                                                                topicMeetingSeriesOpt.get().getEsTopicMeetingId())
+                                                .stream()
+                                                .filter(m -> m.getStatus() != EsMeeting.MeetingStatus.CANCELLED)
+                                                .filter(m -> m.getScheduledStart() != null
+                                                                && !m.getScheduledStart().toLocalDate().isBefore(today))
+                                                .collect(Collectors.toList());
+
+                                LinkedHashMap<Long, EsMeeting> mergedByMeetingId = new LinkedHashMap<>();
+                                for (EsMeeting m : upcomingMeetings) {
+                                        mergedByMeetingId.putIfAbsent(m.getEsMeetingId(), m);
+                                }
+                                for (EsMeeting m : directMeetings) {
+                                        mergedByMeetingId.putIfAbsent(m.getEsMeetingId(), m);
+                                }
+
+                                upcomingMeetings = mergedByMeetingId.values().stream()
+                                                .sorted(Comparator.comparing(EsMeeting::getScheduledStart))
                                                 .collect(Collectors.toList());
                         }
                 }
@@ -297,7 +323,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 subscriberUsers = userDao.findByIds(subUserIds).stream()
                                                 .collect(Collectors.toMap(User::getUserId, u -> u));
                         }
-                        topicMeetingSeries = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
+                        topicMeetingSeries = topicMeetingSeriesOpt.orElse(null);
                         topicComments = commentDao.findByTopicId(topicId);
                 }
 
