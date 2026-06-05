@@ -443,6 +443,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("    });");
                         out.println("  </script>");
 
+                        PageFooterRenderer.render(out);
                         out.println("</body>");
                         out.println("</html>");
                 }
@@ -457,6 +458,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         LocalEnvBannerRenderer.renderIfLocalhost(out);
                         out.println("<p>Topic not found.</p>");
                         out.println("<p><a href=\"" + contextPath + "/es/topics\">\u2190 Back to Topics</a></p>");
+                        PageFooterRenderer.render(out);
                         out.println("</body></html>");
                 }
         }

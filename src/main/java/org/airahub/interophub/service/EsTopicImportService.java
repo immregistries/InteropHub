@@ -1,7 +1,10 @@
 package org.airahub.interophub.service;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -10,10 +13,13 @@ import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsInterestDao;
+import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
+import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopic;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -31,6 +37,8 @@ public class EsTopicImportService {
     private final EsInterestDao interestDao;
     private final EsCommentDao commentDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsNeighborhoodDao neighborhoodDao;
+    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
@@ -39,6 +47,8 @@ public class EsTopicImportService {
         this.interestDao = new EsInterestDao();
         this.commentDao = new EsCommentDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.neighborhoodDao = new EsNeighborhoodDao();
+        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
     }
 
     /**
@@ -102,6 +112,7 @@ public class EsTopicImportService {
         int campaignTopicsUpdated = 0;
         int duplicateTopicCodes = 0;
         Set<String> seenTopicCodes = new HashSet<>();
+        Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup();
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -150,8 +161,9 @@ public class EsTopicImportService {
                 topic.setTopicName(json.getString("topicName"));
                 topic.setDescription(
                         json.isNull("description") ? null : json.optString("description", null));
-                topic.setNeighborhood(
-                        json.isNull("neighborhood") ? null : json.optString("neighborhood", null));
+                String neighborhoodRaw = json.isNull("neighborhood") ? null : json.optString("neighborhood", null);
+                Set<Long> neighborhoodIds = resolveNeighborhoodIds(neighborhoodRaw, activeNeighborhoodsByName);
+                topic.setNeighborhood(joinNeighborhoodNames(neighborhoodIds, activeNeighborhoodsByName));
                 topic.setPriorityIis(json.optInt("priorityIis", 0));
                 topic.setPriorityEhr(json.optInt("priorityEhr", 0));
                 topic.setPriorityCdc(json.optInt("priorityCdc", 0));
@@ -161,6 +173,7 @@ public class EsTopicImportService {
                 topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));
 
                 topic = topicDao.saveOrUpdate(topic);
+                topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), neighborhoodIds);
 
                 if (isNewTopic) {
                     topicsInserted++;
@@ -269,6 +282,69 @@ public class EsTopicImportService {
             return null;
         }
         String trimmed = raw.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private Map<String, EsNeighborhood> buildActiveNeighborhoodLookup() {
+        Map<String, EsNeighborhood> lookup = new LinkedHashMap<>();
+        for (EsNeighborhood neighborhood : neighborhoodDao.findAllActive()) {
+            String name = normalizeNeighborhoodToken(neighborhood.getNeighborhoodName());
+            if (name != null) {
+                lookup.putIfAbsent(name.toLowerCase(), neighborhood);
+            }
+        }
+        return lookup;
+    }
+
+    private Set<Long> resolveNeighborhoodIds(String neighborhoodRaw,
+            Map<String, EsNeighborhood> activeNeighborhoodsByName) {
+        Set<Long> neighborhoodIds = new LinkedHashSet<>();
+        for (String token : parseNeighborhoodTokens(neighborhoodRaw)) {
+            EsNeighborhood neighborhood = activeNeighborhoodsByName.get(token.toLowerCase());
+            if (neighborhood == null) {
+                throw new IllegalArgumentException("Unknown neighborhood: " + token
+                        + ". Use an active neighborhood name exactly as configured in Admin > ES > Neighborhoods.");
+            }
+            neighborhoodIds.add(neighborhood.getEsNeighborhoodId());
+        }
+        return neighborhoodIds;
+    }
+
+    private List<String> parseNeighborhoodTokens(String neighborhoodRaw) {
+        String normalized = normalizeNeighborhoodToken(neighborhoodRaw);
+        if (normalized == null) {
+            return List.of();
+        }
+
+        return java.util.Arrays.stream(normalized.split(","))
+                .map(this::normalizeNeighborhoodToken)
+                .filter(token -> token != null)
+                .distinct()
+                .collect(Collectors.toList());
+    }
+
+    private String joinNeighborhoodNames(Set<Long> neighborhoodIds,
+            Map<String, EsNeighborhood> activeNeighborhoodsByName) {
+        if (neighborhoodIds == null || neighborhoodIds.isEmpty()) {
+            return null;
+        }
+
+        Map<Long, String> namesById = new LinkedHashMap<>();
+        for (EsNeighborhood neighborhood : activeNeighborhoodsByName.values()) {
+            namesById.putIfAbsent(neighborhood.getEsNeighborhoodId(), neighborhood.getNeighborhoodName());
+        }
+
+        return neighborhoodIds.stream()
+                .map(namesById::get)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.joining(", "));
+    }
+
+    private String normalizeNeighborhoodToken(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
     }
 

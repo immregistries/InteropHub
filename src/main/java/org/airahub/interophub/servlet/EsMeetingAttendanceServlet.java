@@ -267,7 +267,6 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         request.getSession().setAttribute("interophub.lastAttendedEmail", emailNormalized);
 
         String agendaUrl = buildAgendaUrl(request.getContextPath(), resolvedMeeting, esTopicMeetingId);
-        response.sendRedirect(agendaUrl);
         try {
             Optional<EsTopicMeetingSurvey> pendingSurvey = esSurveyService.findPendingSurveyForAttendance(record,
                     authenticatedUser.orElse(null));

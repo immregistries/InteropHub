@@ -341,6 +341,7 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
         out.println("  }");
         out.println("  </script>");
 
+        PageFooterRenderer.render(out);
         out.println("</body>");
         out.println("</html>");
     }

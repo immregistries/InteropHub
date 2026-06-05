@@ -191,7 +191,9 @@ public class EsSurveyServlet extends HttpServlet {
             out.println("    <br>");
             out.println("    <button type=\"submit\">Submit Survey</button>");
             out.println("  </form>");
-            out.println("</main></body></html>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
         }
     }
 
@@ -207,7 +209,9 @@ public class EsSurveyServlet extends HttpServlet {
             out.println("  <h1>Thank You!</h1>");
             out.println("  <p>Your survey response has been submitted successfully.</p>");
             out.println("  <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main></body></html>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
         }
     }
 
@@ -222,7 +226,9 @@ public class EsSurveyServlet extends HttpServlet {
             out.println("  <h1>Already Submitted</h1>");
             out.println("  <p>You have already submitted a response for this survey. Thank you!</p>");
             out.println("  <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main></body></html>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
         }
     }
 
@@ -238,7 +244,9 @@ public class EsSurveyServlet extends HttpServlet {
             out.println("  <h1>Survey</h1>");
             out.println("  <p>" + escapeHtml(message) + "</p>");
             out.println("  <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main></body></html>");
+            out.println("</main>");
+            PageFooterRenderer.render(out);
+            out.println("</body></html>");
         }
     }
 

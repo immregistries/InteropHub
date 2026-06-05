@@ -381,6 +381,7 @@ public class EsUnsubscribeServlet extends HttpServlet {
     }
 
     private void writePageFooter(PrintWriter out) {
+        PageFooterRenderer.render(out);
         out.println("</body>");
         out.println("</html>");
     }

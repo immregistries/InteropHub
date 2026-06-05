@@ -356,6 +356,7 @@ public class EsTopicsServlet extends HttpServlet {
                     reviewScoreCounts,
                     notReviewedCount);
 
+            PageFooterRenderer.render(out);
             out.println("</body>");
             out.println("</html>");
         }
