@@ -87,6 +87,8 @@ public class AdminEsCampaignsServlet extends HttpServlet {
                     panelOut.println("        </table>");
                 }
 
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/es/campaigns/create\">Create New Campaign</a></p>");
                 panelOut.println("        <p style=\"margin-top:1.5rem\">");
                 panelOut.println("          <a href=\"" + contextPath + "/admin/es-topic-import\">Import Topics</a>");
                 panelOut.println("        </p>");

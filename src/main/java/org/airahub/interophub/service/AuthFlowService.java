@@ -30,6 +30,7 @@ import org.airahub.interophub.model.User;
 public class AuthFlowService {
     public static final String SESSION_COOKIE_NAME = "interophub_session";
     private static final String ADMIN_EMAIL_DOMAIN = "@immregistries.org";
+    private static final String CDC_EMAIL_DOMAIN = "@cdc.gov";
     public static final String PARAM_APP_CODE = "app_code";
     public static final String PARAM_RETURN_TO = "return_to";
     public static final String PARAM_STATE = "state";
@@ -382,7 +383,20 @@ public class AuthFlowService {
                 .filter(this::isAdminUser);
     }
 
+    public Optional<User> findAuthenticatedCdcOrAdminUser(HttpServletRequest request) {
+        return findAuthenticatedUser(request)
+                .filter(this::isCdcOrAdminUser);
+    }
+
     public boolean isAdminUser(User user) {
+        return hasEmailDomain(user, ADMIN_EMAIL_DOMAIN);
+    }
+
+    public boolean isCdcOrAdminUser(User user) {
+        return isAdminUser(user) || hasEmailDomain(user, CDC_EMAIL_DOMAIN);
+    }
+
+    private boolean hasEmailDomain(User user, String requiredDomain) {
         if (user == null) {
             return false;
         }
@@ -395,7 +409,7 @@ public class AuthFlowService {
             return false;
         }
 
-        return email.trim().toLowerCase().endsWith(ADMIN_EMAIL_DOMAIN);
+        return email.trim().toLowerCase().endsWith(requiredDomain);
     }
 
     public void logout(HttpServletRequest request) {

@@ -830,6 +830,154 @@ a.doc-card {
   font-size: 0.9rem;
 }
 
+.es-cdc-review-page {
+  padding-bottom: 1.25rem;
+}
+
+.es-cdc-intro {
+  margin: 0 0 1rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid #c9d7ea;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+  color: #1e293b;
+  box-shadow: 0 6px 18px rgba(30, 41, 59, 0.08);
+}
+
+.es-cdc-intro p {
+  margin: 0;
+  line-height: 1.55;
+}
+
+.es-cdc-topic-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.es-cdc-topic-row {
+  grid-template-columns: 1fr;
+}
+
+.es-cdc-topic-body {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.9rem 0.95rem 1rem;
+}
+
+.es-cdc-topic-meta {
+  margin: -0.2rem 0 0;
+  color: #475569;
+  font-size: 0.93rem;
+}
+
+.es-cdc-meta-sep {
+  padding: 0 0.35rem;
+}
+
+.es-cdc-control-block {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.es-cdc-control-label {
+  margin: 0;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.es-cdc-signal-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.es-cdc-signal-btn {
+  border: 1px solid #8ea4c4;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 0.72rem 0.8rem;
+  text-align: left;
+  font-weight: 700;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.es-cdc-signal-btn:hover {
+  border-color: #0f766e;
+}
+
+.es-cdc-signal-btn.is-active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f5132;
+  box-shadow: inset 0 0 0 1px rgba(15, 118, 110, 0.12);
+}
+
+.es-cdc-signal-btn:disabled,
+.es-cdc-policy-action:disabled,
+.js-cdc-comment-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.es-cdc-comment-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.es-cdc-policy-badge {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.es-cdc-policy-note {
+  margin: 0;
+  padding: 0.7rem 0.8rem;
+  border-radius: 10px;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  font-size: 0.94rem;
+}
+
+.es-cdc-policy-action {
+  justify-self: start;
+}
+
+.es-cdc-row-status {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.es-cdc-row-status.is-error {
+  color: #991b1b;
+}
+
+.es-cdc-topic-row.is-cdc-policy-blocked {
+  border-color: #a8b3c2;
+  background: linear-gradient(180deg, #f3f4f6 0%, #e5e7eb 100%);
+  box-shadow: 0 8px 18px rgba(107, 114, 128, 0.18);
+}
+
+.es-cdc-topic-row.is-cdc-policy-blocked h3,
+.es-cdc-topic-row.is-cdc-policy-blocked .es-topic-preview,
+.es-cdc-topic-row.is-cdc-policy-blocked .es-cdc-topic-meta {
+  color: #4b5563;
+}
+
 .es-review-edit-wrap[hidden],
 .es-review-selected-wrap[hidden],
 .es-topic-state[hidden] {

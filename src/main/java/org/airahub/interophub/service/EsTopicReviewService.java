@@ -4,9 +4,11 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicReviewDao;
+import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicReview;
@@ -14,12 +16,16 @@ import org.airahub.interophub.model.User;
 
 public class EsTopicReviewService {
 
+    public static final String CDC_POLICY_STATUS_NOT_SUPPORTED = "Not currently supported by CDC policy";
+
     private final EsTopicReviewDao reviewDao;
+    private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicDao topicDao;
     private final EsCommentDao commentDao;
 
     public EsTopicReviewService() {
         this.reviewDao = new EsTopicReviewDao();
+        this.campaignTopicDao = new EsCampaignTopicDao();
         this.topicDao = new EsTopicDao();
         this.commentDao = new EsCommentDao();
     }
@@ -66,6 +72,40 @@ public class EsTopicReviewService {
         return new SaveResult(saved, reviewedCount);
     }
 
+    public SaveResult saveCdcSignal(Long campaignId, Long topicId, Long userId, Integer score) {
+        if (campaignId == null || campaignId <= 0L) {
+            throw new IllegalArgumentException("Campaign is required.");
+        }
+        if (topicId == null || topicId <= 0L) {
+            throw new IllegalArgumentException("Topic is required.");
+        }
+        if (userId == null || userId <= 0L) {
+            throw new IllegalArgumentException("Authenticated user is required.");
+        }
+        if (!isAllowedCdcSignalScore(score)) {
+            throw new IllegalArgumentException("Signal must be one of 1, 3, or 4.");
+        }
+
+        EsTopic topic = requireCampaignActiveTopic(campaignId, topicId);
+        if (isCdcPolicyBlocked(topic)) {
+            throw new IllegalArgumentException(
+                    "Feedback is not requested because this topic is marked: " + CDC_POLICY_STATUS_NOT_SUPPORTED
+                            + ".");
+        }
+
+        Optional<EsTopicReview> existing = reviewDao.findByCampaignIdAndTopicIdAndUserId(campaignId, topicId, userId);
+
+        EsTopicReview review = existing.orElseGet(EsTopicReview::new);
+        review.setEsCampaignId(campaignId);
+        review.setEsTopicId(topic.getEsTopicId());
+        review.setUserId(userId);
+        review.setCommunityValueScore(score);
+
+        EsTopicReview saved = reviewDao.saveOrUpdate(review);
+        long reviewedCount = reviewDao.countReviewedTopicsByCampaignIdAndUserId(campaignId, userId);
+        return new SaveResult(saved, reviewedCount);
+    }
+
     public EsComment addTopicComment(Long campaignId, Long topicId, User user, String commentText) {
         if (campaignId == null || campaignId <= 0L) {
             throw new IllegalArgumentException("Campaign is required.");
@@ -98,6 +138,67 @@ public class EsTopicReviewService {
         return commentDao.save(comment);
     }
 
+    public EsComment addCdcTopicComment(Long campaignId, Long topicId, User user, String commentText) {
+        if (campaignId == null || campaignId <= 0L) {
+            throw new IllegalArgumentException("Campaign is required.");
+        }
+        if (topicId == null || topicId <= 0L) {
+            throw new IllegalArgumentException("Topic is required.");
+        }
+        if (user == null || user.getUserId() == null) {
+            throw new IllegalArgumentException("Authenticated user is required.");
+        }
+        String normalizedComment = trimToNull(commentText);
+        if (normalizedComment == null) {
+            throw new IllegalArgumentException("Comment text is required.");
+        }
+
+        EsTopic topic = requireCampaignActiveTopic(campaignId, topicId);
+        if (isCdcPolicyBlocked(topic)) {
+            throw new IllegalArgumentException(
+                    "Feedback is not requested because this topic is marked: " + CDC_POLICY_STATUS_NOT_SUPPORTED
+                            + ".");
+        }
+
+        NameParts nameParts = deriveNameParts(user);
+
+        EsComment comment = new EsComment();
+        comment.setEsCampaignId(campaignId);
+        comment.setEsTopicId(topic.getEsTopicId());
+        comment.setUserId(user.getUserId());
+        comment.setSessionKey(null);
+        comment.setFirstName(nameParts.firstName());
+        comment.setLastName(nameParts.lastName());
+        comment.setEmail(trimToNull(user.getEmail()));
+        comment.setEmailNormalized(EsNormalizer.normalizeEmail(user.getEmail()));
+        comment.setCommentType(EsComment.CommentType.TOPIC);
+        comment.setCommentText(normalizedComment);
+        return commentDao.save(comment);
+    }
+
+    public EsTopic updateCdcPolicyStatus(Long campaignId, Long topicId, String action) {
+        if (campaignId == null || campaignId <= 0L) {
+            throw new IllegalArgumentException("Campaign is required.");
+        }
+        if (topicId == null || topicId <= 0L) {
+            throw new IllegalArgumentException("Topic is required.");
+        }
+        String normalizedAction = trimToNull(action);
+        if (normalizedAction == null) {
+            throw new IllegalArgumentException("policyStatusAction is required.");
+        }
+
+        EsTopic topic = requireCampaignActiveTopic(campaignId, topicId);
+        if ("set".equalsIgnoreCase(normalizedAction)) {
+            topic.setPolicyStatus(CDC_POLICY_STATUS_NOT_SUPPORTED);
+        } else if ("clear".equalsIgnoreCase(normalizedAction)) {
+            topic.setPolicyStatus(null);
+        } else {
+            throw new IllegalArgumentException("policyStatusAction must be set or clear.");
+        }
+        return topicDao.saveOrUpdate(topic);
+    }
+
     public List<EsTopicReviewDao.ResponderRow> findResponders(Long campaignId) {
         return reviewDao.findRespondersByCampaignId(campaignId);
     }
@@ -117,6 +218,22 @@ public class EsTopicReviewService {
             throw new IllegalArgumentException("Topic is not active.");
         }
         return topic;
+    }
+
+    private EsTopic requireCampaignActiveTopic(Long campaignId, Long topicId) {
+        EsCampaignTopic campaignTopic = campaignTopicDao.findByCampaignIdAndTopicId(campaignId, topicId)
+                .orElseThrow(() -> new IllegalArgumentException("Topic is not included in this campaign."));
+        return requireActiveTopic(campaignTopic.getEsTopicId());
+    }
+
+    private boolean isAllowedCdcSignalScore(Integer score) {
+        return Integer.valueOf(1).equals(score)
+                || Integer.valueOf(3).equals(score)
+                || Integer.valueOf(4).equals(score);
+    }
+
+    public boolean isCdcPolicyBlocked(EsTopic topic) {
+        return topic != null && CDC_POLICY_STATUS_NOT_SUPPORTED.equals(trimToNull(topic.getPolicyStatus()));
     }
 
     private NameParts deriveNameParts(User user) {

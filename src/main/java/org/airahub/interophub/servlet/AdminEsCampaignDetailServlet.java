@@ -123,6 +123,8 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
                         + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/es/review/"
                         + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/es/cdc-review/"
+                        + escapeHtml(campaign.getCampaignCode()) + "\">Open CDC Signal Instrument</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/review-results?campaignCode="
                         + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns/edit?campaignCode="

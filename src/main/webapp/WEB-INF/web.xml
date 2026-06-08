@@ -301,6 +301,26 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsCdcReviewServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCdcReviewServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsCdcReviewSignalSaveServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCdcReviewSignalSaveServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsCdcReviewCommentSaveServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCdcReviewCommentSaveServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsCdcReviewPolicyStatusServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsCdcReviewPolicyStatusServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignRegistrationDisplayServlet</servlet-class>
   </servlet>
@@ -383,6 +403,11 @@
   <servlet>
     <servlet-name>AdminEsCampaignEditServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignEditServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsCampaignCreateServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignCreateServlet</servlet-class>
   </servlet>
 
   <servlet>
@@ -511,6 +536,26 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>EsCdcReviewServlet</servlet-name>
+    <url-pattern>/es/cdc-review/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCdcReviewSignalSaveServlet</servlet-name>
+    <url-pattern>/es/cdc-review/save-signal</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCdcReviewCommentSaveServlet</servlet-name>
+    <url-pattern>/es/cdc-review/save-comment</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsCdcReviewPolicyStatusServlet</servlet-name>
+    <url-pattern>/es/cdc-review/policy-status</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>AdminEsCampaignRegistrationDisplayServlet</servlet-name>
     <url-pattern>/admin/es/registrations</url-pattern>
   </servlet-mapping>
@@ -603,6 +648,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsCampaignEditServlet</servlet-name>
     <url-pattern>/admin/es/campaigns/edit</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsCampaignCreateServlet</servlet-name>
+    <url-pattern>/admin/es/campaigns/create</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
