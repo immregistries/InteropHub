@@ -271,8 +271,10 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             Optional<EsTopicMeetingSurvey> pendingSurvey = esSurveyService.findPendingSurveyForAttendance(record,
                     authenticatedUser.orElse(null));
             if (pendingSurvey.isPresent()) {
+                String returnUrlEncoded = URLEncoder.encode(agendaUrl, StandardCharsets.UTF_8);
                 response.sendRedirect(request.getContextPath() + "/es/survey?assignmentId="
-                        + pendingSurvey.get().getEsTopicMeetingSurveyId());
+                        + pendingSurvey.get().getEsTopicMeetingSurveyId()
+                        + "&returnUrl=" + returnUrlEncoded);
                 return;
             }
         } catch (Exception ex) {

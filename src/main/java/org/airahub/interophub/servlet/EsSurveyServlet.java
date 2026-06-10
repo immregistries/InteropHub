@@ -41,7 +41,12 @@ public class EsSurveyServlet extends HttpServlet {
         }
 
         if ("1".equals(request.getParameter("submitted"))) {
-            renderThankYou(response, contextPath, assignmentId);
+            String returnUrl = sanitizeReturnUrl(request.getParameter("returnUrl"), contextPath);
+            if (returnUrl != null) {
+                response.sendRedirect(returnUrl);
+            } else {
+                renderThankYou(response, contextPath, assignmentId);
+            }
             return;
         }
 
@@ -66,9 +71,10 @@ public class EsSurveyServlet extends HttpServlet {
             return;
         }
 
+        String returnUrl = sanitizeReturnUrl(request.getParameter("returnUrl"), contextPath);
         EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
         List<EsSurveyQuestion> questions = surveyService.listQuestions(assignment.getEsSurveyId());
-        renderSurveyForm(response, contextPath, assignment, survey, questions, null);
+        renderSurveyForm(response, contextPath, assignment, survey, questions, null, returnUrl);
     }
 
     @Override
@@ -97,12 +103,13 @@ public class EsSurveyServlet extends HttpServlet {
         User loggedInUser = authenticatedUser.orElse(null);
 
         // Build a minimal attendance-like object from session/form data
+        String returnUrl = sanitizeReturnUrl(request.getParameter("returnUrl"), contextPath);
         String emailNormalized = resolveEmailNormalized(request, loggedInUser);
         if (emailNormalized == null) {
             EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
             List<EsSurveyQuestion> questions = surveyService.listQuestions(assignment.getEsSurveyId());
             renderSurveyForm(response, contextPath, assignment, survey, questions,
-                    "Could not identify your email address. Please return to the attendance page.");
+                    "Could not identify your email address. Please return to the attendance page.", returnUrl);
             return;
         }
 
@@ -122,18 +129,21 @@ public class EsSurveyServlet extends HttpServlet {
 
         try {
             surveyService.submitSurveyResponse(assignment, syntheticAttendance, loggedInUser, answers);
-            response.sendRedirect(contextPath + "/es/survey?assignmentId=" + assignmentId + "&submitted=1");
+            String redirectAfterSubmit = returnUrl != null
+                    ? returnUrl
+                    : contextPath + "/es/survey?assignmentId=" + assignmentId + "&submitted=1";
+            response.sendRedirect(redirectAfterSubmit);
         } catch (IllegalStateException ex) {
             // Already responded
             renderAlreadySubmitted(response, contextPath);
         } catch (IllegalArgumentException ex) {
             // Validation error
             EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
-            renderSurveyForm(response, contextPath, assignment, survey, questions, ex.getMessage());
+            renderSurveyForm(response, contextPath, assignment, survey, questions, ex.getMessage(), returnUrl);
         } catch (Exception ex) {
             EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
             renderSurveyForm(response, contextPath, assignment, survey, questions,
-                    "An error occurred while saving your response. Please try again.");
+                    "An error occurred while saving your response. Please try again.", returnUrl);
         }
     }
 
@@ -143,7 +153,7 @@ public class EsSurveyServlet extends HttpServlet {
 
     private void renderSurveyForm(HttpServletResponse response, String contextPath,
             EsTopicMeetingSurvey assignment, EsSurvey survey, List<EsSurveyQuestion> questions,
-            String errorMessage) throws IOException {
+            String errorMessage, String returnUrl) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         String title = survey != null ? escapeHtml(survey.getSurveyName()) : "Survey";
         try (PrintWriter out = response.getWriter()) {
@@ -165,6 +175,9 @@ public class EsSurveyServlet extends HttpServlet {
             out.println("  <form method=\"post\" action=\"" + contextPath + "/es/survey\">");
             out.println("    <input type=\"hidden\" name=\"assignmentId\" value=\""
                     + assignment.getEsTopicMeetingSurveyId() + "\">");
+            if (returnUrl != null) {
+                out.println("    <input type=\"hidden\" name=\"returnUrl\" value=\"" + escapeHtml(returnUrl) + "\">");
+            }
 
             for (EsSurveyQuestion q : questions) {
                 out.println("  <div class=\"survey-question\">");
@@ -298,6 +311,20 @@ public class EsSurveyServlet extends HttpServlet {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String sanitizeReturnUrl(String returnUrl, String contextPath) {
+        if (returnUrl == null || returnUrl.isBlank()) {
+            return null;
+        }
+        String url = returnUrl.trim();
+        // Only allow relative URLs that start with the context path (or just "/")
+        // to prevent open-redirect attacks.
+        if (url.startsWith(contextPath + "/") || url.startsWith(contextPath + "?")
+                || (contextPath.isEmpty() && url.startsWith("/"))) {
+            return url;
+        }
+        return null;
     }
 
     private String escapeHtml(String value) {
