@@ -154,23 +154,25 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
                 }
                 panelOut.println("        <p><a href=\"" + contextPath
                         + "/admin/es/meeting-survey?action=new\" class=\"button\">+ New Assignment</a></p>");
-                panelOut.println("        <table>");
+                panelOut.println("        <table class=\"data-table\">");
                 panelOut.println("          <thead><tr>"
-                        + "<th>ID</th><th>Meeting ID</th><th>Survey ID</th>"
-                        + "<th>Start</th><th>End</th><th>Status</th><th>Actions</th>"
+                        + "<th>Survey</th><th>Meeting</th>"
+                        + "<th>Start</th><th>Status</th><th>Actions</th>"
                         + "</tr></thead>");
                 panelOut.println("          <tbody>");
                 for (EsTopicMeetingSurvey a : assignments) {
+                    EsSurvey survey = surveyService.getSurvey(a.getEsSurveyId()).orElse(null);
+                    EsTopicMeeting meeting = topicMeetingDao.findById(a.getEsTopicMeetingId()).orElse(null);
+                    String surveyName = survey != null ? survey.getSurveyName() : "?";
+                    String meetingName = meeting != null ? orEmpty(meeting.getMeetingName()) : "?";
                     String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
                             + a.getEsTopicMeetingSurveyId();
                     String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
                             + a.getEsTopicMeetingSurveyId();
                     panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + a.getEsTopicMeetingSurveyId() + "</td>");
-                    panelOut.println("              <td>" + a.getEsTopicMeetingId() + "</td>");
-                    panelOut.println("              <td>" + a.getEsSurveyId() + "</td>");
+                    panelOut.println("              <td>" + escapeHtml(surveyName) + "</td>");
+                    panelOut.println("              <td>" + escapeHtml(meetingName) + "</td>");
                     panelOut.println("              <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(a.getEndDate().toString()) + "</td>");
                     panelOut.println("              <td>" + escapeHtml(a.getStatus() != null
                             ? a.getStatus().name()
                             : "") + "</td>");
@@ -179,7 +181,7 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
                     panelOut.println("            </tr>");
                 }
                 if (assignments.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"7\">No assignments found.</td></tr>");
+                    panelOut.println("            <tr><td colspan=\"5\">No assignments found.</td></tr>");
                 }
                 panelOut.println("          </tbody>");
                 panelOut.println("        </table>");
@@ -244,6 +246,7 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
             String errorMessage) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
+        EsTopicMeeting meeting = topicMeetingDao.findById(assignment.getEsTopicMeetingId()).orElse(null);
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Edit Assignment - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
@@ -251,8 +254,8 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
                         + assignment.getEsTopicMeetingSurveyId() + "</h2>");
                 panelOut.println("        <p>Survey: <strong>"
                         + escapeHtml(survey != null ? survey.getSurveyName() : "?") + "</strong></p>");
-                panelOut.println("        <p>Topic Meeting ID: "
-                        + assignment.getEsTopicMeetingId() + "</p>");
+                panelOut.println("        <p>Meeting: <strong>"
+                        + escapeHtml(meeting != null ? orEmpty(meeting.getMeetingName()) : "?") + "</strong></p>");
                 if (successMessage != null) {
                     panelOut.println("        <p><strong>" + escapeHtml(successMessage) + "</strong></p>");
                 }
