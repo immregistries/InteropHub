@@ -195,8 +195,14 @@ public class EsAgendaServlet extends HttpServlet {
         }
         String attendeeEmailForInterest = user != null ? user.getEmailNormalized() : lastAttendedEmail;
 
-        // Collect agenda topic IDs (linked, non-cancelled, non-postponed) for
-        // subscription lookup.
+        // Topics rendered in the "Topics of Interest" form (linked, non-cancelled).
+        List<Long> topicInterestTopicIds = items.stream()
+                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
+                .map(EsMeetingAgendaItem::getEsTopicId)
+                .distinct()
+                .collect(Collectors.toList());
+
+        // Agenda topics used for in-agenda engagement metrics (exclude postponed).
         List<Long> agendaTopicIds = items.stream()
                 .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED
                         && i.getStatus() != AgendaItemStatus.POSTPONED)
@@ -205,18 +211,18 @@ public class EsAgendaServlet extends HttpServlet {
                 .collect(Collectors.toList());
 
         Map<Long, EsSubscription> subsByTopicId = new java.util.LinkedHashMap<>();
-        if (attendeeEmailForInterest != null && !agendaTopicIds.isEmpty()) {
+        if (attendeeEmailForInterest != null && !topicInterestTopicIds.isEmpty()) {
             List<EsSubscription> emailSubs = subscriptionDao.findByEmailNormalizedAndType(
                     attendeeEmailForInterest, EsSubscription.SubscriptionType.TOPIC);
             for (EsSubscription sub : emailSubs) {
-                if (sub.getEsTopicId() != null && agendaTopicIds.contains(sub.getEsTopicId())) {
+                if (sub.getEsTopicId() != null && topicInterestTopicIds.contains(sub.getEsTopicId())) {
                     subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
                 }
             }
             if (user != null && user.getUserId() != null) {
                 List<EsSubscription> userSubs = subscriptionDao.findByUserId(user.getUserId());
                 for (EsSubscription sub : userSubs) {
-                    if (sub.getEsTopicId() != null && agendaTopicIds.contains(sub.getEsTopicId())) {
+                    if (sub.getEsTopicId() != null && topicInterestTopicIds.contains(sub.getEsTopicId())) {
                         subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
                     }
                 }
@@ -269,7 +275,7 @@ public class EsAgendaServlet extends HttpServlet {
         renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
                 isEditor, isAdmin, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch,
                 suggestBanner,
-                attendeeEmailForInterest, subsByTopicId, agendaTopicIds,
+                attendeeEmailForInterest, subsByTopicId, topicInterestTopicIds,
                 isWithinAttendanceWindow, meetingAttendees, engagementByTopicId);
     }
 
@@ -1414,7 +1420,7 @@ public class EsAgendaServlet extends HttpServlet {
             EsMeeting nextMeeting, String savedMsg, String errorMsg,
             String loginHintMismatch, String suggestBanner,
             String attendeeEmailForInterest, Map<Long, EsSubscription> subsByTopicId,
-            List<Long> agendaTopicIds,
+            List<Long> topicInterestTopicIds,
             boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees,
             Map<Long, TopicEngagementSummary> engagementByTopicId) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
@@ -3062,13 +3068,15 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
                         out.println("              <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
-                        out.println("              <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
+                        out.println(
+                                "              <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
                         out.println("              <input type=\"hidden\" name=\"title\" value=\""
                                 + escapeHtml(row.topicName) + "\">");
                         if (editOverride) {
                             out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         }
-                        out.println("              <button type=\"submit\" class=\"curated-quick-add-btn\">Add to Agenda</button>");
+                        out.println(
+                                "              <button type=\"submit\" class=\"curated-quick-add-btn\">Add to Agenda</button>");
                         out.println("            </form>");
                     }
                     out.println("          </td>");
@@ -3081,9 +3089,9 @@ public class EsAgendaServlet extends HttpServlet {
             }
 
             // --- TOPIC INTEREST SECTION ---
-            if (attendeeEmailForInterest != null && !agendaTopicIds.isEmpty()) {
+            if (attendeeEmailForInterest != null && !topicInterestTopicIds.isEmpty()) {
                 renderTopicInterestSection(out, contextPath, meeting, items, topicById,
-                        agendaTopicIds, subsByTopicId, attendeeEmailForInterest, user);
+                        subsByTopicId, attendeeEmailForInterest, user);
             }
 
             out.println("  <div class=\"agenda-footer\">");
@@ -3471,16 +3479,16 @@ public class EsAgendaServlet extends HttpServlet {
                 "    .prev-copy-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; white-space: nowrap; }");
         out.println("    .prev-copy-btn:hover { background: #dcfce7; }");
         out.println(
-            "    .curated-cadence-section { margin-top: 1.4rem; border-left: 3px solid #dc2626; padding-left: 0.6rem; }");
+                "    .curated-cadence-section { margin-top: 1.4rem; border-left: 3px solid #dc2626; padding-left: 0.6rem; }");
         out.println(
-            "    .curated-cadence-heading { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }");
+                "    .curated-cadence-heading { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }");
         out.println("    .curated-cadence-subtext { font-size: 0.8rem; color: #7f1d1d; margin-bottom: 0.45rem; }");
         out.println(
-            "    .curated-cadence-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #fff5f5; border: 1px solid #fecaca; }");
+                "    .curated-cadence-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #fff5f5; border: 1px solid #fecaca; }");
         out.println(
-            "    .curated-cadence-table th { background: #fee2e2; color: #7f1d1d; font-weight: 700; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #fecaca; text-align: left; white-space: nowrap; }");
+                "    .curated-cadence-table th { background: #fee2e2; color: #7f1d1d; font-weight: 700; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #fecaca; text-align: left; white-space: nowrap; }");
         out.println(
-            "    .curated-cadence-table td { padding: 0.42rem 0.5rem; border-bottom: 1px solid #fecaca; vertical-align: top; }");
+                "    .curated-cadence-table td { padding: 0.42rem 0.5rem; border-bottom: 1px solid #fecaca; vertical-align: top; }");
         out.println("    .curated-cadence-table tr:last-child td { border-bottom: none; }");
         out.println("    .curated-row-ok td { background: #ffffff; }");
         out.println("    .curated-row-due-soon td { background: #fffbeb; }");
@@ -3489,13 +3497,13 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .curated-days-ago { color: #64748b; font-size: 0.78rem; }");
         out.println("    .curated-never { color: #b91c1c; font-weight: 700; }");
         out.println(
-            "    .curated-status { font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 4px; display: inline-block; white-space: nowrap; }");
+                "    .curated-status { font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 4px; display: inline-block; white-space: nowrap; }");
         out.println("    .curated-status-critical { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }");
         out.println("    .curated-status-warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }");
         out.println("    .curated-status-ok { background: #dcfce7; border: 1px solid #86efac; color: #166534; }");
         out.println("    .curated-action-cell { white-space: nowrap; }");
         out.println(
-            "    .curated-quick-add-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; font-weight: 700; }");
+                "    .curated-quick-add-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; font-weight: 700; }");
         out.println("    .curated-quick-add-btn:hover { background: #fecaca; }");
         out.println("    .curated-on-agenda { color: #166534; font-size: 0.78rem; font-weight: 600; }");
         // Role picker in add-presenter panel
@@ -3808,8 +3816,7 @@ public class EsAgendaServlet extends HttpServlet {
                         newSub.setUserId(userOpt.get().getUserId());
                     }
                     esInterestService.subscribeOrUpdate(newSub);
-                } else if (existing != null
-                        && existing.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED) {
+                } else if (existing != null && isActiveFollowStatus(existing.getStatus())) {
                     subscriptionDao.setTopicSubscriptionStatus(
                             existing.getEsSubscriptionId(),
                             EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
@@ -3836,7 +3843,7 @@ public class EsAgendaServlet extends HttpServlet {
      */
     private void renderTopicInterestSection(PrintWriter out, String contextPath, EsMeeting meeting,
             List<EsMeetingAgendaItem> items, Map<Long, EsTopic> topicById,
-            List<Long> agendaTopicIds, Map<Long, EsSubscription> subsByTopicId,
+            Map<Long, EsSubscription> subsByTopicId,
             String attendeeEmail, User user) {
         // Collect items that are topic-linked and not cancelled, preserving agenda
         // order.
@@ -3870,8 +3877,7 @@ public class EsAgendaServlet extends HttpServlet {
             }
             EsSubscription sub = subsByTopicId.get(topicId);
             boolean isChampion = sub != null && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
-            boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                    || sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION);
+            boolean isChecked = sub != null && isActiveFollowStatus(sub.getStatus());
             out.println("        <li class=\"es-topic-interest-item\">");
             // Hidden field to track which topics were shown (needed for unsubscribe logic).
             out.println("          <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
@@ -3907,6 +3913,12 @@ public class EsAgendaServlet extends HttpServlet {
             return a;
         }
         return b;
+    }
+
+    private static boolean isActiveFollowStatus(EsSubscription.SubscriptionStatus status) {
+        return status == EsSubscription.SubscriptionStatus.SUBSCRIBED
+                || status == EsSubscription.SubscriptionStatus.CHAMPION
+                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String cadenceLabel(int cadenceDays) {
