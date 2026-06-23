@@ -57,6 +57,7 @@ public class WelcomeServlet extends HttpServlet {
                 : user.getFullName();
         List<AppRegistry> availableApps = appRegistryDao.findAllOrdered().stream()
                 .filter(app -> Boolean.TRUE.equals(app.getEnabled()))
+                .filter(app -> Boolean.TRUE.equals(app.getVisible()))
                 .filter(app -> !Boolean.TRUE.equals(app.getKillSwitch()))
                 .filter(app -> app.getAppName() != null && !app.getAppName().isBlank())
                 .filter(app -> app.getDefaultRedirectUrl() != null && !app.getDefaultRedirectUrl().isBlank())

@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.ColumnDefault;
 
 @Entity
 @Table(name = "app_registry")
@@ -43,6 +44,10 @@ public class AppRegistry {
     @Column(name = "is_enabled", nullable = false)
     private Boolean enabled;
 
+    @Column(name = "is_visible", nullable = false)
+    @ColumnDefault("true")
+    private Boolean visible;
+
     @Column(name = "kill_switch", nullable = false)
     private Boolean killSwitch;
 
@@ -59,6 +64,9 @@ public class AppRegistry {
         }
         if (enabled == null) {
             enabled = Boolean.TRUE;
+        }
+        if (visible == null) {
+            visible = Boolean.TRUE;
         }
         if (killSwitch == null) {
             killSwitch = Boolean.FALSE;
@@ -119,6 +127,14 @@ public class AppRegistry {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public Boolean getVisible() {
+        return visible;
+    }
+
+    public void setVisible(Boolean visible) {
+        this.visible = visible;
     }
 
     public Boolean getKillSwitch() {

@@ -117,6 +117,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
         String newPurposeLabel = trimToNull(request.getParameter("newPurposeLabel"));
         boolean newPurposeEnabled = request.getParameter("newPurposeEnabled") != null;
         boolean enabled = request.getParameter("enabled") != null;
+        boolean visible = request.getParameter("visible") != null;
 
         try {
             appRegistry.setAppCode(required(appCode, "App code"));
@@ -125,6 +126,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
             appRegistry.setManagedBy(parseManagedBy(required(managedBy, "Managed By")));
             appRegistry.setAppDescription(appDescription);
             appRegistry.setEnabled(enabled);
+            appRegistry.setVisible(visible);
 
             appRegistry = appRegistryDao.saveOrUpdate(appRegistry);
             upsertAllowlistEntries(request, appRegistry.getAppId());
@@ -252,6 +254,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
                 out.println("          <th>App Name</th>");
                 out.println("          <th>Managed By</th>");
                 out.println("          <th>Enabled</th>");
+                out.println("          <th>Visible</th>");
                 out.println("          <th>Action</th>");
                 out.println("        </tr>");
                 out.println("      </thead>");
@@ -264,13 +267,14 @@ public class AdminAppRegistryServlet extends HttpServlet {
                             "          <td>" + escapeHtml(app.getManagedBy() == null ? "" : app.getManagedBy().name())
                                     + "</td>");
                     out.println("          <td>" + enabledIcon(Boolean.TRUE.equals(app.getEnabled())) + "</td>");
+                    out.println("          <td>" + visibleIcon(Boolean.TRUE.equals(app.getVisible())) + "</td>");
                     out.println("          <td><a href=\"" + contextPath + "/admin/apps?appId=" + app.getAppId()
                             + "\">Edit</a></td>");
                     out.println("        </tr>");
                 }
                 if (apps.isEmpty()) {
                     out.println("        <tr>");
-                    out.println("          <td colspan=\"5\">No app entries yet.</td>");
+                    out.println("          <td colspan=\"6\">No app entries yet.</td>");
                     out.println("        </tr>");
                 }
                 out.println("      </tbody>");
@@ -344,6 +348,10 @@ public class AdminAppRegistryServlet extends HttpServlet {
                         out.println("      <label><input type=\"checkbox\" name=\"enabled\""
                                 + (Boolean.TRUE.equals(appRegistry.getEnabled()) || createNew ? " checked" : "")
                                 + " /> Enabled</label>");
+
+                        out.println("      <label><input type=\"checkbox\" name=\"visible\""
+                                + (Boolean.TRUE.equals(appRegistry.getVisible()) || createNew ? " checked" : "")
+                                + " /> Visible on Welcome page</label>");
 
                         out.println("      <h2>Allowed Redirect Base URLs</h2>");
                         out.println("      <p>Edit existing entries or disable them. Deletion is not supported.</p>");
@@ -436,6 +444,13 @@ public class AdminAppRegistryServlet extends HttpServlet {
             return "<span class=\"status-icon status-enabled\" title=\"Enabled\">&#10004; Enabled</span>";
         }
         return "<span class=\"status-icon status-disabled\" title=\"Disabled\">&#10008; Disabled</span>";
+    }
+
+    private String visibleIcon(boolean visible) {
+        if (visible) {
+            return "<span class=\"status-icon status-enabled\" title=\"Visible\">&#10004; Visible</span>";
+        }
+        return "<span class=\"status-icon status-disabled\" title=\"Hidden\">&#10008; Hidden</span>";
     }
 
     private String generateUniqueApiCode(Long appId, String purposeLabel) {
