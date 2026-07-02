@@ -37,15 +37,17 @@ public class AdminEsSurveyResultsServlet extends HttpServlet {
             return;
         }
 
+        boolean includeAdmin = "true".equals(request.getParameter("includeAdmin"));
+
         SurveyResultsData results;
         try {
-            results = surveyService.getAggregateResults(assignmentId);
+            results = surveyService.getAggregateResults(assignmentId, includeAdmin);
         } catch (Exception ex) {
             renderError(response, contextPath, "Could not load results: " + ex.getMessage());
             return;
         }
 
-        renderResults(response, contextPath, results);
+        renderResults(response, contextPath, results, includeAdmin);
     }
 
     // -------------------------------------------------------------------------
@@ -53,7 +55,7 @@ public class AdminEsSurveyResultsServlet extends HttpServlet {
     // -------------------------------------------------------------------------
 
     private void renderResults(HttpServletResponse response, String contextPath,
-            SurveyResultsData data) throws IOException {
+            SurveyResultsData data, boolean includeAdmin) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Survey Results - InteropHub", contextPath, panelOut -> {
@@ -63,8 +65,29 @@ public class AdminEsSurveyResultsServlet extends HttpServlet {
                         + " | Topic Meeting ID: " + data.getAssignment().getEsTopicMeetingId()
                         + " | Window: " + data.getAssignment().getStartDate()
                         + " to " + data.getAssignment().getEndDate() + "</p>");
+                panelOut.println(
+                        "        <form method=\"get\" action=\"" + contextPath + "/admin/es/survey-results\">");
+                panelOut.println("          <input type=\"hidden\" name=\"assignmentId\" value=\""
+                        + data.getAssignment().getEsTopicMeetingSurveyId() + "\">");
+                panelOut.println("          <label>");
+                String checked = includeAdmin ? " checked" : "";
+                panelOut.println("            <input type=\"checkbox\" name=\"includeAdmin\" value=\"true\""
+                        + checked + "> Include admin responses");
+                panelOut.println("          </label>");
+                panelOut.println("          <button type=\"submit\">Submit</button>");
+                panelOut.println("        </form>");
                 panelOut.println("        <p><strong>Total Responses: " + data.getResponseCount()
                         + "</strong></p>");
+                if (data.getExcludedAdminCount() > 0) {
+                    if (includeAdmin) {
+                        panelOut.println("        <p><em>Showing all responses including "
+                                + data.getExcludedAdminCount() + " admin response(s).</em></p>");
+                    } else {
+                        panelOut.println("        <p><em>Note: " + data.getExcludedAdminCount()
+                                + " admin response(s) excluded."
+                                + " Check &#8220;Include admin responses&#8221; to include them.</em></p>");
+                    }
+                }
 
                 for (QuestionResult qr : data.getQuestionResults()) {
                     panelOut.println("        <hr>");

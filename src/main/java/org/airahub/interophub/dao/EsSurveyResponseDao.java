@@ -60,6 +60,23 @@ public class EsSurveyResponseDao extends GenericDao<EsSurveyResponse, Long> {
         }
     }
 
+    public long countByTopicMeetingSurveyIdExcludingAdmin(Long esTopicMeetingSurveyId) {
+        if (esTopicMeetingSurveyId == null) {
+            return 0L;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(r) from EsSurveyResponse r"
+                            + " where r.esTopicMeetingSurveyId = :assignmentId"
+                            + " and (r.userId is null"
+                            + "  or r.userId not in (select u.userId from User u where u.isAdmin = true))",
+                    Long.class)
+                    .setParameter("assignmentId", esTopicMeetingSurveyId)
+                    .uniqueResult();
+            return count != null ? count : 0L;
+        }
+    }
+
     public EsSurveyResponse saveOrUpdate(EsSurveyResponse response) {
         Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

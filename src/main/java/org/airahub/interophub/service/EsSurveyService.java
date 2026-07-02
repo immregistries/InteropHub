@@ -336,31 +336,43 @@ public class EsSurveyService {
     // -------------------------------------------------------------------------
 
     public SurveyResultsData getAggregateResults(Long esTopicMeetingSurveyId) {
+        return getAggregateResults(esTopicMeetingSurveyId, true);
+    }
+
+    public SurveyResultsData getAggregateResults(Long esTopicMeetingSurveyId, boolean includeAdmin) {
         EsTopicMeetingSurvey assignment = assignmentDao.findById(esTopicMeetingSurveyId)
                 .orElseThrow(() -> new IllegalArgumentException("Assignment not found: " + esTopicMeetingSurveyId));
         EsSurvey survey = surveyDao.findById(assignment.getEsSurveyId())
                 .orElseThrow(() -> new IllegalArgumentException("Survey not found."));
         List<EsSurveyQuestion> questions = questionDao.findBySurveyIdOrdered(assignment.getEsSurveyId());
-        long responseCount = responseDao.countByTopicMeetingSurveyId(esTopicMeetingSurveyId);
+
+        long totalResponseCount = responseDao.countByTopicMeetingSurveyId(esTopicMeetingSurveyId);
+        long responseCount = includeAdmin ? totalResponseCount
+                : responseDao.countByTopicMeetingSurveyIdExcludingAdmin(esTopicMeetingSurveyId);
+        long excludedAdminCount = totalResponseCount - responseCount;
 
         List<QuestionResult> questionResults = new ArrayList<>();
         for (EsSurveyQuestion question : questions) {
             List<EsSurveyAnswer> answers = loadAnswersForQuestion(esTopicMeetingSurveyId,
-                    question.getEsSurveyQuestionId());
+                    question.getEsSurveyQuestionId(), includeAdmin);
             questionResults.add(buildQuestionResult(question, answers));
         }
-        return new SurveyResultsData(assignment, survey, responseCount, questionResults);
+        return new SurveyResultsData(assignment, survey, responseCount, excludedAdminCount, questionResults);
     }
 
-    private List<EsSurveyAnswer> loadAnswersForQuestion(Long esTopicMeetingSurveyId, Long questionId) {
+    private List<EsSurveyAnswer> loadAnswersForQuestion(Long esTopicMeetingSurveyId, Long questionId,
+            boolean includeAdmin) {
         try (org.hibernate.Session session = org.airahub.interophub.config.HibernateUtil
                 .getSessionFactory().openSession()) {
-            return session.createQuery(
-                    "select a from EsSurveyAnswer a"
-                            + " join EsSurveyResponse r on a.esSurveyResponseId = r.esSurveyResponseId"
-                            + " where r.esTopicMeetingSurveyId = :assignmentId"
-                            + " and a.esSurveyQuestionId = :questionId",
-                    EsSurveyAnswer.class)
+            String hql = "select a from EsSurveyAnswer a"
+                    + " join EsSurveyResponse r on a.esSurveyResponseId = r.esSurveyResponseId"
+                    + " where r.esTopicMeetingSurveyId = :assignmentId"
+                    + " and a.esSurveyQuestionId = :questionId";
+            if (!includeAdmin) {
+                hql += " and (r.userId is null"
+                        + "  or r.userId not in (select u.userId from User u where u.isAdmin = true))";
+            }
+            return session.createQuery(hql, EsSurveyAnswer.class)
                     .setParameter("assignmentId", esTopicMeetingSurveyId)
                     .setParameter("questionId", questionId)
                     .getResultList();
@@ -404,13 +416,15 @@ public class EsSurveyService {
         private final EsTopicMeetingSurvey assignment;
         private final EsSurvey survey;
         private final long responseCount;
+        private final long excludedAdminCount;
         private final List<QuestionResult> questionResults;
 
         public SurveyResultsData(EsTopicMeetingSurvey assignment, EsSurvey survey,
-                long responseCount, List<QuestionResult> questionResults) {
+                long responseCount, long excludedAdminCount, List<QuestionResult> questionResults) {
             this.assignment = assignment;
             this.survey = survey;
             this.responseCount = responseCount;
+            this.excludedAdminCount = excludedAdminCount;
             this.questionResults = questionResults;
         }
 
@@ -424,6 +438,10 @@ public class EsSurveyService {
 
         public long getResponseCount() {
             return responseCount;
+        }
+
+        public long getExcludedAdminCount() {
+            return excludedAdminCount;
         }
 
         public List<QuestionResult> getQuestionResults() {
