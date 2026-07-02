@@ -14,7 +14,7 @@ import org.airahub.interophub.service.AuthFlowService;
  * Admin edit page for a single auth_user account.
  * Route: /admin/users/edit?userId={id}
  * Editable fields: email, firstName, lastName, displayName, organization,
- * roleTitle.
+ * roleTitle, isAdmin.
  */
 public class AdminUserEditServlet extends HttpServlet {
 
@@ -77,6 +77,7 @@ public class AdminUserEditServlet extends HttpServlet {
         String displayName = trimToNull(request.getParameter("displayName"));
         String organization = trimToNull(request.getParameter("organization"));
         String roleTitle = trimToNull(request.getParameter("roleTitle"));
+        boolean isAdmin = "on".equalsIgnoreCase(request.getParameter("isAdmin"));
 
         if (email == null) {
             renderForm(response, contextPath, user, "Email is required.");
@@ -124,6 +125,7 @@ public class AdminUserEditServlet extends HttpServlet {
         user.setDisplayName(displayName);
         user.setOrganization(organization);
         user.setRoleTitle(roleTitle);
+        user.setIsAdmin(isAdmin);
         userDao.saveOrUpdate(user);
 
         response.sendRedirect(contextPath + "/admin/users/detail?userId=" + userId + "&saved=1");
@@ -185,6 +187,11 @@ public class AdminUserEditServlet extends HttpServlet {
                 panelOut.println("          <input id=\"roleTitle\" name=\"roleTitle\" type=\"text\""
                         + " maxlength=\"200\" value=\""
                         + escapeHtml(orEmpty(user.getRoleTitle())) + "\" />");
+
+                panelOut.println("          <label for=\"isAdmin\">Admin Access</label>");
+                panelOut.println("          <input id=\"isAdmin\" name=\"isAdmin\" type=\"checkbox\""
+                        + (Boolean.TRUE.equals(user.getIsAdmin()) ? " checked" : "") + " />");
+                panelOut.println("          <small>Enable to grant InteropHub admin permissions.</small>");
 
                 panelOut.println("          <div class=\"form-actions\">");
                 panelOut.println("            <button type=\"submit\">Save Changes</button>");

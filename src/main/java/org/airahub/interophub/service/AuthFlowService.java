@@ -29,7 +29,6 @@ import org.airahub.interophub.model.User;
 
 public class AuthFlowService {
     public static final String SESSION_COOKIE_NAME = "interophub_session";
-    private static final String ADMIN_EMAIL_DOMAIN = "@immregistries.org";
     private static final String CDC_EMAIL_DOMAIN = "@cdc.gov";
     public static final String PARAM_APP_CODE = "app_code";
     public static final String PARAM_RETURN_TO = "return_to";
@@ -389,7 +388,7 @@ public class AuthFlowService {
     }
 
     public boolean isAdminUser(User user) {
-        return hasEmailDomain(user, ADMIN_EMAIL_DOMAIN);
+        return user != null && Boolean.TRUE.equals(user.getIsAdmin());
     }
 
     public boolean isCdcOrAdminUser(User user) {

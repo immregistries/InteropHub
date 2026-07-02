@@ -56,6 +56,9 @@ public class User {
     @Column(name = "status", nullable = false, length = 16)
     private UserStatus status;
 
+    @Column(name = "is_admin", nullable = false)
+    private Boolean isAdmin;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -78,6 +81,9 @@ public class User {
         }
         if (status == null) {
             status = UserStatus.ACTIVE;
+        }
+        if (isAdmin == null) {
+            isAdmin = Boolean.FALSE;
         }
     }
 
@@ -190,6 +196,14 @@ public class User {
 
     public void setStatus(UserStatus status) {
         this.status = status;
+    }
+
+    public Boolean getIsAdmin() {
+        return isAdmin;
+    }
+
+    public void setIsAdmin(Boolean isAdmin) {
+        this.isAdmin = isAdmin;
     }
 
     public LocalDateTime getCreatedAt() {

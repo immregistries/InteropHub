@@ -84,6 +84,7 @@ CREATE TABLE auth_user (
   timezone_id        VARCHAR(64) NULL,         -- IANA timezone id e.g. America/New_York
   email_verified     BIT(1) NOT NULL DEFAULT b'0',
   status             ENUM('ACTIVE','DELETED','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  is_admin           BIT(1) NOT NULL DEFAULT b'0',
   created_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   last_login_at      DATETIME(6) NULL,
   last_seen_at       DATETIME(6) NULL,
