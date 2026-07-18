@@ -11,17 +11,20 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsCdcReviewSignalSaveServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
     private final EsTopicReviewService reviewService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsCdcReviewSignalSaveServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.reviewService = new EsTopicReviewService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -47,6 +50,12 @@ public class EsCdcReviewSignalSaveServlet extends HttpServlet {
         if (campaignCode == null || topicId == null || score == null) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             writeJsonError(response, "campaignCode, topicId, and score are required.");
+            return;
+        }
+
+        if (!topicSpaceAccessService.canViewTopicId(user.get(), topicId)) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            writeJsonError(response, "Topic was not found.");
             return;
         }
 

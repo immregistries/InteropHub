@@ -32,6 +32,9 @@ public class EsMeeting {
     @Column(name = "es_topic_meeting_id", nullable = false)
     private Long esTopicMeetingId;
 
+    @Column(name = "es_topic_space_id")
+    private Long esTopicSpaceId;
+
     @Column(name = "meeting_key", length = 80)
     private String meetingKey;
 
@@ -112,6 +115,14 @@ public class EsMeeting {
 
     public void setEsTopicMeetingId(Long esTopicMeetingId) {
         this.esTopicMeetingId = esTopicMeetingId;
+    }
+
+    public Long getEsTopicSpaceId() {
+        return esTopicSpaceId;
+    }
+
+    public void setEsTopicSpaceId(Long esTopicSpaceId) {
+        this.esTopicSpaceId = esTopicSpaceId;
     }
 
     public String getMeetingKey() {

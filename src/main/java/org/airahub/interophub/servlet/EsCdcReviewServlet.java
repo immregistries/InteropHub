@@ -15,6 +15,7 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsCdcReviewServlet extends HttpServlet {
 
@@ -27,12 +28,14 @@ public class EsCdcReviewServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicReviewService reviewService;
+        private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsCdcReviewServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.reviewService = new EsTopicReviewService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -60,6 +63,7 @@ public class EsCdcReviewServlet extends HttpServlet {
 
         List<EsCampaignTopicBrowseRow> rows = campaignTopicDao
                 .findBrowseRowsByCampaignIdOrdered(campaign.get().getEsCampaignId());
+        rows = topicSpaceAccessService.filterVisibleTopicRows(user.get(), rows);
         Map<Long, Integer> scoreByTopicId = reviewService.findUserScoresByTopicId(
                 campaign.get().getEsCampaignId(), user.get().getUserId());
 

@@ -13,12 +13,15 @@ import org.airahub.interophub.dao.AppRegistryDao;
 import org.airahub.interophub.dao.ConnectWorkspaceDao;
 import org.airahub.interophub.dao.IgTopicDao;
 import org.airahub.interophub.dao.WorkspaceEnrollmentDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.ConnectWorkspace;
 import org.airahub.interophub.model.IgTopic;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class WelcomeServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
@@ -26,7 +29,9 @@ public class WelcomeServlet extends HttpServlet {
     private final ConnectWorkspaceDao connectWorkspaceDao;
     private final IgTopicDao igTopicDao;
     private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final EsInterestService esInterestService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
@@ -34,7 +39,9 @@ public class WelcomeServlet extends HttpServlet {
         this.connectWorkspaceDao = new ConnectWorkspaceDao();
         this.igTopicDao = new IgTopicDao();
         this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.esInterestService = new EsInterestService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -74,6 +81,8 @@ public class WelcomeServlet extends HttpServlet {
         for (IgTopic topic : igTopicDao.findAllOrdered()) {
             topicNameById.put(topic.getTopicId(), topic.getTopicName());
         }
+        List<EsTopicSpace> visibleTopicSpaces = topicSpaceAccessService
+            .filterVisibleSpaces(user, topicSpaceDao.findAllActiveOrdered());
 
         try (PrintWriter out = response.getWriter()) {
             out.println("<!DOCTYPE html>");
@@ -96,14 +105,14 @@ public class WelcomeServlet extends HttpServlet {
                 out.println("    </aside>");
                 out.println("    <section class=\"admin-main\">");
                 renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                        pendingRegistrationCount, true);
+                    visibleTopicSpaces, pendingRegistrationCount, true);
                 out.println("    </section>");
                 out.println("  </main>");
             } else {
                 out.println("<body>");
                 out.println("  <main class=\"container\">");
                 renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                        pendingRegistrationCount, false);
+                    visibleTopicSpaces, pendingRegistrationCount, false);
                 out.println("  </main>");
             }
             PageFooterRenderer.render(out);
@@ -114,7 +123,7 @@ public class WelcomeServlet extends HttpServlet {
 
     private void renderWelcomePanel(PrintWriter out, String contextPath, String name, User user,
             List<AppRegistry> availableApps, List<ConnectWorkspace> activeWorkspaces, Map<Long, String> topicNameById,
-            long pendingRegistrationCount, boolean adminUser) {
+            List<EsTopicSpace> visibleTopicSpaces, long pendingRegistrationCount, boolean adminUser) {
         out.println("      <section class=\"panel\">");
         out.println("        <img class=\"banner\" src=\"" + contextPath
                 + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
@@ -167,10 +176,48 @@ public class WelcomeServlet extends HttpServlet {
             out.println("        </ul>");
         }
 
+        out.println("        <h3>Topic Spaces</h3>");
+        if (visibleTopicSpaces.isEmpty()) {
+            out.println("        <p>No Topic Spaces are currently available.</p>");
+        } else {
+            List<EsTopicSpace> publicSpaces = new ArrayList<>();
+            List<EsTopicSpace> privateSpaces = new ArrayList<>();
+            for (EsTopicSpace topicSpace : visibleTopicSpaces) {
+                if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
+                    privateSpaces.add(topicSpace);
+                } else {
+                    publicSpaces.add(topicSpace);
+                }
+            }
+
+            renderTopicSpaceList(out, contextPath, "Public Topic Spaces", publicSpaces, true);
+            renderTopicSpaceList(out, contextPath, "Private Topic Spaces", privateSpaces, true);
+        }
+
         out.println("        <form action=\"" + contextPath + "/logout\" method=\"post\">");
         out.println("          <button type=\"submit\">Logout</button>");
         out.println("        </form>");
         out.println("      </section>");
+    }
+
+    private void renderTopicSpaceList(PrintWriter out, String contextPath, String heading,
+            List<EsTopicSpace> spaces, boolean includeHeading) {
+        if (!spaces.isEmpty() && includeHeading) {
+            out.println("        <h4>" + escapeHtml(heading) + "</h4>");
+            out.println("        <ul>");
+            for (EsTopicSpace topicSpace : spaces) {
+                out.println("          <li><a href=\"" + buildTopicSpaceUrl(contextPath, topicSpace.getSpaceCode())
+                        + "\">" + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</a></li>");
+            }
+            out.println("        </ul>");
+        } else if (spaces.isEmpty()) {
+            out.println("        <p>No " + escapeHtml(heading) + " are currently available.</p>");
+        }
+    }
+
+    private String buildTopicSpaceUrl(String contextPath, String spaceCode) {
+        return contextPath + "/spaces/" + java.net.URLEncoder.encode(orEmpty(spaceCode), java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20") + "/topics";
     }
 
     private String escapeHtml(String value) {

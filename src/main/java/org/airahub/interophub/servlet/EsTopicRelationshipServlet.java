@@ -12,6 +12,7 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 /**
  * Handles add/delete of es_topic_relationship rows.
@@ -24,11 +25,13 @@ public class EsTopicRelationshipServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final EsTopicRelationshipDao relationshipDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicRelationshipServlet() {
         this.authFlowService = new AuthFlowService();
         this.relationshipDao = new EsTopicRelationshipDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -52,6 +55,11 @@ public class EsTopicRelationshipServlet extends HttpServlet {
             String typeStr = trimToNull(request.getParameter("relationshipType"));
 
             if (fromTopicId == null || toTopicId == null) {
+                response.sendRedirect(contextPath + "/es/topics");
+                return;
+            }
+            if (!topicSpaceAccessService.canViewTopicId(user, fromTopicId)
+                    || !topicSpaceAccessService.canViewTopicId(user, toTopicId)) {
                 response.sendRedirect(contextPath + "/es/topics");
                 return;
             }
@@ -95,6 +103,11 @@ public class EsTopicRelationshipServlet extends HttpServlet {
                 return;
             }
             EsTopicRelationship rel = relOpt.get();
+            if (!topicSpaceAccessService.canViewTopicId(user, rel.getFromTopicId())
+                    || !topicSpaceAccessService.canViewTopicId(user, rel.getToTopicId())) {
+                response.sendRedirect(contextPath + "/es/topics");
+                return;
+            }
             if (!isAdmin && !isChampionOf(user, rel.getFromTopicId())) {
                 response.sendRedirect(contextPath + "/es/topic/" + rel.getFromTopicId() + "?error=not_authorized");
                 return;

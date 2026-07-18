@@ -31,6 +31,7 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsRegisterForMeetingServlet extends HttpServlet {
 
@@ -54,6 +55,7 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
     private final EsSubscriptionDao esSubscriptionDao;
     private final EmailService emailService;
     private final EmailSendLogDao emailSendLogDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsRegisterForMeetingServlet() {
         this.campaignDao = new EsCampaignDao();
@@ -66,6 +68,7 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         this.esSubscriptionDao = new EsSubscriptionDao();
         this.emailService = new EmailService();
         this.emailSendLogDao = new EmailSendLogDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -79,6 +82,12 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         Resolution resolution = resolvePath(parts);
         if (!resolution.valid()) {
             renderNotFound(response, request.getContextPath(), resolution.errorMessage());
+            return;
+        }
+
+        User viewer = authFlowService.findAuthenticatedUser(request).orElse(null);
+        if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())) {
+            renderNotFound(response, request.getContextPath(), "Meeting was not found.");
             return;
         }
 
@@ -99,6 +108,12 @@ public class EsRegisterForMeetingServlet extends HttpServlet {
         Resolution resolution = resolvePath(parts);
         if (!resolution.valid()) {
             renderNotFound(response, request.getContextPath(), resolution.errorMessage());
+            return;
+        }
+
+        User viewer = authFlowService.findAuthenticatedUser(request).orElse(null);
+        if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())) {
+            renderNotFound(response, request.getContextPath(), "Meeting was not found.");
             return;
         }
 

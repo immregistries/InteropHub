@@ -336,6 +336,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsTopicSpaceServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicSpaceServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsSubscriptionServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsSubscriptionServlet</servlet-class>
   </servlet>
@@ -368,6 +373,11 @@
   <servlet>
     <servlet-name>EsTopicDetailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicDetailServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>TopicSpaceRouteServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.TopicSpaceRouteServlet</servlet-class>
   </servlet>
 
   <servlet>
@@ -571,6 +581,11 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>AdminEsTopicSpaceServlet</servlet-name>
+    <url-pattern>/admin/es/topic-spaces</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>AdminEsSubscriptionServlet</servlet-name>
     <url-pattern>/admin/es/subscription</url-pattern>
   </servlet-mapping>
@@ -613,6 +628,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicDetailServlet</servlet-name>
     <url-pattern>/es/topic/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>TopicSpaceRouteServlet</servlet-name>
+    <url-pattern>/spaces/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

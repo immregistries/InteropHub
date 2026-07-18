@@ -13,21 +13,28 @@ import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsSurvey;
 import org.airahub.interophub.model.EsSurveyQuestion;
 import org.airahub.interophub.model.EsSurveyQuestion.QuestionType;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingSurvey;
 import org.airahub.interophub.model.EsTopicMeetingSurvey.AssignmentStatus;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsNormalizer;
 import org.airahub.interophub.service.EsSurveyService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsSurveyServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsSurveyService surveyService;
+    private final EsTopicMeetingDao topicMeetingDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsSurveyServlet() {
         this.authFlowService = new AuthFlowService();
         this.surveyService = new EsSurveyService();
+        this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -56,13 +63,19 @@ public class EsSurveyServlet extends HttpServlet {
             return;
         }
 
+        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        User viewer = authenticatedUser.orElse(null);
+        if (!canViewAssignment(viewer, assignment)) {
+            renderError(response, contextPath, "This survey is not available.");
+            return;
+        }
+
         java.time.LocalDate today = java.time.LocalDate.now();
         if (today.isBefore(assignment.getStartDate()) || today.isAfter(assignment.getEndDate())) {
             renderError(response, contextPath, "This survey is not currently accepting responses.");
             return;
         }
 
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         Long userId = authenticatedUser.map(User::getUserId).orElse(null);
 
         String emailNormalized = resolveEmailNormalized(request, authenticatedUser.orElse(null));
@@ -93,14 +106,18 @@ public class EsSurveyServlet extends HttpServlet {
             return;
         }
 
+        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        User loggedInUser = authenticatedUser.orElse(null);
+        if (!canViewAssignment(loggedInUser, assignment)) {
+            renderError(response, contextPath, "This survey is not available.");
+            return;
+        }
+
         java.time.LocalDate today = java.time.LocalDate.now();
         if (today.isBefore(assignment.getStartDate()) || today.isAfter(assignment.getEndDate())) {
             renderError(response, contextPath, "This survey is not currently accepting responses.");
             return;
         }
-
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        User loggedInUser = authenticatedUser.orElse(null);
 
         // Build a minimal attendance-like object from session/form data
         String returnUrl = sanitizeReturnUrl(request.getParameter("returnUrl"), contextPath);
@@ -145,6 +162,17 @@ public class EsSurveyServlet extends HttpServlet {
             renderSurveyForm(response, contextPath, assignment, survey, questions,
                     "An error occurred while saving your response. Please try again.", returnUrl);
         }
+    }
+
+    private boolean canViewAssignment(User viewer, EsTopicMeetingSurvey assignment) {
+        if (assignment == null || assignment.getEsTopicMeetingId() == null) {
+            return false;
+        }
+        EsTopicMeeting topicMeeting = topicMeetingDao.findById(assignment.getEsTopicMeetingId()).orElse(null);
+        if (topicMeeting == null || topicMeeting.getEsTopicId() == null) {
+            return false;
+        }
+        return topicSpaceAccessService.canViewTopicId(viewer, topicMeeting.getEsTopicId());
     }
 
     // -------------------------------------------------------------------------

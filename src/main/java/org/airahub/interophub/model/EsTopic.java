@@ -60,6 +60,9 @@ public class EsTopic {
     @Column(name = "confluence_url", length = 500)
     private String confluenceUrl;
 
+    @Column(name = "es_topic_space_id")
+    private Long esTopicSpaceId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private EsTopicStatus status;
@@ -193,6 +196,14 @@ public class EsTopic {
 
     public void setConfluenceUrl(String confluenceUrl) {
         this.confluenceUrl = confluenceUrl;
+    }
+
+    public Long getEsTopicSpaceId() {
+        return esTopicSpaceId;
+    }
+
+    public void setEsTopicSpaceId(Long esTopicSpaceId) {
+        this.esTopicSpaceId = esTopicSpaceId;
     }
 
     public EsTopicStatus getStatus() {

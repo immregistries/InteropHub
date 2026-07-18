@@ -23,8 +23,11 @@ import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsCampaignTopicsServlet extends HttpServlet {
 
@@ -43,6 +46,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsInterestService esInterestService;
+    private final AuthFlowService authFlowService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsCampaignTopicsServlet() {
         this.campaignDao = new EsCampaignDao();
@@ -50,6 +55,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.esInterestService = new EsInterestService();
+        this.authFlowService = new AuthFlowService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -71,7 +78,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         Integer subscribedCount = parseIntOrNull(request.getParameter("subscribedCount"));
         boolean generalSubscribedNow = "1".equals(request.getParameter("generalSubscribed"));
 
-        BrowseState browseState = loadBrowseState(campaign.get(), session);
+        User viewer = authFlowService.findAuthenticatedUser(request).orElse(null);
+        BrowseState browseState = loadBrowseState(campaign.get(), session, viewer);
         String selectionKey = selectionSessionKey(campaignCode);
         Set<Long> selectedTopicIds = sanitizeSelectedIds(
                 readSelectedTopicIdsFromSession(session, selectionKey),
@@ -108,7 +116,8 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             action = "preview";
         }
 
-        BrowseState browseState = loadBrowseState(campaign.get(), session);
+        User viewer = authFlowService.findAuthenticatedUser(request).orElse(null);
+        BrowseState browseState = loadBrowseState(campaign.get(), session, viewer);
         String selectionKey = selectionSessionKey(campaignCode);
         Set<Long> requestSelectedIds = parseTopicIdsCsv(request.getParameter("selectedTopicIds"));
         Set<Long> selectedTopicIds = sanitizeSelectedIds(
@@ -216,8 +225,9 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         return target.toString();
     }
 
-    private BrowseState loadBrowseState(EsCampaign campaign, HttpSession session) {
-        List<EsCampaignTopicBrowseRow> rows = topicDao.findAllActiveBrowseRowsOrdered();
+    private BrowseState loadBrowseState(EsCampaign campaign, HttpSession session, User viewer) {
+        List<EsCampaignTopicBrowseRow> rows = topicSpaceAccessService
+                .filterVisibleTopicRows(viewer, topicDao.findAllActiveBrowseRowsOrdered());
         applyCanonicalNeighborhoods(rows);
         List<Long> topicIds = rows.stream()
                 .map(EsCampaignTopicBrowseRow::getEsTopicId)

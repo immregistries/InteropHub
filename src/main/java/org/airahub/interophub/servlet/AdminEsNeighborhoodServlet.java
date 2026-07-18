@@ -13,7 +13,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsNeighborhood;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 
@@ -22,11 +24,13 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final EsNeighborhoodDao esNeighborhoodDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+    private final EsTopicSpaceDao topicSpaceDao;
 
     public AdminEsNeighborhoodServlet() {
         this.authFlowService = new AuthFlowService();
         this.esNeighborhoodDao = new EsNeighborhoodDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
     }
 
     @Override
@@ -48,13 +52,13 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         if (neighborhoodIdRaw != null) {
             Long neighborhoodId = parseId(neighborhoodIdRaw);
             if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null);
+                renderList(response, contextPath, "Invalid neighborhood identifier.", null, null);
                 return;
             }
 
             EsNeighborhood neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
             if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null);
+                renderList(response, contextPath, "Neighborhood was not found.", null, null);
                 return;
             }
 
@@ -71,7 +75,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         if (request.getParameter("bulkSaved") != null) {
             message = "Neighborhood block imported.";
         }
-        renderList(response, contextPath, message, null);
+        renderList(response, contextPath, message, null, null);
     }
 
     @Override
@@ -98,12 +102,12 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         } else {
             Long neighborhoodId = parseId(neighborhoodIdRaw);
             if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null);
+                renderList(response, contextPath, "Invalid neighborhood identifier.", null, null);
                 return;
             }
             neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
             if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null);
+                renderList(response, contextPath, "Neighborhood was not found.", null, null);
                 return;
             }
         }
@@ -111,10 +115,20 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         String neighborhoodCode = trimToNull(request.getParameter("neighborhoodCode"));
         String neighborhoodName = trimToNull(request.getParameter("neighborhoodName"));
         String description = trimToNull(request.getParameter("description"));
+        Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         String displayOrderRaw = trimToNull(request.getParameter("displayOrder"));
         boolean isActive = request.getParameter("isActive") != null;
 
         try {
+            if (topicSpaceId == null) {
+                throw new IllegalArgumentException("Topic Space is required.");
+            }
+            if (creating || !topicSpaceId.equals(neighborhood.getEsTopicSpaceId())) {
+                requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new neighborhoods.");
+            }
+            ensureUniqueNeighborhoodNameInSpace(neighborhoodName, topicSpaceId, neighborhood.getEsNeighborhoodId());
+
+            neighborhood.setEsTopicSpaceId(topicSpaceId);
             neighborhood.setNeighborhoodCode(required(neighborhoodCode, "Neighborhood code"));
             neighborhood.setNeighborhoodName(required(neighborhoodName, "Neighborhood name"));
             neighborhood.setDescription(description);
@@ -130,6 +144,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             neighborhood.setNeighborhoodCode(neighborhoodCode);
             neighborhood.setNeighborhoodName(neighborhoodName);
             neighborhood.setDescription(description);
+            neighborhood.setEsTopicSpaceId(topicSpaceId);
             neighborhood.setDisplayOrder(parseIntOrNull(displayOrderRaw));
             neighborhood.setIsActive(isActive);
             renderEditForm(response, contextPath, neighborhood, ex.getMessage(), creating);
@@ -140,13 +155,25 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             User adminUser)
             throws IOException {
         String bulkNeighborhoods = request.getParameter("bulkNeighborhoods");
+        Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         String normalizedBlock = trimToNull(bulkNeighborhoods);
         if (normalizedBlock == null) {
-            renderList(response, contextPath, "Paste at least one neighborhood line to import.", bulkNeighborhoods);
+            renderList(response, contextPath, "Paste at least one neighborhood line to import.", bulkNeighborhoods,
+                    topicSpaceId);
+            return;
+        }
+        if (topicSpaceId == null) {
+            renderList(response, contextPath, "Topic Space is required for bulk import.", bulkNeighborhoods, null);
+            return;
+        }
+        try {
+            requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new neighborhoods.");
+        } catch (IllegalArgumentException ex) {
+            renderList(response, contextPath, ex.getMessage(), bulkNeighborhoods, topicSpaceId);
             return;
         }
 
-        List<EsNeighborhood> existingNeighborhoods = esNeighborhoodDao.findAllOrdered();
+        List<EsNeighborhood> existingNeighborhoods = esNeighborhoodDao.findAllOrderedBySpaceId(topicSpaceId);
         Set<String> usedCodes = new HashSet<>();
         int nextDisplayOrder = 0;
         for (EsNeighborhood existing : existingNeighborhoods) {
@@ -172,23 +199,25 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             if (colonIndex <= 0) {
                 renderList(response, contextPath,
                         "Each line must use 'Neighborhood: Description' format. Problem line: " + normalizedLine,
-                        bulkNeighborhoods);
+                    bulkNeighborhoods, topicSpaceId);
                 return;
             }
 
             String neighborhoodName = trimToNull(normalizedLine.substring(0, colonIndex));
             String description = trimToNull(normalizedLine.substring(colonIndex + 1));
             if (neighborhoodName == null) {
-                renderList(response, contextPath, "Neighborhood name is required on every line.", bulkNeighborhoods);
+                renderList(response, contextPath, "Neighborhood name is required on every line.", bulkNeighborhoods,
+                        topicSpaceId);
                 return;
             }
 
-            EsNeighborhood neighborhood = esNeighborhoodDao.findByName(neighborhoodName).orElse(null);
+            EsNeighborhood neighborhood = esNeighborhoodDao.findByNameInSpace(neighborhoodName, topicSpaceId).orElse(null);
             boolean creating = neighborhood == null;
             if (creating) {
                 neighborhood = new EsNeighborhood();
                 neighborhood.setNeighborhoodName(neighborhoodName);
                 neighborhood.setNeighborhoodCode(generateUniqueCode(neighborhoodName, usedCodes));
+                neighborhood.setEsTopicSpaceId(topicSpaceId);
                 neighborhood.setCreatedByUserId(adminUser.getUserId());
                 neighborhood.setDisplayOrder(nextDisplayOrder++);
             }
@@ -228,10 +257,18 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         return authenticatedUser;
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message, String bulkNeighborhoods)
+        private void renderList(HttpServletResponse response, String contextPath, String message, String bulkNeighborhoods,
+            Long bulkSpaceId)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         List<EsNeighborhood> neighborhoods = esNeighborhoodDao.findAllOrdered();
+        Map<Long, EsTopicSpace> spacesById = topicSpaceDao.findAllOrdered().stream()
+            .collect(java.util.stream.Collectors.toMap(
+                EsTopicSpace::getEsTopicSpaceId,
+                s -> s,
+                (left, right) -> left,
+                java.util.LinkedHashMap::new));
+        List<EsTopicSpace> activeSpaces = topicSpaceDao.findAllActiveOrdered();
         Map<Long, Long> usageCounts = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId();
 
         try (PrintWriter out = response.getWriter()) {
@@ -253,6 +290,15 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
                         + "/admin/es/neighborhoods\" method=\"post\">");
                 panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
+                panelOut.println("            <label for=\"bulkSpaceId\">Topic Space (required)</label>");
+                panelOut.println("            <select id=\"bulkSpaceId\" name=\"esTopicSpaceId\" required>");
+                panelOut.println("              <option value=\"\">\u2014 Select \u2014</option>");
+                for (EsTopicSpace space : activeSpaces) {
+                    panelOut.println("              <option value=\"" + space.getEsTopicSpaceId() + "\""
+                        + (space.getEsTopicSpaceId().equals(bulkSpaceId) ? " selected" : "")
+                        + ">" + escapeHtml(orEmpty(space.getSpaceName())) + "</option>");
+                }
+                panelOut.println("            </select>");
                 panelOut.println("            <label for=\"bulkNeighborhoods\">Neighborhood block</label>");
                 panelOut.println("            <textarea id=\"bulkNeighborhoods\" name=\"bulkNeighborhoods\" rows=\"8\""
                         + " placeholder=\"Advanced Access: New technologies...\">"
@@ -266,6 +312,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 panelOut.println("            <tr>");
                 panelOut.println("              <th>Name</th>");
                 panelOut.println("              <th>Code</th>");
+                panelOut.println("              <th>Topic Space</th>");
                 panelOut.println("              <th>Display Order</th>");
                 panelOut.println("              <th>Active</th>");
                 panelOut.println("              <th>Active Topics</th>");
@@ -278,6 +325,9 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                             + "/admin/es/neighborhoods?esNeighborhoodId=" + neighborhood.getEsNeighborhoodId()
                             + "\">" + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</a></td>");
                     panelOut.println("              <td>" + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode()))
+                            + "</td>");
+                        EsTopicSpace topicSpace = spacesById.get(neighborhood.getEsTopicSpaceId());
+                        panelOut.println("              <td>" + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
                             + "</td>");
                     panelOut.println("              <td>"
                             + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
@@ -293,7 +343,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 }
                 if (neighborhoods.isEmpty()) {
                     panelOut.println("            <tr>");
-                    panelOut.println("              <td colspan=\"5\">No neighborhoods found.</td>");
+                    panelOut.println("              <td colspan=\"6\">No neighborhoods found.</td>");
                     panelOut.println("            </tr>");
                 }
                 panelOut.println("          </tbody>");
@@ -310,6 +360,9 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         response.setContentType("text/html;charset=UTF-8");
         long activeTopicCount = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId()
                 .getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
+        EsTopicSpace topicSpace = neighborhood.getEsTopicSpaceId() == null
+            ? null
+            : topicSpaceDao.findById(neighborhood.getEsTopicSpaceId()).orElse(null);
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "Neighborhood Details - InteropHub", contextPath, panelOut -> {
@@ -320,6 +373,8 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</p>");
                 panelOut.println("          <p><strong>Code:</strong> "
                         + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "</p>");
+                panelOut.println("          <p><strong>Topic Space:</strong> "
+                    + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
                 panelOut.println("          <p><strong>Description:</strong> "
                         + escapeHtml(orEmpty(neighborhood.getDescription())) + "</p>");
                 panelOut.println("          <p><strong>Display Order:</strong> "
@@ -344,6 +399,8 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
     private void renderEditForm(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood,
             String errorMessage, boolean creating) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
+        List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
+        Long selectedSpaceId = neighborhood.getEsTopicSpaceId();
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Neighborhood - InteropHub", contextPath,
@@ -372,6 +429,26 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         panelOut.println(
                                 "      <input id=\"neighborhoodName\" name=\"neighborhoodName\" type=\"text\" required value=\""
                                         + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "\" />");
+
+                        panelOut.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
+                        panelOut.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
+                        panelOut.println("        <option value=\"\">\u2014 Select \u2014</option>");
+                        for (EsTopicSpace topicSpace : allSpaces) {
+                            if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                                continue;
+                            }
+                            boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedSpaceId);
+                            boolean isActive = Boolean.TRUE.equals(topicSpace.getIsActive());
+                            String flags = isCurrent ? " selected" : "";
+                            if (!isActive && !isCurrent) {
+                                flags += " disabled";
+                            }
+                            panelOut.println("        <option value=\"" + topicSpace.getEsTopicSpaceId() + "\"" + flags + ">"
+                                    + escapeHtml(orEmpty(topicSpace.getSpaceName()))
+                                    + (isActive ? "" : " (inactive)")
+                                    + "</option>");
+                        }
+                        panelOut.println("      </select>");
 
                         panelOut.println("      <label for=\"description\">Description</label>");
                         panelOut.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
@@ -434,6 +511,29 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             return value == null ? null : Integer.valueOf(value);
         } catch (NumberFormatException ex) {
             return null;
+        }
+    }
+
+    private EsTopicSpace requireActiveTopicSpace(Long topicSpaceId, String errorMessage) {
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId)
+                .orElseThrow(() -> new IllegalArgumentException("Topic Space is invalid."));
+        if (!Boolean.TRUE.equals(topicSpace.getIsActive())) {
+            throw new IllegalArgumentException(errorMessage);
+        }
+        return topicSpace;
+    }
+
+    private void ensureUniqueNeighborhoodNameInSpace(String neighborhoodName, Long topicSpaceId, Long excludeId) {
+        String normalizedName = trimToNull(neighborhoodName);
+        if (normalizedName == null || topicSpaceId == null) {
+            return;
+        }
+        boolean duplicate = esNeighborhoodDao
+                .findByNameInSpaceExcludingId(normalizedName, topicSpaceId, excludeId)
+                .isPresent();
+        if (duplicate) {
+            throw new IllegalArgumentException(
+                    "Neighborhood name must be unique within the selected Topic Space.");
         }
     }
 

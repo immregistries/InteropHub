@@ -17,12 +17,15 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 /**
  * Public-facing list of all meetings for a given meeting series
@@ -48,12 +51,16 @@ public class EsMeetingSeriesServlet extends HttpServlet {
     private final EsTopicMeetingDao topicMeetingDao;
     private final EsMeetingDao meetingDao;
     private final EsTopicDao topicDao;
+    private final EsTopicSpaceDao topicSpaceDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsMeetingSeriesServlet() {
         this.authFlowService = new AuthFlowService();
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.meetingDao = new EsMeetingDao();
         this.topicDao = new EsTopicDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -74,11 +81,19 @@ public class EsMeetingSeriesServlet extends HttpServlet {
 
         List<EsMeeting> meetings = meetingDao.findAllBySeriesDesc(seriesId);
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        User viewer = authenticatedUser.orElse(null);
         boolean isAdmin = authenticatedUser.isPresent() && authFlowService.isAdminUser(authenticatedUser.get());
 
         EsTopic topic = series.getEsTopicId() != null
                 ? topicDao.findById(series.getEsTopicId()).orElse(null)
                 : null;
+        if (topic == null || !topicSpaceAccessService.canViewTopic(viewer, topic)) {
+            renderNotFound(response, contextPath);
+            return;
+        }
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topic.getEsTopicSpaceId()).orElse(null);
+        String spaceCode = topicSpace == null ? "emerging-standards" : topicSpace.getSpaceCode();
+        meetings = topicSpaceAccessService.filterVisibleMeetings(viewer, meetings);
 
         // Determine timezone for display: prefer user setting, fall back to ET
         String viewerTzId = authenticatedUser
@@ -107,10 +122,12 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             // Header
             out.println("  <div class=\"mseries-header\">");
             out.println("    <div class=\"mseries-breadcrumb\">");
-            out.println("      <a href=\"" + contextPath + "/es/topics\">Topics</a>");
+                out.println("      <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
+                    + "/topics\">Topics</a>");
             if (topic != null) {
                 out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
-                out.println("      <a href=\"" + contextPath + "/es/topic/" + topic.getEsTopicId() + "\">"
+                out.println("      <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
+                    + "/topic/" + topic.getEsTopicId() + "\">"
                         + escapeHtml(topic.getTopicName() != null ? topic.getTopicName() : "") + "</a>");
             }
             out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
@@ -142,14 +159,14 @@ public class EsMeetingSeriesServlet extends HttpServlet {
                     Collections.reverse(upcomingAsc);
                     out.println("  <div class=\"mseries-section\">");
                     out.println("    <h2 class=\"mseries-section-heading\">Upcoming</h2>");
-                    renderTable(out, upcomingAsc, contextPath, viewerZone, viewerTzId, true);
+                    renderTable(out, upcomingAsc, contextPath, viewerZone, viewerTzId, true, spaceCode);
                     out.println("  </div>");
                 }
 
                 if (!past.isEmpty()) {
                     out.println("  <div class=\"mseries-section\">");
                     out.println("    <h2 class=\"mseries-section-heading\">Past Meetings</h2>");
-                    renderTable(out, past, contextPath, viewerZone, viewerTzId, false);
+                    renderTable(out, past, contextPath, viewerZone, viewerTzId, false, spaceCode);
                     out.println("  </div>");
                 }
             }
@@ -173,8 +190,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
         }
     }
 
-    private void renderTable(PrintWriter out, List<EsMeeting> meetings, String contextPath,
-            ZoneId viewerZone, String viewerTzId, boolean isUpcoming) {
+        private void renderTable(PrintWriter out, List<EsMeeting> meetings, String contextPath,
+            ZoneId viewerZone, String viewerTzId, boolean isUpcoming, String spaceCode) {
         out.println("    <div class=\"mseries-table-wrap\">");
         out.println("    <table class=\"mseries-table\">");
         out.println("      <thead><tr>");
@@ -213,8 +230,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
                     + escapeHtml(statusLabel) + "</span></td>");
             out.println("        <td class=\"mseries-agenda\">");
             if (hasAgenda) {
-                out.println("          <a href=\"" + contextPath + "/es/agenda?meetingId="
-                        + m.getEsMeetingId() + "\" class=\"mseries-agenda-link\">View Agenda</a>");
+                out.println("          <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
+                        + "/meeting/" + m.getEsMeetingId() + "\" class=\"mseries-agenda-link\">View Agenda</a>");
             } else {
                 out.println("          <span class=\"mseries-no-agenda\">—</span>");
             }
@@ -341,5 +358,10 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             return "";
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 .replace("\"", "&quot;").replace("'", "&#x27;");
+    }
+
+    private static String urlEncodePathSegment(String value) {
+        return java.net.URLEncoder.encode(value == null ? "" : value, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
     }
 }

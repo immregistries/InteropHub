@@ -18,6 +18,7 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsTopicReviewServlet extends HttpServlet {
 
@@ -30,6 +31,7 @@ public class EsTopicReviewServlet extends HttpServlet {
     private final EsTopicDao topicDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicReviewService reviewService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicReviewServlet() {
         this.authFlowService = new AuthFlowService();
@@ -37,6 +39,7 @@ public class EsTopicReviewServlet extends HttpServlet {
         this.topicDao = new EsTopicDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.reviewService = new EsTopicReviewService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -58,7 +61,8 @@ public class EsTopicReviewServlet extends HttpServlet {
             return;
         }
 
-        List<EsCampaignTopicBrowseRow> rows = topicDao.findAllActiveBrowseRowsOrdered();
+        List<EsCampaignTopicBrowseRow> rows = topicSpaceAccessService
+            .filterVisibleTopicRows(user.get(), topicDao.findAllActiveBrowseRowsOrdered());
         applyCanonicalNeighborhoods(rows);
         Map<Long, Integer> scoreByTopicId = reviewService.findUserScoresByTopicId(
                 campaign.get().getEsCampaignId(), user.get().getUserId());

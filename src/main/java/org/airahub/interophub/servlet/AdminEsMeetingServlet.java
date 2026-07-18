@@ -26,6 +26,7 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.dao.EsTopicMeetingSurveyDao;
 import org.airahub.interophub.model.EsMeeting;
@@ -52,6 +53,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private final EsTopicMeetingDao meetingDao;
     private final EsTopicMeetingMemberDao memberDao;
     private final EsTopicDao topicDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final UserDao userDao;
     private final PublicUrlService publicUrlService;
     private final EsMeetingDao esMeetingDao;
@@ -64,6 +66,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         this.meetingDao = new EsTopicMeetingDao();
         this.memberDao = new EsTopicMeetingMemberDao();
         this.topicDao = new EsTopicDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.userDao = new UserDao();
         this.publicUrlService = new PublicUrlService();
         this.esMeetingDao = new EsMeetingDao();
@@ -185,6 +188,15 @@ public class AdminEsMeetingServlet extends HttpServlet {
             return;
         }
 
+        EsTopic hostTopic = topicMeeting.getEsTopicId() == null
+            ? null
+            : topicDao.findById(topicMeeting.getEsTopicId()).orElse(null);
+        if (hostTopic == null || !topicSpaceDao.isActiveSpaceId(hostTopic.getEsTopicSpaceId())) {
+            renderDetail(response, contextPath, topicMeeting,
+                "Cannot create a new meeting because the host Topic Space is inactive.");
+            return;
+        }
+
         String agendaDateRaw = trimToNull(request.getParameter("agendaDate"));
         if (agendaDateRaw == null) {
             renderDetail(response, contextPath, topicMeeting, "Date is required to create an agenda.");
@@ -230,6 +242,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
         EsMeeting newMeeting = new EsMeeting();
         newMeeting.setEsTopicMeetingId(topicMeeting.getEsTopicMeetingId());
+        newMeeting.setEsTopicSpaceId(hostTopic.getEsTopicSpaceId());
         newMeeting.setMeetingName(topicMeeting.getMeetingName());
         newMeeting.setMeetingDescription(topicMeeting.getMeetingDescription());
         newMeeting.setScheduledStart(scheduledStart);

@@ -17,17 +17,23 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCommentDao;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
+import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
+import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 
@@ -41,6 +47,10 @@ public class AdminEsTopicServlet extends HttpServlet {
     private final EsCommentDao esCommentDao;
     private final EsSubscriptionDao esSubscriptionDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+    private final EsNeighborhoodDao esNeighborhoodDao;
+    private final EsTopicSpaceDao topicSpaceDao;
+    private final EsMeetingDao esMeetingDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
     private final UserDao userDao;
 
     public AdminEsTopicServlet() {
@@ -50,6 +60,10 @@ public class AdminEsTopicServlet extends HttpServlet {
         this.esCommentDao = new EsCommentDao();
         this.esSubscriptionDao = new EsSubscriptionDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+        this.esNeighborhoodDao = new EsNeighborhoodDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
+        this.esMeetingDao = new EsMeetingDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
         this.userDao = new UserDao();
     }
 
@@ -111,6 +125,7 @@ public class AdminEsTopicServlet extends HttpServlet {
 
         String contextPath = request.getContextPath();
         String topicIdRaw = trimToNull(request.getParameter("esTopicId"));
+        String topicSpaceIdRaw = trimToNull(request.getParameter("esTopicSpaceId"));
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
@@ -137,11 +152,18 @@ public class AdminEsTopicServlet extends HttpServlet {
             EsTopic newTopic = new EsTopic();
             EsTopicMeeting newMeeting = null;
             try {
+                Long defaultSpaceId = findActiveDefaultTopicSpaceId();
+                Long requestedSpaceId = parseId(topicSpaceIdRaw);
+                if (requestedSpaceId == null) {
+                    requestedSpaceId = defaultSpaceId;
+                }
+                EsTopicSpace targetSpace = requireActiveTopicSpace(requestedSpaceId, "Topic Space");
                 String topicCodeVal = required(topicCodeParam, "Topic code");
                 if (esTopicDao.findByTopicCode(topicCodeVal).isPresent()) {
                     throw new IllegalArgumentException("Topic code is already in use.");
                 }
                 newTopic.setTopicCode(topicCodeVal);
+                newTopic.setEsTopicSpaceId(targetSpace.getEsTopicSpaceId());
                 newTopic.setTopicName(required(topicName, "Topic name"));
                 newTopic.setDescription(description);
                 newTopic.setNeighborhood(null);
@@ -155,10 +177,16 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setStatus(parseStatus(required(statusRaw, "Status")));
                 newTopic.setCreatedByUserId(adminUser.get().getUserId());
 
+                validateNeighborhoodSelectionForTopicSpace(newTopic.getEsTopicSpaceId(), selectedNeighborhoodIds);
+
                 EsTopic saved = esTopicDao.saveOrUpdate(newTopic);
                 topicNeighborhoodDao.replaceTopicNeighborhoods(saved.getEsTopicId(), selectedNeighborhoodIds);
 
                 if (meetingEnabled) {
+                    if (!topicSpaceDao.isActiveSpaceId(saved.getEsTopicSpaceId())) {
+                        throw new IllegalArgumentException(
+                                "Cannot create a meeting for a topic in an inactive Topic Space.");
+                    }
                     newMeeting = new EsTopicMeeting();
                     newMeeting.setEsTopicId(saved.getEsTopicId());
                     newMeeting.setMeetingName(required(meetingName, "Meeting name"));
@@ -176,6 +204,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setTopicName(topicName);
                 newTopic.setDescription(description);
                 newTopic.setNeighborhood(null);
+                newTopic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
                 newTopic.setStage(stage);
                 newTopic.setPolicyStatus(policyStatus);
                 newTopic.setTopicType(topicType);
@@ -230,6 +259,18 @@ public class AdminEsTopicServlet extends HttpServlet {
         EsTopicMeeting meeting = esTopicMeetingDao.findByTopicId(topicId).orElse(null);
 
         try {
+            Long requestedSpaceId = parseId(required(topicSpaceIdRaw, "Topic Space"));
+            EsTopicSpace targetSpace = topicSpaceDao.findById(requestedSpaceId)
+                    .orElseThrow(() -> new IllegalArgumentException("Topic Space is invalid."));
+            boolean movingTopicSpace = !requestedSpaceId.equals(topic.getEsTopicSpaceId());
+            if (movingTopicSpace && !topicSpaceDao.isActiveSpaceId(requestedSpaceId)) {
+                throw new IllegalArgumentException("Only active Topic Spaces may receive moved topics.");
+            }
+            if (movingTopicSpace) {
+                validateTopicMoveMeetingAssignments(topic.getEsTopicId(), targetSpace);
+            }
+
+            topic.setEsTopicSpaceId(requestedSpaceId);
             topic.setTopicName(required(topicName, "Topic name"));
             topic.setDescription(description);
             topic.setNeighborhood(null);
@@ -242,10 +283,16 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setConfluenceUrl(validateOptionalUrl(confluenceUrl, "Confluence URL"));
             topic.setStatus(parseStatus(required(statusRaw, "Status")));
 
+            validateNeighborhoodSelectionForTopicSpace(topic.getEsTopicSpaceId(), selectedNeighborhoodIds);
+
             esTopicDao.saveOrUpdate(topic);
             topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), selectedNeighborhoodIds);
 
             if (meetingEnabled) {
+                if (!topicSpaceDao.isActiveSpaceId(topic.getEsTopicSpaceId())) {
+                    throw new IllegalArgumentException(
+                            "Cannot create a meeting for a topic in an inactive Topic Space.");
+                }
                 if (meeting == null) {
                     meeting = new EsTopicMeeting();
                     meeting.setEsTopicId(topic.getEsTopicId());
@@ -268,6 +315,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setTopicName(topicName);
             topic.setDescription(description);
             topic.setNeighborhood(null);
+            topic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
             topic.setStage(stage);
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
@@ -532,7 +580,14 @@ public class AdminEsTopicServlet extends HttpServlet {
             String errorMessage, boolean isNew, Set<Long> selectedNeighborhoodIdsOverride) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         boolean meetingEnabled = meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE;
-        List<EsNeighborhood> allNeighborhoods = new EsNeighborhoodDao().findAllActive();
+        List<EsTopicSpace> allTopicSpaces = topicSpaceDao.findAllOrdered();
+        Long selectedTopicSpaceId = topic.getEsTopicSpaceId();
+        if (selectedTopicSpaceId == null) {
+            selectedTopicSpaceId = findActiveDefaultTopicSpaceId();
+            topic.setEsTopicSpaceId(selectedTopicSpaceId);
+        }
+        final Long selectedTopicSpaceIdFinal = selectedTopicSpaceId;
+        List<EsNeighborhood> allNeighborhoods = esNeighborhoodDao.findAllActive();
         List<String> policyStatuses = esTopicDao.findDistinctPolicyStatuses();
         List<String> topicTypes = esTopicDao.findDistinctTopicTypes();
         Set<Long> selectedNeighborhoodIds = selectedNeighborhoodIdsOverride;
@@ -580,6 +635,30 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
                                 + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
 
+                        out.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
+                        out.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
+                        out.println("        <option value=\"\">\u2014 Select \u2014</option>");
+                        for (EsTopicSpace topicSpace : allTopicSpaces) {
+                            if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                                continue;
+                            }
+                            boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedTopicSpaceIdFinal);
+                            boolean active = Boolean.TRUE.equals(topicSpace.getIsActive());
+                            String optionFlags = "";
+                            if (isCurrent) {
+                                optionFlags += " selected";
+                            }
+                            if (!active && !isCurrent) {
+                                optionFlags += " disabled";
+                            }
+                            out.println("        <option value=\"" + topicSpace.getEsTopicSpaceId() + "\"" + optionFlags
+                                    + ">"
+                                    + escapeHtml(orEmpty(topicSpace.getSpaceName()))
+                                    + (active ? "" : " (inactive)")
+                                    + "</option>");
+                        }
+                        out.println("      </select>");
+
                         out.println("      <fieldset style=\"margin-bottom: 1em;\">");
                         out.println("        <legend>Neighborhood(s)</legend>");
                         if (allNeighborhoods.isEmpty()) {
@@ -590,11 +669,33 @@ public class AdminEsTopicServlet extends HttpServlet {
                             for (EsNeighborhood nh : allNeighborhoods) {
                                 Long nhId = nh.getEsNeighborhoodId();
                                 boolean nhChecked = nhId != null && selectedNeighborhoodIdsFinal.contains(nhId);
-                                out.println("        <label><input type=\"checkbox\" name=\"esNeighborhoodId\" value=\""
+                                out.println("        <label class=\"js-neighborhood-option\" data-space-id=\""
+                                        + escapeHtml(String.valueOf(nh.getEsTopicSpaceId()))
+                                        + "\"><input type=\"checkbox\" name=\"esNeighborhoodId\" value=\""
                                         + escapeHtml(String.valueOf(nhId)) + "\"" + (nhChecked ? " checked" : "")
                                         + " /> "
                                         + escapeHtml(orEmpty(nh.getNeighborhoodName())) + "</label>");
                             }
+                            out.println("        <script>");
+                            out.println("          (function(){");
+                            out.println("            var select = document.getElementById('esTopicSpaceId');");
+                            out.println("            if (!select) { return; }");
+                            out.println("            var options = Array.prototype.slice.call(document.querySelectorAll('.js-neighborhood-option')); ");
+                            out.println("            function applyNeighborhoodFilter(){");
+                            out.println("              var selected = (select.value || '').trim();");
+                            out.println("              options.forEach(function(label){");
+                            out.println("                var matches = selected && (label.getAttribute('data-space-id') === selected);");
+                            out.println("                label.style.display = matches ? '' : 'none';");
+                            out.println("                if (!matches) {");
+                            out.println("                  var checkbox = label.querySelector('input[type=checkbox]');");
+                            out.println("                  if (checkbox) { checkbox.checked = false; }");
+                            out.println("                }");
+                            out.println("              });");
+                            out.println("            }");
+                            out.println("            select.addEventListener('change', applyNeighborhoodFilter);");
+                            out.println("            applyNeighborhoodFilter();");
+                            out.println("          })();");
+                            out.println("        </script>");
                         }
                         out.println("        <p style=\"margin-top: 0.75em;\"><a href=\"" + contextPath
                                 + "/admin/es/neighborhoods\">Manage neighborhoods</a></p>");
@@ -805,6 +906,81 @@ public class AdminEsTopicServlet extends HttpServlet {
         } catch (Exception ex) {
             throw new IllegalArgumentException(label + " is invalid.");
         }
+    }
+
+    private EsTopicSpace requireActiveTopicSpace(Long topicSpaceId, String label) {
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId)
+                .orElseThrow(() -> new IllegalArgumentException(label + " is invalid."));
+        if (!topicSpaceDao.isActiveSpaceId(topicSpaceId)) {
+            throw new IllegalArgumentException("Only active Topic Spaces may receive new topics.");
+        }
+        return topicSpace;
+    }
+
+    private void validateNeighborhoodSelectionForTopicSpace(Long topicSpaceId, Set<Long> selectedNeighborhoodIds) {
+        if (selectedNeighborhoodIds == null || selectedNeighborhoodIds.isEmpty()) {
+            return;
+        }
+        Set<Long> allowedIds = esNeighborhoodDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+                .map(EsNeighborhood::getEsNeighborhoodId)
+                .collect(Collectors.toSet());
+        List<Long> invalidIds = selectedNeighborhoodIds.stream()
+                .filter(id -> id != null && !allowedIds.contains(id))
+                .collect(Collectors.toList());
+        if (!invalidIds.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Neighborhood assignments must belong to the selected Topic Space. Invalid neighborhood IDs: "
+                            + invalidIds.stream().map(String::valueOf).collect(Collectors.joining(", ")));
+        }
+    }
+
+    private void validateTopicMoveMeetingAssignments(Long topicId, EsTopicSpace targetSpace) {
+        List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
+        if (agendaItems.isEmpty()) {
+            return;
+        }
+        Set<String> invalidMeetingRefs = new LinkedHashSet<>();
+        for (EsMeetingAgendaItem agendaItem : agendaItems) {
+            EsMeeting meeting = esMeetingDao.findById(agendaItem.getEsMeetingId()).orElse(null);
+            if (meeting == null) {
+                continue;
+            }
+            EsTopicSpace hostSpace = topicSpaceDao.findById(meeting.getEsTopicSpaceId()).orElse(null);
+            if (!isTopicSpaceAllowedForMeetingHost(targetSpace, hostSpace)) {
+                invalidMeetingRefs.add("#" + meeting.getEsMeetingId() + " (" + orEmpty(meeting.getMeetingName())
+                        + ")");
+            }
+        }
+        if (!invalidMeetingRefs.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Cannot move topic to the selected Topic Space because existing meeting agenda assignments would "
+                            + "be invalid. Remove the topic from these meetings first: "
+                            + String.join(", ", invalidMeetingRefs));
+        }
+    }
+
+    private boolean isTopicSpaceAllowedForMeetingHost(EsTopicSpace topicSpace, EsTopicSpace meetingHostSpace) {
+        if (topicSpace == null || meetingHostSpace == null) {
+            return false;
+        }
+        EsTopicSpace.Visibility hostVisibility = meetingHostSpace.getVisibility();
+        EsTopicSpace.Visibility topicVisibility = topicSpace.getVisibility();
+        if (hostVisibility == EsTopicSpace.Visibility.PRIVATE) {
+            return meetingHostSpace.getEsTopicSpaceId() != null
+                    && meetingHostSpace.getEsTopicSpaceId().equals(topicSpace.getEsTopicSpaceId());
+        }
+        return topicVisibility == EsTopicSpace.Visibility.PUBLIC;
+    }
+
+    private Long findActiveDefaultTopicSpaceId() {
+        Long defaultSpaceId = topicSpaceDao.findBySpaceCode("emerging-standards")
+                .map(org.airahub.interophub.model.EsTopicSpace::getEsTopicSpaceId)
+                .orElse(null);
+        if (!topicSpaceDao.isActiveSpaceId(defaultSpaceId)) {
+            throw new IllegalArgumentException(
+                    "Cannot create topic because the default Emerging Standards Topic Space is missing or inactive.");
+        }
+        return defaultSpaceId;
     }
 
     private String trimToNull(String value) {

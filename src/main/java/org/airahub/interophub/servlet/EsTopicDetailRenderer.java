@@ -152,6 +152,9 @@ public class EsTopicDetailRenderer {
                 out.println("      window.openDetail = function(row) {");
                 out.println("        currentDetailTopicId = row.getAttribute('data-topic-id');");
                 out.println("        currentMeetingId = row.getAttribute('data-meeting-id') || null;");
+                out.println("        var currentTopicUrl = (row.getAttribute('data-topic-url') || '').trim();");
+                out.println("        var currentMeetingsUrl = (row.getAttribute('data-meetings-url') || '').trim();");
+                out.println("        var currentSpaceCode = (row.getAttribute('data-space-code') || '').trim();");
                 out.println("        currentFollowed = row.getAttribute('data-is-followed') === '1';");
                 out.println("        currentMeetingStatus = (row.getAttribute('data-meeting-status') || '').toUpperCase();");
                 out.println("        detailTitle.textContent = row.getAttribute('data-topic-name') || ''; ");
@@ -180,8 +183,8 @@ public class EsTopicDetailRenderer {
                 out.println("        if (detailMeetingsLink) {");
                 out.println("          if (currentMeetingId) {");
                 out.println("            detailMeetingsLink.hidden = false;");
-                out.println("            detailMeetingsLink.href = '" + contextPath
-                                + "/es/meetings?seriesId=' + currentMeetingId;");
+                out.println("            detailMeetingsLink.href = currentMeetingsUrl || ('" + contextPath
+                                + "/es/meetings?seriesId=' + currentMeetingId);");
                 out.println("          } else {");
                 out.println("            detailMeetingsLink.hidden = true;");
                 out.println("          }");
@@ -190,8 +193,8 @@ public class EsTopicDetailRenderer {
                 out.println("        if (detailPermalink) {");
                 out.println("          if (!closeBackUrl && currentDetailTopicId) {");
                 out.println("            detailPermalink.hidden = false;");
-                out.println("            detailPermalink.href = '" + contextPath
-                                + "/es/topic/' + currentDetailTopicId;");
+                out.println("            detailPermalink.href = currentTopicUrl || ('" + contextPath
+                                + "/es/topic/' + currentDetailTopicId);");
                 out.println("          } else {");
                 out.println("            detailPermalink.hidden = true;");
                 out.println("          }");
@@ -209,8 +212,13 @@ public class EsTopicDetailRenderer {
                 out.println("              if (m.date) { text = m.date + ' \\u2014 ' + text; }");
                 out.println("              if (m.id) {");
                 out.println("                var link = document.createElement('a');");
-                out.println("                link.href = '" + contextPath
+                out.println("                if (currentSpaceCode) {");
+                out.println("                  link.href = '" + contextPath
+                                + "/spaces/' + encodeURIComponent(currentSpaceCode) + '/meeting/' + encodeURIComponent(m.id);");
+                out.println("                } else {");
+                out.println("                  link.href = '" + contextPath
                                 + "/es/agenda?meetingId=' + encodeURIComponent(m.id);");
+                out.println("                }");
                 out.println("                link.textContent = text;");
                 out.println("                li.appendChild(link);");
                 out.println("              } else {");

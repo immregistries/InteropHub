@@ -17,6 +17,7 @@ import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsTopicFollowToggleServlet extends HttpServlet {
 
@@ -25,6 +26,7 @@ public class EsTopicFollowToggleServlet extends HttpServlet {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsInterestService esInterestService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicFollowToggleServlet() {
         this.authFlowService = new AuthFlowService();
@@ -32,6 +34,7 @@ public class EsTopicFollowToggleServlet extends HttpServlet {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.esInterestService = new EsInterestService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -66,6 +69,11 @@ public class EsTopicFollowToggleServlet extends HttpServlet {
         }
 
         User currentUser = user.get();
+        if (!topicSpaceAccessService.canViewTopicId(currentUser, topicId)) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            writeJsonError(response, "Topic was not found.");
+            return;
+        }
         String emailNormalized = currentUser.getEmailNormalized();
         Long userId = currentUser.getUserId();
 

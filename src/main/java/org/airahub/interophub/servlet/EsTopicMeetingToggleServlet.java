@@ -8,28 +8,35 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsSubscription;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsTopicMeetingToggleServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
+    private final EsTopicMeetingDao topicMeetingDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsInterestService esInterestService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicMeetingToggleServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
+        this.topicMeetingDao = new EsTopicMeetingDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.esInterestService = new EsInterestService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -65,6 +72,17 @@ public class EsTopicMeetingToggleServlet extends HttpServlet {
         }
 
         User currentUser = user.get();
+        if (!topicSpaceAccessService.canViewTopicId(currentUser, topicId)) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            writeJsonError(response, "Topic was not found.");
+            return;
+        }
+        EsTopicMeeting topicMeeting = topicMeetingDao.findById(meetingId).orElse(null);
+        if (topicMeeting == null || !topicId.equals(topicMeeting.getEsTopicId())) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            writeJsonError(response, "Meeting does not match the requested topic.");
+            return;
+        }
         String email = currentUser.getEmail();
         String emailNormalized = currentUser.getEmailNormalized();
         Long userId = currentUser.getUserId();

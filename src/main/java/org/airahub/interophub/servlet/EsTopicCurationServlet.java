@@ -12,6 +12,7 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 /**
  * Handles add/update/delete of es_topic_curation rows.
@@ -24,11 +25,13 @@ public class EsTopicCurationServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final EsTopicCurationDao curationDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicCurationServlet() {
         this.authFlowService = new AuthFlowService();
         this.curationDao = new EsTopicCurationDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -51,6 +54,11 @@ public class EsTopicCurationServlet extends HttpServlet {
             Long curatedTopicId = parseLong(request.getParameter("curatedTopicId"));
 
             if (curatorTopicId == null || curatedTopicId == null) {
+                response.sendRedirect(contextPath + "/es/topics");
+                return;
+            }
+            if (!topicSpaceAccessService.canViewTopicId(user, curatorTopicId)
+                    || !topicSpaceAccessService.canViewTopicId(user, curatedTopicId)) {
                 response.sendRedirect(contextPath + "/es/topics");
                 return;
             }
@@ -94,6 +102,11 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             EsTopicCuration entry = entryOpt.get();
+            if (!topicSpaceAccessService.canViewTopicId(user, entry.getCuratorTopicId())
+                    || !topicSpaceAccessService.canViewTopicId(user, entry.getCuratedTopicId())) {
+                response.sendRedirect(contextPath + "/es/topics");
+                return;
+            }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
                 response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId() + "?error=not_authorized");
                 return;
@@ -125,6 +138,11 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             EsTopicCuration entry = entryOpt.get();
+            if (!topicSpaceAccessService.canViewTopicId(user, entry.getCuratorTopicId())
+                    || !topicSpaceAccessService.canViewTopicId(user, entry.getCuratedTopicId())) {
+                response.sendRedirect(contextPath + "/es/topics");
+                return;
+            }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
                 response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId() + "?error=not_authorized");
                 return;

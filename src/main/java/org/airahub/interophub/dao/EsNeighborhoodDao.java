@@ -39,6 +39,38 @@ public class EsNeighborhoodDao extends GenericDao<EsNeighborhood, Long> {
         }
     }
 
+    public Optional<EsNeighborhood> findByNameInSpace(String name, Long esTopicSpaceId) {
+        if (name == null || name.isBlank() || esTopicSpaceId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsNeighborhood n where n.esTopicSpaceId = :spaceId and lower(n.neighborhoodName) = :name",
+                    EsNeighborhood.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("name", name.trim().toLowerCase())
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    public Optional<EsNeighborhood> findByNameInSpaceExcludingId(String name, Long esTopicSpaceId, Long excludeId) {
+        if (name == null || name.isBlank() || esTopicSpaceId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsNeighborhood n where n.esTopicSpaceId = :spaceId and lower(n.neighborhoodName) = :name"
+                            + " and (:excludeId is null or n.esNeighborhoodId <> :excludeId)",
+                    EsNeighborhood.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("name", name.trim().toLowerCase())
+                    .setParameter("excludeId", excludeId)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
     public List<EsNeighborhood> findAllActive() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
@@ -50,12 +82,42 @@ public class EsNeighborhoodDao extends GenericDao<EsNeighborhood, Long> {
         }
     }
 
+    public List<EsNeighborhood> findAllActiveBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsNeighborhood n"
+                            + " where n.isActive = true and n.esTopicSpaceId = :spaceId"
+                            + " order by n.displayOrder asc, lower(n.neighborhoodName) asc, n.esNeighborhoodId asc",
+                    EsNeighborhood.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getResultList();
+        }
+    }
+
     public List<EsNeighborhood> findAllOrdered() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "from EsNeighborhood n"
                             + " order by n.displayOrder asc, lower(n.neighborhoodName) asc, n.esNeighborhoodId asc",
                     EsNeighborhood.class)
+                    .getResultList();
+        }
+    }
+
+    public List<EsNeighborhood> findAllOrderedBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsNeighborhood n"
+                            + " where n.esTopicSpaceId = :spaceId"
+                            + " order by n.displayOrder asc, lower(n.neighborhoodName) asc, n.esNeighborhoodId asc",
+                    EsNeighborhood.class)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .getResultList();
         }
     }

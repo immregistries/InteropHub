@@ -32,6 +32,7 @@ import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
@@ -43,6 +44,7 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -53,6 +55,7 @@ import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.MeetingCommunicationService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsAgendaServlet extends HttpServlet {
 
@@ -82,12 +85,14 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingDao topicMeetingDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final UserDao userDao;
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
     private final EsInterestService esInterestService;
     private final EsMeetingAttendanceDao attendanceDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -98,12 +103,14 @@ public class EsAgendaServlet extends HttpServlet {
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.userDao = new UserDao();
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
         this.esInterestService = new EsInterestService();
         this.attendanceDao = new EsMeetingAttendanceDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     // =========================================================================
@@ -140,6 +147,10 @@ public class EsAgendaServlet extends HttpServlet {
 
         EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
         if (meeting == null) {
+            renderError(response, contextPath, "Meeting not found.");
+            return;
+        }
+        if (!topicSpaceAccessService.canViewMeeting(user, meeting)) {
             renderError(response, contextPath, "Meeting not found.");
             return;
         }
@@ -310,6 +321,10 @@ public class EsAgendaServlet extends HttpServlet {
 
         EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
         if (meeting == null) {
+            response.sendRedirect(contextPath + "/es/agenda");
+            return;
+        }
+        if (!topicSpaceAccessService.canViewMeeting(user, meeting)) {
             response.sendRedirect(contextPath + "/es/agenda");
             return;
         }
@@ -663,6 +678,26 @@ public class EsAgendaServlet extends HttpServlet {
             try {
                 topicId = Long.parseLong(topicIdRaw);
             } catch (NumberFormatException ignored) {
+            }
+        }
+
+        EsTopicSpace hostSpace = findMeetingHostSpace(meeting);
+        if (hostSpace == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting host Topic Space could not be resolved.");
+            return;
+        }
+        if (topicId != null) {
+            EsTopic linkedTopic = topicDao.findById(topicId).orElse(null);
+            if (linkedTopic == null) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "Selected topic was not found.");
+                return;
+            }
+            if (!isTopicAllowedForMeetingHost(linkedTopic, hostSpace)) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "Selected topic is not allowed for this meeting's host Topic Space.");
+                return;
             }
         }
         int maxOrder = items.stream()
@@ -1241,6 +1276,20 @@ public class EsAgendaServlet extends HttpServlet {
             redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
             return;
         }
+        EsTopicSpace hostSpace = findMeetingHostSpace(meeting);
+        if (hostSpace == null) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting host Topic Space could not be resolved.");
+            return;
+        }
+        if (src.getEsTopicId() != null) {
+            EsTopic linkedTopic = topicDao.findById(src.getEsTopicId()).orElse(null);
+            if (linkedTopic == null || !isTopicAllowedForMeetingHost(linkedTopic, hostSpace)) {
+                redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                        "This agenda item cannot be copied because its linked topic is not allowed for this meeting host.");
+                return;
+            }
+        }
         // Verify the source item belongs to the same meeting series
         EsMeeting srcMeeting = meetingDao.findById(src.getEsMeetingId()).orElse(null);
         if (srcMeeting == null
@@ -1398,6 +1447,31 @@ public class EsAgendaServlet extends HttpServlet {
         return "<a href=\"" + link + "\">" + label + "</a>";
     }
 
+    private EsTopicSpace findMeetingHostSpace(EsMeeting meeting) {
+        if (meeting == null || meeting.getEsTopicSpaceId() == null) {
+            return null;
+        }
+        return topicSpaceDao.findById(meeting.getEsTopicSpaceId()).orElse(null);
+    }
+
+    private boolean isTopicAllowedForMeetingHost(EsTopic topic, EsTopicSpace hostSpace) {
+        if (topic == null || topic.getEsTopicSpaceId() == null || hostSpace == null
+                || hostSpace.getEsTopicSpaceId() == null || hostSpace.getVisibility() == null) {
+            return false;
+        }
+
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topic.getEsTopicSpaceId()).orElse(null);
+        if (topicSpace == null || topicSpace.getVisibility() == null) {
+            return false;
+        }
+
+        if (hostSpace.getVisibility() == EsTopicSpace.Visibility.PUBLIC) {
+            return topicSpace.getVisibility() == EsTopicSpace.Visibility.PUBLIC;
+        }
+
+        return hostSpace.getEsTopicSpaceId().equals(topicSpace.getEsTopicSpaceId());
+    }
+
     private void redirectBackWithError(HttpServletResponse response, String contextPath, Long meetingId,
             boolean editOverride, String errorMsg) throws IOException {
         String url = contextPath + "/es/agenda?meetingId=" + meetingId
@@ -1451,6 +1525,7 @@ public class EsAgendaServlet extends HttpServlet {
         EsTopicMeeting topicMeeting = meeting.getEsTopicMeetingId() != null
                 ? topicMeetingDao.findById(meeting.getEsTopicMeetingId()).orElse(null)
                 : null;
+        EsTopicSpace hostTopicSpace = findMeetingHostSpace(meeting);
         String seriesName = topicMeeting != null && topicMeeting.getMeetingName() != null
                 ? topicMeeting.getMeetingName()
                 : null;
@@ -1471,6 +1546,10 @@ public class EsAgendaServlet extends HttpServlet {
         List<EsTopic> allTopics = topicDao.findAllOrderByTopicName();
         Map<Long, EsTopic> topicById = allTopics.stream()
                 .collect(Collectors.toMap(EsTopic::getEsTopicId, t -> t));
+        List<EsTopic> selectableTopics = allTopics.stream()
+            .filter(t -> t.getStatus() == EsTopic.EsTopicStatus.ACTIVE)
+            .filter(t -> isTopicAllowedForMeetingHost(t, hostTopicSpace))
+            .collect(Collectors.toList());
 
         // Champions and all users: only needed when canEdit (for add-presenter
         // quick-pick)
@@ -1681,6 +1760,9 @@ public class EsAgendaServlet extends HttpServlet {
                 for (EsTopicCuration curation : curatedEntries) {
                     EsTopic curatedTopic = topicById.get(curation.getCuratedTopicId());
                     if (curatedTopic == null) {
+                        continue;
+                    }
+                    if (!isTopicAllowedForMeetingHost(curatedTopic, hostTopicSpace)) {
                         continue;
                     }
                     LocalDate lastAppearedOn = lastAppearedByTopicId.get(curation.getCuratedTopicId());
@@ -2902,16 +2984,22 @@ public class EsAgendaServlet extends HttpServlet {
                             + escapeHtml(oiStatusLabel) + "</span></td>");
                     out.println("        <td class=\"prev-item-from\">" + escapeHtml(srcLabel) + "</td>");
                     out.println("        <td class=\"prev-item-controls\">");
-                    out.println("          <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                    out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                        boolean canCopyOpenItem = oi.getEsTopicId() == null
+                            || isTopicAllowedForMeetingHost(topicById.get(oi.getEsTopicId()), hostTopicSpace);
+                        if (canCopyOpenItem) {
+                        out.println("          <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("            <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
-                    out.println("            <input type=\"hidden\" name=\"sourceItemId\" value=\""
+                        out.println("            <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                        out.println("            <input type=\"hidden\" name=\"sourceItemId\" value=\""
                             + oi.getEsMeetingAgendaItemId() + "\">");
-                    if (editOverride)
-                        out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
-                    out.println("          </form>");
+                        if (editOverride)
+                            out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
+                        out.println("          </form>");
+                        } else {
+                        out.println("          <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
+                        }
                     out.println("        </td>");
                     out.println("      </tr>");
                 }
@@ -2982,16 +3070,22 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("          <td><span class=\"prev-item-status " + statusCls + "\">"
                                 + escapeHtml(ciStatusLabel) + "</span></td>");
                         out.println("          <td class=\"prev-item-controls\">");
-                        out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                        out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                        boolean canCopyItem = ci.getEsTopicId() == null
+                            || isTopicAllowedForMeetingHost(topicById.get(ci.getEsTopicId()), hostTopicSpace);
+                        if (canCopyItem) {
+                            out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                            out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
-                        out.println("              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
-                        out.println("              <input type=\"hidden\" name=\"sourceItemId\" value=\""
+                            out.println("              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                            out.println("              <input type=\"hidden\" name=\"sourceItemId\" value=\""
                                 + ci.getEsMeetingAgendaItemId() + "\">");
-                        if (editOverride)
+                            if (editOverride)
                             out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                        out.println("              <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
-                        out.println("            </form>");
+                            out.println("              <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
+                            out.println("            </form>");
+                        } else {
+                            out.println("            <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
+                        }
                         out.println("          </td>");
                         out.println("        </tr>");
                     }
@@ -3122,10 +3216,10 @@ public class EsAgendaServlet extends HttpServlet {
             PageFooterRenderer.render(out);
             out.println("<script>");
             // Topic autocomplete data
-            if (canEdit && !allTopics.isEmpty()) {
+            if (canEdit && !selectableTopics.isEmpty()) {
                 out.print("const esTopics=[");
-                for (int i = 0; i < allTopics.size(); i++) {
-                    EsTopic t = allTopics.get(i);
+                for (int i = 0; i < selectableTopics.size(); i++) {
+                    EsTopic t = selectableTopics.get(i);
                     if (i > 0)
                         out.print(",");
                     out.print("{id:" + t.getEsTopicId() + ",name:" + jsString(t.getTopicName()) + "}");

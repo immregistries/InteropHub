@@ -2,6 +2,8 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -15,11 +17,13 @@ import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -42,6 +46,7 @@ import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicRelationship;
+import org.airahub.interophub.model.EsTopicSpace;
 
 public class EsTopicDetailServlet extends HttpServlet {
 
@@ -59,8 +64,10 @@ public class EsTopicDetailServlet extends HttpServlet {
         private final EsTopicMeetingDao esTopicMeetingDao;
         private final EsMeetingAgendaItemDao agendaItemDao;
         private final EsMeetingDao esMeetingDao;
+        private final EsTopicSpaceDao topicSpaceDao;
         private final EsTopicRelationshipDao relationshipDao;
         private final EsTopicCurationDao curationDao;
+        private final TopicSpaceAccessService topicSpaceAccessService;
 
         public EsTopicDetailServlet() {
                 this.authFlowService = new AuthFlowService();
@@ -75,8 +82,10 @@ public class EsTopicDetailServlet extends HttpServlet {
                 this.esTopicMeetingDao = new EsTopicMeetingDao();
                 this.agendaItemDao = new EsMeetingAgendaItemDao();
                 this.esMeetingDao = new EsMeetingDao();
+                this.topicSpaceDao = new EsTopicSpaceDao();
                 this.relationshipDao = new EsTopicRelationshipDao();
                 this.curationDao = new EsTopicCurationDao();
+                this.topicSpaceAccessService = new TopicSpaceAccessService();
         }
 
         @Override
@@ -119,6 +128,25 @@ public class EsTopicDetailServlet extends HttpServlet {
                 EsCampaignTopicBrowseRow topic = topicOpt.get();
 
                 Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+                User viewer = authenticatedUser.orElse(null);
+                EsTopic topicEntity = esTopicDao.findById(topicId).orElse(null);
+                if (topicEntity == null || !topicSpaceAccessService.canViewTopic(viewer, topicEntity)) {
+                        renderNotFound(response, contextPath, topicId);
+                        return;
+                }
+                EsTopicSpace topicSpace = topicSpaceDao.findById(topicEntity.getEsTopicSpaceId()).orElse(null);
+                if (topicSpace == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                        renderNotFound(response, contextPath, topicId);
+                        return;
+                }
+
+                String servletPath = trimToNull(request.getServletPath());
+                boolean isLegacyTopicUrl = "/es/topic".equals(servletPath);
+                if (isLegacyTopicUrl && !"emerging-standards".equalsIgnoreCase(topicSpace.getSpaceCode())) {
+                        response.sendRedirect(buildSpaceTopicUrl(contextPath, topicSpace.getSpaceCode(), topicId,
+                                        request.getQueryString()));
+                        return;
+                }
                 Optional<EsCampaign> campaign = campaignDao.findMostRecentActive();
                 boolean canInteract = authenticatedUser.isPresent();
                 boolean canReview = authenticatedUser.isPresent() && campaign.isPresent();
@@ -224,6 +252,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 tempMeetings.add(m);
                                         }
                                 }
+                                tempMeetings = topicSpaceAccessService.filterVisibleMeetings(viewer, tempMeetings);
                                 tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart));
                                 topicAgendaMeetings = tempMeetings;
                                 upcomingMeetings = tempMeetings.stream()
@@ -242,6 +271,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 .filter(m -> m.getScheduledStart() != null
                                                                 && !m.getScheduledStart().toLocalDate().isBefore(today))
                                                 .collect(Collectors.toList());
+                                directMeetings = topicSpaceAccessService.filterVisibleMeetings(viewer, directMeetings);
 
                                 LinkedHashMap<Long, EsMeeting> mergedByMeetingId = new LinkedHashMap<>();
                                 for (EsMeeting m : upcomingMeetings) {
@@ -259,10 +289,14 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                 // Load relationship and curation data (needed for public display and champion
                 // management)
-                List<EsTopicRelationship> outboundRels = relationshipDao.findByFromTopicId(topicId);
-                List<EsTopicRelationship> inboundRels = relationshipDao.findByToTopicId(topicId);
-                List<EsTopicCuration> curatedEntries = curationDao.findByCuratorTopicId(topicId);
-                List<EsTopicCuration> curatedByEntries = curationDao.findByCuratedTopicId(topicId);
+                List<EsTopicRelationship> outboundRels = topicSpaceAccessService
+                                .filterVisibleRelationships(viewer, relationshipDao.findByFromTopicId(topicId));
+                List<EsTopicRelationship> inboundRels = topicSpaceAccessService
+                                .filterVisibleRelationships(viewer, relationshipDao.findByToTopicId(topicId));
+                List<EsTopicCuration> curatedEntries = topicSpaceAccessService
+                                .filterVisibleCurations(viewer, curationDao.findByCuratorTopicId(topicId));
+                List<EsTopicCuration> curatedByEntries = topicSpaceAccessService
+                                .filterVisibleCurations(viewer, curationDao.findByCuratedTopicId(topicId));
 
                 boolean needsTopicData = !outboundRels.isEmpty() || !inboundRels.isEmpty()
                                 || !curatedEntries.isEmpty() || !curatedByEntries.isEmpty() || showChampionView
@@ -270,7 +304,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                 List<EsTopic> allTopics = List.of();
                 Map<Long, String> topicNameMap = Map.of();
                 if (needsTopicData) {
-                        allTopics = esTopicDao.findAllOrderByTopicName();
+                        allTopics = topicSpaceAccessService.filterVisibleTopics(viewer,
+                                        esTopicDao.findAllOrderByTopicName());
                         Map<Long, String> nameMap = new HashMap<>();
                         for (EsTopic t : allTopics) {
                                 nameMap.put(t.getEsTopicId(), t.getTopicName());
@@ -280,8 +315,12 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                 // Build curator nav context if the visitor arrived via a curated-topics link
                 CuratorNavContext curatorNav = null;
+                if (curatorTopicId != null && !topicSpaceAccessService.canViewTopicId(viewer, curatorTopicId)) {
+                        curatorTopicId = null;
+                }
                 if (curatorTopicId != null) {
-                        List<EsTopicCuration> curatorList = curationDao.findByCuratorTopicId(curatorTopicId);
+                        List<EsTopicCuration> curatorList = topicSpaceAccessService
+                                        .filterVisibleCurations(viewer, curationDao.findByCuratorTopicId(curatorTopicId));
                         int pos = -1;
                         for (int i = 0; i < curatorList.size(); i++) {
                                 if (topicId.equals(curatorList.get(i).getCuratedTopicId())) {
@@ -516,6 +555,23 @@ public class EsTopicDetailServlet extends HttpServlet {
 
         private String orEmpty(String value) {
                 return value == null ? "" : value;
+        }
+
+        private String buildSpaceTopicUrl(String contextPath, String spaceCode, Long topicId, String queryString) {
+                StringBuilder url = new StringBuilder(contextPath)
+                                .append("/spaces/")
+                                .append(urlEncodePathSegment(orEmpty(spaceCode)))
+                                .append("/topic/")
+                                .append(topicId);
+                String normalizedQuery = trimToNull(queryString);
+                if (normalizedQuery != null) {
+                        url.append('?').append(normalizedQuery);
+                }
+                return url.toString();
+        }
+
+        private String urlEncodePathSegment(String value) {
+                return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
         }
 
         private static final DateTimeFormatter AGENDA_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");

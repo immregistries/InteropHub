@@ -2,6 +2,8 @@ package org.airahub.interophub.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -11,34 +13,37 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "es_neighborhood")
-public class EsNeighborhood {
+@Table(name = "es_topic_space")
+public class EsTopicSpace {
+
+    public enum Visibility {
+        PUBLIC,
+        PRIVATE
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "es_neighborhood_id")
-    private Long esNeighborhoodId;
+    @Column(name = "es_topic_space_id")
+    private Long esTopicSpaceId;
 
-    @Column(name = "neighborhood_code", nullable = false, unique = true, length = 80)
-    private String neighborhoodCode;
+    @Column(name = "space_code", nullable = false, unique = true, length = 80)
+    private String spaceCode;
 
-    @Column(name = "neighborhood_name", nullable = false, length = 140)
-    private String neighborhoodName;
+    @Column(name = "space_name", nullable = false, length = 140)
+    private String spaceName;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "es_topic_space_id")
-    private Long esTopicSpaceId;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visibility", nullable = false, length = 16)
+    private Visibility visibility;
 
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
-
-    @Column(name = "created_by_user_id", nullable = false)
-    private Long createdByUserId;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -66,28 +71,28 @@ public class EsNeighborhood {
         updatedAt = LocalDateTime.now();
     }
 
-    public Long getEsNeighborhoodId() {
-        return esNeighborhoodId;
+    public Long getEsTopicSpaceId() {
+        return esTopicSpaceId;
     }
 
-    public void setEsNeighborhoodId(Long esNeighborhoodId) {
-        this.esNeighborhoodId = esNeighborhoodId;
+    public void setEsTopicSpaceId(Long esTopicSpaceId) {
+        this.esTopicSpaceId = esTopicSpaceId;
     }
 
-    public String getNeighborhoodCode() {
-        return neighborhoodCode;
+    public String getSpaceCode() {
+        return spaceCode;
     }
 
-    public void setNeighborhoodCode(String neighborhoodCode) {
-        this.neighborhoodCode = neighborhoodCode;
+    public void setSpaceCode(String spaceCode) {
+        this.spaceCode = spaceCode;
     }
 
-    public String getNeighborhoodName() {
-        return neighborhoodName;
+    public String getSpaceName() {
+        return spaceName;
     }
 
-    public void setNeighborhoodName(String neighborhoodName) {
-        this.neighborhoodName = neighborhoodName;
+    public void setSpaceName(String spaceName) {
+        this.spaceName = spaceName;
     }
 
     public String getDescription() {
@@ -98,12 +103,12 @@ public class EsNeighborhood {
         this.description = description;
     }
 
-    public Long getEsTopicSpaceId() {
-        return esTopicSpaceId;
+    public Visibility getVisibility() {
+        return visibility;
     }
 
-    public void setEsTopicSpaceId(Long esTopicSpaceId) {
-        this.esTopicSpaceId = esTopicSpaceId;
+    public void setVisibility(Visibility visibility) {
+        this.visibility = visibility;
     }
 
     public Integer getDisplayOrder() {
@@ -120,14 +125,6 @@ public class EsNeighborhood {
 
     public void setIsActive(Boolean isActive) {
         this.isActive = isActive;
-    }
-
-    public Long getCreatedByUserId() {
-        return createdByUserId;
-    }
-
-    public void setCreatedByUserId(Long createdByUserId) {
-        this.createdByUserId = createdByUserId;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -1,6 +1,8 @@
 package org.airahub.interophub.dao;
 
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsTopic;
@@ -97,6 +99,24 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public Map<Long, Long> findSpaceIdsByTopicIds(List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return Map.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Object[]> rows = session.createQuery(
+                    "select t.esTopicId, t.esTopicSpaceId from EsTopic t where t.esTopicId in (:topicIds)",
+                    Object[].class)
+                    .setParameterList("topicIds", topicIds)
+                    .getResultList();
+            Map<Long, Long> result = new LinkedHashMap<>();
+            for (Object[] row : rows) {
+                result.put((Long) row[0], (Long) row[1]);
+            }
+            return result;
+        }
+    }
+
     public List<EsTopic> findAllOrdered() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery("from EsTopic t order by t.topicCode asc", EsTopic.class)
@@ -108,6 +128,20 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery("from EsTopic t order by lower(t.topicName) asc, t.esTopicId asc", EsTopic.class)
                     .getResultList();
+        }
+    }
+
+    public long countBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return 0L;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(t) from EsTopic t where t.esTopicSpaceId = :spaceId",
+                    Long.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getSingleResult();
+            return count == null ? 0L : count;
         }
     }
 

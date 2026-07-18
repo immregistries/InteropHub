@@ -338,4 +338,18 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
             throw ex;
         }
     }
+
+    public long countBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return 0L;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(m) from EsMeeting m where m.esTopicSpaceId = :spaceId",
+                    Long.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getSingleResult();
+            return count == null ? 0L : count;
+        }
+    }
 }

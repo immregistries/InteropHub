@@ -52,6 +52,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
         Long selectedCampaignId = parseId(trimToNull(request.getParameter("campaignId")));
         String newCampaignCode = trimToNull(request.getParameter("newCampaignCode"));
         String newCampaignName = trimToNull(request.getParameter("newCampaignName"));
+        String topicSpaceCode = trimToNull(request.getParameter("topicSpaceCode"));
         int tablesPerSet = parsePositiveIntOrDefault(trimToNull(request.getParameter("tablesPerSet")), 1);
         String jsonLines = request.getParameter("jsonLines");
 
@@ -59,11 +60,15 @@ public class AdminEsTopicImportServlet extends HttpServlet {
             renderForm(response, contextPath, "JSON input is required.", campaignDao.findAllOrdered());
             return;
         }
+        if (topicSpaceCode == null) {
+            renderForm(response, contextPath, "Topic Space code is required.", campaignDao.findAllOrdered());
+            return;
+        }
 
         try {
             ImportResult result = importService.importLines(
                     jsonLines, selectedCampaignId, newCampaignCode, newCampaignName,
-                    adminUser.get().getUserId(), tablesPerSet);
+                    adminUser.get().getUserId(), tablesPerSet, topicSpaceCode);
             renderResult(response, contextPath, result);
         } catch (IllegalArgumentException ex) {
             renderForm(response, contextPath, ex.getMessage(), campaignDao.findAllOrdered());
@@ -115,11 +120,17 @@ public class AdminEsTopicImportServlet extends HttpServlet {
                 panelOut.println(
                         "          <p style=\"margin-top:0;font-size:.85em;color:#555\">One <code>es_campaign_topic</code> row is created per table (1 through this number). Default 1.</p>");
 
+                panelOut.println("          <label for=\"topicSpaceCode\">Topic Space Code (required)</label>");
+                panelOut.println(
+                    "          <input id=\"topicSpaceCode\" name=\"topicSpaceCode\" type=\"text\" required placeholder=\"emerging-standards\" />");
+                panelOut.println(
+                    "          <p style=\"margin-top:0;font-size:.85em;color:#555\">All imported topics in this batch must belong to this single Topic Space code.</p>");
+
                 panelOut.println("          <h2>JSON Lines</h2>");
                 panelOut.println(
                         "          <p>Required fields per line: <code>topicCode</code>, <code>topicName</code>. Optional: <code>description</code>, <code>neighborhood</code>, <code>priorityIis</code>, <code>priorityEhr</code>, <code>priorityCdc</code>, <code>stage</code>, <code>policyStatus</code>, <code>topicType</code>, <code>confluenceUrl</code>, <code>displayOrder</code>, <code>set</code>.</p>");
                 panelOut.println(
-                        "          <p style=\"margin-top:0;font-size:.85em;color:#555\"><code>neighborhood</code> should contain one active neighborhood name or a comma-separated list of active neighborhood names. The import updates the canonical topic-to-neighborhood mapping.</p>");
+                    "          <p style=\"margin-top:0;font-size:.85em;color:#555\"><code>neighborhood</code> should contain one active neighborhood name or a comma-separated list of active neighborhood names in the selected Topic Space. The import updates the canonical topic-to-neighborhood mapping.</p>");
                 panelOut.println("          <label for=\"jsonLines\">One JSON object per line</label>");
                 panelOut.println(
                         "          <textarea id=\"jsonLines\" name=\"jsonLines\" rows=\"20\" style=\"width:100%;font-family:monospace\"></textarea>");

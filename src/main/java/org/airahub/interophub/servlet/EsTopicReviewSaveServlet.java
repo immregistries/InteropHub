@@ -12,6 +12,7 @@ import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsTopicReviewSaveServlet extends HttpServlet {
 
@@ -19,12 +20,14 @@ public class EsTopicReviewSaveServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsTopicDao topicDao;
     private final EsTopicReviewService reviewService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsTopicReviewSaveServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.topicDao = new EsTopicDao();
         this.reviewService = new EsTopicReviewService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -48,6 +51,11 @@ public class EsTopicReviewSaveServlet extends HttpServlet {
             writeJsonError(response, "campaignCode, topicId, and score are required.");
             return;
         }
+        if (!topicSpaceAccessService.canViewTopicId(user.get(), topicId)) {
+            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+            writeJsonError(response, "Topic was not found.");
+            return;
+        }
 
         Optional<EsCampaign> campaign = findCampaignExact(campaignCode);
         if (campaign.isEmpty()) {
@@ -59,7 +67,9 @@ public class EsTopicReviewSaveServlet extends HttpServlet {
         try {
             EsTopicReviewService.SaveResult saveResult = reviewService.saveScore(
                     campaign.get().getEsCampaignId(), topicId, user.get().getUserId(), score);
-            int totalTopics = topicDao.findAllActiveBrowseRowsOrdered().size();
+                int totalTopics = topicSpaceAccessService
+                    .filterVisibleTopicRows(user.get(), topicDao.findAllActiveBrowseRowsOrdered())
+                    .size();
             long reviewedCount = saveResult.reviewedCount();
             long leftCount = Math.max(0L, totalTopics - reviewedCount);
 

@@ -12,12 +12,15 @@ import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.model.EsTopicMeetingPoll;
 import org.airahub.interophub.model.EsTopicMeetingPollOption;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingPollResponse.PollResponseValue;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicMeetingPollService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsMeetingPollServlet extends HttpServlet {
 
@@ -26,10 +29,14 @@ public class EsMeetingPollServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsTopicMeetingPollService pollService;
+    private final EsTopicMeetingDao topicMeetingDao;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsMeetingPollServlet() {
         this.authFlowService = new AuthFlowService();
         this.pollService = new EsTopicMeetingPollService();
+        this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -50,6 +57,11 @@ public class EsMeetingPollServlet extends HttpServlet {
         try {
             User user = authenticatedUser.get();
             EsTopicMeetingPoll poll = pollService.getPollRequired(pollId);
+            EsTopicMeeting topicMeeting = topicMeetingDao.findById(poll.getEsTopicMeetingId()).orElse(null);
+            if (topicMeeting == null || !topicSpaceAccessService.canViewTopicId(user, topicMeeting.getEsTopicId())) {
+                renderError(response, contextPath, "Poll not found.");
+                return;
+            }
             List<EsTopicMeetingPollOption> options = pollService.listOptionsOrdered(pollId);
 
             String selectedTimezone = trimToNull(request.getParameter("timezoneId"));
@@ -87,6 +99,12 @@ public class EsMeetingPollServlet extends HttpServlet {
         User user = authenticatedUser.get();
         String action = trimToNull(request.getParameter("action"));
         try {
+            EsTopicMeetingPoll poll = pollService.getPollRequired(pollId);
+            EsTopicMeeting topicMeeting = topicMeetingDao.findById(poll.getEsTopicMeetingId()).orElse(null);
+            if (topicMeeting == null || !topicSpaceAccessService.canViewTopicId(user, topicMeeting.getEsTopicId())) {
+                response.sendRedirect(contextPath + "/home");
+                return;
+            }
             if ("updateTimezone".equals(action)) {
                 String timezoneId = trimToNull(request.getParameter("timezoneId"));
                 pollService.updateUserTimezone(user, timezoneId);

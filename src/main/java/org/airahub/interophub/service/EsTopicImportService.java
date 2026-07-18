@@ -17,10 +17,12 @@ import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -39,6 +41,7 @@ public class EsTopicImportService {
     private final EsSubscriptionDao subscriptionDao;
     private final EsNeighborhoodDao neighborhoodDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+    private final EsTopicSpaceDao topicSpaceDao;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
@@ -49,6 +52,7 @@ public class EsTopicImportService {
         this.subscriptionDao = new EsSubscriptionDao();
         this.neighborhoodDao = new EsNeighborhoodDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
     }
 
     /**
@@ -87,10 +91,12 @@ public class EsTopicImportService {
      * </pre>
      */
     public ImportResult importLines(String rawLines, Long selectedCampaignId,
-            String newCampaignCode, String newCampaignName, Long adminUserId, int tablesPerSet) {
+            String newCampaignCode, String newCampaignName, Long adminUserId, int tablesPerSet,
+            String topicSpaceCode) {
 
         EsCampaign campaign = resolveCampaign(
                 selectedCampaignId, newCampaignCode, newCampaignName, adminUserId);
+        EsTopicSpace targetTopicSpace = resolveTopicSpace(topicSpaceCode);
 
         boolean allowCampaignReset = campaign.getStatus() == null
                 || campaign.getStatus() == EsCampaign.CampaignStatus.DRAFT;
@@ -112,7 +118,8 @@ public class EsTopicImportService {
         int campaignTopicsUpdated = 0;
         int duplicateTopicCodes = 0;
         Set<String> seenTopicCodes = new HashSet<>();
-        Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup();
+        Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup(
+            targetTopicSpace.getEsTopicSpaceId());
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -134,6 +141,7 @@ public class EsTopicImportService {
 
             try {
                 Integer topicSetNo = !json.has("set") || json.isNull("set") ? null : json.getInt("set");
+                validateLineTopicSpace(json, targetTopicSpace.getSpaceCode());
 
                 // ── Upsert es_topic ──────────────────────────────────────────────────
                 String topicCode = json.getString("topicCode");
@@ -158,6 +166,7 @@ public class EsTopicImportService {
 
                 // Import policy: topic metadata is always upserted regardless of campaign
                 // status. Only campaign-assignment rebuild logic is gated to DRAFT campaigns.
+                topic.setEsTopicSpaceId(targetTopicSpace.getEsTopicSpaceId());
                 topic.setTopicName(json.getString("topicName"));
                 topic.setDescription(
                         json.isNull("description") ? null : json.optString("description", null));
@@ -285,9 +294,45 @@ public class EsTopicImportService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private Map<String, EsNeighborhood> buildActiveNeighborhoodLookup() {
+    private EsTopicSpace resolveTopicSpace(String topicSpaceCode) {
+        String normalizedCode = normalizeNeighborhoodToken(topicSpaceCode);
+        if (normalizedCode == null) {
+            throw new IllegalArgumentException("Topic Space code is required for imports.");
+        }
+        EsTopicSpace topicSpace = topicSpaceDao.findBySpaceCode(normalizedCode)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown Topic Space code: " + normalizedCode));
+        if (!Boolean.TRUE.equals(topicSpace.getIsActive())) {
+            throw new IllegalArgumentException(
+                    "Only active Topic Spaces may receive imported topics. Topic Space is inactive: "
+                            + normalizedCode);
+        }
+        return topicSpace;
+    }
+
+    private void validateLineTopicSpace(JSONObject json, String expectedTopicSpaceCode) {
+        for (String field : new String[] { "topicSpaceCode", "spaceCode", "topicSpace" }) {
+            if (!json.has(field) || json.isNull(field)) {
+                continue;
+            }
+            String value = normalizeNeighborhoodToken(json.optString(field, null));
+            if (value == null) {
+                continue;
+            }
+            if (value.contains(",")) {
+                throw new IllegalArgumentException(
+                        "Import line contains multiple Topic Spaces in field '" + field + "'. Exactly one Topic Space is allowed.");
+            }
+            if (!expectedTopicSpaceCode.equalsIgnoreCase(value)) {
+                throw new IllegalArgumentException(
+                        "Import line Topic Space '" + value + "' does not match selected Topic Space '"
+                                + expectedTopicSpaceCode + "'.");
+            }
+        }
+    }
+
+    private Map<String, EsNeighborhood> buildActiveNeighborhoodLookup(Long topicSpaceId) {
         Map<String, EsNeighborhood> lookup = new LinkedHashMap<>();
-        for (EsNeighborhood neighborhood : neighborhoodDao.findAllActive()) {
+        for (EsNeighborhood neighborhood : neighborhoodDao.findAllActiveBySpaceId(topicSpaceId)) {
             String name = normalizeNeighborhoodToken(neighborhood.getNeighborhoodName());
             if (name != null) {
                 lookup.putIfAbsent(name.toLowerCase(), neighborhood);
@@ -303,7 +348,7 @@ public class EsTopicImportService {
             EsNeighborhood neighborhood = activeNeighborhoodsByName.get(token.toLowerCase());
             if (neighborhood == null) {
                 throw new IllegalArgumentException("Unknown neighborhood: " + token
-                        + ". Use an active neighborhood name exactly as configured in Admin > ES > Neighborhoods.");
+                        + ". Use an active neighborhood name exactly as configured in the selected Topic Space.");
             }
             neighborhoodIds.add(neighborhood.getEsNeighborhoodId());
         }

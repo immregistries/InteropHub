@@ -38,6 +38,7 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.model.EsTopicMeetingSurvey;
 import org.airahub.interophub.service.EsSurveyService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +61,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     private final EmailService emailService;
     private final EmailSendLogDao emailSendLogDao;
     private final EsSurveyService esSurveyService;
+    private final TopicSpaceAccessService topicSpaceAccessService;
 
     public EsMeetingAttendanceServlet() {
         this.topicDao = new EsTopicDao();
@@ -74,6 +76,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         this.emailService = new EmailService();
         this.emailSendLogDao = new EmailSendLogDao();
         this.esSurveyService = new EsSurveyService();
+        this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
 
     @Override
@@ -91,6 +94,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         }
 
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        User viewer = authenticatedUser.orElse(null);
+        if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
+            || (resolution.explicitMeeting() != null
+                && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
+            renderNotFound(response, request.getContextPath(), "Meeting not found.");
+            return;
+        }
         boolean submitted = "1".equals(request.getParameter("submitted"));
         boolean anonymousMode = "1".equals(request.getParameter("anon"));
 
@@ -119,6 +129,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         }
 
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+        User viewer = authenticatedUser.orElse(null);
+        if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
+            || (resolution.explicitMeeting() != null
+                && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
+            renderNotFound(response, request.getContextPath(), "Meeting not found.");
+            return;
+        }
 
         // Pre-compute topic data for form re-renders (best-effort email for
         // pre-checking boxes)

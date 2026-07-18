@@ -37,6 +37,8 @@
     <mapping class="org.airahub.interophub.model.LegalTermAcceptance"/>
     <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
     <mapping class="org.airahub.interophub.model.EsTopic"/>
+    <mapping class="org.airahub.interophub.model.EsTopicSpace"/>
+    <mapping class="org.airahub.interophub.model.EsTopicSpaceMember"/>
     <mapping class="org.airahub.interophub.model.EsNeighborhood"/>
     <mapping class="org.airahub.interophub.model.EsTopicNeighborhood"/>
     <mapping class="org.airahub.interophub.model.EsCampaign"/>
