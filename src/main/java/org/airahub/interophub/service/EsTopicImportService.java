@@ -151,13 +151,20 @@ public class EsTopicImportService {
                 }
                 seenTopicCodes.add(topicCode);
 
-                Optional<EsTopic> existingTopic = topicDao.findByTopicCode(topicCode);
+                Optional<EsTopic> existingTopic = topicDao.findByTopicCodeAndSpaceId(
+                        topicCode, targetTopicSpace.getEsTopicSpaceId());
                 EsTopic topic;
                 boolean isNewTopic;
                 if (existingTopic.isPresent()) {
                     topic = existingTopic.get();
                     isNewTopic = false;
                 } else {
+                    Optional<EsTopic> topicInAnotherSpace = topicDao.findByTopicCode(topicCode);
+                    if (topicInAnotherSpace.isPresent()) {
+                        throw new IllegalArgumentException(
+                                "Topic code '" + topicCode
+                                        + "' already exists in a different Topic Space. Import only updates topics in the selected Topic Space and will not move topics between spaces.");
+                    }
                     topic = new EsTopic();
                     topic.setTopicCode(topicCode);
                     topic.setCreatedByUserId(adminUserId);

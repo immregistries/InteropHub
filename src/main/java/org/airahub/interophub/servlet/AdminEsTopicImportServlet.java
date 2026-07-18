@@ -10,7 +10,9 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCampaignDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsCampaign;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicImportService;
@@ -24,11 +26,13 @@ public class AdminEsTopicImportServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final EsTopicImportService importService;
 
     public AdminEsTopicImportServlet() {
         this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.importService = new EsTopicImportService();
     }
 
@@ -38,7 +42,8 @@ public class AdminEsTopicImportServlet extends HttpServlet {
         if (adminUser.isEmpty()) {
             return;
         }
-        renderForm(response, request.getContextPath(), null, campaignDao.findAllOrdered());
+        renderForm(response, request.getContextPath(), null, campaignDao.findAllOrdered(),
+                topicSpaceDao.findAllActiveOrdered());
     }
 
     @Override
@@ -57,11 +62,13 @@ public class AdminEsTopicImportServlet extends HttpServlet {
         String jsonLines = request.getParameter("jsonLines");
 
         if (jsonLines == null || jsonLines.isBlank()) {
-            renderForm(response, contextPath, "JSON input is required.", campaignDao.findAllOrdered());
+            renderForm(response, contextPath, "JSON input is required.", campaignDao.findAllOrdered(),
+                    topicSpaceDao.findAllActiveOrdered());
             return;
         }
         if (topicSpaceCode == null) {
-            renderForm(response, contextPath, "Topic Space code is required.", campaignDao.findAllOrdered());
+            renderForm(response, contextPath, "Topic Space code is required.", campaignDao.findAllOrdered(),
+                    topicSpaceDao.findAllActiveOrdered());
             return;
         }
 
@@ -71,7 +78,8 @@ public class AdminEsTopicImportServlet extends HttpServlet {
                     adminUser.get().getUserId(), tablesPerSet, topicSpaceCode);
             renderResult(response, contextPath, result);
         } catch (IllegalArgumentException ex) {
-            renderForm(response, contextPath, ex.getMessage(), campaignDao.findAllOrdered());
+            renderForm(response, contextPath, ex.getMessage(), campaignDao.findAllOrdered(),
+                    topicSpaceDao.findAllActiveOrdered());
         }
     }
 
@@ -79,7 +87,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
     // ────────────────────────────────────────────────────────────────────────────
 
     private void renderForm(HttpServletResponse response, String contextPath,
-            String errorMessage, List<EsCampaign> campaigns) throws IOException {
+            String errorMessage, List<EsCampaign> campaigns, List<EsTopicSpace> topicSpaces) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "ES Topic Import - InteropHub", contextPath, panelOut -> {
@@ -121,10 +129,16 @@ public class AdminEsTopicImportServlet extends HttpServlet {
                         "          <p style=\"margin-top:0;font-size:.85em;color:#555\">One <code>es_campaign_topic</code> row is created per table (1 through this number). Default 1.</p>");
 
                 panelOut.println("          <label for=\"topicSpaceCode\">Topic Space Code (required)</label>");
+                panelOut.println("          <select id=\"topicSpaceCode\" name=\"topicSpaceCode\" required>");
+                panelOut.println("            <option value=\"\" selected disabled>Choose a Topic Space</option>");
+                for (EsTopicSpace topicSpace : topicSpaces) {
+                    panelOut.println("            <option value=\"" + escapeHtml(topicSpace.getSpaceCode()) + "\">"
+                            + escapeHtml(topicSpace.getSpaceName() + " (" + topicSpace.getSpaceCode() + ")")
+                            + "</option>");
+                }
+                panelOut.println("          </select>");
                 panelOut.println(
-                        "          <input id=\"topicSpaceCode\" name=\"topicSpaceCode\" type=\"text\" required placeholder=\"emerging-standards\" />");
-                panelOut.println(
-                        "          <p style=\"margin-top:0;font-size:.85em;color:#555\">All imported topics in this batch must belong to this single Topic Space code.</p>");
+                        "          <p style=\"margin-top:0;font-size:.85em;color:#555\">Select the Topic Space that owns this batch. Import only updates topics already in that Topic Space and will not move topics between spaces.</p>");
 
                 panelOut.println("          <h2>JSON Lines</h2>");
                 panelOut.println(

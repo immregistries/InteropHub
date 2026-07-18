@@ -26,6 +26,21 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public Optional<EsTopic> findByTopicCodeAndSpaceId(String topicCode, Long esTopicSpaceId) {
+        if (topicCode == null || topicCode.isBlank() || esTopicSpaceId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopic t where t.topicCode = :code and t.esTopicSpaceId = :spaceId",
+                    EsTopic.class)
+                    .setParameter("code", topicCode.trim())
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
     public List<EsTopic> findAllActive() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
