@@ -347,6 +347,8 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         + topicSpace.getEsTopicSpaceId() + "&mode=edit\">Edit Topic Space</a></p>");
                 panelOut.println("        <p><a href=\"" + buildTopicSpaceTopicsUrl(contextPath, topicSpace)
                         + "\">View Topic Space</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?space="
+                        + topicSpace.getEsTopicSpaceId() + "\">Manage ES Topics for this Workspace</a></p>");
 
                 if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
                     panelOut.println("        <h3>Members</h3>");

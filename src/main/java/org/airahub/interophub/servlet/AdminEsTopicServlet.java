@@ -77,17 +77,24 @@ public class AdminEsTopicServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
         String topicIdRaw = trimToNull(request.getParameter("esTopicId"));
+        String selectedSpaceRaw = trimToNull(request.getParameter("space"));
+        Long selectedSpaceId = parseId(selectedSpaceRaw);
+
+        if (selectedSpaceRaw != null && selectedSpaceId == null) {
+            renderList(response, contextPath, "Invalid Topic Space selection.", null);
+            return;
+        }
 
         if (topicIdRaw != null) {
             Long topicId = parseId(topicIdRaw);
             if (topicId == null) {
-                renderList(response, contextPath, "Invalid topic identifier.");
+                renderList(response, contextPath, "Invalid topic identifier.", selectedSpaceId);
                 return;
             }
 
             EsTopic topic = esTopicDao.findById(topicId).orElse(null);
             if (topic == null) {
-                renderList(response, contextPath, "Topic entry was not found.");
+                renderList(response, contextPath, "Topic entry was not found.", selectedSpaceId);
                 return;
             }
 
@@ -113,7 +120,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         }
 
         String message = request.getParameter("saved") != null ? "Topic settings saved." : null;
-        renderList(response, contextPath, message);
+        renderList(response, contextPath, message, selectedSpaceId);
     }
 
     @Override
@@ -126,6 +133,7 @@ public class AdminEsTopicServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         String topicIdRaw = trimToNull(request.getParameter("esTopicId"));
         String topicSpaceIdRaw = trimToNull(request.getParameter("esTopicSpaceId"));
+        Long postedSpaceId = parseId(topicSpaceIdRaw);
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
@@ -198,7 +206,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                     esTopicMeetingDao.saveOrUpdate(newMeeting);
                 }
 
-                response.sendRedirect(contextPath + "/admin/es/topics?esTopicId=" + saved.getEsTopicId());
+                response.sendRedirect(contextPath + "/admin/es/topics?esTopicId=" + saved.getEsTopicId()
+                        + "&space=" + saved.getEsTopicSpaceId());
             } catch (Exception ex) {
                 newTopic.setTopicCode(topicCodeParam);
                 newTopic.setTopicName(topicName);
@@ -246,13 +255,13 @@ public class AdminEsTopicServlet extends HttpServlet {
         // EDIT path
         Long topicId = parseId(topicIdRaw);
         if (topicId == null) {
-            renderList(response, contextPath, "Invalid topic identifier.");
+            renderList(response, contextPath, "Invalid topic identifier.", postedSpaceId);
             return;
         }
 
         EsTopic topic = esTopicDao.findById(topicId).orElse(null);
         if (topic == null) {
-            renderList(response, contextPath, "Topic entry was not found.");
+            renderList(response, contextPath, "Topic entry was not found.", postedSpaceId);
             return;
         }
 
@@ -310,7 +319,7 @@ public class AdminEsTopicServlet extends HttpServlet {
                 esTopicMeetingDao.disableMeeting(meeting, adminUser.get().getUserId());
             }
 
-            response.sendRedirect(contextPath + "/admin/es/topics?saved=1");
+            response.sendRedirect(contextPath + "/admin/es/topics?saved=1&space=" + topic.getEsTopicSpaceId());
         } catch (Exception ex) {
             topic.setTopicName(topicName);
             topic.setDescription(description);
@@ -371,9 +380,17 @@ public class AdminEsTopicServlet extends HttpServlet {
         return authenticatedUser;
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message) throws IOException {
+    private void renderList(HttpServletResponse response, String contextPath, String message, Long selectedSpaceId)
+            throws IOException {
         response.setContentType("text/html;charset=UTF-8");
-        List<EsTopic> topics = esTopicDao.findAllOrderByTopicName();
+        List<EsTopicSpace> allTopicSpaces = topicSpaceDao.findAllOrdered();
+        EsTopicSpace selectedSpace = selectedSpaceId == null ? null
+                : topicSpaceDao.findById(selectedSpaceId).orElse(null);
+        List<EsTopic> topics = selectedSpaceId == null
+                ? List.of()
+                : esTopicDao.findAllOrderByTopicName().stream()
+                        .filter(topic -> selectedSpaceId.equals(topic.getEsTopicSpaceId()))
+                        .toList();
 
         try (PrintWriter out = response.getWriter()) {
             AdminShellRenderer.render(out, "ES Topics Admin - InteropHub", contextPath, panelOut -> {
@@ -384,37 +401,74 @@ public class AdminEsTopicServlet extends HttpServlet {
                     panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
                 }
 
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Topic Name</th>");
-                panelOut.println("              <th>Stage</th>");
-                panelOut.println("              <th>Status</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopic topic : topics) {
-                    panelOut.println("            <tr>");
-                    panelOut.println(
-                            "              <td><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
-                                    + topic.getEsTopicId()
-                                    + "\">" + escapeHtml(orEmpty(topic.getTopicName())) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(topic.getStage())) + "</td>");
-                    panelOut.println(
-                            "              <td>" + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name())
-                                    + "</td>");
-                    panelOut.println("            </tr>");
-                }
-                if (topics.isEmpty()) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td colspan=\"3\">No ES topics found.</td>");
-                    panelOut.println("            </tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-
+                panelOut.println("        <form method=\"get\" action=\"" + contextPath + "/admin/es/topics\"");
                 panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/topics?mode=new\">Add New Topic</a></p>");
+                        "              style=\"display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap;margin:1rem 0;\">");
+                panelOut.println("          <label for=\"space\" style=\"min-width:18rem\">Workspace (required)<br>");
+                panelOut.println(
+                        "            <select id=\"space\" name=\"space\" required onchange=\"this.form.submit()\">");
+                panelOut.println("              <option value=\"\">— Select —</option>");
+                for (EsTopicSpace topicSpace : allTopicSpaces) {
+                    if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                        continue;
+                    }
+                    boolean isSelected = selectedSpaceId != null
+                            && selectedSpaceId.equals(topicSpace.getEsTopicSpaceId());
+                    boolean active = Boolean.TRUE.equals(topicSpace.getIsActive());
+                    String flags = isSelected ? " selected" : "";
+                    if (!active && !isSelected) {
+                        flags += " disabled";
+                    }
+                    panelOut.println("              <option value=\"" + topicSpace.getEsTopicSpaceId() + "\""
+                            + flags + ">" + escapeHtml(orEmpty(topicSpace.getSpaceName()))
+                            + (active ? "" : " (inactive)") + "</option>");
+                }
+                panelOut.println("            </select>");
+                panelOut.println("          </label>");
+                panelOut.println("          <noscript><button type=\"submit\">Show Topics</button></noscript>");
+                panelOut.println("        </form>");
+
+                if (selectedSpace == null) {
+                    panelOut.println("        <p>Select a workspace above to view and manage its topics.</p>");
+                } else {
+                    panelOut.println("        <p><strong>Current workspace:</strong> "
+                            + escapeHtml(orEmpty(selectedSpace.getSpaceName())) + "</p>");
+                }
+
+                if (selectedSpace != null) {
+                    panelOut.println("        <table class=\"data-table\">");
+                    panelOut.println("          <thead>");
+                    panelOut.println("            <tr>");
+                    panelOut.println("              <th>Topic Name</th>");
+                    panelOut.println("              <th>Stage</th>");
+                    panelOut.println("              <th>Status</th>");
+                    panelOut.println("            </tr>");
+                    panelOut.println("          </thead>");
+                    panelOut.println("          <tbody>");
+                    for (EsTopic topic : topics) {
+                        panelOut.println("            <tr>");
+                        panelOut.println(
+                                "              <td><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
+                                        + topic.getEsTopicId() + "&space=" + selectedSpaceId
+                                        + "\">" + escapeHtml(orEmpty(topic.getTopicName())) + "</a></td>");
+                        panelOut.println("              <td>" + escapeHtml(orEmpty(topic.getStage())) + "</td>");
+                        panelOut.println(
+                                "              <td>"
+                                        + escapeHtml(topic.getStatus() == null ? "" : topic.getStatus().name())
+                                        + "</td>");
+                        panelOut.println("            </tr>");
+                    }
+                    if (topics.isEmpty()) {
+                        panelOut.println("            <tr>");
+                        panelOut.println("              <td colspan=\"3\">No ES topics found for this workspace.</td>");
+                        panelOut.println("            </tr>");
+                    }
+                    panelOut.println("          </tbody>");
+                    panelOut.println("        </table>");
+
+                    panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?mode=new&space="
+                            + selectedSpaceId + "\">Add New Topic</a></p>");
+                }
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
                 panelOut.println("      </section>");
@@ -811,7 +865,9 @@ public class AdminEsTopicServlet extends HttpServlet {
                         panelOut.println("      <button type=\"submit\">Save</button>");
                         panelOut.println("    </form>");
                         panelOut.println(
-                                "    <p><a href=\"" + contextPath + "/admin/es/topics\">Back to Topics</a></p>");
+                                "    <p><a href=\"" + contextPath + "/admin/es/topics?space="
+                                        + topic.getEsTopicSpaceId()
+                                        + "\">Back to Topics</a></p>");
                         panelOut.println("      </section>");
                     });
         }
