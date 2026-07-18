@@ -18,6 +18,7 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.EsTopicSpaceMemberDao;
+import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicSpaceMember;
@@ -78,6 +79,11 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
 
             if ("edit".equalsIgnoreCase(mode)) {
                 renderEditForm(response, contextPath, topicSpace, false, null);
+                return;
+            }
+
+            if ("report".equalsIgnoreCase(mode)) {
+                renderTopicNarrativeReport(response, contextPath, topicSpace);
                 return;
             }
 
@@ -349,6 +355,9 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         + "\">View Topic Space</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?space="
                         + topicSpace.getEsTopicSpaceId() + "\">Manage ES Topics for this Workspace</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath
+                        + "/admin/es/topic-spaces?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                        + "&mode=report\">Printable Topic Narrative Report</a></p>");
 
                 if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
                     panelOut.println("        <h3>Members</h3>");
@@ -495,6 +504,48 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                                 + "\">Back</a></p>");
                         panelOut.println("      </section>");
                     });
+        }
+    }
+
+    private void renderTopicNarrativeReport(HttpServletResponse response, String contextPath, EsTopicSpace topicSpace)
+            throws IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        List<EsTopic> topics = topicDao.findAllOrderByTopicName().stream()
+                .filter(topic -> topicSpace.getEsTopicSpaceId() != null
+                        && topicSpace.getEsTopicSpaceId().equals(topic.getEsTopicSpaceId()))
+                .toList();
+
+        try (PrintWriter out = response.getWriter()) {
+            AdminShellRenderer.render(out, "Topic Narrative Report - InteropHub", contextPath, panelOut -> {
+                panelOut.println("      <section class=\"panel\">");
+                panelOut.println("        <h2>Topic Narrative Report</h2>");
+                panelOut.println("        <p><strong>Topic Space:</strong> "
+                        + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</p>");
+                panelOut.println("        <p><strong>Generated:</strong> " + escapeHtml(formatDate(LocalDateTime.now()))
+                        + "</p>");
+                panelOut.println("        <p>This is an alphabetical, human-readable list of topics.</p>");
+                panelOut.println(
+                        "        <p><button type=\"button\" onclick=\"window.print()\">Print This Report</button></p>");
+
+                if (topics.isEmpty()) {
+                    panelOut.println("        <p>No topics were found for this Topic Space.</p>");
+                } else {
+                    for (EsTopic topic : topics) {
+                        panelOut.println("        <section class=\"panel\">");
+                        panelOut.println("          <h3>" + escapeHtml(orEmpty(topic.getTopicName())) + "</h3>");
+                        if (topic.getStatus() != null && topic.getStatus() != EsTopic.EsTopicStatus.ACTIVE) {
+                            panelOut.println("          <p><strong>Status:</strong> "
+                                    + escapeHtml(topic.getStatus().name()) + "</p>");
+                        }
+                        panelOut.println("          <p>" + escapeHtml(orEmpty(topic.getDescription())) + "</p>");
+                        panelOut.println("        </section>");
+                    }
+                }
+
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
+                        + topicSpace.getEsTopicSpaceId() + "\">Back to Topic Space</a></p>");
+                panelOut.println("      </section>");
+            });
         }
     }
 
