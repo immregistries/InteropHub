@@ -189,11 +189,11 @@ public class AdminEsMeetingServlet extends HttpServlet {
         }
 
         EsTopic hostTopic = topicMeeting.getEsTopicId() == null
-            ? null
-            : topicDao.findById(topicMeeting.getEsTopicId()).orElse(null);
+                ? null
+                : topicDao.findById(topicMeeting.getEsTopicId()).orElse(null);
         if (hostTopic == null || !topicSpaceDao.isActiveSpaceId(hostTopic.getEsTopicSpaceId())) {
             renderDetail(response, contextPath, topicMeeting,
-                "Cannot create a new meeting because the host Topic Space is inactive.");
+                    "Cannot create a new meeting because the host Topic Space is inactive.");
             return;
         }
 

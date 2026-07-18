@@ -119,7 +119,7 @@ public class EsTopicImportService {
         int duplicateTopicCodes = 0;
         Set<String> seenTopicCodes = new HashSet<>();
         Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup(
-            targetTopicSpace.getEsTopicSpaceId());
+                targetTopicSpace.getEsTopicSpaceId());
 
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
@@ -320,7 +320,8 @@ public class EsTopicImportService {
             }
             if (value.contains(",")) {
                 throw new IllegalArgumentException(
-                        "Import line contains multiple Topic Spaces in field '" + field + "'. Exactly one Topic Space is allowed.");
+                        "Import line contains multiple Topic Spaces in field '" + field
+                                + "'. Exactly one Topic Space is allowed.");
             }
             if (!expectedTopicSpaceCode.equalsIgnoreCase(value)) {
                 throw new IllegalArgumentException(

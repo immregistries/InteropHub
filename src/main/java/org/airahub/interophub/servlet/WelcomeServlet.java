@@ -82,7 +82,7 @@ public class WelcomeServlet extends HttpServlet {
             topicNameById.put(topic.getTopicId(), topic.getTopicName());
         }
         List<EsTopicSpace> visibleTopicSpaces = topicSpaceAccessService
-            .filterVisibleSpaces(user, topicSpaceDao.findAllActiveOrdered());
+                .filterVisibleSpaces(user, topicSpaceDao.findAllActiveOrdered());
 
         try (PrintWriter out = response.getWriter()) {
             out.println("<!DOCTYPE html>");
@@ -105,14 +105,14 @@ public class WelcomeServlet extends HttpServlet {
                 out.println("    </aside>");
                 out.println("    <section class=\"admin-main\">");
                 renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                    visibleTopicSpaces, pendingRegistrationCount, true);
+                        visibleTopicSpaces, pendingRegistrationCount, true);
                 out.println("    </section>");
                 out.println("  </main>");
             } else {
                 out.println("<body>");
                 out.println("  <main class=\"container\">");
                 renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                    visibleTopicSpaces, pendingRegistrationCount, false);
+                        visibleTopicSpaces, pendingRegistrationCount, false);
                 out.println("  </main>");
             }
             PageFooterRenderer.render(out);
@@ -216,8 +216,10 @@ public class WelcomeServlet extends HttpServlet {
     }
 
     private String buildTopicSpaceUrl(String contextPath, String spaceCode) {
-        return contextPath + "/spaces/" + java.net.URLEncoder.encode(orEmpty(spaceCode), java.nio.charset.StandardCharsets.UTF_8)
-                .replace("+", "%20") + "/topics";
+        return contextPath + "/spaces/"
+                + java.net.URLEncoder.encode(orEmpty(spaceCode), java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("+", "%20")
+                + "/topics";
     }
 
     private String escapeHtml(String value) {

@@ -96,8 +96,8 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         User viewer = authenticatedUser.orElse(null);
         if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
-            || (resolution.explicitMeeting() != null
-                && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
+                || (resolution.explicitMeeting() != null
+                        && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
             renderNotFound(response, request.getContextPath(), "Meeting not found.");
             return;
         }
@@ -131,8 +131,8 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         User viewer = authenticatedUser.orElse(null);
         if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
-            || (resolution.explicitMeeting() != null
-                && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
+                || (resolution.explicitMeeting() != null
+                        && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
             renderNotFound(response, request.getContextPath(), "Meeting not found.");
             return;
         }

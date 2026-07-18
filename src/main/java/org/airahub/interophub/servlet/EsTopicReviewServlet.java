@@ -62,7 +62,7 @@ public class EsTopicReviewServlet extends HttpServlet {
         }
 
         List<EsCampaignTopicBrowseRow> rows = topicSpaceAccessService
-            .filterVisibleTopicRows(user.get(), topicDao.findAllActiveBrowseRowsOrdered());
+                .filterVisibleTopicRows(user.get(), topicDao.findAllActiveBrowseRowsOrdered());
         applyCanonicalNeighborhoods(rows);
         Map<Long, Integer> scoreByTopicId = reviewService.findUserScoresByTopicId(
                 campaign.get().getEsCampaignId(), user.get().getUserId());

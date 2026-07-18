@@ -320,7 +320,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                 }
                 if (curatorTopicId != null) {
                         List<EsTopicCuration> curatorList = topicSpaceAccessService
-                                        .filterVisibleCurations(viewer, curationDao.findByCuratorTopicId(curatorTopicId));
+                                        .filterVisibleCurations(viewer,
+                                                        curationDao.findByCuratorTopicId(curatorTopicId));
                         int pos = -1;
                         for (int i = 0; i < curatorList.size(); i++) {
                                 if (topicId.equals(curatorList.get(i).getCuratedTopicId())) {

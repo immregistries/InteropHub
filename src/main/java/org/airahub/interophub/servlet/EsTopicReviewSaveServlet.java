@@ -67,7 +67,7 @@ public class EsTopicReviewSaveServlet extends HttpServlet {
         try {
             EsTopicReviewService.SaveResult saveResult = reviewService.saveScore(
                     campaign.get().getEsCampaignId(), topicId, user.get().getUserId(), score);
-                int totalTopics = topicSpaceAccessService
+            int totalTopics = topicSpaceAccessService
                     .filterVisibleTopicRows(user.get(), topicDao.findAllActiveBrowseRowsOrdered())
                     .size();
             long reviewedCount = saveResult.reviewedCount();

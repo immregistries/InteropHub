@@ -122,15 +122,15 @@ public class AdminEsTopicImportServlet extends HttpServlet {
 
                 panelOut.println("          <label for=\"topicSpaceCode\">Topic Space Code (required)</label>");
                 panelOut.println(
-                    "          <input id=\"topicSpaceCode\" name=\"topicSpaceCode\" type=\"text\" required placeholder=\"emerging-standards\" />");
+                        "          <input id=\"topicSpaceCode\" name=\"topicSpaceCode\" type=\"text\" required placeholder=\"emerging-standards\" />");
                 panelOut.println(
-                    "          <p style=\"margin-top:0;font-size:.85em;color:#555\">All imported topics in this batch must belong to this single Topic Space code.</p>");
+                        "          <p style=\"margin-top:0;font-size:.85em;color:#555\">All imported topics in this batch must belong to this single Topic Space code.</p>");
 
                 panelOut.println("          <h2>JSON Lines</h2>");
                 panelOut.println(
                         "          <p>Required fields per line: <code>topicCode</code>, <code>topicName</code>. Optional: <code>description</code>, <code>neighborhood</code>, <code>priorityIis</code>, <code>priorityEhr</code>, <code>priorityCdc</code>, <code>stage</code>, <code>policyStatus</code>, <code>topicType</code>, <code>confluenceUrl</code>, <code>displayOrder</code>, <code>set</code>.</p>");
                 panelOut.println(
-                    "          <p style=\"margin-top:0;font-size:.85em;color:#555\"><code>neighborhood</code> should contain one active neighborhood name or a comma-separated list of active neighborhood names in the selected Topic Space. The import updates the canonical topic-to-neighborhood mapping.</p>");
+                        "          <p style=\"margin-top:0;font-size:.85em;color:#555\"><code>neighborhood</code> should contain one active neighborhood name or a comma-separated list of active neighborhood names in the selected Topic Space. The import updates the canonical topic-to-neighborhood mapping.</p>");
                 panelOut.println("          <label for=\"jsonLines\">One JSON object per line</label>");
                 panelOut.println(
                         "          <textarea id=\"jsonLines\" name=\"jsonLines\" rows=\"20\" style=\"width:100%;font-family:monospace\"></textarea>");

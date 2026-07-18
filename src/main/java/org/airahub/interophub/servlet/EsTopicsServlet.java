@@ -153,17 +153,17 @@ public class EsTopicsServlet extends HttpServlet {
                 .orElse(null);
 
         List<EsNeighborhood> neighborhoods = topicSpaceAccessService
-            .filterVisibleNeighborhoods(viewer, esNeighborhoodDao.findAllActive()).stream()
-            .filter(n -> selectedSpaceId.equals(n.getEsTopicSpaceId()))
-            .collect(Collectors.toList());
+                .filterVisibleNeighborhoods(viewer, esNeighborhoodDao.findAllActive()).stream()
+                .filter(n -> selectedSpaceId.equals(n.getEsTopicSpaceId()))
+                .collect(Collectors.toList());
         List<EsCampaignTopicBrowseRow> allRows = topicSpaceAccessService
-            .filterVisibleTopicRows(viewer, esTopicDao.findAllActiveBrowseRowsOrdered());
+                .filterVisibleTopicRows(viewer, esTopicDao.findAllActiveBrowseRowsOrdered());
         Map<Long, Long> topicSpaceIdsByTopicId = esTopicDao.findSpaceIdsByTopicIds(allRows.stream()
-            .map(EsCampaignTopicBrowseRow::getEsTopicId)
-            .collect(Collectors.toList()));
+                .map(EsCampaignTopicBrowseRow::getEsTopicId)
+                .collect(Collectors.toList()));
         allRows = allRows.stream()
-            .filter(row -> selectedSpaceId.equals(topicSpaceIdsByTopicId.get(row.getEsTopicId())))
-            .collect(Collectors.toList());
+                .filter(row -> selectedSpaceId.equals(topicSpaceIdsByTopicId.get(row.getEsTopicId())))
+                .collect(Collectors.toList());
         applyCanonicalNeighborhoods(allRows);
         List<Long> allTopicIds = allRows.stream().map(EsCampaignTopicBrowseRow::getEsTopicId)
                 .collect(Collectors.toList());
@@ -227,9 +227,9 @@ public class EsTopicsServlet extends HttpServlet {
         Map<Long, List<EsMeeting>> topicUpcomingMeetings = new HashMap<>();
         {
             List<EsMeeting> upcomingMeetings = topicSpaceAccessService
-                .filterVisibleMeetings(viewer, esMeetingDao.findUpcoming(1000)).stream()
-                .filter(m -> selectedSpaceId.equals(m.getEsTopicSpaceId()))
-                .collect(Collectors.toList());
+                    .filterVisibleMeetings(viewer, esMeetingDao.findUpcoming(1000)).stream()
+                    .filter(m -> selectedSpaceId.equals(m.getEsTopicSpaceId()))
+                    .collect(Collectors.toList());
             if (!upcomingMeetings.isEmpty()) {
                 List<Long> upcomingMeetingIds = upcomingMeetings.stream()
                         .map(EsMeeting::getEsMeetingId)
@@ -361,7 +361,8 @@ public class EsTopicsServlet extends HttpServlet {
             out.println("  <div class=\"estp-shell\">");
             out.println("    <div class=\"estp-layout\">");
 
-                renderSidebar(out, contextPath, visibleSpaces, selectedSpaceCode, neighborhoods, view, selectedNeighborhood, selectedStage,
+            renderSidebar(out, contextPath, visibleSpaces, selectedSpaceCode, neighborhoods, view, selectedNeighborhood,
+                    selectedStage,
                     selectedReviewScore, stageCounts, neighborhoodCounts, query, searchActive,
                     campaign.isPresent(), reviewScoreCounts, notReviewedCount,
                     authenticatedUser.isPresent(),
@@ -369,10 +370,11 @@ public class EsTopicsServlet extends HttpServlet {
                     meetingByTopicId.size());
 
             out.println("      <main class=\"estp-main\">");
-                renderMainHeader(out, contextPath, selectedSpace, view, selectedNeighborhood, selectedStage, selectedReviewScore,
+            renderMainHeader(out, contextPath, selectedSpace, view, selectedNeighborhood, selectedStage,
+                    selectedReviewScore,
                     filteredRows.size(), query, authenticatedUser);
 
-                boolean showOverview = VIEW_OVERVIEW.equalsIgnoreCase(view)
+            boolean showOverview = VIEW_OVERVIEW.equalsIgnoreCase(view)
                     && query == null
                     && isDefaultLegacySpace(selectedSpaceCode);
             if (showOverview) {
@@ -443,7 +445,7 @@ public class EsTopicsServlet extends HttpServlet {
                 ? " is-active"
                 : "";
         out.println("          <a class=\"estp-nav-link" + allTopicsActive + "\" href=\""
-            + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_ALL, null, null, query) + "\">All Topics</a>");
+                + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_ALL, null, null, query) + "\">All Topics</a>");
 
         String myTopicsActive = VIEW_MY_TOPICS.equalsIgnoreCase(view) ? " is-active" : "";
         String meetingsActive = VIEW_MEETINGS.equalsIgnoreCase(view) ? " is-active" : "";
@@ -454,10 +456,10 @@ public class EsTopicsServlet extends HttpServlet {
                 ? "Meetings (" + meetingCount + ")"
                 : "Meetings";
         out.println("          <a class=\"estp-nav-link" + myTopicsActive + "\" href=\""
-            + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_MY_TOPICS, null, null, query) + "\">"
+                + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_MY_TOPICS, null, null, query) + "\">"
                 + escapeHtml(myTopicsLabel) + "</a>");
         out.println("          <a class=\"estp-nav-link" + meetingsActive + "\" href=\""
-            + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_MEETINGS, null, null, query) + "\">"
+                + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_MEETINGS, null, null, query) + "\">"
                 + escapeHtml(meetingsLabel) + "</a>");
 
         out.println("          <details class=\"estp-nav-section\""
@@ -508,7 +510,7 @@ public class EsTopicsServlet extends HttpServlet {
                             : "";
             out.println("              <a class=\"estp-nav-link" + uncategorizedActive + "\" href=\""
                     + buildTopicsUrl(contextPath, selectedSpaceCode, VIEW_NEIGHBORHOOD, UNCATEGORIZED_LABEL, null,
-                        query)
+                            query)
                     + "\">"
                     + UNCATEGORIZED_LABEL + " (" + uncategorizedCount + ")</a>");
         }
@@ -525,7 +527,7 @@ public class EsTopicsServlet extends HttpServlet {
                         && selectedReviewScore != null
                         && selectedReviewScore.intValue() == score ? " is-active" : "";
                 out.println("              <a id=\"es-review-level-" + score + "\" class=\"estp-nav-link" + active
-                    + "\" href=\"" + buildReviewTopicsUrl(contextPath, selectedSpaceCode, score, query) + "\">"
+                        + "\" href=\"" + buildReviewTopicsUrl(contextPath, selectedSpaceCode, score, query) + "\">"
                         + escapeHtml(reviewLevelLabel(score)) + " (<span id=\"es-review-count-" + score
                         + "\">" + reviewScoreCounts.getOrDefault(score, 0) + "</span>)</a>");
             }
@@ -577,10 +579,10 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("        <p class=\"estp-subtitle\"><strong>Active topics:</strong> " + topicCount + "</p>");
 
         out.println(
-            "        <form class=\"estp-search-form\" method=\"get\" action=\"" + contextPath + "/es/topics\">");
+                "        <form class=\"estp-search-form\" method=\"get\" action=\"" + contextPath + "/es/topics\">");
         if (selectedSpace != null && trimToNull(selectedSpace.getSpaceCode()) != null) {
             out.println("          <input type=\"hidden\" name=\"space\" value=\""
-                + escapeHtml(selectedSpace.getSpaceCode()) + "\" />");
+                    + escapeHtml(selectedSpace.getSpaceCode()) + "\" />");
         }
         if (trimToNull(view) != null && !VIEW_ALL.equalsIgnoreCase(view)) {
             out.println("          <input type=\"hidden\" name=\"view\" value=\"" + escapeHtml(view) + "\" />");
@@ -699,7 +701,8 @@ public class EsTopicsServlet extends HttpServlet {
                     + " data-topic-url=\""
                     + escapeHtml(buildSpaceTopicDetailUrl(contextPath, selectedSpaceCode, row.getEsTopicId())) + "\""
                     + " data-meetings-url=\""
-                    + escapeHtml(meetingId == null ? "" : buildSpaceMeetingsUrl(contextPath, selectedSpaceCode, meetingId))
+                    + escapeHtml(
+                            meetingId == null ? "" : buildSpaceMeetingsUrl(contextPath, selectedSpaceCode, meetingId))
                     + "\""
                     + " data-topic-name=\"" + escapeHtml(topicName) + "\""
                     + " data-topic-description=\"" + escapeHtml(description) + "\""

@@ -297,7 +297,8 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 }
                 panelOut.println("          </tbody>");
                 panelOut.println("        </table>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
                 panelOut.println("      </section>");
             });
         }
@@ -325,16 +326,19 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 panelOut.println("          <p><strong>Visibility:</strong> "
                         + escapeHtml(topicSpace.getVisibility() == null ? "" : topicSpace.getVisibility().name())
                         + "</p>");
-                panelOut.println("          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topicSpace.getDescription()))
-                        + "</p>");
+                panelOut.println(
+                        "          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topicSpace.getDescription()))
+                                + "</p>");
                 panelOut.println("          <p><strong>Display Order:</strong> "
                         + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder()))) + "</p>");
                 panelOut.println("          <p><strong>Active:</strong> "
                         + (Boolean.TRUE.equals(topicSpace.getIsActive()) ? "Yes" : "No") + "</p>");
-                panelOut.println("          <p><strong>Created:</strong> " + escapeHtml(formatDate(topicSpace.getCreatedAt()))
-                        + "</p>");
-                panelOut.println("          <p><strong>Updated:</strong> " + escapeHtml(formatDate(topicSpace.getUpdatedAt()))
-                        + "</p>");
+                panelOut.println(
+                        "          <p><strong>Created:</strong> " + escapeHtml(formatDate(topicSpace.getCreatedAt()))
+                                + "</p>");
+                panelOut.println(
+                        "          <p><strong>Updated:</strong> " + escapeHtml(formatDate(topicSpace.getUpdatedAt()))
+                                + "</p>");
                 panelOut.println("          <p><strong>Topics:</strong> " + topicCount + "</p>");
                 panelOut.println("          <p><strong>Meetings:</strong> " + meetingCount + "</p>");
                 panelOut.println("        </section>");
@@ -342,13 +346,14 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
                         + topicSpace.getEsTopicSpaceId() + "&mode=edit\">Edit Topic Space</a></p>");
                 panelOut.println("        <p><a href=\"" + buildTopicSpaceTopicsUrl(contextPath, topicSpace)
-                    + "\">View Topic Space</a></p>");
+                        + "\">View Topic Space</a></p>");
 
                 if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
                     panelOut.println("        <h3>Members</h3>");
                     panelOut.println("        <table class=\"data-table\">");
                     panelOut.println("          <thead><tr>");
-                    panelOut.println("            <th>Email</th><th>Name</th><th>Role</th><th>Added</th><th>Action</th>");
+                    panelOut.println(
+                            "            <th>Email</th><th>Name</th><th>Role</th><th>Added</th><th>Action</th>");
                     panelOut.println("          </tr></thead>");
                     panelOut.println("          <tbody>");
                     for (EsTopicSpaceMember member : members) {
@@ -356,20 +361,24 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         panelOut.println("            <tr>");
                         panelOut.println("              <td>" + escapeHtml(user == null ? "" : orEmpty(user.getEmail()))
                                 + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(user == null ? "" : orEmpty(user.getFullName()))
-                                + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(user == null ? "" : orEmpty(user.getFullName()))
+                                        + "</td>");
                         panelOut.println("              <td>" + escapeHtml(member.getRole() == null
                                 ? ""
                                 : member.getRole().name()) + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
+                        panelOut.println(
+                                "              <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
                         panelOut.println("              <td>");
                         panelOut.println("                <form method=\"post\" action=\"" + contextPath
                                 + "/admin/es/topic-spaces\" style=\"display:inline;\">");
-                        panelOut.println("                  <input type=\"hidden\" name=\"action\" value=\"removeMember\" />");
+                        panelOut.println(
+                                "                  <input type=\"hidden\" name=\"action\" value=\"removeMember\" />");
                         panelOut.println("                  <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
                                 + topicSpace.getEsTopicSpaceId() + "\" />");
-                        panelOut.println("                  <input type=\"hidden\" name=\"esTopicSpaceMemberId\" value=\""
-                                + member.getEsTopicSpaceMemberId() + "\" />");
+                        panelOut.println(
+                                "                  <input type=\"hidden\" name=\"esTopicSpaceMemberId\" value=\""
+                                        + member.getEsTopicSpaceMemberId() + "\" />");
                         panelOut.println("                  <button type=\"submit\">Remove</button>");
                         panelOut.println("                </form>");
                         panelOut.println("              </td>");
@@ -388,7 +397,8 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                     panelOut.println("          <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
                             + topicSpace.getEsTopicSpaceId() + "\" />");
                     panelOut.println("          <label for=\"memberEmail\">User Email (required)</label>");
-                    panelOut.println("          <input id=\"memberEmail\" name=\"memberEmail\" type=\"email\" required />");
+                    panelOut.println(
+                            "          <input id=\"memberEmail\" name=\"memberEmail\" type=\"email\" required />");
                     panelOut.println("          <label for=\"memberRole\">Role</label>");
                     panelOut.println("          <select id=\"memberRole\" name=\"memberRole\">");
                     panelOut.println("            <option value=\"MEMBER\">MEMBER</option>");
@@ -431,8 +441,9 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         panelOut.println("          <label for=\"spaceCode\">Topic Space Code"
                                 + (creating ? " (required)" : "") + "</label>");
                         if (creating) {
-                            panelOut.println("          <input id=\"spaceCode\" name=\"spaceCode\" type=\"text\" required"
-                                    + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
+                            panelOut.println(
+                                    "          <input id=\"spaceCode\" name=\"spaceCode\" type=\"text\" required"
+                                            + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
                         } else {
                             panelOut.println("          <input id=\"spaceCode\" type=\"text\" disabled"
                                     + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
@@ -466,9 +477,10 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         }
 
                         panelOut.println("          <label for=\"displayOrder\">Display Order (required)</label>");
-                        panelOut.println("          <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required"
-                                + " value=\"" + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder())))
-                                + "\" />");
+                        panelOut.println(
+                                "          <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required"
+                                        + " value=\"" + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder())))
+                                        + "\" />");
 
                         panelOut.println("          <label><input type=\"checkbox\" name=\"isActive\""
                                 + (Boolean.TRUE.equals(topicSpace.getIsActive()) ? " checked" : "")

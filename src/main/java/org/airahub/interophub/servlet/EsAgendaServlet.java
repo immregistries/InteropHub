@@ -1547,9 +1547,9 @@ public class EsAgendaServlet extends HttpServlet {
         Map<Long, EsTopic> topicById = allTopics.stream()
                 .collect(Collectors.toMap(EsTopic::getEsTopicId, t -> t));
         List<EsTopic> selectableTopics = allTopics.stream()
-            .filter(t -> t.getStatus() == EsTopic.EsTopicStatus.ACTIVE)
-            .filter(t -> isTopicAllowedForMeetingHost(t, hostTopicSpace))
-            .collect(Collectors.toList());
+                .filter(t -> t.getStatus() == EsTopic.EsTopicStatus.ACTIVE)
+                .filter(t -> isTopicAllowedForMeetingHost(t, hostTopicSpace))
+                .collect(Collectors.toList());
 
         // Champions and all users: only needed when canEdit (for add-presenter
         // quick-pick)
@@ -2984,22 +2984,23 @@ public class EsAgendaServlet extends HttpServlet {
                             + escapeHtml(oiStatusLabel) + "</span></td>");
                     out.println("        <td class=\"prev-item-from\">" + escapeHtml(srcLabel) + "</td>");
                     out.println("        <td class=\"prev-item-controls\">");
-                        boolean canCopyOpenItem = oi.getEsTopicId() == null
+                    boolean canCopyOpenItem = oi.getEsTopicId() == null
                             || isTopicAllowedForMeetingHost(topicById.get(oi.getEsTopicId()), hostTopicSpace);
-                        if (canCopyOpenItem) {
+                    if (canCopyOpenItem) {
                         out.println("          <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
                         out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
-                            + meeting.getEsMeetingId() + "\">");
+                                + meeting.getEsMeetingId() + "\">");
                         out.println("            <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
                         out.println("            <input type=\"hidden\" name=\"sourceItemId\" value=\""
-                            + oi.getEsMeetingAgendaItemId() + "\">");
+                                + oi.getEsMeetingAgendaItemId() + "\">");
                         if (editOverride)
                             out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                        out.println("            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
+                        out.println(
+                                "            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
                         out.println("          </form>");
-                        } else {
+                    } else {
                         out.println("          <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
-                        }
+                    }
                     out.println("        </td>");
                     out.println("      </tr>");
                 }
@@ -3071,20 +3072,22 @@ public class EsAgendaServlet extends HttpServlet {
                                 + escapeHtml(ciStatusLabel) + "</span></td>");
                         out.println("          <td class=\"prev-item-controls\">");
                         boolean canCopyItem = ci.getEsTopicId() == null
-                            || isTopicAllowedForMeetingHost(topicById.get(ci.getEsTopicId()), hostTopicSpace);
+                                || isTopicAllowedForMeetingHost(topicById.get(ci.getEsTopicId()), hostTopicSpace);
                         if (canCopyItem) {
                             out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
                             out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
-                                + meeting.getEsMeetingId() + "\">");
-                            out.println("              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                                    + meeting.getEsMeetingId() + "\">");
+                            out.println(
+                                    "              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
                             out.println("              <input type=\"hidden\" name=\"sourceItemId\" value=\""
-                                + ci.getEsMeetingAgendaItemId() + "\">");
+                                    + ci.getEsMeetingAgendaItemId() + "\">");
                             if (editOverride)
-                            out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                                out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
                             out.println("              <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
                             out.println("            </form>");
                         } else {
-                            out.println("            <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
+                            out.println(
+                                    "            <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
                         }
                         out.println("          </td>");
                         out.println("        </tr>");

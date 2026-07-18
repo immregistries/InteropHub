@@ -32,7 +32,8 @@ public class AdminEsServlet extends HttpServlet {
                 panelOut.println("        <h2>Emerging Standards</h2>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Campaigns</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">ES Topics</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces\">Topic Spaces</a></p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/topic-spaces\">Topic Spaces</a></p>");
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es/neighborhoods\">Neighborhoods</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath

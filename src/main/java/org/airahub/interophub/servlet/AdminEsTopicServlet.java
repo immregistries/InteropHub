@@ -639,7 +639,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
                         out.println("        <option value=\"\">\u2014 Select \u2014</option>");
                         for (EsTopicSpace topicSpace : allTopicSpaces) {
-                            if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                            if (topicSpace.getEsTopicSpaceId() == null
+                                    || trimToNull(topicSpace.getSpaceCode()) == null) {
                                 continue;
                             }
                             boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedTopicSpaceIdFinal);
@@ -680,14 +681,17 @@ public class AdminEsTopicServlet extends HttpServlet {
                             out.println("          (function(){");
                             out.println("            var select = document.getElementById('esTopicSpaceId');");
                             out.println("            if (!select) { return; }");
-                            out.println("            var options = Array.prototype.slice.call(document.querySelectorAll('.js-neighborhood-option')); ");
+                            out.println(
+                                    "            var options = Array.prototype.slice.call(document.querySelectorAll('.js-neighborhood-option')); ");
                             out.println("            function applyNeighborhoodFilter(){");
                             out.println("              var selected = (select.value || '').trim();");
                             out.println("              options.forEach(function(label){");
-                            out.println("                var matches = selected && (label.getAttribute('data-space-id') === selected);");
+                            out.println(
+                                    "                var matches = selected && (label.getAttribute('data-space-id') === selected);");
                             out.println("                label.style.display = matches ? '' : 'none';");
                             out.println("                if (!matches) {");
-                            out.println("                  var checkbox = label.querySelector('input[type=checkbox]');");
+                            out.println(
+                                    "                  var checkbox = label.querySelector('input[type=checkbox]');");
                             out.println("                  if (checkbox) { checkbox.checked = false; }");
                             out.println("                }");
                             out.println("              });");

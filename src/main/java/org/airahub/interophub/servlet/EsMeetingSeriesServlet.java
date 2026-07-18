@@ -122,12 +122,12 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             // Header
             out.println("  <div class=\"mseries-header\">");
             out.println("    <div class=\"mseries-breadcrumb\">");
-                out.println("      <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
+            out.println("      <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
                     + "/topics\">Topics</a>");
             if (topic != null) {
                 out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
                 out.println("      <a href=\"" + contextPath + "/spaces/" + urlEncodePathSegment(spaceCode)
-                    + "/topic/" + topic.getEsTopicId() + "\">"
+                        + "/topic/" + topic.getEsTopicId() + "\">"
                         + escapeHtml(topic.getTopicName() != null ? topic.getTopicName() : "") + "</a>");
             }
             out.println("      <span class=\"mseries-sep\">&rsaquo;</span>");
@@ -190,7 +190,7 @@ public class EsMeetingSeriesServlet extends HttpServlet {
         }
     }
 
-        private void renderTable(PrintWriter out, List<EsMeeting> meetings, String contextPath,
+    private void renderTable(PrintWriter out, List<EsMeeting> meetings, String contextPath,
             ZoneId viewerZone, String viewerTzId, boolean isUpcoming, String spaceCode) {
         out.println("    <div class=\"mseries-table-wrap\">");
         out.println("    <table class=\"mseries-table\">");
