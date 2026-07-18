@@ -51,6 +51,15 @@ public class EsTopic {
     @Column(name = "stage", length = 80)
     private String stage;
 
+    @Column(name = "path", length = 80)
+    private String path;
+
+    @Column(name = "es_topic_stage_definition_id")
+    private Long esTopicStageDefinitionId;
+
+    @Column(name = "es_topic_path_definition_id")
+    private Long esTopicPathDefinitionId;
+
     @Column(name = "policy_status", length = 120)
     private String policyStatus;
 
@@ -172,6 +181,30 @@ public class EsTopic {
 
     public void setStage(String stage) {
         this.stage = stage;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+    public Long getEsTopicStageDefinitionId() {
+        return esTopicStageDefinitionId;
+    }
+
+    public void setEsTopicStageDefinitionId(Long esTopicStageDefinitionId) {
+        this.esTopicStageDefinitionId = esTopicStageDefinitionId;
+    }
+
+    public Long getEsTopicPathDefinitionId() {
+        return esTopicPathDefinitionId;
+    }
+
+    public void setEsTopicPathDefinitionId(Long esTopicPathDefinitionId) {
+        this.esTopicPathDefinitionId = esTopicPathDefinitionId;
     }
 
     public String getPolicyStatus() {

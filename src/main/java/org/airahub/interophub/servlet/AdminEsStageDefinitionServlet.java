@@ -4,32 +4,29 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.airahub.interophub.dao.EsNeighborhoodDao;
-import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
-import org.airahub.interophub.model.EsNeighborhood;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 
-public class AdminEsNeighborhoodServlet extends HttpServlet {
+public class AdminEsStageDefinitionServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService;
-    private final EsNeighborhoodDao esNeighborhoodDao;
-    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+    private final EsTopicStageDefinitionDao stageDefinitionDao;
     private final EsTopicSpaceDao topicSpaceDao;
 
-    public AdminEsNeighborhoodServlet() {
+    public AdminEsStageDefinitionServlet() {
         this.authFlowService = new AuthFlowService();
-        this.esNeighborhoodDao = new EsNeighborhoodDao();
-        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+        this.stageDefinitionDao = new EsTopicStageDefinitionDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
     }
 
@@ -42,41 +39,41 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
 
         String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
-        String neighborhoodIdRaw = trimToNull(request.getParameter("esNeighborhoodId"));
+        String definitionIdRaw = trimToNull(request.getParameter("esTopicStageDefinitionId"));
         Long selectedTopicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
 
         if ("new".equalsIgnoreCase(mode)) {
-            EsNeighborhood neighborhood = new EsNeighborhood();
-            neighborhood.setEsTopicSpaceId(selectedTopicSpaceId);
-            renderEditForm(response, contextPath, neighborhood, null, true);
+            EsTopicStageDefinition definition = new EsTopicStageDefinition();
+            definition.setEsTopicSpaceId(selectedTopicSpaceId);
+            renderEditForm(response, contextPath, definition, null, true);
             return;
         }
 
-        if (neighborhoodIdRaw != null) {
-            Long neighborhoodId = parseId(neighborhoodIdRaw);
-            if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null, selectedTopicSpaceId);
+        if (definitionIdRaw != null) {
+            Long definitionId = parseId(definitionIdRaw);
+            if (definitionId == null) {
+                renderList(response, contextPath, "Invalid stage identifier.", null, selectedTopicSpaceId);
                 return;
             }
 
-            EsNeighborhood neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
-            if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null, selectedTopicSpaceId);
+            EsTopicStageDefinition definition = stageDefinitionDao.findById(definitionId).orElse(null);
+            if (definition == null) {
+                renderList(response, contextPath, "Stage was not found.", null, selectedTopicSpaceId);
                 return;
             }
 
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, neighborhood, null, false);
+                renderEditForm(response, contextPath, definition, null, false);
                 return;
             }
 
-            renderDetails(response, contextPath, neighborhood);
+            renderDetails(response, contextPath, definition);
             return;
         }
 
-        String message = request.getParameter("saved") != null ? "Neighborhood saved." : null;
+        String message = request.getParameter("saved") != null ? "Stage saved." : null;
         if (request.getParameter("bulkSaved") != null) {
-            message = "Neighborhood block imported.";
+            message = "Stage block imported.";
         }
         renderList(response, contextPath, message, null, selectedTopicSpaceId);
     }
@@ -91,33 +88,32 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         String action = trimToNull(request.getParameter("action"));
         if ("bulkUpsert".equalsIgnoreCase(action)) {
-            handleBulkUpsert(request, response, contextPath, adminUser.get());
+            handleBulkUpsert(request, response, contextPath);
             return;
         }
 
-        String neighborhoodIdRaw = trimToNull(request.getParameter("esNeighborhoodId"));
-        boolean creating = neighborhoodIdRaw == null;
+        String definitionIdRaw = trimToNull(request.getParameter("esTopicStageDefinitionId"));
+        boolean creating = definitionIdRaw == null;
 
-        EsNeighborhood neighborhood;
+        EsTopicStageDefinition definition;
         if (creating) {
-            neighborhood = new EsNeighborhood();
-            neighborhood.setCreatedByUserId(adminUser.get().getUserId());
+            definition = new EsTopicStageDefinition();
         } else {
-            Long neighborhoodId = parseId(neighborhoodIdRaw);
-            if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null, null);
+            Long definitionId = parseId(definitionIdRaw);
+            if (definitionId == null) {
+                renderList(response, contextPath, "Invalid stage identifier.", null, null);
                 return;
             }
-            neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
-            if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null, null);
+            definition = stageDefinitionDao.findById(definitionId).orElse(null);
+            if (definition == null) {
+                renderList(response, contextPath, "Stage was not found.", null, null);
                 return;
             }
         }
 
-        String neighborhoodCode = trimToNull(request.getParameter("neighborhoodCode"));
-        String neighborhoodName = trimToNull(request.getParameter("neighborhoodName"));
-        String description = trimToNull(request.getParameter("description"));
+        String stageCode = trimToNull(request.getParameter("stageCode"));
+        String stageName = trimToNull(request.getParameter("stageName"));
+        String stageDescription = trimToNull(request.getParameter("stageDescription"));
         Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         String displayOrderRaw = trimToNull(request.getParameter("displayOrder"));
         boolean isActive = request.getParameter("isActive") != null;
@@ -126,61 +122,57 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             if (topicSpaceId == null) {
                 throw new IllegalArgumentException("Topic Space is required.");
             }
-            if (creating || !topicSpaceId.equals(neighborhood.getEsTopicSpaceId())) {
-                requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new neighborhoods.");
+            if (creating || !topicSpaceId.equals(definition.getEsTopicSpaceId())) {
+                requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new stages.");
             }
-            ensureUniqueNeighborhoodNameInSpace(neighborhoodName, topicSpaceId, neighborhood.getEsNeighborhoodId());
+            ensureUniqueStageNameInSpace(stageName, topicSpaceId, definition.getEsTopicStageDefinitionId());
 
-            neighborhood.setEsTopicSpaceId(topicSpaceId);
-            neighborhood.setNeighborhoodCode(required(neighborhoodCode, "Neighborhood code"));
-            neighborhood.setNeighborhoodName(required(neighborhoodName, "Neighborhood name"));
-            neighborhood.setDescription(description);
-            neighborhood.setDisplayOrder(parseRequiredInt(displayOrderRaw, "Display order"));
-            neighborhood.setIsActive(isActive);
-            if (neighborhood.getCreatedByUserId() == null) {
-                neighborhood.setCreatedByUserId(adminUser.get().getUserId());
-            }
+            definition.setEsTopicSpaceId(topicSpaceId);
+            definition.setStageCode(required(stageCode, "Stage code"));
+            definition.setStageName(required(stageName, "Stage name"));
+            definition.setStageDescription(stageDescription);
+            definition.setDisplayOrder(parseRequiredInt(displayOrderRaw, "Display order"));
+            definition.setIsActive(isActive);
 
-            esNeighborhoodDao.saveOrUpdate(neighborhood);
-            response.sendRedirect(contextPath + "/admin/es/neighborhoods?saved=1&esTopicSpaceId=" + topicSpaceId);
+            stageDefinitionDao.saveOrUpdate(definition);
+            response.sendRedirect(contextPath + "/admin/es/stages?saved=1&esTopicSpaceId=" + topicSpaceId);
         } catch (Exception ex) {
-            neighborhood.setNeighborhoodCode(neighborhoodCode);
-            neighborhood.setNeighborhoodName(neighborhoodName);
-            neighborhood.setDescription(description);
-            neighborhood.setEsTopicSpaceId(topicSpaceId);
-            neighborhood.setDisplayOrder(parseIntOrNull(displayOrderRaw));
-            neighborhood.setIsActive(isActive);
-            renderEditForm(response, contextPath, neighborhood, ex.getMessage(), creating);
+            definition.setStageCode(stageCode);
+            definition.setStageName(stageName);
+            definition.setStageDescription(stageDescription);
+            definition.setEsTopicSpaceId(topicSpaceId);
+            definition.setDisplayOrder(parseIntOrNull(displayOrderRaw));
+            definition.setIsActive(isActive);
+            renderEditForm(response, contextPath, definition, ex.getMessage(), creating);
         }
     }
 
-    private void handleBulkUpsert(HttpServletRequest request, HttpServletResponse response, String contextPath,
-            User adminUser)
+    private void handleBulkUpsert(HttpServletRequest request, HttpServletResponse response, String contextPath)
             throws IOException {
-        String bulkNeighborhoods = request.getParameter("bulkNeighborhoods");
+        String bulkStages = request.getParameter("bulkStages");
         Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
-        String normalizedBlock = trimToNull(bulkNeighborhoods);
+        String normalizedBlock = trimToNull(bulkStages);
         if (normalizedBlock == null) {
-            renderList(response, contextPath, "Paste at least one neighborhood line to import.", bulkNeighborhoods,
+            renderList(response, contextPath, "Paste at least one stage line to import.", bulkStages,
                     topicSpaceId);
             return;
         }
         if (topicSpaceId == null) {
-            renderList(response, contextPath, "Topic Space is required for bulk import.", bulkNeighborhoods, null);
+            renderList(response, contextPath, "Topic Space is required for bulk import.", bulkStages, null);
             return;
         }
         try {
-            requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new neighborhoods.");
+            requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new stages.");
         } catch (IllegalArgumentException ex) {
-            renderList(response, contextPath, ex.getMessage(), bulkNeighborhoods, topicSpaceId);
+            renderList(response, contextPath, ex.getMessage(), bulkStages, topicSpaceId);
             return;
         }
 
-        List<EsNeighborhood> existingNeighborhoods = esNeighborhoodDao.findAllOrderedBySpaceId(topicSpaceId);
+        List<EsTopicStageDefinition> existingDefinitions = stageDefinitionDao.findAllOrderedBySpaceId(topicSpaceId);
         Set<String> usedCodes = new HashSet<>();
         int nextDisplayOrder = 0;
-        for (EsNeighborhood existing : existingNeighborhoods) {
-            String code = trimToNull(existing.getNeighborhoodCode());
+        for (EsTopicStageDefinition existing : existingDefinitions) {
+            String code = trimToNull(existing.getStageCode());
             if (code != null) {
                 usedCodes.add(code.toLowerCase(Locale.ROOT));
             }
@@ -201,49 +193,45 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             int colonIndex = normalizedLine.indexOf(':');
             if (colonIndex <= 0) {
                 renderList(response, contextPath,
-                        "Each line must use 'Neighborhood: Description' format. Problem line: " + normalizedLine,
-                        bulkNeighborhoods, topicSpaceId);
+                        "Each line must use 'Stage: Description' format. Problem line: " + normalizedLine,
+                        bulkStages, topicSpaceId);
                 return;
             }
 
-            String neighborhoodName = trimToNull(normalizedLine.substring(0, colonIndex));
-            String description = trimToNull(normalizedLine.substring(colonIndex + 1));
-            if (neighborhoodName == null) {
-                renderList(response, contextPath, "Neighborhood name is required on every line.", bulkNeighborhoods,
+            String stageName = trimToNull(normalizedLine.substring(0, colonIndex));
+            String stageDescription = trimToNull(normalizedLine.substring(colonIndex + 1));
+            if (stageName == null) {
+                renderList(response, contextPath, "Stage name is required on every line.", bulkStages,
                         topicSpaceId);
                 return;
             }
 
-            EsNeighborhood neighborhood = esNeighborhoodDao.findByNameInSpace(neighborhoodName, topicSpaceId)
+            EsTopicStageDefinition definition = stageDefinitionDao.findByNameInSpace(stageName, topicSpaceId)
                     .orElse(null);
-            boolean creating = neighborhood == null;
+            boolean creating = definition == null;
             if (creating) {
-                neighborhood = new EsNeighborhood();
-                neighborhood.setNeighborhoodName(neighborhoodName);
-                neighborhood.setNeighborhoodCode(generateUniqueCode(neighborhoodName, usedCodes));
-                neighborhood.setEsTopicSpaceId(topicSpaceId);
-                neighborhood.setCreatedByUserId(adminUser.getUserId());
-                neighborhood.setDisplayOrder(nextDisplayOrder++);
+                definition = new EsTopicStageDefinition();
+                definition.setStageName(stageName);
+                definition.setStageCode(generateUniqueCode(stageName, usedCodes));
+                definition.setEsTopicSpaceId(topicSpaceId);
+                definition.setDisplayOrder(nextDisplayOrder++);
             }
 
-            neighborhood.setNeighborhoodName(neighborhoodName);
-            neighborhood.setDescription(description);
-            neighborhood.setIsActive(Boolean.TRUE);
-            if (neighborhood.getNeighborhoodCode() == null || neighborhood.getNeighborhoodCode().isBlank()) {
-                neighborhood.setNeighborhoodCode(generateUniqueCode(neighborhoodName, usedCodes));
+            definition.setStageName(stageName);
+            definition.setStageDescription(stageDescription);
+            definition.setIsActive(Boolean.TRUE);
+            if (definition.getStageCode() == null || definition.getStageCode().isBlank()) {
+                definition.setStageCode(generateUniqueCode(stageName, usedCodes));
             }
-            if (neighborhood.getCreatedByUserId() == null) {
-                neighborhood.setCreatedByUserId(adminUser.getUserId());
-            }
-            if (neighborhood.getDisplayOrder() == null) {
-                neighborhood.setDisplayOrder(nextDisplayOrder++);
+            if (definition.getDisplayOrder() == null) {
+                definition.setDisplayOrder(nextDisplayOrder++);
             }
 
-            esNeighborhoodDao.saveOrUpdate(neighborhood);
+            stageDefinitionDao.saveOrUpdate(definition);
             importedCount++;
         }
 
-        response.sendRedirect(contextPath + "/admin/es/neighborhoods?bulkSaved=1&count=" + importedCount
+        response.sendRedirect(contextPath + "/admin/es/stages?bulkSaved=1&count=" + importedCount
                 + "&esTopicSpaceId=" + topicSpaceId);
     }
 
@@ -262,7 +250,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         return authenticatedUser;
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message, String bulkNeighborhoods,
+    private void renderList(HttpServletResponse response, String contextPath, String message, String bulkStages,
             Long selectedTopicSpaceId)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
@@ -273,20 +261,20 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         s -> s,
                         (left, right) -> left,
                         java.util.LinkedHashMap::new));
-        List<EsNeighborhood> neighborhoods = selectedTopicSpaceId == null
+        List<EsTopicStageDefinition> definitions = selectedTopicSpaceId == null
                 ? List.of()
-                : esNeighborhoodDao.findAllOrderedBySpaceId(selectedTopicSpaceId);
-        Map<Long, Long> usageCounts = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId();
+                : stageDefinitionDao.findAllOrderedBySpaceId(selectedTopicSpaceId);
+        Map<Long, Long> usageCounts = stageDefinitionDao.findTopicUsageCountsByDefinitionId();
         EsTopicSpace selectedTopicSpace = selectedTopicSpaceId == null
                 ? null
                 : spacesById.get(selectedTopicSpaceId);
         boolean topicSpaceSelected = selectedTopicSpace != null;
 
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Neighborhoods Admin - InteropHub", contextPath, panelOut -> {
+            AdminShellRenderer.render(out, "Stages Admin - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Neighborhoods</h2>");
-                panelOut.println("        <p>Manage Neighborhood options used by the public ES Topics page.</p>");
+                panelOut.println("        <h2>Stages</h2>");
+                panelOut.println("        <p>Manage Stage options scoped to each Topic Space.</p>");
                 if (message != null && !message.isBlank()) {
                     panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
                 }
@@ -294,11 +282,11 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 panelOut.println("        <section class=\"panel\">");
                 panelOut.println("          <h3>Topic Space</h3>");
                 panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/neighborhoods\" method=\"get\">");
+                        + "/admin/es/stages\" method=\"get\">");
                 panelOut.println("            <label for=\"spaceFilterId\">Topic Space (required)</label>");
                 panelOut.println(
                         "            <select id=\"spaceFilterId\" name=\"esTopicSpaceId\" required onchange=\"this.form.submit()\">");
-                panelOut.println("              <option value=\"\">\u2014 Select \u2014</option>");
+                panelOut.println("              <option value=\"\">— Select —</option>");
                 for (EsTopicSpace space : allSpaces) {
                     if (space.getEsTopicSpaceId() == null || trimToNull(space.getSpaceCode()) == null) {
                         continue;
@@ -314,20 +302,19 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                             + "</option>");
                 }
                 panelOut.println("            </select>");
-                panelOut.println(
-                        "            <noscript><button type=\"submit\">Load Neighborhoods</button></noscript>");
+                panelOut.println("            <noscript><button type=\"submit\">Load Stages</button></noscript>");
                 panelOut.println("          </form>");
                 panelOut.println("        </section>");
 
                 if (!topicSpaceSelected) {
-                    panelOut.println("        <p>Select a Topic Space to view, add, or bulk import neighborhoods.</p>");
+                    panelOut.println("        <p>Select a Topic Space to view, add, or bulk import stages.</p>");
                     panelOut.println(
                             "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
                     panelOut.println("      </section>");
                     return;
                 }
 
-                panelOut.println("        <h3>Current Neighborhoods for "
+                panelOut.println("        <h3>Current Stages for "
                         + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
 
                 panelOut.println("        <table class=\"data-table\">");
@@ -338,63 +325,62 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 panelOut.println("              <th>Topic Space</th>");
                 panelOut.println("              <th>Display Order</th>");
                 panelOut.println("              <th>Active</th>");
-                panelOut.println("              <th>Active Topics</th>");
+                panelOut.println("              <th>Topics</th>");
                 panelOut.println("            </tr>");
                 panelOut.println("          </thead>");
                 panelOut.println("          <tbody>");
-                for (EsNeighborhood neighborhood : neighborhoods) {
+                for (EsTopicStageDefinition definition : definitions) {
                     panelOut.println("            <tr>");
                     panelOut.println("              <td><a href=\"" + contextPath
-                            + "/admin/es/neighborhoods?esNeighborhoodId=" + neighborhood.getEsNeighborhoodId()
+                            + "/admin/es/stages?esTopicStageDefinitionId="
+                            + definition.getEsTopicStageDefinitionId()
                             + "&esTopicSpaceId=" + selectedTopicSpaceId
-                            + "\">" + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode()))
-                            + "</td>");
-                    EsTopicSpace topicSpace = spacesById.get(neighborhood.getEsTopicSpaceId());
+                            + "\">" + escapeHtml(orEmpty(definition.getStageName())) + "</a></td>");
+                    panelOut.println("              <td>" + escapeHtml(orEmpty(definition.getStageCode())) + "</td>");
+                    EsTopicSpace topicSpace = spacesById.get(definition.getEsTopicSpaceId());
                     panelOut.println("              <td>"
                             + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
                             + "</td>");
                     panelOut.println("              <td>"
-                            + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
+                            + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
                                     ? 0
-                                    : neighborhood.getDisplayOrder()))
+                                    : definition.getDisplayOrder()))
                             + "</td>");
-                    panelOut.println(
-                            "              <td>" + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No")
-                                    + "</td>");
-                    Long usageCount = usageCounts.getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
+                    panelOut.println("              <td>"
+                            + (Boolean.TRUE.equals(definition.getIsActive()) ? "Yes" : "No")
+                            + "</td>");
+                    Long usageCount = usageCounts.getOrDefault(definition.getEsTopicStageDefinitionId(), 0L);
                     panelOut.println("              <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
                     panelOut.println("            </tr>");
                 }
-                if (neighborhoods.isEmpty()) {
+                if (definitions.isEmpty()) {
                     panelOut.println("            <tr>");
-                    panelOut.println(
-                            "              <td colspan=\"6\">No neighborhoods found for this Topic Space.</td>");
+                    panelOut.println("              <td colspan=\"6\">No stages found for this Topic Space.</td>");
                     panelOut.println("            </tr>");
                 }
                 panelOut.println("          </tbody>");
                 panelOut.println("        </table>");
 
                 panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/neighborhoods?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
-                        + "\">Add Neighborhood</a></p>");
+                        + "/admin/es/stages?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
+                        + "\">Add Stage</a></p>");
 
                 panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Bulk Load Descriptions</h3>");
+                panelOut.println("          <h3>Bulk Load Stage Descriptions</h3>");
                 panelOut.println(
-                        "          <p>Paste one neighborhood per line using <strong>Name: Description</strong>.</p>");
+                        "          <p>Paste one stage per line using <strong>Stage: Description</strong>.</p>");
                 panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/neighborhoods\" method=\"post\">");
+                        + "/admin/es/stages\" method=\"post\">");
                 panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
                 panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
                         + selectedTopicSpaceId + "\" />");
                 panelOut.println("            <p><strong>Topic Space:</strong> "
                         + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</p>");
-                panelOut.println("            <label for=\"bulkNeighborhoods\">Neighborhood block</label>");
-                panelOut.println("            <textarea id=\"bulkNeighborhoods\" name=\"bulkNeighborhoods\" rows=\"8\""
-                        + " placeholder=\"Advanced Access: New technologies...\">"
-                        + escapeHtml(orEmpty(bulkNeighborhoods)) + "</textarea>");
-                panelOut.println("            <button type=\"submit\">Import Neighborhood Block</button>");
+                panelOut.println("            <label for=\"bulkStages\">Stage block</label>");
+                panelOut.println("            <textarea id=\"bulkStages\" name=\"bulkStages\" rows=\"8\""
+                        + " placeholder=\"Draft: Description of draft stage\">"
+                        + escapeHtml(orEmpty(bulkStages)) + "</textarea>");
+                panelOut.println("            <button type=\"submit\">Import Stage Block</button>");
                 panelOut.println("          </form>");
                 panelOut.println("        </section>");
                 panelOut.println(
@@ -404,60 +390,60 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         }
     }
 
-    private void renderDetails(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood)
+    private void renderDetails(HttpServletResponse response, String contextPath, EsTopicStageDefinition definition)
             throws IOException {
         response.setContentType("text/html;charset=UTF-8");
-        long activeTopicCount = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId()
-                .getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
-        EsTopicSpace topicSpace = neighborhood.getEsTopicSpaceId() == null
+        long usageCount = stageDefinitionDao.findTopicUsageCountsByDefinitionId()
+                .getOrDefault(definition.getEsTopicStageDefinitionId(), 0L);
+        EsTopicSpace topicSpace = definition.getEsTopicSpaceId() == null
                 ? null
-                : topicSpaceDao.findById(neighborhood.getEsTopicSpaceId()).orElse(null);
+                : topicSpaceDao.findById(definition.getEsTopicSpaceId()).orElse(null);
 
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Neighborhood Details - InteropHub", contextPath, panelOut -> {
+            AdminShellRenderer.render(out, "Stage Details - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Neighborhood Details</h2>");
+                panelOut.println("        <h2>Stage Details</h2>");
                 panelOut.println("        <section class=\"panel\">");
                 panelOut.println("          <p><strong>Name:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</p>");
+                        + escapeHtml(orEmpty(definition.getStageName())) + "</p>");
                 panelOut.println("          <p><strong>Code:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "</p>");
+                        + escapeHtml(orEmpty(definition.getStageCode())) + "</p>");
                 panelOut.println("          <p><strong>Topic Space:</strong> "
                         + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
                 panelOut.println("          <p><strong>Description:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getDescription())) + "</p>");
+                        + escapeHtml(orEmpty(definition.getStageDescription())) + "</p>");
                 panelOut.println("          <p><strong>Display Order:</strong> "
-                        + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
+                        + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
                                 ? 0
-                                : neighborhood.getDisplayOrder()))
+                                : definition.getDisplayOrder()))
                         + "</p>");
                 panelOut.println("          <p><strong>Active:</strong> "
-                        + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No") + "</p>");
-                panelOut.println("          <p><strong>Active Topic Usage:</strong> "
-                        + escapeHtml(String.valueOf(activeTopicCount)) + "</p>");
+                        + (Boolean.TRUE.equals(definition.getIsActive()) ? "Yes" : "No") + "</p>");
+                panelOut.println("          <p><strong>Topic Usage:</strong> "
+                        + escapeHtml(String.valueOf(usageCount)) + "</p>");
                 panelOut.println("        </section>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/neighborhoods?esNeighborhoodId="
-                        + neighborhood.getEsNeighborhoodId() + "&mode=edit&esTopicSpaceId="
-                        + neighborhood.getEsTopicSpaceId() + "\">Edit Neighborhood</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/stages?esTopicStageDefinitionId="
+                        + definition.getEsTopicStageDefinitionId() + "&mode=edit&esTopicSpaceId="
+                        + definition.getEsTopicSpaceId() + "\">Edit Stage</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/neighborhoods?esTopicSpaceId=" + neighborhood.getEsTopicSpaceId()
-                        + "\">Back to Neighborhoods</a></p>");
+                        + "/admin/es/stages?esTopicSpaceId=" + definition.getEsTopicSpaceId()
+                        + "\">Back to Stages</a></p>");
                 panelOut.println("      </section>");
             });
         }
     }
 
-    private void renderEditForm(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood,
+    private void renderEditForm(HttpServletResponse response, String contextPath, EsTopicStageDefinition definition,
             String errorMessage, boolean creating) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
-        Long selectedSpaceId = neighborhood.getEsTopicSpaceId();
+        Long selectedSpaceId = definition.getEsTopicSpaceId();
 
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Neighborhood - InteropHub", contextPath,
+            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Stage - InteropHub", contextPath,
                     panelOut -> {
                         panelOut.println("      <section class=\"panel\">");
-                        panelOut.println("        <h2>" + (creating ? "Create" : "Edit") + " Neighborhood</h2>");
+                        panelOut.println("        <h2>" + (creating ? "Create" : "Edit") + " Stage</h2>");
 
                         if (errorMessage != null && !errorMessage.isBlank()) {
                             panelOut.println("        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage)
@@ -465,25 +451,26 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         }
 
                         panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/es/neighborhoods\" method=\"post\">");
-                        if (!creating && neighborhood.getEsNeighborhoodId() != null) {
-                            panelOut.println("      <input type=\"hidden\" name=\"esNeighborhoodId\" value=\""
-                                    + neighborhood.getEsNeighborhoodId() + "\" />");
+                                + "/admin/es/stages\" method=\"post\">");
+                        if (!creating && definition.getEsTopicStageDefinitionId() != null) {
+                            panelOut.println(
+                                    "      <input type=\"hidden\" name=\"esTopicStageDefinitionId\" value=\""
+                                            + definition.getEsTopicStageDefinitionId() + "\" />");
                         }
 
-                        panelOut.println("      <label for=\"neighborhoodCode\">Neighborhood Code (required)</label>");
+                        panelOut.println("      <label for=\"stageCode\">Stage Code (required)</label>");
                         panelOut.println(
-                                "      <input id=\"neighborhoodCode\" name=\"neighborhoodCode\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "\" />");
+                                "      <input id=\"stageCode\" name=\"stageCode\" type=\"text\" required value=\""
+                                        + escapeHtml(orEmpty(definition.getStageCode())) + "\" />");
 
-                        panelOut.println("      <label for=\"neighborhoodName\">Neighborhood Name (required)</label>");
+                        panelOut.println("      <label for=\"stageName\">Stage Name (required)</label>");
                         panelOut.println(
-                                "      <input id=\"neighborhoodName\" name=\"neighborhoodName\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "\" />");
+                                "      <input id=\"stageName\" name=\"stageName\" type=\"text\" required value=\""
+                                        + escapeHtml(orEmpty(definition.getStageName())) + "\" />");
 
                         panelOut.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
                         panelOut.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
-                        panelOut.println("        <option value=\"\">\u2014 Select \u2014</option>");
+                        panelOut.println("        <option value=\"\">— Select —</option>");
                         for (EsTopicSpace topicSpace : allSpaces) {
                             if (topicSpace.getEsTopicSpaceId() == null
                                     || trimToNull(topicSpace.getSpaceCode()) == null) {
@@ -503,26 +490,26 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                         }
                         panelOut.println("      </select>");
 
-                        panelOut.println("      <label for=\"description\">Description</label>");
-                        panelOut.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
-                                + escapeHtml(orEmpty(neighborhood.getDescription())) + "</textarea>");
+                        panelOut.println("      <label for=\"stageDescription\">Description</label>");
+                        panelOut.println("      <textarea id=\"stageDescription\" name=\"stageDescription\" rows=\"5\">"
+                                + escapeHtml(orEmpty(definition.getStageDescription())) + "</textarea>");
 
                         panelOut.println("      <label for=\"displayOrder\">Display Order (required)</label>");
                         panelOut.println(
                                 "      <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required value=\""
                                         + escapeHtml(String.valueOf(
-                                                neighborhood.getDisplayOrder() == null ? 0
-                                                        : neighborhood.getDisplayOrder()))
+                                                definition.getDisplayOrder() == null ? 0
+                                                        : definition.getDisplayOrder()))
                                         + "\" />");
 
                         panelOut.println("      <label><input type=\"checkbox\" name=\"isActive\""
-                                + (Boolean.TRUE.equals(neighborhood.getIsActive()) || creating ? " checked" : "")
+                                + (Boolean.TRUE.equals(definition.getIsActive()) || creating ? " checked" : "")
                                 + " /> Active</label>");
 
                         panelOut.println("      <button type=\"submit\">Save</button>");
                         panelOut.println("    </form>");
                         panelOut.println("    <p><a href=\"" + contextPath
-                                + "/admin/es/neighborhoods\">Back to Neighborhoods</a></p>");
+                                + "/admin/es/stages\">Back to Stages</a></p>");
                         panelOut.println("      </section>");
                     });
         }
@@ -535,7 +522,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
                 panelOut.println("      <section class=\"panel\">");
                 panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access ES neighborhood settings.</p>");
+                panelOut.println("        <p>You must be an InteropHub admin to access stage settings.</p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
                 panelOut.println("      </section>");
             });
@@ -576,28 +563,28 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         return topicSpace;
     }
 
-    private void ensureUniqueNeighborhoodNameInSpace(String neighborhoodName, Long topicSpaceId, Long excludeId) {
-        String normalizedName = trimToNull(neighborhoodName);
+    private void ensureUniqueStageNameInSpace(String stageName, Long topicSpaceId, Long excludeId) {
+        String normalizedName = trimToNull(stageName);
         if (normalizedName == null || topicSpaceId == null) {
             return;
         }
-        boolean duplicate = esNeighborhoodDao
+        boolean duplicate = stageDefinitionDao
                 .findByNameInSpaceExcludingId(normalizedName, topicSpaceId, excludeId)
                 .isPresent();
         if (duplicate) {
             throw new IllegalArgumentException(
-                    "Neighborhood name must be unique within the selected Topic Space.");
+                    "Stage name must be unique within the selected Topic Space.");
         }
     }
 
-    private String generateUniqueCode(String neighborhoodName, Set<String> usedCodes) {
-        String base = neighborhoodName == null
-                ? "neighborhood"
-                : neighborhoodName.toLowerCase(Locale.ROOT)
+    private String generateUniqueCode(String label, Set<String> usedCodes) {
+        String base = label == null
+                ? "value"
+                : label.toLowerCase(Locale.ROOT)
                         .replaceAll("[^a-z0-9]+", "-")
                         .replaceAll("(^-+|-+$)", "");
         if (base.isBlank()) {
-            base = "neighborhood";
+            base = "value";
         }
         if (base.length() > 70) {
             base = base.substring(0, 70);

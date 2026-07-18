@@ -36,6 +36,10 @@ public class AdminEsServlet extends HttpServlet {
                         "        <p><a href=\"" + contextPath + "/admin/es/topic-spaces\">Topic Spaces</a></p>");
                 panelOut.println(
                         "        <p><a href=\"" + contextPath + "/admin/es/neighborhoods\">Neighborhoods</a></p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/stages\">Stages</a></p>");
+                panelOut.println(
+                        "        <p><a href=\"" + contextPath + "/admin/es/paths\">Advancement Paths</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath
                         + "/admin/es/registrations\">Campaign Registration Display</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath

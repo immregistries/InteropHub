@@ -40,6 +40,8 @@
     <mapping class="org.airahub.interophub.model.EsTopicSpace"/>
     <mapping class="org.airahub.interophub.model.EsTopicSpaceMember"/>
     <mapping class="org.airahub.interophub.model.EsNeighborhood"/>
+    <mapping class="org.airahub.interophub.model.EsTopicStageDefinition"/>
+    <mapping class="org.airahub.interophub.model.EsTopicPathDefinition"/>
     <mapping class="org.airahub.interophub.model.EsTopicNeighborhood"/>
     <mapping class="org.airahub.interophub.model.EsCampaign"/>
     <mapping class="org.airahub.interophub.model.EsCampaignTopic"/>

@@ -351,6 +351,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
 
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
                         + topicSpace.getEsTopicSpaceId() + "&mode=edit\">Edit Topic Space</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/neighborhoods?esTopicSpaceId="
+                        + topicSpace.getEsTopicSpaceId() + "\">Edit Neighborhoods</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/stages?esTopicSpaceId="
+                        + topicSpace.getEsTopicSpaceId() + "\">Edit Stages</a></p>");
+                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/paths?esTopicSpaceId="
+                        + topicSpace.getEsTopicSpaceId() + "\">Edit Advancement Paths</a></p>");
                 panelOut.println("        <p><a href=\"" + buildTopicSpaceTopicsUrl(contextPath, topicSpace)
                         + "\">View Topic Space</a></p>");
                 panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?space="

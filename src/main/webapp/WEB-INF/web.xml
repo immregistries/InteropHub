@@ -366,6 +366,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsStageDefinitionServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsStageDefinitionServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>AdminEsPathDefinitionServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsPathDefinitionServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicsServlet</servlet-class>
   </servlet>
@@ -618,6 +628,16 @@
   <servlet-mapping>
     <servlet-name>AdminEsNeighborhoodServlet</servlet-name>
     <url-pattern>/admin/es/neighborhoods</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsStageDefinitionServlet</servlet-name>
+    <url-pattern>/admin/es/stages</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsPathDefinitionServlet</servlet-name>
+    <url-pattern>/admin/es/paths</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
