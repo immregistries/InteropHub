@@ -132,6 +132,24 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public Map<Long, String> findTopicNamesByTopicIds(List<Long> topicIds) {
+        if (topicIds == null || topicIds.isEmpty()) {
+            return Map.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Object[]> rows = session.createQuery(
+                    "select t.esTopicId, t.topicName from EsTopic t where t.esTopicId in (:topicIds)",
+                    Object[].class)
+                    .setParameterList("topicIds", topicIds)
+                    .getResultList();
+            Map<Long, String> result = new LinkedHashMap<>();
+            for (Object[] row : rows) {
+                result.put((Long) row[0], (String) row[1]);
+            }
+            return result;
+        }
+    }
+
     public List<EsTopic> findAllOrdered() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery("from EsTopic t order by t.topicCode asc", EsTopic.class)

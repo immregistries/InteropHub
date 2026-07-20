@@ -1,6 +1,7 @@
 package org.airahub.interophub.service;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
 import org.airahub.interophub.model.CommunicationRecipientPreview;
 import org.airahub.interophub.model.CommunicationRenderedEmail;
@@ -72,9 +73,7 @@ public class ReminderCommunicationHandler implements MeetingCommunicationHandler
                 sb.append("This is a reminder about the upcoming meeting for topics you champion/support:\n\n");
                 if (!recipient.getTopicNames().isEmpty()) {
                     sb.append("  Your topic(s):\n");
-                    for (String topic : recipient.getTopicNames()) {
-                        sb.append("    - ").append(topic).append("\n");
-                    }
+                    appendTopicLines(sb, recipient, baseUrl);
                     sb.append("\n");
                 }
                 break;
@@ -82,9 +81,7 @@ public class ReminderCommunicationHandler implements MeetingCommunicationHandler
                 sb.append("This is a reminder about the upcoming meeting for topics you follow:\n\n");
                 if (!recipient.getTopicNames().isEmpty()) {
                     sb.append("  Topics you follow:\n");
-                    for (String topic : recipient.getTopicNames()) {
-                        sb.append("    - ").append(topic).append("\n");
-                    }
+                    appendTopicLines(sb, recipient, baseUrl);
                     sb.append("\n");
                 }
                 break;
@@ -113,5 +110,17 @@ public class ReminderCommunicationHandler implements MeetingCommunicationHandler
                 .append(baseUrl).append("/es/agenda?meetingId=")
                 .append(meeting.getEsMeetingId()).append("\n");
         return sb.toString();
+    }
+
+    private void appendTopicLines(StringBuilder sb, CommunicationRecipientPreview recipient, String baseUrl) {
+        List<String> topicNames = recipient.getTopicNames();
+        List<Long> topicIds = recipient.getTopicIds();
+        for (int i = 0; i < topicNames.size(); i++) {
+            sb.append("    - ").append(topicNames.get(i));
+            if (i < topicIds.size() && topicIds.get(i) != null && baseUrl != null && !baseUrl.isBlank()) {
+                sb.append(" (").append(baseUrl).append("/es/topic/").append(topicIds.get(i)).append(")");
+            }
+            sb.append("\n");
+        }
     }
 }

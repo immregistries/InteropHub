@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.model.CommunicationRecipientPreview;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
@@ -36,12 +37,14 @@ public class MeetingCommunicationRecipientResolver {
     private final EsMeetingAgendaItemDao agendaItemDao;
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicDao topicDao;
 
     public MeetingCommunicationRecipientResolver() {
         this.memberDao = new EsTopicMeetingMemberDao();
         this.agendaItemDao = new EsMeetingAgendaItemDao();
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicDao = new EsTopicDao();
     }
 
     /**
@@ -77,12 +80,7 @@ public class MeetingCommunicationRecipientResolver {
                         EsMeetingAgendaItem::getEsMeetingAgendaItemId,
                         EsMeetingAgendaItem::getTitle,
                         (a, b) -> a));
-        // Map topic ID -> topic name (via agenda items) for enriching subscription
-        // recipients
-        // (EsMeetingAgendaItem.title is the agenda item title; topic name requires a
-        // separate
-        // lookup — we use the agenda item title as a proxy when topic name is
-        // unavailable)
+        Map<Long, String> topicNamesById = topicDao.findTopicNamesByTopicIds(topicIds);
 
         // Source 1: General Meeting Members (APPROVED)
         if (communication.isIncludeGeneralMembers()) {
@@ -105,7 +103,7 @@ public class MeetingCommunicationRecipientResolver {
                         k -> new RecipientBuilder(s.getEmail(), s.getEmailNormalized(), s.getUserId(), null));
                 rb.addGroup(RecipientGroup.TOPIC_SUBSCRIBER);
                 if (s.getEsTopicId() != null) {
-                    rb.addTopicId(s.getEsTopicId());
+                    rb.addTopic(s.getEsTopicId(), topicNamesById.get(s.getEsTopicId()));
                 }
             }
         }
@@ -120,7 +118,7 @@ public class MeetingCommunicationRecipientResolver {
                         k -> new RecipientBuilder(s.getEmail(), s.getEmailNormalized(), s.getUserId(), null));
                 rb.addGroup(RecipientGroup.TOPIC_CHAMPION);
                 if (s.getEsTopicId() != null) {
-                    rb.addTopicId(s.getEsTopicId());
+                    rb.addTopic(s.getEsTopicId(), topicNamesById.get(s.getEsTopicId()));
                 }
             }
         }
@@ -168,7 +166,8 @@ public class MeetingCommunicationRecipientResolver {
         private final Long userId;
         private String displayName;
         private final Set<RecipientGroup> groups = EnumSet.noneOf(RecipientGroup.class);
-        private final List<String> topicIds = new ArrayList<>();
+        private final List<Long> topicIds = new ArrayList<>();
+        private final List<String> topicNames = new ArrayList<>();
         private final List<String> agendaItemTitles = new ArrayList<>();
 
         RecipientBuilder(String email, String emailNormalized, Long userId, String displayName) {
@@ -182,10 +181,15 @@ public class MeetingCommunicationRecipientResolver {
             groups.add(group);
         }
 
-        void addTopicId(Long topicId) {
-            String s = String.valueOf(topicId);
-            if (!topicIds.contains(s)) {
-                topicIds.add(s);
+        void addTopic(Long topicId, String topicName) {
+            if (topicId == null || topicIds.contains(topicId)) {
+                return;
+            }
+            topicIds.add(topicId);
+            if (topicName != null && !topicName.isBlank()) {
+                topicNames.add(topicName.trim());
+            } else {
+                topicNames.add("Topic #" + topicId);
             }
         }
 
@@ -208,6 +212,7 @@ public class MeetingCommunicationRecipientResolver {
                     primary,
                     EnumSet.copyOf(groups),
                     List.copyOf(topicIds),
+                    List.copyOf(topicNames),
                     List.copyOf(agendaItemTitles));
         }
     }

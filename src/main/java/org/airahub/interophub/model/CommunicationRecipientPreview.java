@@ -19,6 +19,8 @@ public class CommunicationRecipientPreview {
     private final RecipientGroup primaryGroup;
     /** All groups this recipient qualifies for (before deduplication priority). */
     private final Set<RecipientGroup> allGroups;
+    /** Topic IDs relevant to this recipient (may be empty). */
+    private final List<Long> topicIds;
     /** Topic names relevant to this recipient (may be empty). */
     private final List<String> topicNames;
     /** Agenda item titles where this recipient is a presenter (may be empty). */
@@ -31,6 +33,7 @@ public class CommunicationRecipientPreview {
             String displayName,
             RecipientGroup primaryGroup,
             Set<RecipientGroup> allGroups,
+            List<Long> topicIds,
             List<String> topicNames,
             List<String> agendaItemTitles) {
         this.email = email;
@@ -39,6 +42,7 @@ public class CommunicationRecipientPreview {
         this.displayName = displayName;
         this.primaryGroup = primaryGroup;
         this.allGroups = Collections.unmodifiableSet(EnumSet.copyOf(allGroups));
+        this.topicIds = Collections.unmodifiableList(topicIds);
         this.topicNames = Collections.unmodifiableList(topicNames);
         this.agendaItemTitles = Collections.unmodifiableList(agendaItemTitles);
     }
@@ -65,6 +69,10 @@ public class CommunicationRecipientPreview {
 
     public Set<RecipientGroup> getAllGroups() {
         return allGroups;
+    }
+
+    public List<Long> getTopicIds() {
+        return topicIds;
     }
 
     public List<String> getTopicNames() {
