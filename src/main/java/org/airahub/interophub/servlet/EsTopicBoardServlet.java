@@ -4,25 +4,20 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Properties;
 import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.TopicBoardService;
-import org.immregistries.aira.web.AiraDefaults;
-import org.immregistries.aira.web.AiraLogo;
+import org.immregistries.aira.web.AiraContextConfig;
+import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 
 public class EsTopicBoardServlet extends HttpServlet {
-
-    private static final String APPLICATION_NAME = "InteropHub";
-    private static final String APPLICATION_VERSION = resolveVersion();
 
     private final AuthFlowService authFlowService;
     private final TopicBoardService topicBoardService;
@@ -54,17 +49,15 @@ public class EsTopicBoardServlet extends HttpServlet {
         TopicBoardService.BoardView board = boardView.get();
         String contextPath = request.getContextPath();
 
-        AiraPage page = AiraPage.builder()
-                .applicationName(APPLICATION_NAME)
+        AiraPage page = InteropAiraPageFactory.base(request, board.board().getBoardName() + " - InteropHub")
                 .applicationSubtitle("Topic Boards")
-                .applicationVersion(APPLICATION_VERSION)
-                .documentTitle(board.board().getBoardName() + " - InteropHub")
                 .pageHeading(board.board().getBoardName())
                 .pageIntro(board.board().getBoardDescription() == null ? "" : board.board().getBoardDescription())
                 .mainClass("aira-main interophub-topic-board-main")
-                .contextPath(contextPath)
-                .identityHref("/home")
-                .logo(new AiraLogo(AiraDefaults.DEFAULT_LOGO_PATH, AiraDefaults.DEFAULT_LOGO_ALT_TEXT))
+                .context(new AiraContextConfig(board.board().getBoardName(), List.of(
+                        new AiraNavigationItem("Board", "/es/board/" + board.board().getBoardCode(), true),
+                        new AiraNavigationItem("Topics", "/es/topics", false),
+                        new AiraNavigationItem("Meetings", "/es/topics?view=meetings", false))))
                 .addGlobalAction("Topics", "/es/topics", "secondary")
                 .addGlobalAction("Welcome", "/welcome", "secondary")
                 .addLocalStylesheet("/css/topic-board.css")
@@ -213,38 +206,6 @@ public class EsTopicBoardServlet extends HttpServlet {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
-    }
-
-    private static String resolveVersion() {
-        String appVersion = readVersionFromProperties("/interophub-version.properties", "software.version");
-        if (appVersion != null && !appVersion.startsWith("${")) {
-            return appVersion;
-        }
-
-        String pomVersion = readVersionFromProperties("/META-INF/maven/org.airahub/interophub/pom.properties",
-                "version");
-        if (pomVersion != null) {
-            return pomVersion;
-        }
-
-        return "development";
-    }
-
-    private static String readVersionFromProperties(String path, String key) {
-        Properties properties = new Properties();
-        try (InputStream in = AiraDemoServlet.class.getResourceAsStream(path)) {
-            if (in == null) {
-                return null;
-            }
-            properties.load(in);
-            String value = properties.getProperty(key);
-            if (value == null || value.isBlank()) {
-                return null;
-            }
-            return value.trim();
-        } catch (IOException ex) {
-            return null;
-        }
     }
 
     private record StageColumn(Long stageId, String stageName, boolean unassigned) {

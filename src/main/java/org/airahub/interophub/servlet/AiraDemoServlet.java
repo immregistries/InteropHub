@@ -4,35 +4,29 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
-import java.util.Properties;
-import org.immregistries.aira.web.AiraDefaults;
+import java.util.List;
+import org.immregistries.aira.web.AiraContextConfig;
 import org.immregistries.aira.web.AiraEnvironmentConfig;
-import org.immregistries.aira.web.AiraLogo;
+import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 
 public class AiraDemoServlet extends HttpServlet {
-    private static final String APPLICATION_NAME = "InteropHub";
-    private static final String APPLICATION_VERSION = resolveVersion();
-
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setCharacterEncoding("UTF-8");
         response.setContentType("text/html;charset=UTF-8");
 
-        AiraPage page = AiraPage.builder()
-                .applicationName(APPLICATION_NAME)
+        AiraPage page = InteropAiraPageFactory.base(request, "AIRA Web Integration Demo - InteropHub")
                 .applicationSubtitle("AIRA Web integration preview")
-                .applicationVersion(APPLICATION_VERSION)
-                .documentTitle("AIRA Web Integration Demo - InteropHub")
                 .pageHeading("AIRA Web Integration Demo")
                 .pageIntro(
                         "This page verifies InteropHub can render the shared AIRA Web shell and styles from a local Maven dependency.")
                 .mainClass("aira-main interophub-demo-main")
-                .contextPath(request.getContextPath())
-                .identityHref("/home")
-                .logo(new AiraLogo(AiraDefaults.DEFAULT_LOGO_PATH, AiraDefaults.DEFAULT_LOGO_ALT_TEXT))
+                .context(new AiraContextConfig("Emerging Standards for Immunizations", List.of(
+                        new AiraNavigationItem("Home", "/demo", true),
+                        new AiraNavigationItem("Topics", "/demo", false),
+                        new AiraNavigationItem("Meetings", "/demo", false))))
                 .addGlobalAction("InteropHub Home", "/home", "secondary")
                 .environment(new AiraEnvironmentConfig("Local", "Unauthenticated local integration demo"))
                 .addLocalStylesheet("/css/aira-demo.css")
@@ -81,38 +75,6 @@ public class AiraDemoServlet extends HttpServlet {
             out.println("    </div>");
 
             page.writeEnd(out);
-        }
-    }
-
-    private static String resolveVersion() {
-        String appVersion = readVersionFromProperties("/interophub-version.properties", "software.version");
-        if (appVersion != null && !appVersion.startsWith("${")) {
-            return appVersion;
-        }
-
-        String pomVersion = readVersionFromProperties("/META-INF/maven/org.airahub/interophub/pom.properties",
-                "version");
-        if (pomVersion != null) {
-            return pomVersion;
-        }
-
-        return "development";
-    }
-
-    private static String readVersionFromProperties(String path, String key) {
-        Properties properties = new Properties();
-        try (InputStream in = AiraDemoServlet.class.getResourceAsStream(path)) {
-            if (in == null) {
-                return null;
-            }
-            properties.load(in);
-            String value = properties.getProperty(key);
-            if (value == null || value.isBlank()) {
-                return null;
-            }
-            return value.trim();
-        } catch (IOException ex) {
-            return null;
         }
     }
 
