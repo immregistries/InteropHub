@@ -421,6 +421,21 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsTopicBoardServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsTopicBoardServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicBoardServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicBoardServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicBoardApiServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicBoardApiServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>AdminEsCampaignDetailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsCampaignDetailServlet</servlet-class>
   </servlet>
@@ -683,6 +698,21 @@
   <servlet-mapping>
     <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
     <url-pattern>/es/topics/meeting-toggle</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsTopicBoardServlet</servlet-name>
+    <url-pattern>/admin/es/topic-boards</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicBoardServlet</servlet-name>
+    <url-pattern>/es/board/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicBoardApiServlet</servlet-name>
+    <url-pattern>/es/board/action</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

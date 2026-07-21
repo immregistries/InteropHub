@@ -29,6 +29,7 @@ public final class AdminNavRenderer {
         renderGroup(out, "Emerging Standards", List.of(
                 navItem(contextPath + "/admin/es", "ES Home"),
                 navItem(contextPath + "/admin/es/topic-spaces", "Topic Spaces"),
+                navItem(contextPath + "/admin/es/topic-boards", "Topic Boards"),
                 navItem(contextPath + "/admin/es/campaigns", "Campaigns"),
                 navItem(contextPath + "/admin/es/topics", "ES Topics"),
                 navItem(contextPath + "/admin/es/meetings", "Meetings"),

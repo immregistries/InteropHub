@@ -544,3 +544,216 @@ ALTER TABLE es_neighborhood
 
 ALTER TABLE es_meeting
   MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL;
+
+CREATE TABLE es_topic_board_definition (
+  es_topic_board_definition_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  board_code                   VARCHAR(80) NOT NULL,
+  board_name                   VARCHAR(140) NOT NULL,
+  board_description            TEXT NULL,
+  es_topic_space_id            BIGINT UNSIGNED NOT NULL,
+  curator_topic_id             BIGINT NULL,
+  show_unassigned_stage        TINYINT(1) NOT NULL DEFAULT 0,
+  show_unassigned_path         TINYINT(1) NOT NULL DEFAULT 0,
+  is_active                    TINYINT(1) NOT NULL DEFAULT 1,
+  created_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                               ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (es_topic_board_definition_id),
+  UNIQUE KEY uq_es_topic_board_code (board_code),
+  KEY ix_es_topic_board_space (es_topic_space_id),
+  KEY ix_es_topic_board_curator (curator_topic_id),
+  CONSTRAINT fk_es_topic_board_space
+    FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id),
+  CONSTRAINT fk_es_topic_board_curator
+    FOREIGN KEY (curator_topic_id)
+    REFERENCES es_topic(es_topic_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE es_topic_board_stage (
+  es_topic_board_stage_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_topic_board_definition_id BIGINT UNSIGNED NOT NULL,
+  es_topic_stage_definition_id BIGINT UNSIGNED NOT NULL,
+  display_order                INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (es_topic_board_stage_id),
+  UNIQUE KEY uq_es_topic_board_stage (
+    es_topic_board_definition_id,
+    es_topic_stage_definition_id
+  ),
+  KEY ix_es_topic_board_stage_order (
+    es_topic_board_definition_id,
+    display_order
+  ),
+  CONSTRAINT fk_es_topic_board_stage_board
+    FOREIGN KEY (es_topic_board_definition_id)
+    REFERENCES es_topic_board_definition(es_topic_board_definition_id),
+  CONSTRAINT fk_es_topic_board_stage_definition
+    FOREIGN KEY (es_topic_stage_definition_id)
+    REFERENCES es_topic_stage_definition(es_topic_stage_definition_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE es_topic_board_path (
+  es_topic_board_path_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  es_topic_board_definition_id BIGINT UNSIGNED NOT NULL,
+  es_topic_path_definition_id  BIGINT UNSIGNED NOT NULL,
+  display_order                INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (es_topic_board_path_id),
+  UNIQUE KEY uq_es_topic_board_path (
+    es_topic_board_definition_id,
+    es_topic_path_definition_id
+  ),
+  KEY ix_es_topic_board_path_order (
+    es_topic_board_definition_id,
+    display_order
+  ),
+  CONSTRAINT fk_es_topic_board_path_board
+    FOREIGN KEY (es_topic_board_definition_id)
+    REFERENCES es_topic_board_definition(es_topic_board_definition_id),
+  CONSTRAINT fk_es_topic_board_path_definition
+    FOREIGN KEY (es_topic_path_definition_id)
+    REFERENCES es_topic_path_definition(es_topic_path_definition_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO es_topic_board_definition (
+  board_code,
+  board_name,
+  board_description,
+  es_topic_space_id,
+  curator_topic_id,
+  show_unassigned_stage,
+  show_unassigned_path,
+  is_active,
+  created_at,
+  updated_at
+)
+VALUES
+  ('emerging-standards', 'Emerging Standards', NULL, 1, NULL, 0, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+  ('ifg-topics', 'Immunization Focus Group Topics', NULL, 1, 74, 0, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+  ('aira-opportunity-nursery', 'AIRA Opportunity Nursery', NULL, 3, NULL, 1, 1, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+ON DUPLICATE KEY UPDATE
+  board_name = VALUES(board_name),
+  board_description = VALUES(board_description),
+  es_topic_space_id = VALUES(es_topic_space_id),
+  curator_topic_id = VALUES(curator_topic_id),
+  show_unassigned_stage = VALUES(show_unassigned_stage),
+  show_unassigned_path = VALUES(show_unassigned_path),
+  is_active = VALUES(is_active),
+  updated_at = UTC_TIMESTAMP();
+
+INSERT INTO es_topic_board_stage (
+  es_topic_board_definition_id,
+  es_topic_stage_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  sd.es_topic_stage_definition_id,
+  CASE sd.stage_code
+    WHEN 'monitor' THEN 10
+    WHEN 'gather' THEN 20
+    WHEN 'start' THEN 30
+    WHEN 'draft' THEN 40
+  END AS board_display_order
+FROM es_topic_board_definition b
+JOIN es_topic_stage_definition sd
+  ON sd.es_topic_space_id = 1
+ AND sd.is_active = 1
+ AND sd.stage_code IN ('monitor', 'gather', 'start', 'draft')
+WHERE b.board_code = 'emerging-standards'
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);
+
+INSERT INTO es_topic_board_stage (
+  es_topic_board_definition_id,
+  es_topic_stage_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  sd.es_topic_stage_definition_id,
+  CASE sd.stage_code
+    WHEN 'monitor' THEN 10
+    WHEN 'gather' THEN 20
+    WHEN 'start' THEN 30
+    WHEN 'draft' THEN 40
+  END AS board_display_order
+FROM es_topic_board_definition b
+JOIN es_topic_stage_definition sd
+  ON sd.es_topic_space_id = 1
+ AND sd.is_active = 1
+ AND sd.stage_code IN ('monitor', 'gather', 'start', 'draft')
+WHERE b.board_code = 'ifg-topics'
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);
+
+INSERT INTO es_topic_board_stage (
+  es_topic_board_definition_id,
+  es_topic_stage_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  sd.es_topic_stage_definition_id,
+  sd.display_order
+FROM es_topic_board_definition b
+JOIN es_topic_stage_definition sd
+  ON sd.es_topic_space_id = 3
+ AND sd.is_active = 1
+WHERE b.board_code = 'aira-opportunity-nursery'
+ORDER BY sd.display_order, sd.stage_name
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);
+
+INSERT INTO es_topic_board_path (
+  es_topic_board_definition_id,
+  es_topic_path_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  pd.es_topic_path_definition_id,
+  pd.display_order
+FROM es_topic_board_definition b
+JOIN es_topic_path_definition pd
+  ON pd.es_topic_space_id = 1
+ AND pd.is_active = 1
+WHERE b.board_code = 'emerging-standards'
+ORDER BY pd.display_order, pd.path_name
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);
+
+INSERT INTO es_topic_board_path (
+  es_topic_board_definition_id,
+  es_topic_path_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  pd.es_topic_path_definition_id,
+  pd.display_order
+FROM es_topic_board_definition b
+JOIN es_topic_path_definition pd
+  ON pd.es_topic_space_id = 1
+ AND pd.is_active = 1
+WHERE b.board_code = 'ifg-topics'
+ORDER BY pd.display_order, pd.path_name
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);
+
+INSERT INTO es_topic_board_path (
+  es_topic_board_definition_id,
+  es_topic_path_definition_id,
+  display_order
+)
+SELECT
+  b.es_topic_board_definition_id,
+  pd.es_topic_path_definition_id,
+  pd.display_order
+FROM es_topic_board_definition b
+JOIN es_topic_path_definition pd
+  ON pd.es_topic_space_id = 3
+ AND pd.is_active = 1
+WHERE b.board_code = 'aira-opportunity-nursery'
+ORDER BY pd.display_order, pd.path_name
+ON DUPLICATE KEY UPDATE
+  display_order = VALUES(display_order);

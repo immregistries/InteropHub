@@ -164,6 +164,59 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public List<EsTopic> findAllActiveOrderByTopicName() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopic t where t.status = :status order by lower(t.topicName) asc, t.esTopicId asc",
+                    EsTopic.class)
+                    .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
+    public List<EsTopic> findActiveBySpaceIdOrderByTopicName(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopic t"
+                            + " where t.esTopicSpaceId = :spaceId"
+                            + " and t.status = :status"
+                            + " order by lower(t.topicName) asc, t.esTopicId asc",
+                    EsTopic.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
+                    .getResultList();
+        }
+    }
+
+    public List<EsTopic> searchActiveBySpaceId(Long esTopicSpaceId, String query, int maxResults) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        String normalized = query == null ? "" : query.trim().toLowerCase();
+        boolean hasQuery = !normalized.isBlank();
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "from EsTopic t"
+                    + " where t.esTopicSpaceId = :spaceId"
+                    + " and t.status = :status";
+            if (hasQuery) {
+                hql += " and (lower(t.topicName) like :query or lower(t.topicCode) like :query)";
+            }
+            hql += " order by lower(t.topicName) asc, t.esTopicId asc";
+
+            var q = session.createQuery(hql, EsTopic.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
+                    .setMaxResults(Math.max(1, maxResults));
+            if (hasQuery) {
+                q.setParameter("query", "%" + normalized + "%");
+            }
+            return q.getResultList();
+        }
+    }
+
     public long countBySpaceId(Long esTopicSpaceId) {
         if (esTopicSpaceId == null) {
             return 0L;
