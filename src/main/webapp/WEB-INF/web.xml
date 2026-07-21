@@ -31,6 +31,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AiraDemoServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AiraDemoServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AiraDemoServlet</servlet-name>
+    <url-pattern>/demo</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>SendWelcomeEmailServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.SendWelcomeEmailServlet</servlet-class>
   </servlet>

@@ -1,0 +1,13 @@
+.interophub-demo-main .interophub-demo-note {
+  max-width: 72ch;
+}
+
+.interophub-demo-main .interophub-demo-card {
+  border-left: 4px solid var(--aira-green);
+}
+
+.interophub-demo-main .interophub-demo-actions {
+  display: flex;
+  gap: var(--aira-space-3);
+  flex-wrap: wrap;
+}

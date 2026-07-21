@@ -29,6 +29,11 @@
       <scope>provided</scope>
     </dependency>
     <dependency>
+      <groupId>org.immregistries</groupId>
+      <artifactId>aira-web-components</artifactId>
+      <version>0.1.0-SNAPSHOT</version>
+    </dependency>
+    <dependency>
       <groupId>org.hibernate.orm</groupId>
       <artifactId>hibernate-core</artifactId>
       <version>6.4.9.Final</version>
