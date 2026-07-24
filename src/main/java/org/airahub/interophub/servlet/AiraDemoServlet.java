@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
 import org.immregistries.aira.web.AiraContextConfig;
-import org.immregistries.aira.web.AiraEnvironmentConfig;
 import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 
@@ -27,8 +26,6 @@ public class AiraDemoServlet extends HttpServlet {
                         new AiraNavigationItem("Home", "/demo", true),
                         new AiraNavigationItem("Topics", "/demo", false),
                         new AiraNavigationItem("Meetings", "/demo", false))))
-                .addGlobalAction("InteropHub Home", "/home", "secondary")
-                .environment(new AiraEnvironmentConfig("Local", "Unauthenticated local integration demo"))
                 .addLocalStylesheet("/css/aira-demo.css")
                 .build();
 

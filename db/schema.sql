@@ -1,1002 +1,1585 @@
--- MySQL 8.x
--- Central Auth + Connectathon Workspace schema (Level 0)
--- Notes:
---  - Store secrets hashed (SHA-256 / bcrypt/argon2 at app layer). Never store raw tokens.
---  - Keep everything UTF8MB4.
---  - Time stored in UTC in DATETIME.
+-- MySQL dump 10.13  Distrib 8.1.0, for Win64 (x86_64)
+--
+-- Host: 127.0.0.1    Database: interophub
+-- ------------------------------------------------------
+-- Server version	8.1.0
 
-SET NAMES utf8mb4;
-SET time_zone = '+00:00';
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!50503 SET NAMES utf8mb4 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
--- -------------------------
--- DATABASE USER (DEV)
--- -------------------------
--- Creates a dedicated application login for local development.
-CREATE USER IF NOT EXISTS 'interophub_app'@'localhost' IDENTIFIED BY 'M3fcFHmj7e9HESs3';
-ALTER USER 'interophub_app'@'localhost' IDENTIFIED BY 'M3fcFHmj7e9HESs3';
-GRANT ALL PRIVILEGES ON interophub.* TO 'interophub_app'@'localhost';
-FLUSH PRIVILEGES;
+--
+-- Table structure for table `admin_note`
+--
 
--- -------------------------
--- HUB SETTINGS (URL + SMTP)
--- -------------------------
-CREATE TABLE hub_settings (
-  setting_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  active             TINYINT(1) NOT NULL DEFAULT 1,
-  external_base_url  VARCHAR(300) NOT NULL,
-  smtp_host          VARCHAR(255) NOT NULL,
-  smtp_port          INT NOT NULL,
-  smtp_username      VARCHAR(255) NOT NULL,
-  smtp_password      VARCHAR(255) NOT NULL,
-  smtp_auth          TINYINT(1) NOT NULL DEFAULT 1,
-  smtp_starttls      TINYINT(1) NOT NULL DEFAULT 1,
-  smtp_ssl           TINYINT(1) NOT NULL DEFAULT 0,
-  smtp_from_email    VARCHAR(254) NOT NULL,
-  smtp_from_name     VARCHAR(160) NOT NULL,
-  email_enabled      TINYINT(1) NOT NULL DEFAULT 1 COMMENT 'When 0, all outbound email is silently suppressed (no SMTP attempt).',
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (setting_id),
-  KEY ix_hub_settings_active (active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `admin_note`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `admin_note` (
+  `note_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `scope_type` enum('APP','WORKSPACE','SYSTEM','USER','TOKEN') NOT NULL,
+  `scope_id` bigint unsigned NOT NULL,
+  `note_text` text NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`note_id`),
+  KEY `ix_admin_note_scope` (`scope_type`,`scope_id`,`created_at`),
+  KEY `fk_admin_note_creator` (`created_by_user_id`),
+  CONSTRAINT `fk_admin_note_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Mailtrap sandbox defaults. Replace smtp_password with your mailbox/API password.
-INSERT INTO hub_settings (
-  active,
-  external_base_url,
-  smtp_host,
-  smtp_port,
-  smtp_username,
-  smtp_password,
-  smtp_auth,
-  smtp_starttls,
-  smtp_ssl,
-  smtp_from_email,
-  smtp_from_name,
-  email_enabled
-) VALUES (
-  1,
-  'http://localhost:8080/hub',
-  'sandbox.smtp.mailtrap.io',
-  2525,
-  'd1ab59b8e6b528',
-  '5fa9c8b967f462',
-  1,
-  1,
-  0,
-  'no-reply@interophub.local',
-  'InteropHub',
-  1
-);
+--
+-- Table structure for table `app_api`
+--
 
--- -------------------------
--- USERS / IDENTITY
--- -------------------------
-CREATE TABLE auth_user (
-  user_id            BIGINT NOT NULL AUTO_INCREMENT,
-  email              VARCHAR(254) NOT NULL,
-  email_normalized   VARCHAR(254) NOT NULL,  -- lowercase trimmed
-  display_name       VARCHAR(160) NULL,      -- optional override; when NULL, first_name + last_name is used
-  first_name         VARCHAR(100) NULL,
-  last_name          VARCHAR(100) NULL,
-  organization       VARCHAR(200) NULL,
-  role_title         VARCHAR(200) NULL,      -- free text
-  timezone_id        VARCHAR(64) NULL,         -- IANA timezone id e.g. America/New_York
-  email_verified     BIT(1) NOT NULL DEFAULT b'0',
-  status             ENUM('ACTIVE','DELETED','DISABLED') NOT NULL DEFAULT 'ACTIVE',
-  is_admin           BIT(1) NOT NULL DEFAULT b'0',
-  created_at         DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  last_login_at      DATETIME(6) NULL,
-  last_seen_at       DATETIME(6) NULL,
-  delete_after_at    DATETIME(6) NULL,       -- set to last_seen + 1 year for purge job
-  PRIMARY KEY (user_id),
-  UNIQUE KEY uq_auth_user_email_norm (email_normalized),
-  KEY ix_auth_user_status (status),
-  KEY ix_auth_user_delete_after (delete_after_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `app_api`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_api` (
+  `api_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `app_id` bigint unsigned NOT NULL,
+  `api_code` varchar(80) NOT NULL,
+  `purpose_label` varchar(160) NOT NULL,
+  `description` text,
+  `is_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`api_id`),
+  UNIQUE KEY `uq_app_api_code` (`app_id`,`api_code`),
+  KEY `ix_app_api_enabled` (`app_id`,`is_enabled`),
+  CONSTRAINT `fk_app_api_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Legal terms and agreement text (versioned)
-CREATE TABLE legal_term (
-  term_id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  term_code             VARCHAR(80) NOT NULL,   -- stable logical code, e.g. 'NO_PRODUCTION_DATA'
-  version_num           INT NOT NULL,           -- 1, 2, 3...
-  title                 VARCHAR(200) NOT NULL,  -- short heading shown near checkbox
-  short_text            VARCHAR(500) NOT NULL,  -- concise checkbox text
-  full_text             TEXT NULL,              -- full agreement language or summary
-  full_text_url         VARCHAR(500) NULL,      -- optional link to full policy/agreement page
+--
+-- Table structure for table `app_api_secret`
+--
 
-  scope_type            ENUM('REGISTRATION','WORKSPACE','BOTH') NOT NULL DEFAULT 'REGISTRATION',
-  is_required           TINYINT(1) NOT NULL DEFAULT 1,
-  display_order         INT NOT NULL DEFAULT 0,
+DROP TABLE IF EXISTS `app_api_secret`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_api_secret` (
+  `secret_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `api_id` bigint unsigned NOT NULL,
+  `user_id` bigint NOT NULL,
+  `secret_value` varchar(255) DEFAULT NULL,
+  `label` varchar(120) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`secret_id`),
+  UNIQUE KEY `uq_api_secret_user` (`api_id`,`user_id`),
+  KEY `ix_api_secret_user` (`user_id`),
+  CONSTRAINT `fk_api_secret_api` FOREIGN KEY (`api_id`) REFERENCES `app_api` (`api_id`),
+  CONSTRAINT `fk_api_secret_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
-  is_active             TINYINT(1) NOT NULL DEFAULT 1,
-  effective_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  retired_at            DATETIME NULL,
+--
+-- Table structure for table `app_login_event`
+--
 
-  created_by_user_id    BIGINT NULL,
-  created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+DROP TABLE IF EXISTS `app_login_event`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_login_event` (
+  `event_id` bigint NOT NULL AUTO_INCREMENT,
+  `app_id` bigint NOT NULL,
+  `logged_in_at` datetime(6) NOT NULL,
+  `login_code_id` bigint DEFAULT NULL,
+  `server_ip` varchar(45) DEFAULT NULL,
+  `user_id` bigint NOT NULL,
+  `user_ip` varchar(45) DEFAULT NULL,
+  PRIMARY KEY (`event_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=186 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
-  PRIMARY KEY (term_id),
-  UNIQUE KEY uq_term_version (term_code, version_num),
-  KEY ix_term_scope_active (scope_type, is_active, effective_at),
-  KEY ix_term_display (scope_type, display_order),
-  CONSTRAINT fk_legal_term_creator
-    FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `app_redirect_allowlist`
+--
 
--- One-time magic link tokens (store hash, not raw token)
-CREATE TABLE auth_magic_link (
-  magic_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id            BIGINT NOT NULL,
-  token_hash         BINARY(32) NOT NULL,  -- SHA-256(token)
-  app_id             BIGINT UNSIGNED NULL,
-  return_to          VARCHAR(500) NULL,
-  state_nonce        VARCHAR(255) NULL,
-  requested_url      VARCHAR(500) NULL,
-  issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at         DATETIME NOT NULL,
-  consumed_at        DATETIME NULL,
-  request_ip         VARBINARY(16) NULL,   -- INET6_ATON
-  user_agent         VARCHAR(300) NULL,
-  PRIMARY KEY (magic_id),
-  UNIQUE KEY uq_magic_token_hash (token_hash),
-  KEY ix_magic_user (user_id, issued_at),
-  KEY ix_magic_expires (expires_at),
-  CONSTRAINT fk_magic_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `app_redirect_allowlist`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_redirect_allowlist` (
+  `allow_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `app_id` bigint unsigned NOT NULL,
+  `base_url` varchar(255) NOT NULL,
+  `is_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`allow_id`),
+  UNIQUE KEY `uq_app_base` (`app_id`,`base_url`),
+  KEY `ix_allow_enabled` (`app_id`,`is_enabled`),
+  CONSTRAINT `fk_allow_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Append-only audit of magic-link email send lifecycle events
--- Records each send request and SMTP outcome for troubleshooting duplicates.
-CREATE TABLE auth_magic_link_send_event (
-  send_event_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  magic_id           BIGINT UNSIGNED NULL,
-  user_id            BIGINT NOT NULL,
-  app_id             BIGINT UNSIGNED NULL,
-  email_normalized   VARCHAR(254) NOT NULL,
-  event_type         ENUM('SEND_REQUESTED','SMTP_SEND_STARTED','SMTP_SEND_SUCCEEDED','SMTP_SEND_FAILED') NOT NULL,
-  event_at           DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  request_id         CHAR(36) NULL,
-  request_ip         VARBINARY(16) NULL,
-  user_agent         VARCHAR(300) NULL,
-  smtp_message_id    VARCHAR(255) NULL,
-  smtp_provider      VARCHAR(80) NULL,
-  smtp_reply_code    VARCHAR(32) NULL,
-  error_class        VARCHAR(120) NULL,
-  error_message      VARCHAR(1000) NULL,
-  server_node        VARCHAR(120) NULL,
-  PRIMARY KEY (send_event_id),
-  KEY ix_magic_send_email_time (email_normalized, event_at),
-  KEY ix_magic_send_user_time (user_id, event_at),
-  KEY ix_magic_send_magic_time (magic_id, event_at),
-  KEY ix_magic_send_request (request_id),
-  KEY ix_magic_send_type_time (event_type, event_at),
-  CONSTRAINT fk_magic_send_magic FOREIGN KEY (magic_id) REFERENCES auth_magic_link(magic_id),
-  CONSTRAINT fk_magic_send_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
-  CONSTRAINT fk_magic_send_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `app_registry`
+--
 
--- Central sessions (for central dashboard + for login-code flows)
-CREATE TABLE auth_session (
-  session_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id            BIGINT NOT NULL,
-  session_token_hash BINARY(32) NOT NULL,  -- SHA-256(session_token)
-  issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at         DATETIME NOT NULL,    -- 7 days
-  revoked_at         DATETIME NULL,
-  last_ip            VARBINARY(16) NULL,
-  last_user_agent    VARCHAR(300) NULL,
-  PRIMARY KEY (session_id),
-  UNIQUE KEY uq_session_token_hash (session_token_hash),
-  KEY ix_session_user (user_id, expires_at),
-  KEY ix_session_expires (expires_at),
-  CONSTRAINT fk_session_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `app_registry`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_registry` (
+  `app_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `app_code` varchar(60) NOT NULL,
+  `app_name` varchar(120) NOT NULL,
+  `default_redirect_url` varchar(255) DEFAULT NULL,
+  `app_description` text,
+  `managed_by` enum('AIRA','THIRD_PARTY') NOT NULL DEFAULT 'AIRA',
+  `is_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `kill_switch` tinyint(1) NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_visible` bit(1) NOT NULL DEFAULT b'1',
+  PRIMARY KEY (`app_id`),
+  UNIQUE KEY `uq_app_code` (`app_code`),
+  KEY `ix_app_enabled` (`is_enabled`,`kill_switch`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- One-time login code (for redirect back to edge app and exchange server-to-server)
-CREATE TABLE auth_login_code (
-  login_code_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id            BIGINT NOT NULL,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  code_hash          BINARY(32) NOT NULL,  -- SHA-256(code)
-  return_to          VARCHAR(500) NULL,
-  state_nonce        VARCHAR(255) NULL,
-  requested_url      VARCHAR(500) NULL,
-  issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at         DATETIME NOT NULL,    -- e.g., 60 seconds
-  consumed_at        DATETIME NULL,
-  PRIMARY KEY (login_code_id),
-  UNIQUE KEY uq_login_code_hash (code_hash),
-  KEY ix_login_code_user (user_id, issued_at),
-  KEY ix_login_code_expires (expires_at),
-  CONSTRAINT fk_login_code_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `app_user_token`
+--
 
--- -------------------------
--- APPLICATIONS / TOKENS (per-user per-app)
--- -------------------------
-CREATE TABLE app_registry (
-  app_id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  app_code           VARCHAR(60) NOT NULL,   -- e.g., 'step-cdsi'
-  app_name           VARCHAR(120) NOT NULL,
-  default_redirect_url VARCHAR(255) NULL,
-  app_description    TEXT NULL,
-  managed_by         ENUM('AIRA','THIRD_PARTY') NOT NULL DEFAULT 'AIRA', -- for registry, not per-system
-  is_enabled         TINYINT(1) NOT NULL DEFAULT 1,
-  kill_switch        TINYINT(1) NOT NULL DEFAULT 0, -- global disable for this app’s APIs
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (app_id),
-  UNIQUE KEY uq_app_code (app_code),
-  KEY ix_app_enabled (is_enabled, kill_switch)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `app_user_token`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `app_user_token` (
+  `token_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `app_id` bigint unsigned NOT NULL,
+  `token_hash` varbinary(32) NOT NULL,
+  `label` varchar(120) DEFAULT NULL,
+  `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `last_used_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`token_id`),
+  UNIQUE KEY `uq_app_token_hash` (`token_hash`),
+  KEY `ix_app_user_active` (`app_id`,`user_id`,`revoked_at`,`expires_at`),
+  KEY `ix_app_token_expires` (`expires_at`),
+  KEY `fk_app_token_user` (`user_id`),
+  CONSTRAINT `fk_app_token_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`),
+  CONSTRAINT `fk_app_token_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Redirect allowlist for app callback/base URLs
-CREATE TABLE app_redirect_allowlist (
-  allow_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  base_url           VARCHAR(255) NOT NULL,  -- e.g. https://step.example.org or http://localhost:8080
-  is_enabled         TINYINT(1) NOT NULL DEFAULT 1,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (allow_id),
-  UNIQUE KEY uq_app_base (app_id, base_url),
-  KEY ix_allow_enabled (app_id, is_enabled),
-  CONSTRAINT fk_allow_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `auth_login_code`
+--
 
--- PATs: per-user per-app (30 day expiry)
-CREATE TABLE app_user_token (
-  token_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id            BIGINT NOT NULL,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  token_hash         BINARY(32) NOT NULL,    -- SHA-256(token); store raw only once at creation
-  label              VARCHAR(120) NULL,      -- optional: "Postman", "My client app"
-  issued_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  expires_at         DATETIME NOT NULL,      -- 30 days
-  revoked_at         DATETIME NULL,
-  last_used_at       DATETIME NULL,
-  PRIMARY KEY (token_id),
-  UNIQUE KEY uq_app_token_hash (token_hash),
-  KEY ix_app_user_active (app_id, user_id, revoked_at, expires_at),
-  KEY ix_app_token_expires (expires_at),
-  CONSTRAINT fk_app_token_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
-  CONSTRAINT fk_app_token_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `auth_login_code`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_login_code` (
+  `login_code_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `app_id` bigint unsigned NOT NULL,
+  `code_hash` varbinary(32) NOT NULL,
+  `return_to` varchar(500) DEFAULT NULL,
+  `state_nonce` varchar(255) DEFAULT NULL,
+  `requested_url` varchar(500) DEFAULT NULL,
+  `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `consumed_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`login_code_id`),
+  UNIQUE KEY `uq_login_code_hash` (`code_hash`),
+  KEY `ix_login_code_user` (`user_id`,`issued_at`),
+  KEY `ix_login_code_expires` (`expires_at`),
+  CONSTRAINT `fk_login_code_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=214 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- API definitions per registered app (distinct endpoints/operations the app exposes for testing)
-CREATE TABLE app_api (
-  api_id             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  api_code           VARCHAR(80) NOT NULL,    -- stable identifier, e.g. 'query', 'submit'
-  purpose_label      VARCHAR(160) NOT NULL,   -- human-readable label shown to users
-  description        TEXT NULL,
-  is_enabled         TINYINT(1) NOT NULL DEFAULT 1,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (api_id),
-  UNIQUE KEY uq_app_api_code (app_id, api_code),
-  KEY ix_app_api_enabled (app_id, is_enabled),
-  CONSTRAINT fk_app_api_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `auth_magic_link`
+--
 
--- Per-user API secrets for test system access
--- NOTE: secret_value stored plain-text by design — these are test-only keys with minimal security.
---       Revoke by nulling secret_value; update by replacing it.
-CREATE TABLE app_api_secret (
-  secret_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  api_id             BIGINT UNSIGNED NOT NULL,
-  user_id            BIGINT NOT NULL,
-  secret_value       VARCHAR(255) NULL,       -- NULL = revoked; replace value to rotate
-  label              VARCHAR(120) NULL,       -- optional: "Postman", "My test client"
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (secret_id),
-  UNIQUE KEY uq_api_secret_user (api_id, user_id),
-  KEY ix_api_secret_user (user_id),
-  CONSTRAINT fk_api_secret_api FOREIGN KEY (api_id) REFERENCES app_api(api_id),
-  CONSTRAINT fk_api_secret_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `auth_magic_link`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_magic_link` (
+  `magic_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `token_hash` varbinary(32) NOT NULL,
+  `app_id` bigint unsigned DEFAULT NULL,
+  `return_to` varchar(500) DEFAULT NULL,
+  `state_nonce` varchar(255) DEFAULT NULL,
+  `requested_url` varchar(500) DEFAULT NULL,
+  `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `consumed_at` datetime DEFAULT NULL,
+  `request_ip` varbinary(16) DEFAULT NULL,
+  `user_agent` varchar(300) DEFAULT NULL,
+  PRIMARY KEY (`magic_id`),
+  UNIQUE KEY `uq_magic_token_hash` (`token_hash`),
+  KEY `ix_magic_user` (`user_id`,`issued_at`),
+  KEY `ix_magic_expires` (`expires_at`),
+  CONSTRAINT `fk_magic_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=189 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- CONNECTATHON TOPICS / WORKSPACES
--- -------------------------
-CREATE TABLE ig_topic (
-  topic_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  topic_code         VARCHAR(80) NOT NULL,    -- e.g., 'immds-halo'
-  topic_name         VARCHAR(140) NOT NULL,   -- "ImmDS+HALO"
-  description        TEXT NULL,
-  created_by_user_id BIGINT NOT NULL,
-  status             ENUM('ACTIVE','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (topic_id),
-  UNIQUE KEY uq_topic_code (topic_code),
-  KEY ix_topic_status (status),
-  CONSTRAINT fk_topic_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `auth_magic_link_send_event`
+--
 
-CREATE TABLE connect_workspace (
-  workspace_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  topic_id           BIGINT UNSIGNED NOT NULL,
-  workspace_name     VARCHAR(160) NOT NULL,     -- "Connectathon 40 - March 2026"
-  description        TEXT NULL,
-  start_date         DATE NULL,
-  end_date           DATE NULL,
-  status             ENUM('ACTIVE','CLOSED','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
-  requires_approval  TINYINT(1) NOT NULL DEFAULT 1,
-  created_by_user_id BIGINT NOT NULL,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (workspace_id),
-  KEY ix_workspace_topic (topic_id, status),
-  CONSTRAINT fk_workspace_topic FOREIGN KEY (topic_id) REFERENCES ig_topic(topic_id),
-  CONSTRAINT fk_workspace_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `auth_magic_link_send_event`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_magic_link_send_event` (
+  `send_event_id` bigint NOT NULL AUTO_INCREMENT,
+  `app_id` bigint DEFAULT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `error_class` varchar(120) DEFAULT NULL,
+  `error_message` varchar(1000) DEFAULT NULL,
+  `event_at` datetime(6) NOT NULL,
+  `event_type` enum('SEND_REQUESTED','SMTP_SEND_FAILED','SMTP_SEND_STARTED','SMTP_SEND_SUCCEEDED') NOT NULL,
+  `magic_id` bigint DEFAULT NULL,
+  `request_id` varchar(36) DEFAULT NULL,
+  `request_ip` varbinary(16) DEFAULT NULL,
+  `server_node` varchar(120) DEFAULT NULL,
+  `smtp_message_id` varchar(255) DEFAULT NULL,
+  `smtp_provider` varchar(80) DEFAULT NULL,
+  `smtp_reply_code` varchar(32) DEFAULT NULL,
+  `user_agent` varchar(300) DEFAULT NULL,
+  `user_id` bigint NOT NULL,
+  PRIMARY KEY (`send_event_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=418 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Enrollment (opt-in + approval gate; implies consent to share contact info)
-CREATE TABLE workspace_enrollment (
-  enrollment_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  workspace_id       BIGINT UNSIGNED NOT NULL,
-  user_id            BIGINT NOT NULL,
-  state              ENUM('PENDING','APPROVED','REJECTED','SUSPENDED') NOT NULL DEFAULT 'PENDING',
-  consent_at         DATETIME NULL,         -- when they opted-in / accepted sharing
-  approved_by_user_id BIGINT NULL,
-  approved_at        DATETIME NULL,
-  admin_note         VARCHAR(400) NULL,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (enrollment_id),
-  UNIQUE KEY uq_workspace_user (workspace_id, user_id),
-  KEY ix_enrollment_state (workspace_id, state),
-  CONSTRAINT fk_enroll_workspace FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id),
-  CONSTRAINT fk_enroll_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
-  CONSTRAINT fk_enroll_approver FOREIGN KEY (approved_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `auth_session`
+--
 
-CREATE TABLE legal_term_acceptance (
-  acceptance_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  term_id               BIGINT UNSIGNED NOT NULL,
-  user_id               BIGINT NOT NULL,
+DROP TABLE IF EXISTS `auth_session`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_session` (
+  `session_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` bigint NOT NULL,
+  `session_token_hash` varbinary(32) NOT NULL,
+  `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `expires_at` datetime NOT NULL,
+  `revoked_at` datetime DEFAULT NULL,
+  `last_ip` varbinary(16) DEFAULT NULL,
+  `last_user_agent` varchar(300) DEFAULT NULL,
+  PRIMARY KEY (`session_id`),
+  UNIQUE KEY `uq_session_token_hash` (`session_token_hash`),
+  KEY `ix_session_user` (`user_id`,`expires_at`),
+  KEY `ix_session_expires` (`expires_at`),
+  CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=155 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
-  workspace_id          BIGINT UNSIGNED NULL,   -- null for registration/global acceptance
-  accepted_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--
+-- Table structure for table `auth_user`
+--
 
-  accepted_value        TINYINT(1) NOT NULL DEFAULT 1, -- for checkbox this is normally always 1
-  ip_address            VARCHAR(45) NULL,       -- IPv4/IPv6 text form
-  user_agent            VARCHAR(500) NULL,      -- optional audit detail
+DROP TABLE IF EXISTS `auth_user`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `auth_user` (
+  `user_id` bigint NOT NULL AUTO_INCREMENT,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `display_name` varchar(160) DEFAULT NULL,
+  `organization` varchar(200) DEFAULT NULL,
+  `role_title` varchar(200) DEFAULT NULL,
+  `email_verified` bit(1) NOT NULL DEFAULT b'0',
+  `status` enum('ACTIVE','DELETED','DISABLED') NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `last_login_at` datetime(6) DEFAULT NULL,
+  `last_seen_at` datetime(6) DEFAULT NULL,
+  `delete_after_at` datetime(6) DEFAULT NULL,
+  `first_name` varchar(100) DEFAULT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `timezone_id` varchar(64) DEFAULT NULL,
+  `is_admin` bit(1) NOT NULL,
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `uq_auth_user_email_norm` (`email_normalized`),
+  KEY `ix_auth_user_status` (`status`),
+  KEY `ix_auth_user_delete_after` (`delete_after_at`)
+) ENGINE=InnoDB AUTO_INCREMENT=86 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
-  PRIMARY KEY (acceptance_id),
-  UNIQUE KEY uq_term_acceptance_once (term_id, user_id, workspace_id),
-  KEY ix_accept_user (user_id, accepted_at),
-  KEY ix_accept_term (term_id, accepted_at),
-  KEY ix_accept_workspace (workspace_id, user_id),
-  CONSTRAINT fk_term_acceptance_term
-    FOREIGN KEY (term_id) REFERENCES legal_term(term_id),
-  CONSTRAINT fk_term_acceptance_user
-    FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
-  CONSTRAINT fk_term_acceptance_workspace
-    FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `connect_workspace`
+--
 
--- -------------------------
--- SYSTEMS / ENDPOINTS / CONTACTS
--- -------------------------
-CREATE TABLE workspace_system (
-  system_id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  workspace_id       BIGINT UNSIGNED NOT NULL,
-  system_name        VARCHAR(160) NOT NULL,
-  managed_by         ENUM('AIRA','THIRD_PARTY') NOT NULL DEFAULT 'THIRD_PARTY',
-  capability         ENUM('CLIENT','SERVER','BOTH') NOT NULL,
-  availability       ENUM('UP','DOWN','INTERMITTENT','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
-  availability_note  VARCHAR(400) NULL,
-  description        TEXT NULL,
-  how_to_use         TEXT NULL,
-  limitations        TEXT NULL,
-  created_by_user_id BIGINT NOT NULL,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         DATETIME NULL,
-  PRIMARY KEY (system_id),
-  KEY ix_system_workspace (workspace_id, capability, managed_by),
-  KEY ix_system_availability (workspace_id, availability),
-  CONSTRAINT fk_system_workspace FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id),
-  CONSTRAINT fk_system_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `connect_workspace`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `connect_workspace` (
+  `workspace_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `topic_id` bigint unsigned NOT NULL,
+  `workspace_name` varchar(160) NOT NULL,
+  `description` text,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `status` enum('ACTIVE','CLOSED','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
+  `requires_approval` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` bigint NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`workspace_id`),
+  KEY `ix_workspace_topic` (`topic_id`,`status`),
+  KEY `fk_workspace_creator` (`created_by_user_id`),
+  CONSTRAINT `fk_workspace_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_workspace_topic` FOREIGN KEY (`topic_id`) REFERENCES `ig_topic` (`topic_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Multiple contacts per system (requires enrollment to exist and be approved at app-layer)
-CREATE TABLE workspace_system_contact (
-  system_contact_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  system_id          BIGINT UNSIGNED NOT NULL,
-  user_id            BIGINT NOT NULL,
-  contact_role       VARCHAR(120) NULL, -- free text (e.g., "Primary", "Backup", "Dev")
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (system_contact_id),
-  UNIQUE KEY uq_system_user (system_id, user_id),
-  KEY ix_system_contact_user (user_id),
-  CONSTRAINT fk_sys_contact_system FOREIGN KEY (system_id) REFERENCES workspace_system(system_id),
-  CONSTRAINT fk_sys_contact_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `dandelion_sync_config`
+--
 
--- Endpoints (servers require URL; clients may have none)
-CREATE TABLE workspace_endpoint (
-  endpoint_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  system_id          BIGINT UNSIGNED NOT NULL,
-  endpoint_type      ENUM('FHIR_BASE','SMART_CONFIG','WEBHOOK','OTHER') NOT NULL DEFAULT 'FHIR_BASE',
-  url                VARCHAR(500) NULL, -- required for servers by app-layer rule
-  auth_type          ENUM('AIRA_TOKEN','BEARER_PAT','NONE','OTHER') NOT NULL DEFAULT 'BEARER_PAT',
-  auth_instructions  TEXT NULL,
-  is_active          TINYINT(1) NOT NULL DEFAULT 1,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         DATETIME NULL,
-  PRIMARY KEY (endpoint_id),
-  KEY ix_endpoint_system (system_id, is_active),
-  CONSTRAINT fk_endpoint_system FOREIGN KEY (system_id) REFERENCES workspace_system(system_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `dandelion_sync_config`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dandelion_sync_config` (
+  `config_id` bigint NOT NULL AUTO_INCREMENT,
+  `active` bit(1) NOT NULL,
+  `api_endpoint` varchar(500) NOT NULL,
+  `api_key` varchar(300) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `sync_enabled` bit(1) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`config_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Optionally map a workspace to which AIRA-managed apps are “in play” for that topic/workspace
-CREATE TABLE workspace_app (
-  workspace_app_id   BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  workspace_id       BIGINT UNSIGNED NOT NULL,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (workspace_app_id),
-  UNIQUE KEY uq_workspace_app (workspace_id, app_id),
-  CONSTRAINT fk_workspace_app_workspace FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id),
-  CONSTRAINT fk_workspace_app_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `dandelion_sync_queue`
+--
 
--- -------------------------
--- STEPS + SELF-REPORTED PROGRESS (matrix)
--- -------------------------
-CREATE TABLE workspace_step (
-  step_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  workspace_id       BIGINT UNSIGNED NOT NULL,
-  step_name          VARCHAR(140) NOT NULL, -- "Got token", "Connected", "Good response"
-  applies_to         ENUM('CLIENT_TO_SERVER','CLIENT_ONLY','SERVER_ONLY','BOTH') NOT NULL DEFAULT 'CLIENT_TO_SERVER',
-  sort_order         INT NOT NULL DEFAULT 0,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (step_id),
-  KEY ix_step_workspace (workspace_id, sort_order),
-  CONSTRAINT fk_step_workspace FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `dandelion_sync_queue`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `dandelion_sync_queue` (
+  `sync_queue_id` bigint NOT NULL AUTO_INCREMENT,
+  `attempt_count` int NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `entity_id` bigint NOT NULL,
+  `entity_type` enum('ASSIGNMENT','CONTACT','TOPIC') NOT NULL,
+  `last_error` text,
+  `operation` enum('ASSIGN_ADD','ASSIGN_REMOVE','UPSERT') NOT NULL,
+  `secondary_entity_id` bigint DEFAULT NULL,
+  `sent_at` datetime(6) DEFAULT NULL,
+  `status` enum('FAILED','PENDING','SENT') NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`sync_queue_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1375 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- System-level matrix progress (simpler than endpoint-level)
-CREATE TABLE workspace_progress (
-  progress_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  workspace_id       BIGINT UNSIGNED NOT NULL,
-  step_id            BIGINT UNSIGNED NOT NULL,
-  client_system_id   BIGINT UNSIGNED NOT NULL,
-  server_system_id   BIGINT UNSIGNED NOT NULL,
-  status             ENUM('NO_PROGRESS','PROBLEMS','PARTIAL','WORKS','NOT_APPLICABLE') NOT NULL DEFAULT 'NO_PROGRESS',
-  note               VARCHAR(800) NULL,
-  reported_by_user_id BIGINT NOT NULL,
-  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (progress_id),
-  UNIQUE KEY uq_progress_cell (step_id, client_system_id, server_system_id),
-  KEY ix_progress_workspace (workspace_id, client_system_id, server_system_id),
-  KEY ix_progress_status (workspace_id, status),
-  CONSTRAINT fk_progress_workspace FOREIGN KEY (workspace_id) REFERENCES connect_workspace(workspace_id),
-  CONSTRAINT fk_progress_step FOREIGN KEY (step_id) REFERENCES workspace_step(step_id),
-  CONSTRAINT fk_progress_client FOREIGN KEY (client_system_id) REFERENCES workspace_system(system_id),
-  CONSTRAINT fk_progress_server FOREIGN KEY (server_system_id) REFERENCES workspace_system(system_id),
-  CONSTRAINT fk_progress_reporter FOREIGN KEY (reported_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `email_send_log`
+--
 
--- -------------------------
--- USAGE AGGREGATES (durable counts; Step batches updates)
--- -------------------------
--- Coarse aggregates per day per app (+ optional per token)
-CREATE TABLE usage_daily_agg (
-  usage_day          DATE NOT NULL,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  token_id           BIGINT UNSIGNED NULL,         -- NULL = overall app totals
-  metric             ENUM('API_CALL','API_ERROR_4XX','API_ERROR_5XX') NOT NULL DEFAULT 'API_CALL',
-  count_value        BIGINT UNSIGNED NOT NULL DEFAULT 0,
-  updated_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (usage_day, app_id, token_id, metric),
-  KEY ix_usage_app_day (app_id, usage_day),
-  CONSTRAINT fk_usage_app FOREIGN KEY (app_id) REFERENCES app_registry(app_id),
-  CONSTRAINT fk_usage_token FOREIGN KEY (token_id) REFERENCES app_user_token(token_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `email_send_log`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `email_send_log` (
+  `email_log_id` bigint NOT NULL AUTO_INCREMENT,
+  `body_text` text,
+  `email_reason` varchar(80) NOT NULL,
+  `es_meeting_communication_id` bigint DEFAULT NULL,
+  `magic_id` bigint DEFAULT NULL,
+  `recipient_email` varchar(254) NOT NULL,
+  `recipient_email_normalized` varchar(254) NOT NULL,
+  `sent_at` datetime(6) NOT NULL,
+  `smtp_message_id` varchar(255) DEFAULT NULL,
+  `smtp_provider` varchar(80) DEFAULT NULL,
+  `subject` varchar(500) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`email_log_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=399 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- APP LOGIN EVENTS
--- -------------------------
--- Append-only log of every successful user authentication to an external app
--- via the one-time code exchange (ApiAuthExchangeServlet).
--- One row per login. Use for usage statistics and audit purposes.
-CREATE TABLE app_login_event (
-  event_id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id            BIGINT NOT NULL,
-  app_id             BIGINT UNSIGNED NOT NULL,
-  login_code_id      BIGINT UNSIGNED NULL,     -- originating one-time code; nullable for purge safety (no FK)
-  logged_in_at       DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  server_ip          VARCHAR(45) NULL,         -- IP of the app server making the exchange API call
-  user_ip            VARCHAR(45) NULL,         -- IP of the end user as reported by the app (future; passed via API)
-  PRIMARY KEY (event_id),
-  KEY ix_app_login_user_time (user_id, logged_in_at),
-  KEY ix_app_login_app_time  (app_id, logged_in_at),
-  KEY ix_app_login_day       (app_id, (DATE(logged_in_at))),
-  CONSTRAINT fk_app_login_user FOREIGN KEY (user_id) REFERENCES auth_user(user_id),
-  CONSTRAINT fk_app_login_app  FOREIGN KEY (app_id)  REFERENCES app_registry(app_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_agenda_item_comment`
+--
 
--- Optional: store a lightweight administrative note log (generic, as you requested)
-CREATE TABLE admin_note (
-  note_id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  scope_type         ENUM('APP','WORKSPACE','SYSTEM','USER','TOKEN') NOT NULL,
-  scope_id           BIGINT UNSIGNED NOT NULL, -- interpret by scope_type at app layer
-  note_text          TEXT NOT NULL,
-  created_by_user_id BIGINT NOT NULL,
-  created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (note_id),
-  KEY ix_admin_note_scope (scope_type, scope_id, created_at),
-  CONSTRAINT fk_admin_note_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_agenda_item_comment`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_agenda_item_comment` (
+  `es_agenda_item_comment_id` bigint NOT NULL AUTO_INCREMENT,
+  `comment_markdown` text NOT NULL,
+  `comment_type` enum('CHANGE_REQUEST','COMMENT','DECLINE_REASON','MEETING_NOTE','POSTPONE_REQUEST') NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) DEFAULT NULL,
+  `es_meeting_agenda_item_id` bigint NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_agenda_item_comment_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- EMERGING STANDARDS TOPICS
--- -------------------------
-CREATE TABLE es_topic (
-  es_topic_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  topic_code          VARCHAR(80) NOT NULL,
-  topic_name          VARCHAR(140) NOT NULL,
-  description         TEXT NULL,
-  neighborhood        VARCHAR(120) NULL,
-  priority_iis        INT NOT NULL DEFAULT 0,
-  priority_ehr        INT NOT NULL DEFAULT 0,
-  priority_cdc        INT NOT NULL DEFAULT 0,
-  stage               VARCHAR(80) NULL,         -- e.g. 'Pre-publication', 'Published'
-  status              ENUM('ACTIVE','RETIRED','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
-  created_by_user_id  BIGINT NOT NULL,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_topic_id),
-  UNIQUE KEY uq_es_topic_code (topic_code),
-  KEY ix_es_topic_status (status),
-  CONSTRAINT fk_es_topic_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_agenda_item_presenter`
+--
 
--- -------------------------
--- EMERGING STANDARDS CAMPAIGNS
--- -------------------------
--- A bounded interest-collection effort (Deep Dive, virtual session, etc.).
--- campaign_type is VARCHAR so new meeting types can be added without ALTER.
-CREATE TABLE es_campaign (
-  es_campaign_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  campaign_code       VARCHAR(80) NOT NULL,
-  campaign_name       VARCHAR(160) NOT NULL,
-  description         TEXT NULL,
-  campaign_type       VARCHAR(80) NOT NULL DEFAULT 'DEEP_DIVE',
-  status              ENUM('DRAFT','ACTIVE','CLOSED','ARCHIVED') NOT NULL DEFAULT 'DRAFT',
-  current_round_no    TINYINT UNSIGNED NOT NULL DEFAULT 1,
-  allow_topic_comments    TINYINT(1) NOT NULL DEFAULT 1,
-  allow_general_comments  TINYINT(1) NOT NULL DEFAULT 1,
-  start_at            DATETIME NULL,
-  end_at              DATETIME NULL,
-  created_by_user_id  BIGINT NOT NULL,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_campaign_id),
-  UNIQUE KEY uq_es_campaign_code (campaign_code),
-  KEY ix_es_campaign_status (status),
-  CONSTRAINT fk_es_campaign_creator FOREIGN KEY (created_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_agenda_item_presenter`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_agenda_item_presenter` (
+  `es_agenda_item_presenter_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `display_name` varchar(160) DEFAULT NULL,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `es_meeting_agenda_item_id` bigint NOT NULL,
+  `presenter_role` enum('FACILITATOR','LEAD','REQUESTED_REVIEWER','SUPPORTING') NOT NULL,
+  `responded_at` datetime(6) DEFAULT NULL,
+  `response_note` text,
+  `status` enum('PROPOSED','INVITED','INVITE_BLOCKED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED') NOT NULL DEFAULT 'PROPOSED',
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_agenda_item_presenter_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=33 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- Topics included in a specific campaign (with Deep Dive grouping metadata).
--- topic_set_no: 1-7 for Deep Dive sets; table_no: 1-14 for table assignments.
-CREATE TABLE es_campaign_topic (
-  es_campaign_topic_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_campaign_id        BIGINT UNSIGNED NOT NULL,
-  es_topic_id           BIGINT UNSIGNED NOT NULL,
-  topic_set_no          TINYINT UNSIGNED NULL,   -- which set (e.g., 1-7 for Deep Dive)
-  table_no              TINYINT UNSIGNED NULL,   -- which table (e.g., 1-14 for Deep Dive)
-  display_order         INT NOT NULL DEFAULT 0,
-  created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_campaign_topic_id),
-  UNIQUE KEY uq_es_campaign_topic (es_campaign_id, es_topic_id, table_no),
-  KEY ix_es_ct_set   (es_campaign_id, topic_set_no, display_order),
-  KEY ix_es_ct_table (es_campaign_id, table_no, display_order),
-  CONSTRAINT fk_es_ct_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
-  CONSTRAINT fk_es_ct_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_campaign`
+--
 
--- Campaign registration check-in records used by table-round vote linkage.
-CREATE TABLE es_campaign_registration (
-  es_campaign_registration_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_campaign_id              BIGINT UNSIGNED NOT NULL,
-  first_name                  VARCHAR(100) NOT NULL,
-  last_name                   VARCHAR(100) NULL,
-  email                       VARCHAR(254) NULL,
-  email_normalized            VARCHAR(254) NULL,
-  general_updates_opt_in      TINYINT(1) NOT NULL DEFAULT 0,
-  session_key                 VARCHAR(128) NULL,
-  created_at                  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_campaign_registration_id),
-  KEY ix_es_reg_campaign_time (es_campaign_id, created_at),
-  KEY ix_es_reg_campaign_email (es_campaign_id, email_normalized),
-  KEY ix_es_reg_session_campaign (session_key, es_campaign_id),
-  CONSTRAINT fk_es_campaign_registration_campaign
-    FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_campaign`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_campaign` (
+  `es_campaign_id` bigint NOT NULL AUTO_INCREMENT,
+  `allow_general_comments` bit(1) NOT NULL,
+  `allow_topic_comments` bit(1) NOT NULL,
+  `campaign_code` varchar(80) NOT NULL,
+  `campaign_name` varchar(160) NOT NULL,
+  `campaign_type` varchar(80) NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `current_round_no` int NOT NULL,
+  `description` text,
+  `end_at` datetime(6) DEFAULT NULL,
+  `start_at` datetime(6) DEFAULT NULL,
+  `status` enum('ACTIVE','ARCHIVED','CLOSED','DRAFT') NOT NULL,
+  PRIMARY KEY (`es_campaign_id`),
+  UNIQUE KEY `UK_1aj983v4b46p88tmp8in2q9s4` (`campaign_code`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- EXPRESSIONS OF INTEREST (VOTES)
--- -------------------------
--- One record per session per selected topic per campaign+table+round.
--- Overwrite behavior is enforced at app layer by deleting the current
--- campaign+table+round+session selection set before insert.
-CREATE TABLE es_interest (
-  es_interest_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_campaign_id      BIGINT UNSIGNED NOT NULL,
-  es_topic_id         BIGINT UNSIGNED NOT NULL,
-  es_campaign_registration_id BIGINT UNSIGNED NULL,
-  session_key         VARCHAR(128) NULL,
-  table_no            TINYINT UNSIGNED NOT NULL,
-  round_no            TINYINT UNSIGNED NOT NULL,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_interest_id),
-  KEY ix_es_interest_campaign_table_round_topic (es_campaign_id, table_no, round_no, es_topic_id),
-  KEY ix_es_interest_campaign_table_round_session (es_campaign_id, table_no, round_no, session_key),
-  KEY ix_es_interest_campaign_registration (es_campaign_registration_id),
-  CONSTRAINT fk_es_interest_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
-  CONSTRAINT fk_es_interest_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_interest_campaign_registration
-    FOREIGN KEY (es_campaign_registration_id)
-    REFERENCES es_campaign_registration(es_campaign_registration_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_campaign_registration`
+--
 
--- -------------------------
--- COMMENTS
--- -------------------------
--- comment_type='TOPIC'  requires es_topic_id.
--- comment_type='GENERAL' or 'NEW_TOPIC_SUGGESTION' has es_topic_id=NULL.
-CREATE TABLE es_comment (
-  es_comment_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_campaign_id      BIGINT UNSIGNED NOT NULL,
-  es_topic_id         BIGINT UNSIGNED NULL,     -- NULL for GENERAL / NEW_TOPIC_SUGGESTION
-  user_id             BIGINT NULL,
-  session_key         VARCHAR(128) NULL,
-  first_name          VARCHAR(100) NOT NULL,
-  last_name           VARCHAR(100) NULL,
-  email               VARCHAR(254) NULL,
-  email_normalized    VARCHAR(254) NULL,
-  comment_type        ENUM('TOPIC','GENERAL','NEW_TOPIC_SUGGESTION') NOT NULL,
-  comment_text        TEXT NOT NULL,
-  created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_comment_id),
-  KEY ix_es_comment_campaign (es_campaign_id, comment_type, created_at),
-  KEY ix_es_comment_topic    (es_topic_id, created_at),
-  KEY ix_es_comment_user     (user_id, created_at),
-  CONSTRAINT fk_es_comment_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
-  CONSTRAINT fk_es_comment_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_comment_user     FOREIGN KEY (user_id)        REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_campaign_registration`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_campaign_registration` (
+  `es_campaign_registration_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) DEFAULT NULL,
+  `email_normalized` varchar(254) DEFAULT NULL,
+  `es_campaign_id` bigint NOT NULL,
+  `first_name` varchar(100) NOT NULL,
+  `general_updates_opt_in` bit(1) NOT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `session_key` varchar(128) DEFAULT NULL,
+  PRIMARY KEY (`es_campaign_registration_id`),
+  KEY `ix_es_reg_campaign_time` (`es_campaign_id`,`created_at`),
+  KEY `ix_es_reg_campaign_email` (`es_campaign_id`,`email_normalized`),
+  KEY `ix_es_reg_session_campaign` (`session_key`,`es_campaign_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- TOPIC REVIEWS (INTERNAL)
--- -------------------------
--- One score per user per topic per campaign.
--- Updates overwrite the existing row via app-layer upsert.
-CREATE TABLE es_topic_review (
-  es_topic_review_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_campaign_id          BIGINT UNSIGNED NOT NULL,
-  es_topic_id             BIGINT UNSIGNED NOT NULL,
-  user_id                 BIGINT NOT NULL,
-  community_value_score   TINYINT UNSIGNED NOT NULL,
-  created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_topic_review_id),
-  UNIQUE KEY uq_es_topic_review_campaign_topic_user (es_campaign_id, es_topic_id, user_id),
-  KEY ix_es_topic_review_campaign_user (es_campaign_id, user_id, updated_at),
-  KEY ix_es_topic_review_campaign_topic (es_campaign_id, es_topic_id, updated_at),
-  CONSTRAINT fk_es_topic_review_campaign FOREIGN KEY (es_campaign_id) REFERENCES es_campaign(es_campaign_id),
-  CONSTRAINT fk_es_topic_review_topic    FOREIGN KEY (es_topic_id)    REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_topic_review_user     FOREIGN KEY (user_id)        REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_campaign_topic`
+--
 
--- -------------------------
--- DURABLE SUBSCRIPTIONS
--- -------------------------
--- Separate from campaign votes; survive across campaigns.
--- GENERAL_ES: es_topic_id IS NULL, subscription_type='GENERAL_ES'
--- TOPIC:      es_topic_id IS NOT NULL, subscription_type='TOPIC'
--- Uniqueness: app-layer only (MySQL does not enforce unique across nullable columns).
--- unsubscribe_token_hash: SHA-256 of a random token issued at creation;
---   used for one-click unsubscribe links in future email sends.
-CREATE TABLE es_subscription (
-  es_subscription_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  user_id                 BIGINT NULL,
-  email                   VARCHAR(254) NOT NULL,
-  email_normalized        VARCHAR(254) NOT NULL,
-  es_topic_id             BIGINT UNSIGNED NULL,   -- NULL = GENERAL_ES subscription
-  subscription_type       ENUM('GENERAL_ES','TOPIC') NOT NULL,
-  status                  ENUM('SUBSCRIBED','CHAMPION','SUPPORT','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',  -- CHAMPION/SUPPORT only valid for TOPIC type
-  source_campaign_id      BIGINT UNSIGNED NULL,   -- which campaign produced this subscription
-  unsubscribe_token_hash  BINARY(32) NULL,        -- SHA-256(raw token); for email-link unsubscribe
-  created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  unsubscribed_at         DATETIME NULL,
-  PRIMARY KEY (es_subscription_id),
-  UNIQUE KEY uq_es_sub_token (unsubscribe_token_hash),
-  KEY ix_es_sub_email  (email_normalized, status),
-  KEY ix_es_sub_user   (user_id, status),
-  KEY ix_es_sub_topic  (es_topic_id, status),
-  CONSTRAINT fk_es_sub_user     FOREIGN KEY (user_id)            REFERENCES auth_user(user_id),
-  CONSTRAINT fk_es_sub_topic    FOREIGN KEY (es_topic_id)        REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_sub_campaign FOREIGN KEY (source_campaign_id) REFERENCES es_campaign(es_campaign_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_campaign_topic`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_campaign_topic` (
+  `es_campaign_topic_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `display_order` int NOT NULL,
+  `es_campaign_id` bigint NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `table_no` int DEFAULT NULL,
+  `topic_set_no` int DEFAULT NULL,
+  PRIMARY KEY (`es_campaign_topic_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=202 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- TOPIC MEETINGS (OPTIONAL)
--- -------------------------
--- One topic may have zero or one meeting row.
--- status='DISABLED' represents meeting support turned off while preserving history.
-CREATE TABLE es_topic_meeting (
-  es_topic_meeting_id    BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_id            BIGINT UNSIGNED NOT NULL,
-  meeting_name           VARCHAR(160) NOT NULL,
-  meeting_description    TEXT NULL,
-  join_requires_approval TINYINT(1) NOT NULL DEFAULT 0,
-  status                 ENUM('ACTIVE','DISABLED') NOT NULL DEFAULT 'ACTIVE',
-  disabled_at            DATETIME NULL,
-  disabled_by_user_id    BIGINT NULL,
-  online_meeting_url     VARCHAR(2048) NULL,
-  online_meeting_details TEXT NULL,
-  created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_topic_meeting_id),
-  UNIQUE KEY uq_es_topic_meeting_topic (es_topic_id),
-  KEY ix_es_topic_meeting_status (status),
-  CONSTRAINT fk_es_topic_meeting_topic FOREIGN KEY (es_topic_id) REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_topic_meeting_disabled_user FOREIGN KEY (disabled_by_user_id) REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_comment`
+--
 
--- -------------------------
--- TOPIC MEETING MEMBERS
--- -------------------------
--- Membership supports both authenticated users and email-only participants.
-CREATE TABLE es_topic_meeting_member (
-  es_topic_meeting_member_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_meeting_id        BIGINT UNSIGNED NOT NULL,
-  user_id                    BIGINT NULL,
-  email                      VARCHAR(254) NOT NULL,
-  email_normalized           VARCHAR(254) NOT NULL,
-  membership_status          ENUM('REQUESTED','APPROVED','DECLINED','REMOVED') NOT NULL DEFAULT 'REQUESTED',
-  source_campaign_id         BIGINT UNSIGNED NULL,
-  approved_by_user_id        BIGINT NULL,
-  approved_at                DATETIME NULL,
-  created_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_topic_meeting_member_id),
-  UNIQUE KEY uq_es_topic_meeting_member_email (es_topic_meeting_id, email_normalized),
-  KEY ix_es_topic_meeting_member_status (es_topic_meeting_id, membership_status),
-  KEY ix_es_topic_meeting_member_email (email_normalized, membership_status),
-  KEY ix_es_topic_meeting_member_user (user_id),
-  CONSTRAINT fk_es_tmm_meeting FOREIGN KEY (es_topic_meeting_id)
-    REFERENCES es_topic_meeting(es_topic_meeting_id),
-  CONSTRAINT fk_es_tmm_user FOREIGN KEY (user_id)
-    REFERENCES auth_user(user_id),
-  CONSTRAINT fk_es_tmm_source_campaign FOREIGN KEY (source_campaign_id)
-    REFERENCES es_campaign(es_campaign_id),
-  CONSTRAINT fk_es_tmm_approved_by_user FOREIGN KEY (approved_by_user_id)
-    REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_comment`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_comment` (
+  `es_comment_id` bigint NOT NULL AUTO_INCREMENT,
+  `comment_text` text NOT NULL,
+  `comment_type` enum('GENERAL','NEW_TOPIC_SUGGESTION','TOPIC') NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) DEFAULT NULL,
+  `email_normalized` varchar(254) DEFAULT NULL,
+  `es_campaign_id` bigint NOT NULL,
+  `es_topic_id` bigint DEFAULT NULL,
+  `first_name` varchar(100) NOT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `session_key` varchar(128) DEFAULT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_comment_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- TOPIC MEETING POLLS
--- -------------------------
-CREATE TABLE es_topic_meeting_poll (
-  es_topic_meeting_poll_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_meeting_id      BIGINT UNSIGNED NOT NULL,
-  poll_name                VARCHAR(160) NOT NULL,
-  poll_description         TEXT NULL,
-  default_timezone         VARCHAR(80) NOT NULL,
-  created_at               DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at               DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (es_topic_meeting_poll_id),
-  KEY ix_es_tmp_poll_meeting (es_topic_meeting_id),
-  CONSTRAINT fk_es_tmp_poll_meeting FOREIGN KEY (es_topic_meeting_id)
-    REFERENCES es_topic_meeting(es_topic_meeting_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_interest`
+--
 
-CREATE TABLE es_topic_meeting_poll_option (
-  es_topic_meeting_poll_option_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_meeting_poll_id        BIGINT UNSIGNED NOT NULL,
-  starts_at_utc                   DATETIME(6) NOT NULL,
-  ends_at_utc                     DATETIME(6) NULL,
-  display_order                   INT NOT NULL,
-  created_at                      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at                      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (es_topic_meeting_poll_option_id),
-  KEY ix_es_tmp_poll_option_poll_order (es_topic_meeting_poll_id, display_order),
-  KEY ix_es_tmp_poll_option_poll_start (es_topic_meeting_poll_id, starts_at_utc),
-  CONSTRAINT fk_es_tmp_poll_option_poll FOREIGN KEY (es_topic_meeting_poll_id)
-    REFERENCES es_topic_meeting_poll(es_topic_meeting_poll_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_interest`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_interest` (
+  `es_interest_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `es_campaign_id` bigint NOT NULL,
+  `es_campaign_registration_id` bigint DEFAULT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `round_no` int NOT NULL,
+  `session_key` varchar(128) DEFAULT NULL,
+  `table_no` int NOT NULL,
+  PRIMARY KEY (`es_interest_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=332 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
-CREATE TABLE es_topic_meeting_poll_response (
-  es_topic_meeting_poll_response_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_meeting_poll_option_id   BIGINT UNSIGNED NOT NULL,
-  user_id                           BIGINT NOT NULL,
-  response                          ENUM('YES','MAYBE','NO') NOT NULL,
-  created_at                        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  updated_at                        DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (es_topic_meeting_poll_response_id),
-  UNIQUE KEY uq_es_tmp_poll_response_user_option (user_id, es_topic_meeting_poll_option_id),
-  KEY ix_es_tmp_poll_response_option (es_topic_meeting_poll_option_id),
-  KEY ix_es_tmp_poll_response_user (user_id),
-  KEY ix_es_tmp_poll_response_response (response),
-  CONSTRAINT fk_es_tmp_poll_response_option FOREIGN KEY (es_topic_meeting_poll_option_id)
-    REFERENCES es_topic_meeting_poll_option(es_topic_meeting_poll_option_id),
-  CONSTRAINT fk_es_tmp_poll_response_user FOREIGN KEY (user_id)
-    REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_meeting`
+--
 
--- ---------------------------------------------------------------------------
--- es_meeting
--- Standalone meeting record for Emerging Standards working group sessions.
--- ---------------------------------------------------------------------------
-CREATE TABLE es_meeting (
-  es_meeting_id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_topic_meeting_id   BIGINT UNSIGNED NOT NULL,
-  meeting_key           VARCHAR(80) NULL,              -- optional human-readable slug
-  meeting_name          VARCHAR(160) NOT NULL,
-  meeting_description   TEXT NULL,
-  scheduled_start       DATETIME NOT NULL,
-  scheduled_end         DATETIME NULL,
-  timezone_id           VARCHAR(64) NULL,              -- IANA timezone id
-  status                ENUM('DRAFT','PROPOSED','FINALIZED','COMPLETED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
-  created_by_user_id    BIGINT UNSIGNED NOT NULL,
-  finalized_at          DATETIME NULL,
-  completed_at          DATETIME NULL,
-  cancelled_at          DATETIME NULL,
-  cancellation_reason   TEXT NULL,
-  online_meeting_url    VARCHAR(2048) NULL,
-  online_meeting_details TEXT NULL,
-  created_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_meeting_id),
-  KEY ix_es_meeting_topic_meeting (es_topic_meeting_id),
-  KEY ix_es_meeting_scheduled_start (scheduled_start),
-  KEY ix_es_meeting_status (status),
-  KEY ix_es_meeting_key (meeting_key),
-  CONSTRAINT fk_es_meeting_topic_meeting FOREIGN KEY (es_topic_meeting_id)
-    REFERENCES es_topic_meeting(es_topic_meeting_id),
-  CONSTRAINT fk_es_meeting_created_by FOREIGN KEY (created_by_user_id)
-    REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_meeting`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting` (
+  `es_meeting_id` bigint NOT NULL AUTO_INCREMENT,
+  `cancellation_reason` text,
+  `cancelled_at` datetime(6) DEFAULT NULL,
+  `completed_at` datetime(6) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `es_topic_meeting_id` bigint NOT NULL,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `finalized_at` datetime(6) DEFAULT NULL,
+  `meeting_description` text,
+  `meeting_key` varchar(80) DEFAULT NULL,
+  `meeting_name` varchar(160) NOT NULL,
+  `scheduled_end` datetime(6) DEFAULT NULL,
+  `scheduled_start` datetime(6) NOT NULL,
+  `status` enum('CANCELLED','COMPLETED','DRAFT','FINALIZED','PROPOSED') NOT NULL,
+  `timezone_id` varchar(64) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `online_meeting_details` text,
+  `online_meeting_url` varchar(2048) DEFAULT NULL,
+  PRIMARY KEY (`es_meeting_id`),
+  KEY `ix_es_meeting_topic_space` (`es_topic_space_id`),
+  CONSTRAINT `fk_es_meeting_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- ---------------------------------------------------------------------------
--- es_meeting_agenda_item
--- An item on a specific meeting's agenda. Can optionally be linked to an ES topic.
--- ---------------------------------------------------------------------------
-CREATE TABLE es_meeting_agenda_item (
-  es_meeting_agenda_item_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_meeting_id              BIGINT UNSIGNED NOT NULL,
-  es_topic_id                BIGINT UNSIGNED NULL,      -- optional link to an ES topic
-  display_order              INT NOT NULL DEFAULT 0,
-  title                      VARCHAR(200) NOT NULL,
-  agenda_markdown            TEXT NULL,
-  time_minutes               INT NULL,                  -- estimated slot length in minutes
-  status                     ENUM('DRAFT','PROPOSED','ACCEPTED','NEEDS_REVISION','POSTPONED','COVERED','NOT_COVERED','CANCELLED') NOT NULL DEFAULT 'DRAFT',
-  proposed_by_user_id        BIGINT UNSIGNED NULL,
-  accepted_at                DATETIME NULL,
-  postponed_to_meeting_id    BIGINT UNSIGNED NULL,      -- target meeting when POSTPONED
-  status_note                TEXT NULL,
-  created_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_meeting_agenda_item_id),
-  KEY ix_es_mai_meeting_order (es_meeting_id, display_order),
-  KEY ix_es_mai_topic (es_topic_id),
-  KEY ix_es_mai_status (status),
-  CONSTRAINT fk_es_mai_meeting FOREIGN KEY (es_meeting_id)
-    REFERENCES es_meeting(es_meeting_id),
-  CONSTRAINT fk_es_mai_topic FOREIGN KEY (es_topic_id)
-    REFERENCES es_topic(es_topic_id),
-  CONSTRAINT fk_es_mai_proposed_by FOREIGN KEY (proposed_by_user_id)
-    REFERENCES auth_user(user_id),
-  CONSTRAINT fk_es_mai_postponed_to FOREIGN KEY (postponed_to_meeting_id)
-    REFERENCES es_meeting(es_meeting_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_meeting_agenda_item`
+--
 
--- ---------------------------------------------------------------------------
--- es_agenda_item_presenter
--- Associates a presenter (by email, optionally by user_id) with an agenda item.
--- ---------------------------------------------------------------------------
-CREATE TABLE es_agenda_item_presenter (
-  es_agenda_item_presenter_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_meeting_agenda_item_id    BIGINT UNSIGNED NOT NULL,
-  user_id                      BIGINT UNSIGNED NULL,    -- NULL if invited person has no account
-  email                        VARCHAR(254) NOT NULL,
-  email_normalized             VARCHAR(254) NOT NULL,
-  display_name                 VARCHAR(160) NULL,
-  presenter_role               ENUM('LEAD','SUPPORTING','FACILITATOR','REQUESTED_REVIEWER') NOT NULL DEFAULT 'LEAD',
-  status                       ENUM('PROPOSED','INVITED','INVITE_BLOCKED','ACCEPTED','DECLINED','NEEDS_CHANGES','REMOVED') NOT NULL DEFAULT 'PROPOSED',
-  response_note                TEXT NULL,
-  responded_at                 DATETIME NULL,
-  created_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at                   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_agenda_item_presenter_id),
-  KEY ix_es_aip_item_status (es_meeting_agenda_item_id, status),
-  KEY ix_es_aip_email_status (email_normalized, status),
-  CONSTRAINT fk_es_aip_agenda_item FOREIGN KEY (es_meeting_agenda_item_id)
-    REFERENCES es_meeting_agenda_item(es_meeting_agenda_item_id),
-  CONSTRAINT fk_es_aip_user FOREIGN KEY (user_id)
-    REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_meeting_agenda_item`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_agenda_item` (
+  `es_meeting_agenda_item_id` bigint NOT NULL AUTO_INCREMENT,
+  `accepted_at` datetime(6) DEFAULT NULL,
+  `agenda_markdown` text,
+  `created_at` datetime(6) NOT NULL,
+  `display_order` int NOT NULL,
+  `es_meeting_id` bigint NOT NULL,
+  `es_topic_id` bigint DEFAULT NULL,
+  `postponed_to_meeting_id` bigint DEFAULT NULL,
+  `proposed_by_user_id` bigint DEFAULT NULL,
+  `status` enum('ACCEPTED','CANCELLED','COVERED','DRAFT','NEEDS_REVISION','NOT_COVERED','POSTPONED','PROPOSED') NOT NULL,
+  `status_note` text,
+  `time_minutes` int DEFAULT NULL,
+  `title` varchar(200) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_meeting_agenda_item_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- ---------------------------------------------------------------------------
--- es_agenda_item_comment
--- Append-only comments and notes attached to an agenda item. No updates.
--- ---------------------------------------------------------------------------
-CREATE TABLE es_agenda_item_comment (
-  es_agenda_item_comment_id  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  es_meeting_agenda_item_id  BIGINT UNSIGNED NOT NULL,
-  user_id                    BIGINT UNSIGNED NULL,
-  email                      VARCHAR(254) NULL,
-  comment_type               ENUM('COMMENT','CHANGE_REQUEST','POSTPONE_REQUEST','DECLINE_REASON','MEETING_NOTE') NOT NULL DEFAULT 'COMMENT',
-  comment_markdown           TEXT NOT NULL,
-  created_at                 DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (es_agenda_item_comment_id),
-  KEY ix_es_aic_item_created (es_meeting_agenda_item_id, created_at),
-  CONSTRAINT fk_es_aic_agenda_item FOREIGN KEY (es_meeting_agenda_item_id)
-    REFERENCES es_meeting_agenda_item(es_meeting_agenda_item_id),
-  CONSTRAINT fk_es_aic_user FOREIGN KEY (user_id)
-    REFERENCES auth_user(user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_meeting_attendance`
+--
 
--- -------------------------
--- EMAIL SEND LOG
--- -------------------------
--- Business-level audit trail of every outbound email attempt from InteropHub.
--- One row per send attempt (including suppressed/blocked outcomes).
--- Stores reason, subject, and body so admins can see what was attempted and why.
--- Magic link emails are dual-recorded here and in auth_magic_link_send_event.
-CREATE TABLE email_send_log (
-  email_log_id                 BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  email_reason                 VARCHAR(80) NOT NULL,           -- stable code; see EmailReason.java for all values
-  recipient_email              VARCHAR(254) NOT NULL,
-  recipient_email_normalized   VARCHAR(254) NOT NULL,
-  user_id                      BIGINT NULL,                    -- FK auth_user; NULL if recipient has no account
-  subject                      VARCHAR(500) NOT NULL,
-  body_text                    TEXT NULL,
-  sent_at                      DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  smtp_message_id              VARCHAR(255) NULL,
-  smtp_provider                VARCHAR(80) NULL,
-  magic_id                     BIGINT UNSIGNED NULL,           -- cross-ref to auth_magic_link for magic link emails
-  PRIMARY KEY (email_log_id),
-  KEY ix_email_log_email_time   (recipient_email_normalized, sent_at),
-  KEY ix_email_log_user_time    (user_id, sent_at),
-  KEY ix_email_log_reason_time  (email_reason, sent_at),
-  KEY ix_email_log_sent_at      (sent_at),
-  CONSTRAINT fk_email_log_user  FOREIGN KEY (user_id)  REFERENCES auth_user(user_id),
-  CONSTRAINT fk_email_log_magic FOREIGN KEY (magic_id) REFERENCES auth_magic_link(magic_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_meeting_attendance`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_attendance` (
+  `es_meeting_attendance_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_meeting_id` bigint unsigned NOT NULL,
+  `attendance_date` date NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  `first_name` varchar(100) NOT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `organization` varchar(200) DEFAULT NULL,
+  `hope_text` text,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `es_meeting_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_meeting_attendance_id`),
+  UNIQUE KEY `uq_attendance_meeting_date_email` (`es_topic_meeting_id`,`attendance_date`,`email_normalized`),
+  KEY `ix_attendance_meeting_date` (`es_topic_meeting_id`,`attendance_date`),
+  KEY `ix_attendance_user` (`user_id`),
+  CONSTRAINT `fk_attendance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=164 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
--- -------------------------
--- DANDELION DAILY SYNC CONFIG
--- -------------------------
-CREATE TABLE dandelion_sync_config (
-  config_id      BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  active         TINYINT(1) NOT NULL DEFAULT 1,
-  sync_enabled   TINYINT(1) NOT NULL DEFAULT 0,
-  api_endpoint   VARCHAR(500) NOT NULL,
-  api_key        VARCHAR(300) NOT NULL,
-  created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (config_id),
-  KEY ix_dd_sync_config_active (active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--
+-- Table structure for table `es_meeting_communication`
+--
 
--- -------------------------
--- DANDELION DAILY SYNC QUEUE
--- -------------------------
-CREATE TABLE dandelion_sync_queue (
-  sync_queue_id        BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  entity_type          ENUM('TOPIC','CONTACT','ASSIGNMENT') NOT NULL,
-  entity_id            BIGINT UNSIGNED NOT NULL,
-  secondary_entity_id  BIGINT UNSIGNED NULL,
-  operation            ENUM('UPSERT','ASSIGN_ADD','ASSIGN_REMOVE') NOT NULL,
-  status               ENUM('PENDING','SENT','FAILED') NOT NULL DEFAULT 'PENDING',
-  attempt_count        INT NOT NULL DEFAULT 0,
-  last_error           TEXT NULL,
-  sent_at              DATETIME NULL,
-  created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (sync_queue_id),
-  KEY ix_dd_sync_queue_status_created (status, created_at),
-  KEY ix_dd_sync_queue_entity (entity_type, entity_id, secondary_entity_id, status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+DROP TABLE IF EXISTS `es_meeting_communication`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_communication` (
+  `es_meeting_communication_id` bigint NOT NULL AUTO_INCREMENT,
+  `approved_at` datetime(6) DEFAULT NULL,
+  `approved_by_user_id` bigint DEFAULT NULL,
+  `cancellation_reason` text,
+  `cancelled_at` datetime(6) DEFAULT NULL,
+  `cancelled_by_user_id` bigint DEFAULT NULL,
+  `communication_type` enum('CALL_FOR_TOPICS','CANCELLED','FINAL_AGENDA','PROPOSED_AGENDA','REMINDER') NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `es_meeting_id` bigint NOT NULL,
+  `expected_meeting_status` enum('CANCELLED','COMPLETED','DRAFT','FINALIZED','PROPOSED') DEFAULT NULL,
+  `include_general_members` bit(1) NOT NULL,
+  `include_presenters` bit(1) NOT NULL,
+  `include_topic_champions` bit(1) NOT NULL,
+  `include_topic_subscribers` bit(1) NOT NULL,
+  `last_error` text,
+  `note_to_include` text,
+  `scheduled_send_at` datetime(6) DEFAULT NULL,
+  `sent_completed_at` datetime(6) DEFAULT NULL,
+  `sent_started_at` datetime(6) DEFAULT NULL,
+  `status` enum('CANCELLED','DRAFT','FAILED','SCHEDULED','SENDING','SENT') NOT NULL,
+  `subject_override` varchar(500) DEFAULT NULL,
+  `timezone_id` varchar(64) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_meeting_communication_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_neighborhood`
+--
+
+DROP TABLE IF EXISTS `es_neighborhood`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_neighborhood` (
+  `es_neighborhood_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `description` text,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `display_order` int NOT NULL,
+  `is_active` bit(1) NOT NULL,
+  `neighborhood_code` varchar(80) NOT NULL,
+  `neighborhood_name` varchar(140) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_neighborhood_id`),
+  UNIQUE KEY `UK_lltg11sfmdmahoduh6u9ggw2o` (`neighborhood_code`),
+  UNIQUE KEY `uq_es_neighborhood_space_name` (`es_topic_space_id`,`neighborhood_name`),
+  KEY `ix_es_neighborhood_topic_space` (`es_topic_space_id`),
+  CONSTRAINT `fk_es_neighborhood_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_subscription`
+--
+
+DROP TABLE IF EXISTS `es_subscription`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_subscription` (
+  `es_subscription_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `es_topic_id` bigint DEFAULT NULL,
+  `source_campaign_id` bigint DEFAULT NULL,
+  `status` enum('SUBSCRIBED','CHAMPION','SUPPORT','UNSUBSCRIBED') NOT NULL DEFAULT 'SUBSCRIBED',
+  `subscription_type` enum('GENERAL_ES','TOPIC') NOT NULL,
+  `unsubscribe_token_hash` varbinary(32) DEFAULT NULL,
+  `unsubscribed_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_subscription_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1292 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_survey`
+--
+
+DROP TABLE IF EXISTS `es_survey`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_survey` (
+  `es_survey_id` bigint NOT NULL AUTO_INCREMENT,
+  `closed_at` datetime(6) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `ready_at` datetime(6) DEFAULT NULL,
+  `status` enum('ARCHIVED','CLOSED','DRAFT','READY') NOT NULL,
+  `survey_description` text,
+  `survey_key` varchar(80) DEFAULT NULL,
+  `survey_name` varchar(160) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_survey_id`),
+  UNIQUE KEY `UK_50k4tvbmkq7na087d3jnqpysy` (`survey_key`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_survey_answer`
+--
+
+DROP TABLE IF EXISTS `es_survey_answer`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_survey_answer` (
+  `es_survey_answer_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `es_survey_question_id` bigint NOT NULL,
+  `es_survey_response_id` bigint NOT NULL,
+  `numeric_value` int DEFAULT NULL,
+  `text_value` text,
+  PRIMARY KEY (`es_survey_answer_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=69 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_survey_question`
+--
+
+DROP TABLE IF EXISTS `es_survey_question`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_survey_question` (
+  `es_survey_question_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `display_order` int NOT NULL,
+  `es_survey_id` bigint NOT NULL,
+  `question_text` text NOT NULL,
+  `question_type` enum('LIKERT_1_5','TEXT') NOT NULL,
+  `required` bit(1) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_survey_question_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_survey_response`
+--
+
+DROP TABLE IF EXISTS `es_survey_response`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_survey_response` (
+  `es_survey_response_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `es_meeting_attendance_id` bigint DEFAULT NULL,
+  `es_meeting_id` bigint DEFAULT NULL,
+  `es_topic_meeting_survey_id` bigint NOT NULL,
+  `first_name` varchar(100) DEFAULT NULL,
+  `last_name` varchar(100) DEFAULT NULL,
+  `organization` varchar(200) DEFAULT NULL,
+  `submitted_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_survey_response_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic`
+--
+
+DROP TABLE IF EXISTS `es_topic`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic` (
+  `es_topic_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `description` text,
+  `neighborhood` varchar(120) DEFAULT NULL,
+  `policy_status` varchar(120) DEFAULT NULL,
+  `priority_cdc` int NOT NULL,
+  `priority_ehr` int NOT NULL,
+  `priority_iis` int NOT NULL,
+  `stage` varchar(80) DEFAULT NULL,
+  `path` varchar(80) DEFAULT NULL,
+  `es_topic_stage_definition_id` bigint unsigned DEFAULT NULL,
+  `es_topic_path_definition_id` bigint unsigned DEFAULT NULL,
+  `status` enum('ACTIVE','ARCHIVED','RETIRED') NOT NULL,
+  `topic_code` varchar(80) NOT NULL,
+  `topic_name` varchar(140) NOT NULL,
+  `topic_type` varchar(120) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `confluence_url` varchar(500) DEFAULT NULL,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  PRIMARY KEY (`es_topic_id`),
+  UNIQUE KEY `UK_49mf6h9vgqgfao3nfdvg4ib3d` (`topic_code`),
+  KEY `ix_es_topic_space_id` (`es_topic_space_id`),
+  KEY `ix_es_topic_stage_definition_id` (`es_topic_stage_definition_id`),
+  KEY `ix_es_topic_path_definition_id` (`es_topic_path_definition_id`),
+  CONSTRAINT `fk_es_topic_path_definition` FOREIGN KEY (`es_topic_path_definition_id`) REFERENCES `es_topic_path_definition` (`es_topic_path_definition_id`),
+  CONSTRAINT `fk_es_topic_stage_definition` FOREIGN KEY (`es_topic_stage_definition_id`) REFERENCES `es_topic_stage_definition` (`es_topic_stage_definition_id`),
+  CONSTRAINT `fk_es_topic_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=125 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_board_definition`
+--
+
+DROP TABLE IF EXISTS `es_topic_board_definition`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_board_definition` (
+  `es_topic_board_definition_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `board_code` varchar(80) NOT NULL,
+  `board_name` varchar(140) NOT NULL,
+  `board_description` text,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `curator_topic_id` bigint DEFAULT NULL,
+  `show_unassigned_stage` tinyint(1) NOT NULL DEFAULT '0',
+  `show_unassigned_path` tinyint(1) NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_board_definition_id`),
+  UNIQUE KEY `uq_es_topic_board_code` (`board_code`),
+  KEY `ix_es_topic_board_space` (`es_topic_space_id`),
+  KEY `ix_es_topic_board_curator` (`curator_topic_id`),
+  CONSTRAINT `fk_es_topic_board_curator` FOREIGN KEY (`curator_topic_id`) REFERENCES `es_topic` (`es_topic_id`),
+  CONSTRAINT `fk_es_topic_board_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_board_path`
+--
+
+DROP TABLE IF EXISTS `es_topic_board_path`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_board_path` (
+  `es_topic_board_path_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_board_definition_id` bigint unsigned NOT NULL,
+  `es_topic_path_definition_id` bigint unsigned NOT NULL,
+  `display_order` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`es_topic_board_path_id`),
+  UNIQUE KEY `uq_es_topic_board_path` (`es_topic_board_definition_id`,`es_topic_path_definition_id`),
+  KEY `ix_es_topic_board_path_order` (`es_topic_board_definition_id`,`display_order`),
+  KEY `fk_es_topic_board_path_definition` (`es_topic_path_definition_id`),
+  CONSTRAINT `fk_es_topic_board_path_board` FOREIGN KEY (`es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`),
+  CONSTRAINT `fk_es_topic_board_path_definition` FOREIGN KEY (`es_topic_path_definition_id`) REFERENCES `es_topic_path_definition` (`es_topic_path_definition_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_board_stage`
+--
+
+DROP TABLE IF EXISTS `es_topic_board_stage`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_board_stage` (
+  `es_topic_board_stage_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_board_definition_id` bigint unsigned NOT NULL,
+  `es_topic_stage_definition_id` bigint unsigned NOT NULL,
+  `display_order` int NOT NULL DEFAULT '0',
+  PRIMARY KEY (`es_topic_board_stage_id`),
+  UNIQUE KEY `uq_es_topic_board_stage` (`es_topic_board_definition_id`,`es_topic_stage_definition_id`),
+  KEY `ix_es_topic_board_stage_order` (`es_topic_board_definition_id`,`display_order`),
+  KEY `fk_es_topic_board_stage_definition` (`es_topic_stage_definition_id`),
+  CONSTRAINT `fk_es_topic_board_stage_board` FOREIGN KEY (`es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`),
+  CONSTRAINT `fk_es_topic_board_stage_definition` FOREIGN KEY (`es_topic_stage_definition_id`) REFERENCES `es_topic_stage_definition` (`es_topic_stage_definition_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_curation`
+--
+
+DROP TABLE IF EXISTS `es_topic_curation`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_curation` (
+  `es_topic_curation_id` bigint NOT NULL AUTO_INCREMENT,
+  `category_label` varchar(80) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `curated_topic_id` bigint NOT NULL,
+  `curation_status` varchar(80) DEFAULT NULL,
+  `curator_topic_id` bigint NOT NULL,
+  `display_order` int NOT NULL,
+  `editorial_note` text,
+  `topic_alias` varchar(140) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `agenda_cadence_days` int DEFAULT NULL,
+  PRIMARY KEY (`es_topic_curation_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting` (
+  `es_topic_meeting_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `disabled_at` datetime(6) DEFAULT NULL,
+  `disabled_by_user_id` bigint DEFAULT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `join_requires_approval` bit(1) NOT NULL,
+  `meeting_description` text,
+  `meeting_name` varchar(160) NOT NULL,
+  `status` enum('ACTIVE','DISABLED') NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `online_meeting_details` text,
+  `online_meeting_url` varchar(2048) DEFAULT NULL,
+  PRIMARY KEY (`es_topic_meeting_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting_member`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_member`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_member` (
+  `es_topic_meeting_member_id` bigint NOT NULL AUTO_INCREMENT,
+  `approved_at` datetime(6) DEFAULT NULL,
+  `approved_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `email` varchar(254) NOT NULL,
+  `email_normalized` varchar(254) NOT NULL,
+  `es_topic_meeting_id` bigint NOT NULL,
+  `membership_status` enum('APPROVED','DECLINED','REMOVED','REQUESTED') NOT NULL,
+  `source_campaign_id` bigint DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_topic_meeting_member_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=73 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting_poll`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_poll`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_poll` (
+  `es_topic_meeting_poll_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `default_timezone` varchar(80) NOT NULL,
+  `es_topic_meeting_id` bigint NOT NULL,
+  `poll_description` text,
+  `poll_name` varchar(160) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_topic_meeting_poll_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting_poll_option`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_poll_option`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_poll_option` (
+  `es_topic_meeting_poll_option_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `display_order` int NOT NULL,
+  `ends_at_utc` datetime(6) DEFAULT NULL,
+  `es_topic_meeting_poll_id` bigint NOT NULL,
+  `starts_at_utc` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_topic_meeting_poll_option_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting_poll_response`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_poll_response`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_poll_response` (
+  `es_topic_meeting_poll_response_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `es_topic_meeting_poll_option_id` bigint NOT NULL,
+  `response` enum('MAYBE','NO','YES') NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_topic_meeting_poll_response_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_meeting_survey`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_survey`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_survey` (
+  `es_topic_meeting_survey_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `end_date` date NOT NULL,
+  `es_survey_id` bigint NOT NULL,
+  `es_topic_meeting_id` bigint NOT NULL,
+  `start_date` date NOT NULL,
+  `status` enum('ACTIVE','CLOSED','PAUSED') NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_topic_meeting_survey_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_neighborhood`
+--
+
+DROP TABLE IF EXISTS `es_topic_neighborhood`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_neighborhood` (
+  `es_topic_neighborhood_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_id` bigint NOT NULL,
+  `es_neighborhood_id` bigint NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_neighborhood_id`),
+  UNIQUE KEY `uq_es_topic_neighborhood` (`es_topic_id`,`es_neighborhood_id`),
+  KEY `ix_es_topic_neighborhood_topic` (`es_topic_id`),
+  KEY `ix_es_topic_neighborhood_neighborhood` (`es_neighborhood_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=309 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_path_definition`
+--
+
+DROP TABLE IF EXISTS `es_topic_path_definition`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_path_definition` (
+  `es_topic_path_definition_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `path_code` varchar(80) NOT NULL,
+  `path_name` varchar(120) NOT NULL,
+  `path_description` text,
+  `display_order` int NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_path_definition_id`),
+  UNIQUE KEY `uq_es_topic_path_space_code` (`es_topic_space_id`,`path_code`),
+  UNIQUE KEY `uq_es_topic_path_space_name` (`es_topic_space_id`,`path_name`),
+  KEY `ix_es_topic_path_space_active_order` (`es_topic_space_id`,`is_active`,`display_order`,`path_name`),
+  CONSTRAINT `fk_es_topic_path_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=17 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_relationship`
+--
+
+DROP TABLE IF EXISTS `es_topic_relationship`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_relationship` (
+  `es_topic_relationship_id` bigint NOT NULL AUTO_INCREMENT,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `display_order` int NOT NULL,
+  `from_topic_id` bigint NOT NULL,
+  `relationship_type` enum('BLOCKER_FOR','DEPENDS_ON','DERIVED_FROM','DUPLICATE_OF','FEEDS_INTO','OPERATIONALIZES','OVERLAPS','RELATED_TO','SUPERSEDES') NOT NULL,
+  `to_topic_id` bigint NOT NULL,
+  PRIMARY KEY (`es_topic_relationship_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_review`
+--
+
+DROP TABLE IF EXISTS `es_topic_review`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_review` (
+  `es_topic_review_id` bigint NOT NULL AUTO_INCREMENT,
+  `community_value_score` int NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `es_campaign_id` bigint NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_topic_review_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=690 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_space`
+--
+
+DROP TABLE IF EXISTS `es_topic_space`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_space` (
+  `es_topic_space_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `space_code` varchar(80) NOT NULL,
+  `space_name` varchar(140) NOT NULL,
+  `description` text,
+  `visibility` enum('PUBLIC','PRIVATE') NOT NULL,
+  `display_order` int NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_space_id`),
+  UNIQUE KEY `uq_es_topic_space_code` (`space_code`),
+  KEY `ix_es_topic_space_visible_order` (`visibility`,`is_active`,`display_order`,`space_name`)
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_space_member`
+--
+
+DROP TABLE IF EXISTS `es_topic_space_member`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_space_member` (
+  `es_topic_space_member_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `user_id` bigint NOT NULL,
+  `role` enum('MEMBER','ADMIN') NOT NULL DEFAULT 'MEMBER',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_space_member_id`),
+  UNIQUE KEY `uq_es_topic_space_member_space_user` (`es_topic_space_id`,`user_id`),
+  KEY `ix_es_topic_space_member_user` (`user_id`),
+  KEY `ix_es_topic_space_member_space_role` (`es_topic_space_id`,`role`),
+  CONSTRAINT `fk_es_topic_space_member_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`),
+  CONSTRAINT `fk_es_topic_space_member_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_stage_definition`
+--
+
+DROP TABLE IF EXISTS `es_topic_stage_definition`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_stage_definition` (
+  `es_topic_stage_definition_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `es_topic_space_id` bigint unsigned NOT NULL,
+  `stage_code` varchar(80) NOT NULL,
+  `stage_name` varchar(120) NOT NULL,
+  `stage_description` text,
+  `display_order` int NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`es_topic_stage_definition_id`),
+  UNIQUE KEY `uq_es_topic_stage_space_code` (`es_topic_space_id`,`stage_code`),
+  UNIQUE KEY `uq_es_topic_stage_space_name` (`es_topic_space_id`,`stage_name`),
+  KEY `ix_es_topic_stage_space_active_order` (`es_topic_space_id`,`is_active`,`display_order`,`stage_name`),
+  CONSTRAINT `fk_es_topic_stage_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `hub_settings`
+--
+
+DROP TABLE IF EXISTS `hub_settings`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `hub_settings` (
+  `setting_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `active` tinyint(1) NOT NULL DEFAULT '1',
+  `external_base_url` varchar(300) NOT NULL,
+  `smtp_host` varchar(255) NOT NULL,
+  `smtp_port` int NOT NULL,
+  `smtp_username` varchar(255) NOT NULL,
+  `smtp_password` varchar(255) NOT NULL,
+  `smtp_auth` tinyint(1) NOT NULL DEFAULT '1',
+  `smtp_starttls` tinyint(1) NOT NULL DEFAULT '1',
+  `smtp_ssl` tinyint(1) NOT NULL DEFAULT '0',
+  `smtp_from_email` varchar(254) NOT NULL,
+  `smtp_from_name` varchar(160) NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `email_enabled` bit(1) NOT NULL,
+  PRIMARY KEY (`setting_id`),
+  KEY `ix_hub_settings_active` (`active`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `ig_topic`
+--
+
+DROP TABLE IF EXISTS `ig_topic`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `ig_topic` (
+  `topic_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `topic_code` varchar(80) NOT NULL,
+  `topic_name` varchar(140) NOT NULL,
+  `description` text,
+  `created_by_user_id` bigint NOT NULL,
+  `status` enum('ACTIVE','ARCHIVED') NOT NULL DEFAULT 'ACTIVE',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`topic_id`),
+  UNIQUE KEY `uq_topic_code` (`topic_code`),
+  KEY `ix_topic_status` (`status`),
+  KEY `fk_topic_creator` (`created_by_user_id`),
+  CONSTRAINT `fk_topic_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `legal_term`
+--
+
+DROP TABLE IF EXISTS `legal_term`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `legal_term` (
+  `term_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `term_code` varchar(80) NOT NULL,
+  `version_num` int NOT NULL,
+  `title` varchar(200) NOT NULL,
+  `short_text` varchar(500) NOT NULL,
+  `full_text` text,
+  `full_text_url` varchar(500) DEFAULT NULL,
+  `scope_type` enum('REGISTRATION','WORKSPACE','BOTH') NOT NULL DEFAULT 'REGISTRATION',
+  `is_required` tinyint(1) NOT NULL DEFAULT '1',
+  `display_order` int NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `effective_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `retired_at` datetime DEFAULT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`term_id`),
+  UNIQUE KEY `uq_term_version` (`term_code`,`version_num`),
+  KEY `ix_term_scope_active` (`scope_type`,`is_active`,`effective_at`),
+  KEY `ix_term_display` (`scope_type`,`display_order`),
+  KEY `fk_legal_term_creator` (`created_by_user_id`),
+  CONSTRAINT `fk_legal_term_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `legal_term_acceptance`
+--
+
+DROP TABLE IF EXISTS `legal_term_acceptance`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `legal_term_acceptance` (
+  `acceptance_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `term_id` bigint unsigned NOT NULL,
+  `user_id` bigint NOT NULL,
+  `workspace_id` bigint unsigned DEFAULT NULL,
+  `accepted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `accepted_value` tinyint(1) NOT NULL DEFAULT '1',
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` varchar(500) DEFAULT NULL,
+  PRIMARY KEY (`acceptance_id`),
+  UNIQUE KEY `uq_term_acceptance_once` (`term_id`,`user_id`,`workspace_id`),
+  KEY `ix_accept_user` (`user_id`,`accepted_at`),
+  KEY `ix_accept_term` (`term_id`,`accepted_at`),
+  KEY `ix_accept_workspace` (`workspace_id`,`user_id`),
+  CONSTRAINT `fk_term_acceptance_term` FOREIGN KEY (`term_id`) REFERENCES `legal_term` (`term_id`),
+  CONSTRAINT `fk_term_acceptance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_term_acceptance_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=229 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `usage_daily_agg`
+--
+
+DROP TABLE IF EXISTS `usage_daily_agg`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `usage_daily_agg` (
+  `app_id` bigint NOT NULL,
+  `metric` enum('API_CALL','API_ERROR_4XX','API_ERROR_5XX') NOT NULL,
+  `token_id` bigint NOT NULL,
+  `usage_day` date NOT NULL,
+  `count_value` bigint NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`app_id`,`metric`,`token_id`,`usage_day`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Temporary view structure for view `v_email_prospect`
+--
+
+DROP TABLE IF EXISTS `v_email_prospect`;
+/*!50001 DROP VIEW IF EXISTS `v_email_prospect`*/;
+SET @saved_cs_client     = @@character_set_client;
+/*!50503 SET character_set_client = utf8mb4 */;
+/*!50001 CREATE VIEW `v_email_prospect` AS SELECT 
+ 1 AS `email_normalized`,
+ 1 AS `first_contact_at`,
+ 1 AS `last_contact_at`,
+ 1 AS `campaign_registration_count`,
+ 1 AS `comment_count`,
+ 1 AS `subscription_count`,
+ 1 AS `meeting_member_count`,
+ 1 AS `meeting_attendance_count`*/;
+SET character_set_client = @saved_cs_client;
+
+--
+-- Table structure for table `workspace_app`
+--
+
+DROP TABLE IF EXISTS `workspace_app`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_app` (
+  `workspace_app_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `workspace_id` bigint unsigned NOT NULL,
+  `app_id` bigint unsigned NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`workspace_app_id`),
+  UNIQUE KEY `uq_workspace_app` (`workspace_id`,`app_id`),
+  KEY `fk_workspace_app_app` (`app_id`),
+  CONSTRAINT `fk_workspace_app_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`),
+  CONSTRAINT `fk_workspace_app_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_endpoint`
+--
+
+DROP TABLE IF EXISTS `workspace_endpoint`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_endpoint` (
+  `endpoint_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `system_id` bigint unsigned NOT NULL,
+  `endpoint_type` enum('FHIR_BASE','SMART_CONFIG','WEBHOOK','OTHER') NOT NULL DEFAULT 'FHIR_BASE',
+  `url` varchar(500) DEFAULT NULL,
+  `auth_type` enum('AIRA_TOKEN','BEARER_PAT','NONE','OTHER') NOT NULL DEFAULT 'BEARER_PAT',
+  `auth_instructions` text,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`endpoint_id`),
+  KEY `ix_endpoint_system` (`system_id`,`is_active`),
+  CONSTRAINT `fk_endpoint_system` FOREIGN KEY (`system_id`) REFERENCES `workspace_system` (`system_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_enrollment`
+--
+
+DROP TABLE IF EXISTS `workspace_enrollment`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_enrollment` (
+  `enrollment_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `workspace_id` bigint unsigned NOT NULL,
+  `user_id` bigint NOT NULL,
+  `state` enum('PENDING','APPROVED','REJECTED','SUSPENDED') NOT NULL DEFAULT 'PENDING',
+  `consent_at` datetime DEFAULT NULL,
+  `approved_by_user_id` bigint DEFAULT NULL,
+  `approved_at` datetime DEFAULT NULL,
+  `admin_note` varchar(400) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`enrollment_id`),
+  UNIQUE KEY `uq_workspace_user` (`workspace_id`,`user_id`),
+  KEY `ix_enrollment_state` (`workspace_id`,`state`),
+  KEY `fk_enroll_user` (`user_id`),
+  KEY `fk_enroll_approver` (`approved_by_user_id`),
+  CONSTRAINT `fk_enroll_approver` FOREIGN KEY (`approved_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_enroll_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_enroll_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_progress`
+--
+
+DROP TABLE IF EXISTS `workspace_progress`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_progress` (
+  `progress_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `workspace_id` bigint unsigned NOT NULL,
+  `step_id` bigint unsigned NOT NULL,
+  `client_system_id` bigint unsigned NOT NULL,
+  `server_system_id` bigint unsigned NOT NULL,
+  `status` enum('NO_PROGRESS','PROBLEMS','PARTIAL','WORKS','NOT_APPLICABLE') NOT NULL DEFAULT 'NO_PROGRESS',
+  `note` varchar(800) DEFAULT NULL,
+  `reported_by_user_id` bigint NOT NULL,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`progress_id`),
+  UNIQUE KEY `uq_progress_cell` (`step_id`,`client_system_id`,`server_system_id`),
+  KEY `ix_progress_workspace` (`workspace_id`,`client_system_id`,`server_system_id`),
+  KEY `ix_progress_status` (`workspace_id`,`status`),
+  KEY `fk_progress_client` (`client_system_id`),
+  KEY `fk_progress_server` (`server_system_id`),
+  KEY `fk_progress_reporter` (`reported_by_user_id`),
+  CONSTRAINT `fk_progress_client` FOREIGN KEY (`client_system_id`) REFERENCES `workspace_system` (`system_id`),
+  CONSTRAINT `fk_progress_reporter` FOREIGN KEY (`reported_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_progress_server` FOREIGN KEY (`server_system_id`) REFERENCES `workspace_system` (`system_id`),
+  CONSTRAINT `fk_progress_step` FOREIGN KEY (`step_id`) REFERENCES `workspace_step` (`step_id`),
+  CONSTRAINT `fk_progress_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_step`
+--
+
+DROP TABLE IF EXISTS `workspace_step`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_step` (
+  `step_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `workspace_id` bigint unsigned NOT NULL,
+  `step_name` varchar(140) NOT NULL,
+  `applies_to` enum('CLIENT_TO_SERVER','CLIENT_ONLY','SERVER_ONLY','BOTH') NOT NULL DEFAULT 'CLIENT_TO_SERVER',
+  `sort_order` int NOT NULL DEFAULT '0',
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`step_id`),
+  KEY `ix_step_workspace` (`workspace_id`,`sort_order`),
+  CONSTRAINT `fk_step_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_system`
+--
+
+DROP TABLE IF EXISTS `workspace_system`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_system` (
+  `system_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `workspace_id` bigint unsigned NOT NULL,
+  `system_name` varchar(160) NOT NULL,
+  `managed_by` enum('AIRA','THIRD_PARTY') NOT NULL DEFAULT 'THIRD_PARTY',
+  `capability` enum('CLIENT','SERVER','BOTH') NOT NULL,
+  `availability` enum('UP','DOWN','INTERMITTENT','UNKNOWN') NOT NULL DEFAULT 'UNKNOWN',
+  `availability_note` varchar(400) DEFAULT NULL,
+  `description` text,
+  `how_to_use` text,
+  `limitations` text,
+  `created_by_user_id` bigint NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`system_id`),
+  KEY `ix_system_workspace` (`workspace_id`,`capability`,`managed_by`),
+  KEY `ix_system_availability` (`workspace_id`,`availability`),
+  KEY `fk_system_creator` (`created_by_user_id`),
+  CONSTRAINT `fk_system_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_system_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `workspace_system_contact`
+--
+
+DROP TABLE IF EXISTS `workspace_system_contact`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `workspace_system_contact` (
+  `system_contact_id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `system_id` bigint unsigned NOT NULL,
+  `user_id` bigint NOT NULL,
+  `contact_role` varchar(120) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`system_contact_id`),
+  UNIQUE KEY `uq_system_user` (`system_id`,`user_id`),
+  KEY `ix_system_contact_user` (`user_id`),
+  CONSTRAINT `fk_sys_contact_system` FOREIGN KEY (`system_id`) REFERENCES `workspace_system` (`system_id`),
+  CONSTRAINT `fk_sys_contact_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping events for database 'interophub'
+--
+
+--
+-- Dumping routines for database 'interophub'
+--
+
+--
+-- Final view structure for view `v_email_prospect`
+--
+
+/*!50001 DROP VIEW IF EXISTS `v_email_prospect`*/;
+/*!50001 SET @saved_cs_client          = @@character_set_client */;
+/*!50001 SET @saved_cs_results         = @@character_set_results */;
+/*!50001 SET @saved_col_connection     = @@collation_connection */;
+/*!50001 SET character_set_client      = utf8mb4 */;
+/*!50001 SET character_set_results     = utf8mb4 */;
+/*!50001 SET collation_connection      = utf8mb4_0900_ai_ci */;
+/*!50001 CREATE ALGORITHM=UNDEFINED */
+/*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
+/*!50001 VIEW `v_email_prospect` AS select `t`.`email_normalized` AS `email_normalized`,min(`t`.`created_at`) AS `first_contact_at`,max(`t`.`created_at`) AS `last_contact_at`,sum(`t`.`src_campaign_reg`) AS `campaign_registration_count`,sum(`t`.`src_comment`) AS `comment_count`,sum(`t`.`src_subscription`) AS `subscription_count`,sum(`t`.`src_meeting_member`) AS `meeting_member_count`,sum(`t`.`src_meeting_attendance`) AS `meeting_attendance_count` from (select `es_campaign_registration`.`email_normalized` AS `email_normalized`,`es_campaign_registration`.`created_at` AS `created_at`,1 AS `1`,0 AS `0`,0 AS `0`,0 AS `0`,0 AS `0` from `es_campaign_registration` where (`es_campaign_registration`.`email_normalized` is not null) union all select `es_comment`.`email_normalized` AS `email_normalized`,`es_comment`.`created_at` AS `created_at`,0 AS `0`,1 AS `1`,0 AS `0`,0 AS `0`,0 AS `0` from `es_comment` where ((`es_comment`.`email_normalized` is not null) and (`es_comment`.`user_id` is null)) union all select `es_subscription`.`email_normalized` AS `email_normalized`,`es_subscription`.`created_at` AS `created_at`,0 AS `0`,0 AS `0`,1 AS `1`,0 AS `0`,0 AS `0` from `es_subscription` where ((`es_subscription`.`email_normalized` is not null) and (`es_subscription`.`user_id` is null)) union all select `es_topic_meeting_member`.`email_normalized` AS `email_normalized`,`es_topic_meeting_member`.`created_at` AS `created_at`,0 AS `0`,0 AS `0`,0 AS `0`,1 AS `1`,0 AS `0` from `es_topic_meeting_member` where ((`es_topic_meeting_member`.`email_normalized` is not null) and (`es_topic_meeting_member`.`user_id` is null)) union all select `es_meeting_attendance`.`email_normalized` AS `email_normalized`,`es_meeting_attendance`.`created_at` AS `created_at`,0 AS `0`,0 AS `0`,0 AS `0`,0 AS `0`,1 AS `1` from `es_meeting_attendance` where ((`es_meeting_attendance`.`email_normalized` is not null) and (`es_meeting_attendance`.`user_id` is null))) `t` (`email_normalized`,`created_at`,`src_campaign_reg`,`src_comment`,`src_subscription`,`src_meeting_member`,`src_meeting_attendance`) where `t`.`email_normalized` in (select `auth_user`.`email_normalized` from `auth_user` where (`auth_user`.`status` <> 'DELETED')) is false group by `t`.`email_normalized` */;
+/*!50001 SET character_set_client      = @saved_cs_client */;
+/*!50001 SET character_set_results     = @saved_cs_results */;
+/*!50001 SET collation_connection      = @saved_col_connection */;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+
+-- Dump completed on 2026-07-24  9:17:31
