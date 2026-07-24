@@ -60,6 +60,21 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
         }
     }
 
+    public List<EsMeeting> findDueForClosure(LocalDateTime asOf) {
+        if (asOf == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.status = :status and m.closeDueAt is not null"
+                            + " and m.closeDueAt <= :asOf order by m.closeDueAt asc, m.esMeetingId asc",
+                    EsMeeting.class)
+                    .setParameter("status", EsMeeting.MeetingStatus.COMPLETED)
+                    .setParameter("asOf", asOf)
+                    .getResultList();
+        }
+    }
+
     /**
      * Returns meetings whose scheduledStart falls within [start, end] inclusive,
      * ordered by scheduledStart ascending.

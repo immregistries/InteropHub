@@ -250,7 +250,9 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             case DRAFT -> "Draft";
             case PROPOSED -> "Proposed";
             case FINALIZED -> "Finalized";
+            case IN_SESSION -> "In Session";
             case COMPLETED -> "Completed";
+            case CLOSED -> "Closed";
             case CANCELLED -> "Cancelled";
         };
     }
@@ -262,7 +264,9 @@ public class EsMeetingSeriesServlet extends HttpServlet {
             case DRAFT -> "mseries-badge-draft";
             case PROPOSED -> "mseries-badge-proposed";
             case FINALIZED -> "mseries-badge-finalized";
+            case IN_SESSION -> "mseries-badge-session";
             case COMPLETED -> "mseries-badge-completed";
+            case CLOSED -> "mseries-badge-closed";
             case CANCELLED -> "mseries-badge-cancelled";
         };
     }

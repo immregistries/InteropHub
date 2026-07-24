@@ -2,6 +2,7 @@ package org.airahub.interophub.dao;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 
@@ -92,6 +93,43 @@ public class EsAgendaItemPresenterDao extends GenericDao<EsAgendaItemPresenter, 
                     EsAgendaItemPresenter.class)
                     .setParameter("uid", userId)
                     .getResultList();
+        }
+    }
+
+    public Optional<EsAgendaItemPresenter> findAcceptedByAgendaItemIdAndUserId(Long esMeetingAgendaItemId,
+            Long userId) {
+        if (esMeetingAgendaItemId == null || userId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsAgendaItemPresenter p where p.esMeetingAgendaItemId = :agendaItemId"
+                            + " and p.userId = :userId and p.status = :status",
+                    EsAgendaItemPresenter.class)
+                    .setParameter("agendaItemId", esMeetingAgendaItemId)
+                    .setParameter("userId", userId)
+                    .setParameter("status", EsAgendaItemPresenter.PresenterStatus.ACCEPTED)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    public boolean hasAcceptedPresenterForMeetingAndUserId(Long esMeetingId, Long userId) {
+        if (esMeetingId == null || userId == null) {
+            return false;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(p.esAgendaItemPresenterId) from EsAgendaItemPresenter p"
+                            + " where p.userId = :userId and p.status = :status"
+                            + " and p.esMeetingAgendaItemId in (select a.esMeetingAgendaItemId from EsMeetingAgendaItem a"
+                            + " where a.esMeetingId = :meetingId)",
+                    Long.class)
+                    .setParameter("userId", userId)
+                    .setParameter("status", EsAgendaItemPresenter.PresenterStatus.ACCEPTED)
+                    .setParameter("meetingId", esMeetingId)
+                    .getSingleResult();
+            return count != null && count > 0;
         }
     }
 

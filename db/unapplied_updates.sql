@@ -757,3 +757,256 @@ WHERE b.board_code = 'aira-opportunity-nursery'
 ORDER BY pd.display_order, pd.path_name
 ON DUPLICATE KEY UPDATE
   display_order = VALUES(display_order);
+
+-- Meeting lifecycle, notes, outcomes, and live voting foundation.
+ALTER TABLE es_meeting
+  MODIFY COLUMN status ENUM('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') NOT NULL,
+  ADD COLUMN designated_chair_user_id BIGINT DEFAULT NULL AFTER status,
+  ADD COLUMN designated_scribe_user_id BIGINT DEFAULT NULL AFTER designated_chair_user_id,
+  ADD COLUMN current_chair_user_id BIGINT DEFAULT NULL AFTER designated_scribe_user_id,
+  ADD COLUMN current_scribe_user_id BIGINT DEFAULT NULL AFTER current_chair_user_id,
+  ADD COLUMN current_agenda_item_id BIGINT DEFAULT NULL AFTER current_scribe_user_id,
+  ADD COLUMN started_at DATETIME(6) DEFAULT NULL AFTER current_agenda_item_id,
+  ADD COLUMN started_by_user_id BIGINT DEFAULT NULL AFTER started_at,
+  ADD COLUMN completed_by_user_id BIGINT DEFAULT NULL AFTER started_by_user_id,
+  ADD COLUMN close_due_at DATETIME(6) DEFAULT NULL AFTER completed_by_user_id,
+  ADD COLUMN closed_at DATETIME(6) DEFAULT NULL AFTER close_due_at,
+  ADD COLUMN closed_by_user_id BIGINT DEFAULT NULL AFTER closed_at,
+  ADD COLUMN close_method ENUM('AUTOMATIC','MANUAL') DEFAULT NULL AFTER closed_by_user_id,
+  ADD KEY ix_es_meeting_status_close_due (status, close_due_at, es_meeting_id),
+  ADD KEY ix_es_meeting_current_agenda (current_agenda_item_id);
+
+UPDATE es_meeting
+SET close_due_at = DATE_ADD(completed_at, INTERVAL 7 DAY),
+    close_method = 'MANUAL'
+WHERE status = 'COMPLETED'
+  AND completed_at IS NOT NULL
+  AND close_due_at IS NULL;
+
+ALTER TABLE es_meeting_communication
+  MODIFY COLUMN expected_meeting_status ENUM('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') DEFAULT NULL;
+
+CREATE TABLE es_meeting_status_history (
+  es_meeting_status_history_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_id BIGINT NOT NULL,
+  from_status ENUM('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') DEFAULT NULL,
+  to_status ENUM('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') NOT NULL,
+  changed_at DATETIME(6) NOT NULL,
+  changed_by_user_id BIGINT DEFAULT NULL,
+  transition_method ENUM('AUTOMATIC','USER') NOT NULL,
+  PRIMARY KEY (es_meeting_status_history_id),
+  KEY ix_es_msh_meeting_changed (es_meeting_id, changed_at, es_meeting_status_history_id),
+  KEY ix_es_msh_to_status (to_status, changed_at),
+  CONSTRAINT fk_es_msh_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_msh_changed_by FOREIGN KEY (changed_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_meeting_role_assignment (
+  es_meeting_role_assignment_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_id BIGINT NOT NULL,
+  role_type ENUM('CHAIR','SCRIBE') NOT NULL,
+  user_id BIGINT NOT NULL,
+  started_at DATETIME(6) NOT NULL,
+  ended_at DATETIME(6) DEFAULT NULL,
+  assigned_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_meeting_role_assignment_id),
+  KEY ix_es_mra_meeting_role_open (es_meeting_id, role_type, ended_at, started_at),
+  KEY ix_es_mra_user (user_id, started_at),
+  CONSTRAINT fk_es_mra_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_mra_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_mra_assigned_by FOREIGN KEY (assigned_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_meeting_agenda_activity (
+  es_meeting_agenda_activity_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_id BIGINT NOT NULL,
+  es_meeting_agenda_item_id BIGINT NOT NULL,
+  es_topic_id BIGINT NOT NULL,
+  started_at DATETIME(6) NOT NULL,
+  started_by_user_id BIGINT NOT NULL,
+  ended_at DATETIME(6) DEFAULT NULL,
+  ended_by_user_id BIGINT DEFAULT NULL,
+  PRIMARY KEY (es_meeting_agenda_activity_id),
+  KEY ix_es_maa_meeting_open (es_meeting_id, ended_at, started_at),
+  KEY ix_es_maa_agenda_item (es_meeting_agenda_item_id, started_at),
+  KEY ix_es_maa_topic (es_topic_id, started_at),
+  CONSTRAINT fk_es_maa_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_maa_agenda_item FOREIGN KEY (es_meeting_agenda_item_id) REFERENCES es_meeting_agenda_item (es_meeting_agenda_item_id),
+  CONSTRAINT fk_es_maa_topic FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id),
+  CONSTRAINT fk_es_maa_started_by FOREIGN KEY (started_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_maa_ended_by FOREIGN KEY (ended_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_meeting_participant_count (
+  es_meeting_participant_count_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_agenda_activity_id BIGINT NOT NULL,
+  participant_count INT NOT NULL,
+  recorded_at DATETIME(6) NOT NULL,
+  recorded_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_meeting_participant_count_id),
+  KEY ix_es_mpc_activity_recorded (es_meeting_agenda_activity_id, recorded_at, es_meeting_participant_count_id),
+  CONSTRAINT fk_es_mpc_activity FOREIGN KEY (es_meeting_agenda_activity_id) REFERENCES es_meeting_agenda_activity (es_meeting_agenda_activity_id),
+  CONSTRAINT fk_es_mpc_recorded_by FOREIGN KEY (recorded_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_topic_note (
+  es_topic_note_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_id BIGINT NOT NULL,
+  es_meeting_id BIGINT DEFAULT NULL,
+  es_meeting_agenda_item_id BIGINT DEFAULT NULL,
+  note_title VARCHAR(200) DEFAULT NULL,
+  document_json JSON NOT NULL,
+  document_text LONGTEXT,
+  revision_no BIGINT NOT NULL,
+  status ENUM('FINALIZED','OPEN') NOT NULL,
+  active_editor_user_id BIGINT DEFAULT NULL,
+  active_editor_started_at DATETIME(6) DEFAULT NULL,
+  active_editor_version BIGINT NOT NULL DEFAULT 0,
+  created_at DATETIME(6) NOT NULL,
+  created_by_user_id BIGINT NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  finalize_at DATETIME(6) DEFAULT NULL,
+  finalized_at DATETIME(6) DEFAULT NULL,
+  finalized_by_user_id BIGINT DEFAULT NULL,
+  finalization_method ENUM('AUTOMATIC','MANUAL') DEFAULT NULL,
+  PRIMARY KEY (es_topic_note_id),
+  KEY ix_es_topic_note_topic_created (es_topic_id, created_at, es_topic_note_id),
+  KEY ix_es_topic_note_meeting_status (es_meeting_id, status, finalize_at, es_topic_note_id),
+  KEY ix_es_topic_note_agenda_status (es_meeting_agenda_item_id, status, es_topic_note_id),
+  KEY ix_es_topic_note_finalize_at (finalize_at, es_topic_note_id),
+  CONSTRAINT fk_es_topic_note_topic FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id),
+  CONSTRAINT fk_es_topic_note_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_topic_note_agenda_item FOREIGN KEY (es_meeting_agenda_item_id) REFERENCES es_meeting_agenda_item (es_meeting_agenda_item_id),
+  CONSTRAINT fk_es_topic_note_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_topic_note_finalized_by FOREIGN KEY (finalized_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_topic_note_active_editor FOREIGN KEY (active_editor_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_topic_note_revision (
+  es_topic_note_revision_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_note_id BIGINT NOT NULL,
+  revision_no BIGINT NOT NULL,
+  document_json JSON NOT NULL,
+  document_text LONGTEXT,
+  saved_at DATETIME(6) NOT NULL,
+  saved_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_topic_note_revision_id),
+  UNIQUE KEY uq_es_tnr_note_revision (es_topic_note_id, revision_no),
+  KEY ix_es_tnr_note_saved (es_topic_note_id, revision_no, es_topic_note_revision_id),
+  CONSTRAINT fk_es_tnr_note FOREIGN KEY (es_topic_note_id) REFERENCES es_topic_note (es_topic_note_id),
+  CONSTRAINT fk_es_tnr_saved_by FOREIGN KEY (saved_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_topic_note_editor_history (
+  es_topic_note_editor_history_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_note_id BIGINT NOT NULL,
+  previous_editor_user_id BIGINT DEFAULT NULL,
+  new_editor_user_id BIGINT NOT NULL,
+  changed_at DATETIME(6) NOT NULL,
+  changed_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_topic_note_editor_history_id),
+  KEY ix_es_tneh_note_changed (es_topic_note_id, changed_at, es_topic_note_editor_history_id),
+  CONSTRAINT fk_es_tneh_note FOREIGN KEY (es_topic_note_id) REFERENCES es_topic_note (es_topic_note_id),
+  CONSTRAINT fk_es_tneh_previous_editor FOREIGN KEY (previous_editor_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_tneh_new_editor FOREIGN KEY (new_editor_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_tneh_changed_by FOREIGN KEY (changed_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_recorded_outcome (
+  es_recorded_outcome_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_note_id BIGINT NOT NULL,
+  source_node_id VARCHAR(128) NOT NULL,
+  outcome_type ENUM('ACTION','DIRECTION','FORMAL_MOTION','OPEN_ISSUE','RATIONALE','WORKING_CONSENSUS') NOT NULL,
+  short_title VARCHAR(200) DEFAULT NULL,
+  outcome_text TEXT NOT NULL,
+  display_order INT NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  created_by_user_id BIGINT NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  updated_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_recorded_outcome_id),
+  UNIQUE KEY uq_es_ro_note_source (es_topic_note_id, source_node_id),
+  KEY ix_es_ro_note_order (es_topic_note_id, display_order, es_recorded_outcome_id),
+  CONSTRAINT fk_es_ro_note FOREIGN KEY (es_topic_note_id) REFERENCES es_topic_note (es_topic_note_id),
+  CONSTRAINT fk_es_ro_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_ro_updated_by FOREIGN KEY (updated_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_live_vote (
+  es_live_vote_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_recorded_outcome_id BIGINT NOT NULL,
+  status ENUM('CLOSED','OPEN','PREPARED') NOT NULL,
+  motion_text TEXT NOT NULL,
+  moved_by_user_id BIGINT DEFAULT NULL,
+  moved_by_name VARCHAR(160) DEFAULT NULL,
+  seconded_by_user_id BIGINT DEFAULT NULL,
+  seconded_by_name VARCHAR(160) DEFAULT NULL,
+  presiding_chair_user_id BIGINT NOT NULL,
+  opened_at DATETIME(6) DEFAULT NULL,
+  opened_by_user_id BIGINT DEFAULT NULL,
+  closed_at DATETIME(6) DEFAULT NULL,
+  closed_by_user_id BIGINT DEFAULT NULL,
+  participant_count_observation_id BIGINT DEFAULT NULL,
+  call_participant_count INT DEFAULT NULL,
+  expected_voter_count INT DEFAULT NULL,
+  electronic_for_count INT NOT NULL DEFAULT 0,
+  electronic_against_count INT NOT NULL DEFAULT 0,
+  electronic_abstain_count INT NOT NULL DEFAULT 0,
+  manual_for_count INT NOT NULL DEFAULT 0,
+  manual_against_count INT NOT NULL DEFAULT 0,
+  manual_abstain_count INT NOT NULL DEFAULT 0,
+  final_for_count INT DEFAULT NULL,
+  final_against_count INT DEFAULT NULL,
+  final_abstain_count INT DEFAULT NULL,
+  result ENUM('APPROVED','FAILED','NO_RESULT','WITHDRAWN') DEFAULT NULL,
+  created_at DATETIME(6) NOT NULL,
+  created_by_user_id BIGINT NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  updated_by_user_id BIGINT NOT NULL,
+  PRIMARY KEY (es_live_vote_id),
+  UNIQUE KEY uq_es_live_vote_outcome (es_recorded_outcome_id),
+  KEY ix_es_live_vote_status_created (status, created_at, es_live_vote_id),
+  KEY ix_es_live_vote_result_created (result, created_at),
+  CONSTRAINT fk_es_lv_outcome FOREIGN KEY (es_recorded_outcome_id) REFERENCES es_recorded_outcome (es_recorded_outcome_id),
+  CONSTRAINT fk_es_lv_moved_by FOREIGN KEY (moved_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_seconded_by FOREIGN KEY (seconded_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_presiding_chair FOREIGN KEY (presiding_chair_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_opened_by FOREIGN KEY (opened_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_closed_by FOREIGN KEY (closed_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_participant_count FOREIGN KEY (participant_count_observation_id) REFERENCES es_meeting_participant_count (es_meeting_participant_count_id),
+  CONSTRAINT fk_es_lv_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_lv_updated_by FOREIGN KEY (updated_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_live_vote_response (
+  es_live_vote_response_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_live_vote_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  response ENUM('ABSTAIN','AGAINST','FOR') NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (es_live_vote_response_id),
+  UNIQUE KEY uq_es_lvr_vote_user (es_live_vote_id, user_id),
+  KEY ix_es_lvr_vote_response (es_live_vote_id, response, es_live_vote_response_id),
+  CONSTRAINT fk_es_lvr_vote FOREIGN KEY (es_live_vote_id) REFERENCES es_live_vote (es_live_vote_id),
+  CONSTRAINT fk_es_lvr_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_topic_meeting_cochair (
+  es_topic_meeting_cochair_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_meeting_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  status ENUM('ACTIVE','INACTIVE') NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  created_by_user_id BIGINT NOT NULL,
+  inactive_at DATETIME(6) DEFAULT NULL,
+  inactive_by_user_id BIGINT DEFAULT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (es_topic_meeting_cochair_id),
+  KEY ix_es_tm_cchair_meeting_status (es_topic_meeting_id, status, created_at),
+  KEY ix_es_tm_cchair_user (user_id, created_at),
+  CONSTRAINT fk_es_tm_cchair_meeting FOREIGN KEY (es_topic_meeting_id) REFERENCES es_topic_meeting (es_topic_meeting_id),
+  CONSTRAINT fk_es_tm_cchair_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_tm_cchair_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_tm_cchair_inactive_by FOREIGN KEY (inactive_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

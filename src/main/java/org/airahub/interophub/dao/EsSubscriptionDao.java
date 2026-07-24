@@ -524,6 +524,25 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    public boolean hasActiveChampionForTopicAndUserId(Long esTopicId, Long userId) {
+        if (esTopicId == null || userId == null) {
+            return false;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(s.esSubscriptionId) from EsSubscription s"
+                            + " where s.esTopicId = :topicId and s.userId = :userId"
+                            + " and s.subscriptionType = :type and s.status = :status",
+                    Long.class)
+                    .setParameter("topicId", esTopicId)
+                    .setParameter("userId", userId)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .getSingleResult();
+            return count != null && count > 0;
+        }
+    }
+
     /**
      * Returns active SUBSCRIBED subscriptions for any of the given topic IDs.
      * Used when building the topic-subscriber recipient group for a meeting
