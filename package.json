@@ -1,0 +1,15 @@
+{
+  "name": "interophub",
+  "private": true,
+  "scripts": {
+    "build:meeting-workspace-notes": "esbuild frontend/meeting-workspace-notes.js --bundle --format=iife --target=es2020 --outfile=src/main/webapp/js/meeting-workspace-notes.js"
+  },
+  "dependencies": {
+    "@tiptap/core": "^2.26.1",
+    "@tiptap/extension-list-item": "^2.26.1",
+    "@tiptap/starter-kit": "^2.26.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.9"
+  }
+}

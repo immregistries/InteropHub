@@ -14,6 +14,7 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -23,7 +24,10 @@ import java.util.Optional;
 import org.airahub.interophub.model.EsLiveVote;
 import org.airahub.interophub.model.EsLiveVoteResponse;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingCommunication;
+import org.airahub.interophub.model.EsRecordedOutcome;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.EsTopicNoteEditorHistory;
 import org.airahub.interophub.model.EsTopicNoteRevision;
@@ -84,8 +88,25 @@ class MeetingFoundationTest {
         String documentJson = support.buildInitialDocument("Agenda Item");
 
         assertFalse(support.isEmptyDocument(documentJson));
-        assertEquals("Agenda Item", support.extractPlainText(documentJson));
-        assertEquals("Notes", support.extractPlainText(support.buildInitialDocument(null)));
+        assertEquals("- Agenda Item", support.extractPlainText(documentJson));
+        assertEquals("", support.extractPlainText(support.buildInitialDocument(null)));
+    }
+
+    @Test
+    void documentSupportFindsAnchorsWithDisplayOrder() {
+        TopicNoteDocumentSupport support = new TopicNoteDocumentSupport();
+        String documentJson = tiptapTwoItemDoc(
+                "First",
+                "11111111-1111-4111-8111-111111111111",
+                "Second",
+                "22222222-2222-4222-8222-222222222222");
+
+        List<TopicNoteDocumentSupport.ListItemAnchor> anchors = support.listListItemAnchors(documentJson);
+
+        assertEquals(2, anchors.size());
+        assertEquals("11111111-1111-4111-8111-111111111111", anchors.get(0).sourceNodeId());
+        assertEquals(1, anchors.get(0).displayOrder());
+        assertEquals("Second", anchors.get(1).sourceText());
     }
 
     @Test
@@ -115,12 +136,13 @@ class MeetingFoundationTest {
             }
         });
 
-        EsTopicNote updated = service.takeOverEditing(support.session(), 11L, 99L);
+        TopicNoteService.TopicNoteEditorState updated = service.takeOverEditing(support.session(), 11L, 99L);
 
-        assertSame(note, updated);
+        assertEquals(11L, updated.noteId());
+        assertTrue(updated.tookOver());
         assertEquals(99L, note.getActiveEditorUserId());
         assertEquals(3L, note.getActiveEditorVersion());
-        assertEquals(1L, support.persisted.stream().filter(EsTopicNoteRevision.class::isInstance).count());
+        assertEquals(0L, support.persisted.stream().filter(EsTopicNoteRevision.class::isInstance).count());
         assertEquals(1L, support.persisted.stream().filter(EsTopicNoteEditorHistory.class::isInstance).count());
 
         EsTopicNoteEditorHistory history = support.persisted.stream()
@@ -130,6 +152,329 @@ class MeetingFoundationTest {
                 .orElseThrow();
         assertEquals(7L, history.getPreviousEditorUserId());
         assertEquals(99L, history.getNewEditorUserId());
+    }
+
+    @Test
+    void takeOverBySameEditorIsIdempotent() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(22L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 22L, meeting);
+
+        EsTopicNote note = new EsTopicNote();
+        note.setEsTopicNoteId(11L);
+        note.setEsMeetingId(22L);
+        note.setStatus(TopicNoteStatus.OPEN);
+        note.setActiveEditorUserId(99L);
+        note.setActiveEditorVersion(4L);
+        support.putEntity(EsTopicNote.class, 11L, note);
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteService.TopicNoteEditorState state = service.takeOverEditing(support.session(), 11L, 99L);
+
+        assertEquals(99L, state.activeEditorUserId());
+        assertEquals(4L, state.editorVersion());
+        assertFalse(state.tookOver());
+        assertEquals(0L, support.persisted.stream().filter(EsTopicNoteEditorHistory.class::isInstance).count());
+    }
+
+    @Test
+    void startEditingCreatesProvisionalNoteWithoutRevisionSnapshot() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(71L);
+        meeting.setEsTopicMeetingId(91L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 71L, meeting);
+
+        EsMeetingAgendaItem item = new EsMeetingAgendaItem();
+        item.setEsMeetingAgendaItemId(81L);
+        item.setEsMeetingId(71L);
+        item.setTitle("Agenda Topic");
+        support.putEntity(EsMeetingAgendaItem.class, 81L, item);
+
+        EsTopicMeeting topicMeeting = new EsTopicMeeting();
+        topicMeeting.setEsTopicMeetingId(91L);
+        topicMeeting.setEsTopicId(501L);
+        topicMeeting.setMeetingName("Series");
+        support.putEntity(EsTopicMeeting.class, 91L, topicMeeting);
+
+        support.whenQueryContains("from EsTopicNote n where n.esMeetingAgendaItemId = :agendaItemId", Optional.empty());
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteService.TopicNoteEditorState state = service.startMeetingTopicNoteEditing(support.session(), 71L, 81L,
+                99L);
+
+        assertTrue(state.created());
+        assertEquals(0L, state.revision());
+        assertEquals(1L, state.editorVersion());
+        assertEquals(99L, state.activeEditorUserId());
+        assertEquals(1L, support.persisted.stream().filter(EsTopicNote.class::isInstance).count());
+        assertEquals(1L, support.persisted.stream().filter(EsTopicNoteEditorHistory.class::isInstance).count());
+        assertEquals(0L, support.persisted.stream().filter(EsTopicNoteRevision.class::isInstance).count());
+    }
+
+    @Test
+    void saveRejectsEditorAndRevisionConflictsWithDistinctCodes() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(22L);
+        meeting.setEsTopicMeetingId(33L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 22L, meeting);
+
+        EsMeetingAgendaItem item = new EsMeetingAgendaItem();
+        item.setEsMeetingAgendaItemId(44L);
+        item.setEsMeetingId(22L);
+        item.setEsTopicId(55L);
+        item.setTitle("Agenda item");
+        support.putEntity(EsMeetingAgendaItem.class, 44L, item);
+
+        EsTopicMeeting topicMeeting = new EsTopicMeeting();
+        topicMeeting.setEsTopicMeetingId(33L);
+        topicMeeting.setEsTopicId(55L);
+        topicMeeting.setMeetingName("Series");
+        support.putEntity(EsTopicMeeting.class, 33L, topicMeeting);
+
+        EsTopicNote note = new EsTopicNote();
+        note.setEsTopicNoteId(99L);
+        note.setEsMeetingId(22L);
+        note.setEsMeetingAgendaItemId(44L);
+        note.setStatus(TopicNoteStatus.OPEN);
+        note.setRevisionNo(3L);
+        note.setActiveEditorUserId(100L);
+        note.setActiveEditorVersion(7L);
+        note.setDocumentJson(
+                "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"11111111-1111-4111-8111-111111111111\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Saved\"}]}]}]}]}");
+        support.whenQueryContains("from EsTopicNote n where n.esMeetingAgendaItemId = :agendaItemId",
+                Optional.of(note));
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteConflictException editorConflict = assertThrows(TopicNoteConflictException.class,
+                () -> service.saveMeetingTopicNote(support.session(), 22L, 44L, 99L, 3L, 7L,
+                        "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"22222222-2222-4222-8222-222222222222\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Try save\"}]}]}]}]}"));
+        assertEquals("NOTE_EDITOR_CHANGED", editorConflict.getErrorCode());
+
+        note.setActiveEditorUserId(99L);
+
+        TopicNoteConflictException revisionConflict = assertThrows(TopicNoteConflictException.class,
+                () -> service.saveMeetingTopicNote(support.session(), 22L, 44L, 99L, 2L, 7L,
+                        "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"33333333-3333-4333-8333-333333333333\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Try save\"}]}]}]}]}"));
+        assertEquals("NOTE_REVISION_CONFLICT", revisionConflict.getErrorCode());
+    }
+
+    @Test
+    void manualSaveCreatesSnapshotEvenWhenAutosaveWindowIsRecent() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(22L);
+        meeting.setEsTopicMeetingId(33L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 22L, meeting);
+
+        EsMeetingAgendaItem item = new EsMeetingAgendaItem();
+        item.setEsMeetingAgendaItemId(44L);
+        item.setEsMeetingId(22L);
+        item.setEsTopicId(55L);
+        item.setTitle("Agenda item");
+        support.putEntity(EsMeetingAgendaItem.class, 44L, item);
+
+        EsTopicMeeting topicMeeting = new EsTopicMeeting();
+        topicMeeting.setEsTopicMeetingId(33L);
+        topicMeeting.setEsTopicId(55L);
+        topicMeeting.setMeetingName("Series");
+        support.putEntity(EsTopicMeeting.class, 33L, topicMeeting);
+
+        EsTopicNote note = new EsTopicNote();
+        note.setEsTopicNoteId(99L);
+        note.setEsMeetingId(22L);
+        note.setEsMeetingAgendaItemId(44L);
+        note.setStatus(TopicNoteStatus.OPEN);
+        note.setRevisionNo(3L);
+        note.setActiveEditorUserId(99L);
+        note.setActiveEditorVersion(7L);
+        note.setDocumentJson(tiptapDoc("Saved", "11111111-1111-4111-8111-111111111111"));
+        support.whenQueryContains("from EsTopicNote n where n.esMeetingAgendaItemId = :agendaItemId",
+                Optional.of(note));
+
+        EsTopicNoteRevision latestRevision = new EsTopicNoteRevision();
+        latestRevision.setEsTopicNoteId(99L);
+        latestRevision.setRevisionNo(3L);
+        latestRevision.setDocumentJson(tiptapDoc("Older", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+        latestRevision.setSavedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        support.whenQueryContains("from EsTopicNoteRevision r where r.esTopicNoteId = :noteId",
+                Optional.of(latestRevision));
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteService.SavedMeetingTopicNote saved = service.saveMeetingTopicNote(
+                support.session(),
+                22L,
+                44L,
+                99L,
+                3L,
+                7L,
+                tiptapDoc("Manual save", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
+                TopicNoteService.SaveMode.MANUAL);
+
+        assertEquals(4L, saved.revision());
+        assertEquals(1L, support.persisted.stream().filter(EsTopicNoteRevision.class::isInstance).count());
+    }
+
+    @Test
+    void autosaveSkipsSnapshotWhenLatestSnapshotIsRecent() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(22L);
+        meeting.setEsTopicMeetingId(33L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 22L, meeting);
+
+        EsMeetingAgendaItem item = new EsMeetingAgendaItem();
+        item.setEsMeetingAgendaItemId(44L);
+        item.setEsMeetingId(22L);
+        item.setEsTopicId(55L);
+        item.setTitle("Agenda item");
+        support.putEntity(EsMeetingAgendaItem.class, 44L, item);
+
+        EsTopicMeeting topicMeeting = new EsTopicMeeting();
+        topicMeeting.setEsTopicMeetingId(33L);
+        topicMeeting.setEsTopicId(55L);
+        topicMeeting.setMeetingName("Series");
+        support.putEntity(EsTopicMeeting.class, 33L, topicMeeting);
+
+        EsTopicNote note = new EsTopicNote();
+        note.setEsTopicNoteId(99L);
+        note.setEsMeetingId(22L);
+        note.setEsMeetingAgendaItemId(44L);
+        note.setStatus(TopicNoteStatus.OPEN);
+        note.setRevisionNo(3L);
+        note.setActiveEditorUserId(99L);
+        note.setActiveEditorVersion(7L);
+        note.setDocumentJson(tiptapDoc("Saved", "11111111-1111-4111-8111-111111111111"));
+        support.whenQueryContains("from EsTopicNote n where n.esMeetingAgendaItemId = :agendaItemId",
+                Optional.of(note));
+
+        EsTopicNoteRevision latestRevision = new EsTopicNoteRevision();
+        latestRevision.setEsTopicNoteId(99L);
+        latestRevision.setRevisionNo(3L);
+        latestRevision.setDocumentJson(tiptapDoc("Older", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+        latestRevision.setSavedAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
+        support.whenQueryContains("from EsTopicNoteRevision r where r.esTopicNoteId = :noteId",
+                Optional.of(latestRevision));
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteService.SavedMeetingTopicNote saved = service.saveMeetingTopicNote(
+                support.session(),
+                22L,
+                44L,
+                99L,
+                3L,
+                7L,
+                tiptapDoc("Autosave", "cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
+                TopicNoteService.SaveMode.AUTOSAVE);
+
+        assertEquals(4L, saved.revision());
+        assertEquals(0L, support.persisted.stream().filter(EsTopicNoteRevision.class::isInstance).count());
+    }
+
+    @Test
+    void saveRejectsWhenRecordedOutcomeAnchorIsMissing() {
+        FakeSessionSupport support = new FakeSessionSupport();
+
+        EsMeeting meeting = new EsMeeting();
+        meeting.setEsMeetingId(22L);
+        meeting.setEsTopicMeetingId(33L);
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        support.putEntity(EsMeeting.class, 22L, meeting);
+
+        EsMeetingAgendaItem item = new EsMeetingAgendaItem();
+        item.setEsMeetingAgendaItemId(44L);
+        item.setEsMeetingId(22L);
+        item.setEsTopicId(55L);
+        item.setTitle("Agenda item");
+        support.putEntity(EsMeetingAgendaItem.class, 44L, item);
+
+        EsTopicMeeting topicMeeting = new EsTopicMeeting();
+        topicMeeting.setEsTopicMeetingId(33L);
+        topicMeeting.setEsTopicId(55L);
+        topicMeeting.setMeetingName("Series");
+        support.putEntity(EsTopicMeeting.class, 33L, topicMeeting);
+
+        EsTopicNote note = new EsTopicNote();
+        note.setEsTopicNoteId(99L);
+        note.setEsMeetingId(22L);
+        note.setEsMeetingAgendaItemId(44L);
+        note.setStatus(TopicNoteStatus.OPEN);
+        note.setRevisionNo(3L);
+        note.setActiveEditorUserId(99L);
+        note.setActiveEditorVersion(7L);
+        note.setDocumentJson(tiptapDoc("Saved", "11111111-1111-4111-8111-111111111111"));
+        support.whenQueryContains("from EsTopicNote n where n.esMeetingAgendaItemId = :agendaItemId",
+                Optional.of(note));
+
+        EsRecordedOutcome outcome = new EsRecordedOutcome();
+        outcome.setEsRecordedOutcomeId(200L);
+        outcome.setEsTopicNoteId(99L);
+        outcome.setSourceNodeId("11111111-1111-4111-8111-111111111111");
+        outcome.setDisplayOrder(1);
+        support.whenQueryContains("from EsRecordedOutcome o where o.esTopicNoteId = :noteId",
+                List.of(outcome));
+
+        TopicNoteService service = new TopicNoteService(new MeetingAuthorizationService() {
+            @Override
+            public boolean canEditTopicNote(Long userId, EsTopicNote candidate) {
+                return true;
+            }
+        });
+
+        TopicNoteConflictException conflict = assertThrows(TopicNoteConflictException.class,
+                () -> service.saveMeetingTopicNote(
+                        support.session(),
+                        22L,
+                        44L,
+                        99L,
+                        3L,
+                        7L,
+                        tiptapDoc("Moved", "22222222-2222-4222-8222-222222222222"),
+                        TopicNoteService.SaveMode.MANUAL));
+
+        assertEquals("RECORDED_OUTCOME_SOURCE_MISSING", conflict.getErrorCode());
     }
 
     @Test
@@ -208,6 +553,25 @@ class MeetingFoundationTest {
         return note;
     }
 
+    private static String tiptapDoc(String text, String nodeId) {
+        return "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\""
+                + nodeId
+                + "\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + text
+                + "\"}]}]}]}]}";
+    }
+
+    private static String tiptapTwoItemDoc(String firstText, String firstNodeId, String secondText,
+            String secondNodeId) {
+        return "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":["
+                + "{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"" + firstNodeId
+                + "\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + firstText + "\"}]}]},"
+                + "{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"" + secondNodeId
+                + "\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\""
+                + secondText + "\"}]}]}]}]}";
+    }
+
     private static String tableName(Class<?> type) {
         Table table = type.getAnnotation(Table.class);
         return table == null ? null : table.name();
@@ -235,6 +599,7 @@ class MeetingFoundationTest {
         private final List<String> executedMutations = new ArrayList<>();
         private final List<QueryResult> queryResults = new ArrayList<>();
         private final Transaction transaction = transactionProxy();
+        private long nextNoteId = 1000L;
 
         Session session() {
             return (Session) Proxy.newProxyInstance(
@@ -262,6 +627,11 @@ class MeetingFoundationTest {
                 Object id = args[1];
                 return entities.getOrDefault(type, Map.of()).get(id);
             }
+            if ("find".equals(name)) {
+                Class<?> type = (Class<?>) args[0];
+                Object id = args[1];
+                return entities.getOrDefault(type, Map.of()).get(id);
+            }
             if ("createQuery".equals(name)) {
                 String hql = (String) args[0];
                 return queryProxy(hql, resolvePayload(hql));
@@ -275,7 +645,16 @@ class MeetingFoundationTest {
                 return args[0];
             }
             if ("persist".equals(name)) {
+                if (args != null && args.length > 0 && args[0] instanceof EsTopicNote note) {
+                    if (note.getEsTopicNoteId() == null) {
+                        note.setEsTopicNoteId(nextNoteId++);
+                    }
+                    putEntity(EsTopicNote.class, note.getEsTopicNoteId(), note);
+                }
                 persisted.add(args[0]);
+                return null;
+            }
+            if ("flush".equals(name)) {
                 return null;
             }
             if ("close".equals(name)) {
@@ -340,7 +719,7 @@ class MeetingFoundationTest {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) {
             String name = method.getName();
-            if ("setParameter".equals(name) || "setMaxResults".equals(name)) {
+            if ("setParameter".equals(name) || "setMaxResults".equals(name) || "setLockMode".equals(name)) {
                 return proxy;
             }
             if ("getResultList".equals(name)) {

@@ -1,3 +1,112 @@
+.mw-note-root {
+  min-width: 0;
+}
+
+.mw-note-message {
+  margin: 0;
+}
+
+.mw-note-owner {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--aira-interactive, #0f766e);
+  background: var(--aira-surface-subtle, #f8fafc);
+  border-radius: 0.5rem;
+}
+
+.mw-note-editor,
+.mw-note-readonly {
+  min-height: 12rem;
+  border: 1px solid var(--aira-border-subtle, #d1d5db);
+  border-radius: 0.75rem;
+  background: var(--aira-surface, #fff);
+  padding: 1rem;
+}
+
+.mw-note-readonly {
+  min-height: 6rem;
+  background: var(--aira-surface-subtle, #f8fafc);
+}
+
+.mw-note-editor .ProseMirror,
+.mw-note-readonly .ProseMirror {
+  min-height: 100%;
+  outline: none;
+  white-space: pre-wrap;
+}
+
+.mw-note-editor .ProseMirror-focused {
+  outline: none;
+}
+
+.mw-note-editor:focus-within {
+  border-color: var(--aira-interactive, #0f766e);
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+}
+
+.mw-note-editor ul,
+.mw-note-readonly ul {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.mw-note-editor li,
+.mw-note-readonly li {
+  margin: 0.35rem 0;
+}
+
+.mw-note-editor p,
+.mw-note-readonly p {
+  margin: 0;
+}
+
+.mw-note-editor li.mw-note-outcome-marker,
+.mw-note-readonly li.mw-note-outcome-marker {
+  border-left: 3px solid #0f766e;
+  padding-left: 0.35rem;
+  background: rgba(15, 118, 110, 0.06);
+  border-radius: 0.35rem;
+}
+
+.mw-outcome-panel {
+  border-top: 1px solid var(--aira-border-subtle, #d1d5db);
+  padding-top: 0.75rem;
+}
+
+.mw-outcome-item {
+  border: 1px solid var(--aira-border-subtle, #d1d5db);
+  border-radius: 0.65rem;
+  padding: 0.75rem;
+  background: var(--aira-surface-subtle, #f8fafc);
+}
+
+.mw-outcome-title {
+  margin: 0;
+}
+
+.mw-note-dirty {
+  color: var(--aira-danger, #b91c1c);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.mw-note-save-state {
+  margin: 0;
+  color: var(--aira-text-subtle, #475569);
+}
+
+.mw-note-save-state--saving {
+  color: var(--aira-interactive, #0f766e);
+}
+
+.mw-note-save-state--warning {
+  color: #92400e;
+}
+
+.mw-note-save-state--danger {
+  color: var(--aira-danger, #b91c1c);
+}
+
 :root {
   --bg: #f7f9fc;
   --text: #1e293b;

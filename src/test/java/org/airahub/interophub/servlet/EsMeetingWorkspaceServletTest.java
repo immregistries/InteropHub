@@ -71,7 +71,7 @@ class EsMeetingWorkspaceServletTest {
 
         EsMeetingWorkspaceServlet.AgendaItemView selectedItem = new EsMeetingWorkspaceServlet.AgendaItemView(
                 22L, 20, "Standing agenda", "Operations", "Accepted", "aira-badge--success",
-                "Ada Lovelace", 15, "Read only notes", true, "Open note #44", "Open",
+                "Ada Lovelace", 15, "Read only notes", true, "Open note #44", "Open", "Ada Lovelace is taking notes",
                 "10:00 AM", "10:15 AM", "10:00 AM - 10:15 AM");
         EsMeetingWorkspaceServlet.WorkspaceView view = new EsMeetingWorkspaceServlet.WorkspaceView(
                 meeting,
@@ -92,7 +92,32 @@ class EsMeetingWorkspaceServletTest {
                 "Start session is only available after finalization.",
                 "Ending the meeting will set close due date to 7 days from completion.",
                 null,
-                null);
+                null,
+                new EsMeetingWorkspaceServlet.NotePanelView(
+                        "Operations",
+                        "Standing agenda",
+                        true,
+                        44L,
+                        3L,
+                        2L,
+                        "Open",
+                        "OPEN",
+                        "Thursday, January 15, 2026 10:05 AM",
+                        "2026-01-15T10:05:00Z",
+                        "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"11111111-1111-4111-8111-111111111111\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Read only notes\"}]}]}]}]}",
+                        "{\"type\":\"doc\",\"content\":[{\"type\":\"bulletList\",\"content\":[{\"type\":\"listItem\",\"attrs\":{\"nodeId\":\"11111111-1111-4111-8111-111111111111\"},\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"Read only notes\"}]}]}]}]}",
+                        1L,
+                        "Ada Lovelace",
+                        "You are taking notes for this topic.",
+                        "Take over notes",
+                        "Take over notes from Ada Lovelace",
+                        "Edit notes",
+                        true,
+                        true,
+                        false,
+                        true,
+                        1L,
+                        "csrf-token"));
 
         StringWriter buffer = new StringWriter();
         PrintWriter out = new PrintWriter(buffer);
@@ -102,11 +127,16 @@ class EsMeetingWorkspaceServletTest {
         String html = buffer.toString();
         assertTrue(html.contains("Meeting Workspace"));
         assertTrue(html.contains("Meeting Controls"));
+        assertTrue(html.contains("Topic Notes"));
+        assertTrue(html.contains("Recorded Outcomes"));
+        assertTrue(html.contains("data-note-config"));
+        assertTrue(html.contains("data-outcome-list"));
+        assertTrue(html.contains("createOutcomeUrl"));
         assertTrue(html.contains("method=\"post\""));
         assertTrue(html.contains("name=\"action\" value=\"startSession\""));
         assertTrue(html.contains("name=\"action\" value=\"endMeeting\""));
-        assertTrue(html.contains("Read-only in this release"));
-        assertTrue(html.contains("disabled"));
+        assertTrue(html.contains("Edit notes"));
+        assertTrue(html.contains("meeting-workspace-notes.js"));
     }
 
     @Test
@@ -149,6 +179,7 @@ class EsMeetingWorkspaceServletTest {
                 10,
                 null,
                 false,
+                null,
                 null,
                 null,
                 null,

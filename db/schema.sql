@@ -557,6 +557,91 @@ CREATE TABLE `es_interest` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `es_live_vote`
+--
+
+DROP TABLE IF EXISTS `es_live_vote`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_live_vote` (
+  `es_live_vote_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_recorded_outcome_id` bigint NOT NULL,
+  `status` enum('CLOSED','OPEN','PREPARED') NOT NULL,
+  `motion_text` text NOT NULL,
+  `moved_by_user_id` bigint DEFAULT NULL,
+  `moved_by_name` varchar(160) DEFAULT NULL,
+  `seconded_by_user_id` bigint DEFAULT NULL,
+  `seconded_by_name` varchar(160) DEFAULT NULL,
+  `presiding_chair_user_id` bigint NOT NULL,
+  `opened_at` datetime(6) DEFAULT NULL,
+  `opened_by_user_id` bigint DEFAULT NULL,
+  `closed_at` datetime(6) DEFAULT NULL,
+  `closed_by_user_id` bigint DEFAULT NULL,
+  `participant_count_observation_id` bigint DEFAULT NULL,
+  `call_participant_count` int DEFAULT NULL,
+  `expected_voter_count` int DEFAULT NULL,
+  `electronic_for_count` int NOT NULL DEFAULT '0',
+  `electronic_against_count` int NOT NULL DEFAULT '0',
+  `electronic_abstain_count` int NOT NULL DEFAULT '0',
+  `manual_for_count` int NOT NULL DEFAULT '0',
+  `manual_against_count` int NOT NULL DEFAULT '0',
+  `manual_abstain_count` int NOT NULL DEFAULT '0',
+  `final_for_count` int DEFAULT NULL,
+  `final_against_count` int DEFAULT NULL,
+  `final_abstain_count` int DEFAULT NULL,
+  `result` enum('APPROVED','FAILED','NO_RESULT','WITHDRAWN') DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `updated_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_live_vote_id`),
+  UNIQUE KEY `uq_es_live_vote_outcome` (`es_recorded_outcome_id`),
+  KEY `ix_es_live_vote_status_created` (`status`,`created_at`,`es_live_vote_id`),
+  KEY `ix_es_live_vote_result_created` (`result`,`created_at`),
+  KEY `fk_es_lv_moved_by` (`moved_by_user_id`),
+  KEY `fk_es_lv_seconded_by` (`seconded_by_user_id`),
+  KEY `fk_es_lv_presiding_chair` (`presiding_chair_user_id`),
+  KEY `fk_es_lv_opened_by` (`opened_by_user_id`),
+  KEY `fk_es_lv_closed_by` (`closed_by_user_id`),
+  KEY `fk_es_lv_participant_count` (`participant_count_observation_id`),
+  KEY `fk_es_lv_created_by` (`created_by_user_id`),
+  KEY `fk_es_lv_updated_by` (`updated_by_user_id`),
+  CONSTRAINT `fk_es_lv_closed_by` FOREIGN KEY (`closed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_moved_by` FOREIGN KEY (`moved_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_opened_by` FOREIGN KEY (`opened_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_outcome` FOREIGN KEY (`es_recorded_outcome_id`) REFERENCES `es_recorded_outcome` (`es_recorded_outcome_id`),
+  CONSTRAINT `fk_es_lv_participant_count` FOREIGN KEY (`participant_count_observation_id`) REFERENCES `es_meeting_participant_count` (`es_meeting_participant_count_id`),
+  CONSTRAINT `fk_es_lv_presiding_chair` FOREIGN KEY (`presiding_chair_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_seconded_by` FOREIGN KEY (`seconded_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lv_updated_by` FOREIGN KEY (`updated_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_live_vote_response`
+--
+
+DROP TABLE IF EXISTS `es_live_vote_response`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_live_vote_response` (
+  `es_live_vote_response_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_live_vote_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `response` enum('ABSTAIN','AGAINST','FOR') NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_live_vote_response_id`),
+  UNIQUE KEY `uq_es_lvr_vote_user` (`es_live_vote_id`,`user_id`),
+  KEY `ix_es_lvr_vote_response` (`es_live_vote_id`,`response`,`es_live_vote_response_id`),
+  KEY `fk_es_lvr_user` (`user_id`),
+  CONSTRAINT `fk_es_lvr_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_lvr_vote` FOREIGN KEY (`es_live_vote_id`) REFERENCES `es_live_vote` (`es_live_vote_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `es_meeting`
 --
 
@@ -578,15 +663,59 @@ CREATE TABLE `es_meeting` (
   `meeting_name` varchar(160) NOT NULL,
   `scheduled_end` datetime(6) DEFAULT NULL,
   `scheduled_start` datetime(6) NOT NULL,
-  `status` enum('CANCELLED','COMPLETED','DRAFT','FINALIZED','PROPOSED') NOT NULL,
+  `status` enum('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') NOT NULL,
+  `designated_chair_user_id` bigint DEFAULT NULL,
+  `designated_scribe_user_id` bigint DEFAULT NULL,
+  `current_chair_user_id` bigint DEFAULT NULL,
+  `current_scribe_user_id` bigint DEFAULT NULL,
+  `current_agenda_item_id` bigint DEFAULT NULL,
+  `started_at` datetime(6) DEFAULT NULL,
+  `started_by_user_id` bigint DEFAULT NULL,
+  `completed_by_user_id` bigint DEFAULT NULL,
+  `close_due_at` datetime(6) DEFAULT NULL,
+  `closed_at` datetime(6) DEFAULT NULL,
+  `closed_by_user_id` bigint DEFAULT NULL,
+  `close_method` enum('AUTOMATIC','MANUAL') DEFAULT NULL,
   `timezone_id` varchar(64) DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   `online_meeting_details` text,
   `online_meeting_url` varchar(2048) DEFAULT NULL,
   PRIMARY KEY (`es_meeting_id`),
   KEY `ix_es_meeting_topic_space` (`es_topic_space_id`),
+  KEY `ix_es_meeting_status_close_due` (`status`,`close_due_at`,`es_meeting_id`),
+  KEY `ix_es_meeting_current_agenda` (`current_agenda_item_id`),
   CONSTRAINT `fk_es_meeting_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_meeting_agenda_activity`
+--
+
+DROP TABLE IF EXISTS `es_meeting_agenda_activity`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_agenda_activity` (
+  `es_meeting_agenda_activity_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_meeting_id` bigint NOT NULL,
+  `es_meeting_agenda_item_id` bigint NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `started_at` datetime(6) NOT NULL,
+  `started_by_user_id` bigint NOT NULL,
+  `ended_at` datetime(6) DEFAULT NULL,
+  `ended_by_user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`es_meeting_agenda_activity_id`),
+  KEY `ix_es_maa_meeting_open` (`es_meeting_id`,`ended_at`,`started_at`),
+  KEY `ix_es_maa_agenda_item` (`es_meeting_agenda_item_id`,`started_at`),
+  KEY `ix_es_maa_topic` (`es_topic_id`,`started_at`),
+  KEY `fk_es_maa_started_by` (`started_by_user_id`),
+  KEY `fk_es_maa_ended_by` (`ended_by_user_id`),
+  CONSTRAINT `fk_es_maa_agenda_item` FOREIGN KEY (`es_meeting_agenda_item_id`) REFERENCES `es_meeting_agenda_item` (`es_meeting_agenda_item_id`),
+  CONSTRAINT `fk_es_maa_ended_by` FOREIGN KEY (`ended_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_maa_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
+  CONSTRAINT `fk_es_maa_started_by` FOREIGN KEY (`started_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_maa_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -662,7 +791,7 @@ CREATE TABLE `es_meeting_communication` (
   `created_at` datetime(6) NOT NULL,
   `created_by_user_id` bigint NOT NULL,
   `es_meeting_id` bigint NOT NULL,
-  `expected_meeting_status` enum('CANCELLED','COMPLETED','DRAFT','FINALIZED','PROPOSED') DEFAULT NULL,
+  `expected_meeting_status` enum('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') DEFAULT NULL,
   `include_general_members` bit(1) NOT NULL,
   `include_presenters` bit(1) NOT NULL,
   `include_topic_champions` bit(1) NOT NULL,
@@ -678,6 +807,76 @@ CREATE TABLE `es_meeting_communication` (
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_communication_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_meeting_participant_count`
+--
+
+DROP TABLE IF EXISTS `es_meeting_participant_count`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_participant_count` (
+  `es_meeting_participant_count_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_meeting_agenda_activity_id` bigint NOT NULL,
+  `participant_count` int NOT NULL,
+  `recorded_at` datetime(6) NOT NULL,
+  `recorded_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_meeting_participant_count_id`),
+  KEY `ix_es_mpc_activity_recorded` (`es_meeting_agenda_activity_id`,`recorded_at`,`es_meeting_participant_count_id`),
+  KEY `fk_es_mpc_recorded_by` (`recorded_by_user_id`),
+  CONSTRAINT `fk_es_mpc_activity` FOREIGN KEY (`es_meeting_agenda_activity_id`) REFERENCES `es_meeting_agenda_activity` (`es_meeting_agenda_activity_id`),
+  CONSTRAINT `fk_es_mpc_recorded_by` FOREIGN KEY (`recorded_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_meeting_role_assignment`
+--
+
+DROP TABLE IF EXISTS `es_meeting_role_assignment`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_role_assignment` (
+  `es_meeting_role_assignment_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_meeting_id` bigint NOT NULL,
+  `role_type` enum('CHAIR','SCRIBE') NOT NULL,
+  `user_id` bigint NOT NULL,
+  `started_at` datetime(6) NOT NULL,
+  `ended_at` datetime(6) DEFAULT NULL,
+  `assigned_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_meeting_role_assignment_id`),
+  KEY `ix_es_mra_meeting_role_open` (`es_meeting_id`,`role_type`,`ended_at`,`started_at`),
+  KEY `ix_es_mra_user` (`user_id`,`started_at`),
+  KEY `fk_es_mra_assigned_by` (`assigned_by_user_id`),
+  CONSTRAINT `fk_es_mra_assigned_by` FOREIGN KEY (`assigned_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_mra_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
+  CONSTRAINT `fk_es_mra_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_meeting_status_history`
+--
+
+DROP TABLE IF EXISTS `es_meeting_status_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_meeting_status_history` (
+  `es_meeting_status_history_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_meeting_id` bigint NOT NULL,
+  `from_status` enum('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') DEFAULT NULL,
+  `to_status` enum('CANCELLED','COMPLETED','CLOSED','DRAFT','FINALIZED','IN_SESSION','PROPOSED') NOT NULL,
+  `changed_at` datetime(6) NOT NULL,
+  `changed_by_user_id` bigint DEFAULT NULL,
+  `transition_method` enum('AUTOMATIC','USER') NOT NULL,
+  PRIMARY KEY (`es_meeting_status_history_id`),
+  KEY `ix_es_msh_meeting_changed` (`es_meeting_id`,`changed_at`,`es_meeting_status_history_id`),
+  KEY `ix_es_msh_to_status` (`to_status`,`changed_at`),
+  KEY `fk_es_msh_changed_by` (`changed_by_user_id`),
+  CONSTRAINT `fk_es_msh_changed_by` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_msh_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -704,6 +903,36 @@ CREATE TABLE `es_neighborhood` (
   KEY `ix_es_neighborhood_topic_space` (`es_topic_space_id`),
   CONSTRAINT `fk_es_neighborhood_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_recorded_outcome`
+--
+
+DROP TABLE IF EXISTS `es_recorded_outcome`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_recorded_outcome` (
+  `es_recorded_outcome_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_note_id` bigint NOT NULL,
+  `source_node_id` varchar(128) NOT NULL,
+  `outcome_type` enum('ACTION','DIRECTION','FORMAL_MOTION','OPEN_ISSUE','RATIONALE','WORKING_CONSENSUS') NOT NULL,
+  `short_title` varchar(200) DEFAULT NULL,
+  `outcome_text` text NOT NULL,
+  `display_order` int NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `updated_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_recorded_outcome_id`),
+  UNIQUE KEY `uq_es_ro_note_source` (`es_topic_note_id`,`source_node_id`),
+  KEY `ix_es_ro_note_order` (`es_topic_note_id`,`display_order`,`es_recorded_outcome_id`),
+  KEY `fk_es_ro_created_by` (`created_by_user_id`),
+  KEY `fk_es_ro_updated_by` (`updated_by_user_id`),
+  CONSTRAINT `fk_es_ro_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_ro_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
+  CONSTRAINT `fk_es_ro_updated_by` FOREIGN KEY (`updated_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -974,6 +1203,35 @@ CREATE TABLE `es_topic_meeting` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `es_topic_meeting_cochair`
+--
+
+DROP TABLE IF EXISTS `es_topic_meeting_cochair`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_meeting_cochair` (
+  `es_topic_meeting_cochair_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_meeting_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `status` enum('ACTIVE','INACTIVE') NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `inactive_at` datetime(6) DEFAULT NULL,
+  `inactive_by_user_id` bigint DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_topic_meeting_cochair_id`),
+  KEY `ix_es_tm_cchair_meeting_status` (`es_topic_meeting_id`,`status`,`created_at`),
+  KEY `ix_es_tm_cchair_user` (`user_id`,`created_at`),
+  KEY `fk_es_tm_cchair_created_by` (`created_by_user_id`),
+  KEY `fk_es_tm_cchair_inactive_by` (`inactive_by_user_id`),
+  CONSTRAINT `fk_es_tm_cchair_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_tm_cchair_inactive_by` FOREIGN KEY (`inactive_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_tm_cchair_meeting` FOREIGN KEY (`es_topic_meeting_id`) REFERENCES `es_topic_meeting` (`es_topic_meeting_id`),
+  CONSTRAINT `fk_es_tm_cchair_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `es_topic_meeting_member`
 --
 
@@ -1090,6 +1348,100 @@ CREATE TABLE `es_topic_neighborhood` (
   KEY `ix_es_topic_neighborhood_topic` (`es_topic_id`),
   KEY `ix_es_topic_neighborhood_neighborhood` (`es_neighborhood_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=309 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_note`
+--
+
+DROP TABLE IF EXISTS `es_topic_note`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_note` (
+  `es_topic_note_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_id` bigint NOT NULL,
+  `es_meeting_id` bigint DEFAULT NULL,
+  `es_meeting_agenda_item_id` bigint DEFAULT NULL,
+  `note_title` varchar(200) DEFAULT NULL,
+  `document_json` json NOT NULL,
+  `document_text` longtext,
+  `revision_no` bigint NOT NULL,
+  `status` enum('FINALIZED','OPEN') NOT NULL,
+  `active_editor_user_id` bigint DEFAULT NULL,
+  `active_editor_started_at` datetime(6) DEFAULT NULL,
+  `active_editor_version` bigint NOT NULL DEFAULT '0',
+  `created_at` datetime(6) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `finalize_at` datetime(6) DEFAULT NULL,
+  `finalized_at` datetime(6) DEFAULT NULL,
+  `finalized_by_user_id` bigint DEFAULT NULL,
+  `finalization_method` enum('AUTOMATIC','MANUAL') DEFAULT NULL,
+  PRIMARY KEY (`es_topic_note_id`),
+  KEY `ix_es_topic_note_topic_created` (`es_topic_id`,`created_at`,`es_topic_note_id`),
+  KEY `ix_es_topic_note_meeting_status` (`es_meeting_id`,`status`,`finalize_at`,`es_topic_note_id`),
+  KEY `ix_es_topic_note_agenda_status` (`es_meeting_agenda_item_id`,`status`,`es_topic_note_id`),
+  KEY `ix_es_topic_note_finalize_at` (`finalize_at`,`es_topic_note_id`),
+  KEY `fk_es_topic_note_created_by` (`created_by_user_id`),
+  KEY `fk_es_topic_note_finalized_by` (`finalized_by_user_id`),
+  KEY `fk_es_topic_note_active_editor` (`active_editor_user_id`),
+  CONSTRAINT `fk_es_topic_note_active_editor` FOREIGN KEY (`active_editor_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_topic_note_agenda_item` FOREIGN KEY (`es_meeting_agenda_item_id`) REFERENCES `es_meeting_agenda_item` (`es_meeting_agenda_item_id`),
+  CONSTRAINT `fk_es_topic_note_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_topic_note_finalized_by` FOREIGN KEY (`finalized_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_topic_note_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
+  CONSTRAINT `fk_es_topic_note_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_note_editor_history`
+--
+
+DROP TABLE IF EXISTS `es_topic_note_editor_history`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_note_editor_history` (
+  `es_topic_note_editor_history_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_note_id` bigint NOT NULL,
+  `previous_editor_user_id` bigint DEFAULT NULL,
+  `new_editor_user_id` bigint NOT NULL,
+  `changed_at` datetime(6) NOT NULL,
+  `changed_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_topic_note_editor_history_id`),
+  KEY `ix_es_tneh_note_changed` (`es_topic_note_id`,`changed_at`,`es_topic_note_editor_history_id`),
+  KEY `fk_es_tneh_previous_editor` (`previous_editor_user_id`),
+  KEY `fk_es_tneh_new_editor` (`new_editor_user_id`),
+  KEY `fk_es_tneh_changed_by` (`changed_by_user_id`),
+  CONSTRAINT `fk_es_tneh_changed_by` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_tneh_new_editor` FOREIGN KEY (`new_editor_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_tneh_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
+  CONSTRAINT `fk_es_tneh_previous_editor` FOREIGN KEY (`previous_editor_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_note_revision`
+--
+
+DROP TABLE IF EXISTS `es_topic_note_revision`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_note_revision` (
+  `es_topic_note_revision_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_note_id` bigint NOT NULL,
+  `revision_no` bigint NOT NULL,
+  `document_json` json NOT NULL,
+  `document_text` longtext,
+  `saved_at` datetime(6) NOT NULL,
+  `saved_by_user_id` bigint NOT NULL,
+  PRIMARY KEY (`es_topic_note_revision_id`),
+  UNIQUE KEY `uq_es_tnr_note_revision` (`es_topic_note_id`,`revision_no`),
+  KEY `ix_es_tnr_note_saved` (`es_topic_note_id`,`revision_no`,`es_topic_note_revision_id`),
+  KEY `fk_es_tnr_saved_by` (`saved_by_user_id`),
+  CONSTRAINT `fk_es_tnr_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
+  CONSTRAINT `fk_es_tnr_saved_by` FOREIGN KEY (`saved_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1582,4 +1934,4 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-07-24  9:17:31
+-- Dump completed on 2026-07-27  0:30:10

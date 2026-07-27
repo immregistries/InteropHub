@@ -27,6 +27,7 @@ public class MeetingLifecycleService {
     private final EsMeetingDao meetingDao;
     private final MeetingAuthorizationService authorizationService;
     private final MeetingImmutabilityGuard immutabilityGuard;
+    private final TopicNoteEventPublisher noteEventPublisher;
     private final Clock clock;
 
     public MeetingLifecycleService() {
@@ -37,6 +38,7 @@ public class MeetingLifecycleService {
         this.meetingDao = new EsMeetingDao();
         this.authorizationService = authorizationService;
         this.immutabilityGuard = new MeetingImmutabilityGuard();
+        this.noteEventPublisher = new TopicNoteEventPublisher();
         this.clock = clock;
     }
 
@@ -204,7 +206,8 @@ public class MeetingLifecycleService {
                     meeting.setCloseDueAt(meeting.getCompletedAt().plusDays(7));
                 }
 
-                finalizeOpenMeetingNotes(session, meetingId, meeting.getCloseDueAt(), actingUserId, closeMethod);
+                List<EsTopicNote> finalizedNotes = finalizeOpenMeetingNotes(session, meetingId,
+                        meeting.getCloseDueAt(), actingUserId, closeMethod);
                 closeOpenVotes(session, meetingId, actingUserId);
                 endCurrentAgendaActivity(session, meetingId, now, actingUserId);
                 clearRolePointersAndAssignments(session, meetingId, now);
@@ -220,8 +223,11 @@ public class MeetingLifecycleService {
                 session.merge(meeting);
 
                 insertStatusHistory(session, meetingId, fromStatus, EsMeeting.MeetingStatus.CLOSED,
-                    actingUserId, transitionMethod, now);
+                        actingUserId, transitionMethod, now);
                 tx.commit();
+                for (EsTopicNote finalizedNote : finalizedNotes) {
+                    noteEventPublisher.publishNoteStateChanged(finalizedNote, EsMeeting.MeetingStatus.CLOSED);
+                }
                 return meeting;
             } catch (Exception ex) {
                 tx.rollback();
@@ -230,8 +236,11 @@ public class MeetingLifecycleService {
         }
     }
 
-    private void finalizeOpenMeetingNotes(org.hibernate.Session session, Long meetingId, LocalDateTime deadline,
+    private List<EsTopicNote> finalizeOpenMeetingNotes(org.hibernate.Session session, Long meetingId,
+            LocalDateTime deadline,
             Long actingUserId, MeetingCloseMethod closeMethod) {
+        TopicNoteDocumentSupport documentSupport = new TopicNoteDocumentSupport();
+        List<EsTopicNote> finalized = new java.util.ArrayList<>();
         List<EsTopicNote> notes = session.createQuery(
                 "from EsTopicNote n where n.esMeetingId = :meetingId and n.status = :status",
                 EsTopicNote.class)
@@ -239,6 +248,13 @@ public class MeetingLifecycleService {
                 .setParameter("status", TopicNoteStatus.OPEN)
                 .getResultList();
         for (EsTopicNote note : notes) {
+            boolean provisional = note.getRevisionNo() != null && note.getRevisionNo() <= 0L;
+            boolean emptyDocument = documentSupport.isEmptyDocument(note.getDocumentJson());
+            if (provisional && emptyDocument && !noteHasOutcomesOrVotes(session, note.getEsTopicNoteId())) {
+                session.remove(note);
+                continue;
+            }
+
             note.setStatus(TopicNoteStatus.FINALIZED);
             note.setFinalizedAt(LocalDateTime.now(ZoneOffset.UTC));
             note.setFinalizedByUserId(actingUserId);
@@ -249,7 +265,34 @@ public class MeetingLifecycleService {
             note.setActiveEditorUserId(null);
             note.setActiveEditorStartedAt(null);
             session.merge(note);
+            finalized.add(note);
         }
+        return finalized;
+    }
+
+    private boolean noteHasOutcomesOrVotes(org.hibernate.Session session, Long noteId) {
+        if (noteId == null) {
+            return false;
+        }
+
+        List<Long> outcomeIds = session.createQuery(
+                "select o.esRecordedOutcomeId from EsRecordedOutcome o where o.esTopicNoteId = :noteId",
+                Long.class)
+                .setParameter("noteId", noteId)
+                .setMaxResults(1)
+                .getResultList();
+        if (!outcomeIds.isEmpty()) {
+            return true;
+        }
+
+        List<Long> voteIds = session.createQuery(
+                "select v.esLiveVoteId from EsLiveVote v where v.esRecordedOutcomeId in ("
+                        + "select o.esRecordedOutcomeId from EsRecordedOutcome o where o.esTopicNoteId = :noteId)",
+                Long.class)
+                .setParameter("noteId", noteId)
+                .setMaxResults(1)
+                .getResultList();
+        return !voteIds.isEmpty();
     }
 
     private void closeOpenVotes(org.hibernate.Session session, Long meetingId, Long actingUserId) {
@@ -362,27 +405,27 @@ public class MeetingLifecycleService {
         session.persist(assignment);
     }
 
-        private boolean hasOpenRoleAssignment(org.hibernate.Session session, Long meetingId, MeetingRoleType roleType) {
+    private boolean hasOpenRoleAssignment(org.hibernate.Session session, Long meetingId, MeetingRoleType roleType) {
         Long count = session.createQuery(
-            "select count(r.esMeetingRoleAssignmentId) from EsMeetingRoleAssignment r"
-                + " where r.esMeetingId = :meetingId and r.roleType = :roleType and r.endedAt is null",
-            Long.class)
-            .setParameter("meetingId", meetingId)
-            .setParameter("roleType", roleType)
-            .getSingleResult();
+                "select count(r.esMeetingRoleAssignmentId) from EsMeetingRoleAssignment r"
+                        + " where r.esMeetingId = :meetingId and r.roleType = :roleType and r.endedAt is null",
+                Long.class)
+                .setParameter("meetingId", meetingId)
+                .setParameter("roleType", roleType)
+                .getSingleResult();
         return count != null && count > 0;
-        }
+    }
 
-        private void endOpenRoleAssignments(org.hibernate.Session session, Long meetingId, LocalDateTime endedAt,
+    private void endOpenRoleAssignments(org.hibernate.Session session, Long meetingId, LocalDateTime endedAt,
             MeetingRoleType roleType) {
         session.createMutationQuery(
-            "update EsMeetingRoleAssignment r set r.endedAt = :endedAt"
-                + " where r.esMeetingId = :meetingId and r.roleType = :roleType and r.endedAt is null")
-            .setParameter("endedAt", endedAt)
-            .setParameter("meetingId", meetingId)
-            .setParameter("roleType", roleType)
-            .executeUpdate();
-        }
+                "update EsMeetingRoleAssignment r set r.endedAt = :endedAt"
+                        + " where r.esMeetingId = :meetingId and r.roleType = :roleType and r.endedAt is null")
+                .setParameter("endedAt", endedAt)
+                .setParameter("meetingId", meetingId)
+                .setParameter("roleType", roleType)
+                .executeUpdate();
+    }
 
     private void insertStatusHistory(org.hibernate.Session session, Long meetingId, EsMeeting.MeetingStatus fromStatus,
             EsMeeting.MeetingStatus toStatus, Long actingUserId, MeetingTransitionMethod method,
