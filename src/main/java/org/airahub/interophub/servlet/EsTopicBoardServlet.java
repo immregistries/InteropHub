@@ -58,8 +58,6 @@ public class EsTopicBoardServlet extends HttpServlet {
                         new AiraNavigationItem("Board", "/es/board/" + board.board().getBoardCode(), true),
                         new AiraNavigationItem("Topics", "/es/topics", false),
                         new AiraNavigationItem("Meetings", "/es/topics?view=meetings", false))))
-                .addGlobalAction("Topics", "/es/topics", "secondary")
-                .addGlobalAction("Welcome", "/welcome", "secondary")
                 .addLocalStylesheet("/css/topic-board.css")
                 .build();
 

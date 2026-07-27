@@ -37,7 +37,9 @@ public class EsMeetingCommunication {
         DRAFT,
         PROPOSED,
         FINALIZED,
+        IN_SESSION,
         COMPLETED,
+        CLOSED,
         CANCELLED
     }
 

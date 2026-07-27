@@ -65,6 +65,17 @@
     <mapping class="org.airahub.interophub.model.EsAgendaItemComment"/>
     <mapping class="org.airahub.interophub.model.EmailSendLog"/>
     <mapping class="org.airahub.interophub.model.EsMeetingCommunication"/>
+    <mapping class="org.airahub.interophub.model.EsTopicMeetingCochair"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingStatusHistory"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingRoleAssignment"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingAgendaActivity"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingParticipantCount"/>
+    <mapping class="org.airahub.interophub.model.EsTopicNote"/>
+    <mapping class="org.airahub.interophub.model.EsTopicNoteRevision"/>
+    <mapping class="org.airahub.interophub.model.EsTopicNoteEditorHistory"/>
+    <mapping class="org.airahub.interophub.model.EsRecordedOutcome"/>
+    <mapping class="org.airahub.interophub.model.EsLiveVote"/>
+    <mapping class="org.airahub.interophub.model.EsLiveVoteResponse"/>
     <mapping class="org.airahub.interophub.model.EsTopicRelationship"/>
     <mapping class="org.airahub.interophub.model.EsTopicCuration"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>

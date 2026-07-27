@@ -20,8 +20,15 @@ public class EsMeeting {
         DRAFT,
         PROPOSED,
         FINALIZED,
+        IN_SESSION,
         COMPLETED,
+        CLOSED,
         CANCELLED
+    }
+
+    public enum MeetingCloseMethod {
+        MANUAL,
+        AUTOMATIC
     }
 
     @Id
@@ -56,6 +63,43 @@ public class EsMeeting {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private MeetingStatus status;
+
+    @Column(name = "designated_chair_user_id")
+    private Long designatedChairUserId;
+
+    @Column(name = "designated_scribe_user_id")
+    private Long designatedScribeUserId;
+
+    @Column(name = "current_chair_user_id")
+    private Long currentChairUserId;
+
+    @Column(name = "current_scribe_user_id")
+    private Long currentScribeUserId;
+
+    @Column(name = "current_agenda_item_id")
+    private Long currentAgendaItemId;
+
+    @Column(name = "started_at")
+    private LocalDateTime startedAt;
+
+    @Column(name = "started_by_user_id")
+    private Long startedByUserId;
+
+    @Column(name = "completed_by_user_id")
+    private Long completedByUserId;
+
+    @Column(name = "close_due_at")
+    private LocalDateTime closeDueAt;
+
+    @Column(name = "closed_at")
+    private LocalDateTime closedAt;
+
+    @Column(name = "closed_by_user_id")
+    private Long closedByUserId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "close_method", length = 16)
+    private MeetingCloseMethod closeMethod;
 
     @Column(name = "created_by_user_id", nullable = false)
     private Long createdByUserId;
@@ -179,6 +223,102 @@ public class EsMeeting {
 
     public void setStatus(MeetingStatus status) {
         this.status = status;
+    }
+
+    public Long getDesignatedChairUserId() {
+        return designatedChairUserId;
+    }
+
+    public void setDesignatedChairUserId(Long designatedChairUserId) {
+        this.designatedChairUserId = designatedChairUserId;
+    }
+
+    public Long getDesignatedScribeUserId() {
+        return designatedScribeUserId;
+    }
+
+    public void setDesignatedScribeUserId(Long designatedScribeUserId) {
+        this.designatedScribeUserId = designatedScribeUserId;
+    }
+
+    public Long getCurrentChairUserId() {
+        return currentChairUserId;
+    }
+
+    public void setCurrentChairUserId(Long currentChairUserId) {
+        this.currentChairUserId = currentChairUserId;
+    }
+
+    public Long getCurrentScribeUserId() {
+        return currentScribeUserId;
+    }
+
+    public void setCurrentScribeUserId(Long currentScribeUserId) {
+        this.currentScribeUserId = currentScribeUserId;
+    }
+
+    public Long getCurrentAgendaItemId() {
+        return currentAgendaItemId;
+    }
+
+    public void setCurrentAgendaItemId(Long currentAgendaItemId) {
+        this.currentAgendaItemId = currentAgendaItemId;
+    }
+
+    public LocalDateTime getStartedAt() {
+        return startedAt;
+    }
+
+    public void setStartedAt(LocalDateTime startedAt) {
+        this.startedAt = startedAt;
+    }
+
+    public Long getStartedByUserId() {
+        return startedByUserId;
+    }
+
+    public void setStartedByUserId(Long startedByUserId) {
+        this.startedByUserId = startedByUserId;
+    }
+
+    public Long getCompletedByUserId() {
+        return completedByUserId;
+    }
+
+    public void setCompletedByUserId(Long completedByUserId) {
+        this.completedByUserId = completedByUserId;
+    }
+
+    public LocalDateTime getCloseDueAt() {
+        return closeDueAt;
+    }
+
+    public void setCloseDueAt(LocalDateTime closeDueAt) {
+        this.closeDueAt = closeDueAt;
+    }
+
+    public LocalDateTime getClosedAt() {
+        return closedAt;
+    }
+
+    public void setClosedAt(LocalDateTime closedAt) {
+        this.closedAt = closedAt;
+    }
+
+    public Long getClosedByUserId() {
+        return closedByUserId;
+    }
+
+    public void setClosedByUserId(Long closedByUserId) {
+        this.closedByUserId = closedByUserId;
+    }
+
+    public MeetingCloseMethod getCloseMethod() {
+        return closeMethod;
+    }
+
+    public void setCloseMethod(MeetingCloseMethod closeMethod) {
+        this.closeMethod = closeMethod;
     }
 
     public Long getCreatedByUserId() {

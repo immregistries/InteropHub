@@ -1482,6 +1482,16 @@ public class EsAgendaServlet extends HttpServlet {
         response.sendRedirect(url);
     }
 
+    static void renderWorkspaceLink(PrintWriter out, String contextPath, Long meetingId, boolean canEdit) {
+        if (!canEdit || out == null || meetingId == null) {
+            return;
+        }
+        out.println("    <p class=\"agenda-workspace-link\">");
+        out.println("      <a href=\"" + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
+                + "\">Open Meeting Workspace</a>");
+        out.println("    </p>");
+    }
+
     // =========================================================================
     // Page rendering
     // =========================================================================
@@ -3213,6 +3223,7 @@ public class EsAgendaServlet extends HttpServlet {
                         + meeting.getEsTopicMeetingId() + "\">" + escapeHtml(allLabel) + "</a>");
                 out.println("    </p>");
             }
+            renderWorkspaceLink(out, contextPath, meeting.getEsMeetingId(), canEdit);
             out.println("  </div>");
 
             out.println("</main>");
@@ -3524,6 +3535,10 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("    .agenda-all-meetings { margin: 0.35rem 0 0; }");
         out.println("    .agenda-all-meetings a { color: #475569; font-size: 0.85rem; text-decoration: none; }");
         out.println("    .agenda-all-meetings a:hover { text-decoration: underline; color: #1e40af; }");
+        out.println("    .agenda-workspace-link { margin: 0.35rem 0 0; }");
+        out.println(
+                "    .agenda-workspace-link a { color: #0f766e; font-size: 0.85rem; font-weight: 700; text-decoration: none; }");
+        out.println("    .agenda-workspace-link a:hover { text-decoration: underline; color: #115e59; }");
         out.println("    @media print {");
         out.println("      .no-print { display: none !important; }");
         out.println("      body { background: white; }");
