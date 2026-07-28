@@ -66,8 +66,9 @@ public class MeetingLifecycleService {
                 if (meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION) {
                     throw new IllegalStateException("The meeting is already in session.");
                 }
-                if (meeting.getStatus() != EsMeeting.MeetingStatus.FINALIZED) {
-                    throw new IllegalStateException("Meeting is not finalized.");
+                if (meeting.getStatus() != EsMeeting.MeetingStatus.FINALIZED
+                        && meeting.getStatus() != EsMeeting.MeetingStatus.COMPLETED) {
+                    throw new IllegalStateException("Meeting is not finalized or completed.");
                 }
                 if (!MeetingWindowRules.isMeetingStartWindowOpen(meeting, effectiveNow)) {
                     throw new IllegalStateException("Start window is not open yet.");
@@ -92,7 +93,7 @@ public class MeetingLifecycleService {
                             meeting.getDesignatedScribeUserId(), actingUserId, nowUtc);
                 }
 
-                insertStatusHistory(session, meetingId, EsMeeting.MeetingStatus.FINALIZED,
+                insertStatusHistory(session, meetingId, meeting.getStatus(),
                         EsMeeting.MeetingStatus.IN_SESSION, actingUserId, MeetingTransitionMethod.USER, nowUtc);
 
                 tx.commit();

@@ -18515,44 +18515,62 @@ img.ProseMirror-separator {
         outcomesRoot: root.querySelector("[data-note-outcomes-root]"),
         outcomesListElement: root.querySelector("[data-outcome-list]"),
         addOutcomeButton: root.querySelector("[data-outcome-add]"),
+        outcomeDialogElement: root.querySelector("[data-outcome-dialog]"),
+        outcomeDialogForm: root.querySelector("[data-outcome-form]"),
+        outcomeDialogTitleElement: root.querySelector("[data-outcome-dialog-title]"),
+        outcomeDialogModeElement: root.querySelector("[data-outcome-dialog-mode]"),
+        outcomeDialogCloseButton: root.querySelector("[data-outcome-dialog-close]"),
+        outcomeDialogCancelButton: root.querySelector("[data-outcome-dialog-cancel]"),
+        outcomeDialogSaveButton: root.querySelector("[data-outcome-dialog-save]"),
+        outcomeDialogStatusElement: root.querySelector("[data-outcome-dialog-status]"),
+        outcomeDialogSummaryElement: root.querySelector("[data-outcome-error-summary]"),
+        outcomeDialogSourcePreviewElement: root.querySelector("[data-outcome-source-preview]"),
+        outcomeDialogTypeElement: root.querySelector("[data-outcome-type]"),
+        outcomeDialogShortTitleElement: root.querySelector("[data-outcome-short-title]"),
+        outcomeDialogTextElement: root.querySelector("[data-outcome-text]"),
+        outcomeDialogRemoveButton: root.querySelector("[data-outcome-remove]"),
+        removeOutcomeDialogElement: root.querySelector("[data-remove-outcome-dialog]"),
+        removeOutcomeDialogCancelButton: root.querySelector("[data-remove-outcome-cancel]"),
+        removeOutcomeDialogConfirmButton: root.querySelector("[data-remove-outcome-confirm]"),
+        removeOutcomeDialogMessageElement: root.querySelector("[data-remove-outcome-message]"),
         readOnlyEditor: null,
         editor: null,
         pollTimer: null,
+        canEdit: Boolean(config.canEdit),
+        canAssumeEditor: Boolean(config.canAssumeEditor),
         noteId: parseNullableNumber(config.noteId),
+        noteStatus: config.noteStatus || null,
+        meetingStatus: config.meetingStatus || null,
         revision: Number(config.revision || 0),
         editorVersion: Number(config.editorVersion || 0),
         currentUserId: parseNullableNumber(config.currentUserId),
         activeEditorUserId: parseNullableNumber(config.activeEditorUserId),
-        activeEditorDisplayName: trimToNull(config.activeEditorDisplayName),
-        noteStatus: trimToNull(config.noteStatus),
-        meetingStatus: trimToNull(config.meetingStatus),
+        activeEditorDisplayName: config.activeEditorDisplayName || "",
+        responsibilityMessage: config.responsibilityMessage || "",
         savedAt: trimToNull(config.lastSavedAt),
-        canAssumeEditor: Boolean(config.canAssumeEditor),
-        canEdit: Boolean(config.canEdit),
-        lastSavedDocument: cloneJson2(config.initialDocument || buildEmptyBulletDocument()),
         isDirty: false,
         saveInProgress: false,
         saveRequested: false,
         autosaveBlocked: false,
         localConflict: false,
-        retryTimer: null,
-        retryIndex: 0,
-        debounceTimer: null,
-        maxTimer: null,
+        lastSavedDocument: cloneJson2(config.initialDocument || buildEmptyBulletDocument()),
         sse: null,
         sseHealthy: false,
+        debounceTimer: null,
+        maxTimer: null,
+        retryTimer: null,
+        retryIndex: 0,
         outcomes: [],
         outcomesBySourceNodeId: {},
+        outcomeDialogState: null,
+        removeOutcomeDialogState: null,
         afterNextSuccessfulSave: null,
-        pendingCreateAnchorNodeId: null
+        pendingCreateAnchorNodeId: null,
+        pendingActionAfterSave: null
       };
-      renderReadOnly(state, config.readOnlyDocument);
-      syncOwnerText(state);
-      syncControlVisibility(state);
-      setSaveState(state, state.savedAt ? "Saved at " + formatTime(state.savedAt) : "Saved", "clean");
       if (state.assumeButton) {
         state.assumeButton.addEventListener("click", function() {
-          assumeEditorship(state, true);
+          handleTakeNotesAction(state);
         });
       }
       if (state.editToggle) {
@@ -18562,6 +18580,12 @@ img.ProseMirror-separator {
       }
       if (state.saveButton) {
         state.saveButton.addEventListener("click", function() {
+          const action = state.saveButton.getAttribute("data-note-action") === "next-topic" ? "next-topic" : null;
+          state.pendingActionAfterSave = action;
+          if (action === "next-topic" && !state.isDirty) {
+            advanceToNextAgendaItem(state);
+            return;
+          }
           requestSave(state, "manual", true);
         });
       }
@@ -18575,18 +18599,86 @@ img.ProseMirror-separator {
           openCreateOutcomeFlow(state);
         });
       }
+      if (state.outcomeDialogForm) {
+        state.outcomeDialogForm.addEventListener("submit", function(event) {
+          event.preventDefault();
+          submitOutcomeDialog(state);
+        });
+      }
+      if (state.outcomeDialogCloseButton) {
+        state.outcomeDialogCloseButton.addEventListener("click", function() {
+          closeOutcomeDialog(state);
+        });
+      }
+      if (state.outcomeDialogCancelButton) {
+        state.outcomeDialogCancelButton.addEventListener("click", function() {
+          closeOutcomeDialog(state);
+        });
+      }
+      if (state.outcomeDialogRemoveButton) {
+        state.outcomeDialogRemoveButton.addEventListener("click", function() {
+          openRemoveOutcomeDialogFromState(state);
+        });
+      }
+      if (state.outcomeDialogElement) {
+        state.outcomeDialogElement.addEventListener("cancel", function(event) {
+          event.preventDefault();
+          if (!isOutcomeDialogSaving(state)) {
+            closeOutcomeDialog(state);
+          }
+        });
+      }
+      if (state.removeOutcomeDialogElement) {
+        state.removeOutcomeDialogElement.addEventListener("cancel", function(event) {
+          event.preventDefault();
+          closeRemoveOutcomeDialog(state);
+        });
+      }
+      if (state.removeOutcomeDialogCancelButton) {
+        state.removeOutcomeDialogCancelButton.addEventListener("click", function() {
+          closeRemoveOutcomeDialog(state);
+        });
+      }
+      if (state.removeOutcomeDialogConfirmButton) {
+        state.removeOutcomeDialogConfirmButton.addEventListener("click", function() {
+          confirmRemoveOutcome(state);
+        });
+      }
       if (state.outcomesListElement) {
         state.outcomesListElement.addEventListener("click", function(event) {
           const editButton = event.target.closest("[data-outcome-edit]");
           if (editButton) {
-            editOutcome(state, editButton.getAttribute("data-outcome-edit"));
+            editOutcome(state, editButton.getAttribute("data-outcome-edit"), editButton);
             return;
           }
           const removeButton = event.target.closest("[data-outcome-remove]");
           if (removeButton) {
-            removeOutcome(state, removeButton.getAttribute("data-outcome-remove"));
+            queueRemoveOutcome(state, removeButton.getAttribute("data-outcome-remove"), removeButton);
           }
         });
+      }
+      if (state.readOnlyElement) {
+        state.readOnlyElement.addEventListener("click", function(event) {
+          const marker = event.target.closest("li.mw-note-outcome-marker[data-node-id]");
+          if (marker) {
+            openOutcomeForSourceNodeId(state, marker.getAttribute("data-node-id"), marker.textContent || "");
+          }
+        });
+      }
+      if (state.editorElement) {
+        state.editorElement.addEventListener("click", function(event) {
+          const marker = event.target.closest("li.mw-note-outcome-marker[data-node-id]");
+          if (marker) {
+            openOutcomeForSourceNodeId(state, marker.getAttribute("data-node-id"), marker.textContent || "");
+          }
+        });
+      }
+      renderReadOnly(state, config.readOnlyDocument);
+      syncOwnerText(state);
+      syncControlVisibility(state);
+      setSaveState(state, state.savedAt ? "Saved at " + formatTime(state.savedAt) : "Saved", "clean");
+      if (state.canEdit) {
+        enterEditMode(state);
       }
       loadOutcomes(state);
       startRealtime(state);
@@ -18775,7 +18867,7 @@ img.ProseMirror-separator {
         state.autosaveBlocked = false;
         state.localConflict = false;
         state.retryIndex = 0;
-        setMessage(state, state.noteId ? "You are now taking notes." : "Note session started.", "success");
+        setMessage(state, "", "success");
         setSaveState(state, state.savedAt ? "Saved at " + formatTime(state.savedAt) : "Saved", "clean");
         loadOutcomes(state);
         startRealtime(state);
@@ -18787,6 +18879,16 @@ img.ProseMirror-separator {
       }).finally(function() {
         disableActionButtons(state, false);
       });
+    }
+    function handleTakeNotesAction(state) {
+      if (!state.canAssumeEditor) {
+        return;
+      }
+      if (state.canEdit) {
+        enterEditMode(state);
+        return;
+      }
+      assumeEditorship(state, true);
     }
     function enterEditMode(state) {
       if (!state.canEdit || !state.editPanel) {
@@ -18863,10 +18965,10 @@ img.ProseMirror-separator {
         state.editPanel.hidden = true;
       }
       if (state.readOnlyElement) {
-        state.readOnlyElement.hidden = !state.noteId;
+        state.readOnlyElement.hidden = !state.noteId || state.canEdit;
       }
       if (state.emptyStateElement) {
-        state.emptyStateElement.hidden = !!state.noteId;
+        state.emptyStateElement.hidden = !!state.noteId || state.canEdit;
       }
       syncControlVisibility(state);
     }
@@ -18889,6 +18991,13 @@ img.ProseMirror-separator {
           requestSave(state, "autosave", true);
         }, Number(state.config.autosaveMaxIntervalMs || 1e4));
       }
+    }
+    function advanceToNextAgendaItem(state) {
+      if (!state.config || !state.config.workspaceUrl || !state.config.nextAgendaItemId) {
+        return;
+      }
+      const url = withQueryParam(state.config.workspaceUrl, "itemId", state.config.nextAgendaItemId);
+      window.location.assign(url);
     }
     function requestSave(state, mode, forceImmediate) {
       if (!canAutosave(state) || !state.editor || !state.isDirty) {
@@ -18966,6 +19075,12 @@ img.ProseMirror-separator {
         }, 700);
         setMessage(state, "", "");
         loadOutcomes(state);
+        if (state.pendingActionAfterSave === "next-topic") {
+          state.pendingActionAfterSave = null;
+          advanceToNextAgendaItem(state);
+          return;
+        }
+        state.pendingActionAfterSave = null;
         if (typeof state.afterNextSuccessfulSave === "function") {
           const callback = state.afterNextSuccessfulSave;
           state.afterNextSuccessfulSave = null;
@@ -18975,6 +19090,7 @@ img.ProseMirror-separator {
       }).catch(function(error) {
         state.afterNextSuccessfulSave = null;
         state.pendingCreateAnchorNodeId = null;
+        state.pendingActionAfterSave = null;
         if (error instanceof ConflictError) {
           handleConflict(state, error);
           return;
@@ -19078,7 +19194,7 @@ img.ProseMirror-separator {
           setEditorEditable(state, true);
           syncControlVisibility(state);
           syncOwnerText(state);
-          setMessage(state, "You are now taking notes for this topic.", "success");
+          setMessage(state, "", "success");
         }
         if (!state.isDirty && state.revision > previousRevision) {
           refreshSavedContent(state, previousRevision);
@@ -19165,30 +19281,30 @@ img.ProseMirror-separator {
         state.outcomesListElement.innerHTML = '<div class="aira-empty-state"><p class="aira-empty-state__title">No recorded outcomes yet.</p></div>';
         return;
       }
-      let html = "";
+      let html = '<div class="aira-table-wrap"><table class="aira-table"><thead><tr><th>Type</th><th>Outcome</th>';
+      if (Boolean(state.canEdit)) {
+        html += '<th class="mw-outcome-table__actions">Actions</th>';
+      }
+      html += '</tr></thead><tbody>';
       for (let index = 0; index < state.outcomes.length; index += 1) {
         const outcome = state.outcomes[index];
         const typeLabel = humanizeEnum(outcome.outcomeType || "OUTCOME");
-        const title = escapeHtml(outcome.shortTitle || typeLabel);
-        const sourceText = escapeHtml(trimToNull(outcome.sourceText) || "(No bullet text)");
+        const title = escapeHtml(outcome.shortTitle || "Outcome");
         const outcomeText = escapeHtml(outcome.outcomeText || "");
         const sourceNodeId = escapeHtml(outcome.sourceNodeId || "");
         const canManage = Boolean(state.canEdit);
-        html += '<article class="mw-outcome-item" data-source-node-id="' + sourceNodeId + '">';
-        html += '<div class="aira-cluster aira-cluster--between">';
-        html += '<p class="mw-outcome-title"><strong>' + title + "</strong></p>";
-        html += '<span class="aira-badge aira-badge--subtle">' + escapeHtml(typeLabel) + "</span>";
-        html += "</div>";
-        html += '<p class="aira-meta">From bullet: ' + sourceText + "</p>";
-        html += "<p>" + outcomeText + "</p>";
+        html += '<tr class="mw-outcome-row" data-source-node-id="' + sourceNodeId + '">';
+        html += '<td><span class="aira-badge aira-badge--subtle">' + escapeHtml(typeLabel) + '</span></td>';
+        html += '<td><div class="mw-outcome-title">' + title + '</div><div class="mw-outcome-text">' + outcomeText + '</div></td>';
         if (canManage) {
-          html += '<div class="aira-cluster">';
+          html += '<td class="mw-outcome-table__actions"><div class="aira-cluster">';
           html += '<button type="button" class="aira-button aira-button--secondary" data-outcome-edit="' + outcome.outcomeId + '">Edit</button>';
           html += '<button type="button" class="aira-button aira-button--danger" data-outcome-remove="' + outcome.outcomeId + '">Remove</button>';
-          html += "</div>";
+          html += '</div></td>';
         }
-        html += "</article>";
+        html += '</tr>';
       }
+      html += '</tbody></table></div>';
       state.outcomesListElement.innerHTML = html;
     }
     function applyOutcomeMarkers(state) {
@@ -19233,102 +19349,137 @@ img.ProseMirror-separator {
         setMessage(state, "Place your cursor inside a single bullet to record an outcome.", "danger");
         return;
       }
-      if (state.outcomesBySourceNodeId[anchor.sourceNodeId]) {
-        setMessage(state, "This bullet already has a recorded outcome. Edit it from the outcomes panel.", "danger");
+      const outcome = state.outcomesBySourceNodeId[anchor.sourceNodeId];
+      if (outcome) {
+        openOutcomeDialog(state, {
+          mode: "edit",
+          outcome,
+          sourceNodeId: outcome.sourceNodeId,
+          sourceText: outcome.sourceText || anchor.sourceText || "",
+          openingControl: state.addOutcomeButton || null
+        });
         return;
       }
-      state.pendingCreateAnchorNodeId = anchor.sourceNodeId;
+      openOutcomeDialogWithSaveGate(state, {
+        mode: "create",
+        sourceNodeId: anchor.sourceNodeId,
+        sourceText: anchor.sourceText || "",
+        openingControl: state.addOutcomeButton || null
+      });
+    }
+    function openOutcomeForSourceNodeId(state, sourceNodeId, sourceText) {
+      if (!state.canEdit || !sourceNodeId) {
+        return;
+      }
+      const outcome = state.outcomesBySourceNodeId[sourceNodeId];
+      if (outcome) {
+        openOutcomeDialog(state, {
+          mode: "edit",
+          outcome,
+          sourceNodeId,
+          sourceText: outcome.sourceText || sourceText || "",
+          openingControl: state.addOutcomeButton || null
+        });
+        return;
+      }
+      openOutcomeDialogWithSaveGate(state, {
+        mode: "create",
+        sourceNodeId,
+        sourceText: trimToNull(sourceText) || "",
+        openingControl: state.addOutcomeButton || null
+      });
+    }
+    function openOutcomeDialogWithSaveGate(state, request) {
       if (state.isDirty) {
         state.afterNextSuccessfulSave = function() {
-          openCreateOutcomeDialog(state, state.pendingCreateAnchorNodeId);
+          openOutcomeDialog(state, request);
         };
         requestSave(state, "manual", true);
         return;
       }
-      openCreateOutcomeDialog(state, anchor.sourceNodeId);
+      openOutcomeDialog(state, request);
     }
-    function openCreateOutcomeDialog(state, sourceNodeId) {
-      const outcomeType = pickOutcomeType(state, null);
-      if (!outcomeType) {
+    function openOutcomeDialog(state, request) {
+      if (!state.outcomeDialogElement || !state.outcomeDialogForm) {
         return;
       }
-      const shortTitle = window.prompt("Optional short title for this outcome:", "");
-      if (shortTitle === null) {
-        return;
+      const isEdit = request && request.mode === "edit";
+      const outcome = isEdit ? request.outcome : null;
+      state.outcomeDialogState = {
+        mode: isEdit ? "edit" : "create",
+        outcomeId: outcome ? parseNullableNumber(outcome.outcomeId) : null,
+        sourceNodeId: request && request.sourceNodeId ? String(request.sourceNodeId) : null,
+        sourceText: trimToNull(request && request.sourceText) || "",
+        openingControl: request && request.openingControl ? request.openingControl : null,
+        submitInProgress: false,
+        removeRequested: false
+      };
+      if (state.outcomeDialogTitleElement) {
+        state.outcomeDialogTitleElement.textContent = isEdit ? "Edit Recorded Outcome" : "Add Recorded Outcome";
       }
-      const outcomeText = window.prompt("Outcome text (required):", "");
-      if (outcomeText === null) {
-        return;
+      if (state.outcomeDialogModeElement) {
+        state.outcomeDialogModeElement.textContent = isEdit ? "Edit an existing outcome" : "Record a new outcome from the selected bullet";
       }
-      if (!trimToNull(outcomeText)) {
-        setMessage(state, "Outcome text is required.", "danger");
-        return;
+      if (state.outcomeDialogSaveButton) {
+        state.outcomeDialogSaveButton.textContent = isEdit ? "Save Changes" : "Save Recorded Outcome";
       }
-      submitOutcomeMutation(state, state.config.createOutcomeUrl, {
-        noteId: state.noteId,
-        sourceNodeId,
-        outcomeType,
-        shortTitle,
-        outcomeText,
-        expectedEditorVersion: state.editorVersion
-      }, "Outcome recorded.");
+      if (state.outcomeDialogRemoveButton) {
+        state.outcomeDialogRemoveButton.hidden = !isEdit;
+      }
+      if (state.outcomeDialogSourcePreviewElement) {
+        state.outcomeDialogSourcePreviewElement.textContent = state.outcomeDialogState.sourceText || "(No bullet text)";
+      }
+      if (state.outcomeDialogTypeElement) {
+        state.outcomeDialogTypeElement.value = outcome && outcome.outcomeType ? String(outcome.outcomeType) : "";
+      }
+      if (state.outcomeDialogShortTitleElement) {
+        state.outcomeDialogShortTitleElement.value = outcome && outcome.shortTitle ? String(outcome.shortTitle) : "";
+      }
+      if (state.outcomeDialogTextElement) {
+        state.outcomeDialogTextElement.value = outcome && outcome.outcomeText ? String(outcome.outcomeText) : isEdit ? "" : state.outcomeDialogState.sourceText || "";
+      }
+      clearOutcomeDialogFeedback(state);
+      syncOutcomeDialogAvailability(state);
+      if (!state.outcomeDialogElement.open) {
+        state.outcomeDialogElement.showModal();
+      }
+      document.body.classList.add("mw-dialog-open");
+      window.setTimeout(function() {
+        focusOutcomeDialogInitialField(state);
+      }, 0);
     }
-    function editOutcome(state, outcomeIdRaw) {
-      if (!state.canEdit) {
+    function submitOutcomeDialog(state) {
+      if (!state.outcomeDialogState || !state.outcomeDialogElement) {
         return;
       }
-      const outcomeId = parseNullableNumber(outcomeIdRaw);
-      if (!outcomeId) {
+      if (state.outcomeDialogState.submitInProgress) {
         return;
       }
-      const outcome = state.outcomes.find(function(item) {
-        return Number(item.outcomeId) === Number(outcomeId);
-      });
-      if (!outcome) {
+      const formData = readOutcomeDialogData(state);
+      const validation = validateOutcomeDialog(state, formData);
+      if (!validation.valid) {
         return;
       }
-      const outcomeType = pickOutcomeType(state, outcome.outcomeType);
-      if (!outcomeType) {
+      state.outcomeDialogState.submitInProgress = true;
+      clearOutcomeDialogFeedback(state);
+      setOutcomeDialogStatus(state, state.isDirty ? "Saving the meeting notes before recording this outcome\u2026" : "Saving\u2026", "saving");
+      syncOutcomeDialogAvailability(state);
+      const payload = buildOutcomePayload(state, formData);
+      if (state.isDirty) {
+        state.afterNextSuccessfulSave = function() {
+          submitOutcomeRequest(state, payload);
+        };
+        requestSave(state, "manual", true);
         return;
       }
-      const shortTitle = window.prompt("Short title (optional):", outcome.shortTitle || "");
-      if (shortTitle === null) {
-        return;
-      }
-      const outcomeText = window.prompt("Outcome text (required):", outcome.outcomeText || "");
-      if (outcomeText === null) {
-        return;
-      }
-      if (!trimToNull(outcomeText)) {
-        setMessage(state, "Outcome text is required.", "danger");
-        return;
-      }
-      submitOutcomeMutation(state, state.config.updateOutcomeUrl, {
-        outcomeId,
-        outcomeType,
-        shortTitle,
-        outcomeText,
-        expectedEditorVersion: state.editorVersion
-      }, "Outcome updated.");
+      submitOutcomeRequest(state, payload);
     }
-    function removeOutcome(state, outcomeIdRaw) {
-      if (!state.canEdit) {
-        return;
-      }
-      const outcomeId = parseNullableNumber(outcomeIdRaw);
-      if (!outcomeId) {
-        return;
-      }
-      if (!window.confirm("Remove this recorded outcome?")) {
-        return;
-      }
-      submitOutcomeMutation(state, state.config.removeOutcomeUrl, {
-        outcomeId,
-        expectedEditorVersion: state.editorVersion
-      }, "Outcome removed.");
-    }
-    function submitOutcomeMutation(state, url, payload, successMessage) {
+    function submitOutcomeRequest(state, payload) {
+      const url = payload.remove ? state.config.removeOutcomeUrl : payload.outcomeId ? state.config.updateOutcomeUrl : state.config.createOutcomeUrl;
       if (!url) {
+        state.outcomeDialogState.submitInProgress = false;
+        setOutcomeDialogStatus(state, "The outcome could not be saved. Your entries have been preserved.", "danger");
+        syncOutcomeDialogAvailability(state);
         return;
       }
       fetch(url, {
@@ -19344,22 +19495,330 @@ img.ProseMirror-separator {
           if (result.response.status === 409 && code) {
             throw new ConflictError(code, result.json, result.response.status);
           }
-          throw new SaveError(result.json && (result.json.message || result.json.error) || "Outcome update failed.", result.response.status, result.json);
+          throw new SaveError(result.json && (result.json.message || result.json.error) || "The outcome could not be saved. Your entries have been preserved.", result.response.status, result.json);
         }
         if (typeof result.json.editorVersion !== "undefined" && result.json.editorVersion !== null) {
           state.editorVersion = Number(result.json.editorVersion);
           state.config.editorVersion = state.editorVersion;
         }
         loadOutcomes(state);
-        setMessage(state, successMessage, "success");
+        if (payload.remove) {
+          setMessage(state, "Outcome removed.", "success");
+          closeRemoveOutcomeDialog(state, true);
+        } else {
+          setMessage(state, payload.outcomeId ? "Outcome updated." : "Outcome recorded.", "success");
+          closeOutcomeDialog(state, true);
+        }
       }).catch(function(error) {
+        state.outcomeDialogState.submitInProgress = false;
         if (error instanceof ConflictError) {
-          handleConflict(state, error);
+          handleOutcomeConflict(state, error);
           loadOutcomes(state);
           return;
         }
-        setMessage(state, error.message || "Outcome update failed.", "danger");
+        const message = error.message || "The outcome could not be saved. Your entries have been preserved.";
+        setOutcomeDialogError(state, message);
+        setOutcomeDialogStatus(state, message, "danger");
+        setMessage(state, message, "danger");
       });
+    }
+    function editOutcome(state, outcomeIdRaw, control) {
+      if (!state.canEdit) {
+        return;
+      }
+      const outcomeId = parseNullableNumber(outcomeIdRaw);
+      if (!outcomeId) {
+        return;
+      }
+      const outcome = state.outcomes.find(function(item) {
+        return Number(item.outcomeId) === Number(outcomeId);
+      });
+      if (!outcome) {
+        return;
+      }
+      openOutcomeDialog(state, {
+        mode: "edit",
+        outcome,
+        sourceNodeId: outcome.sourceNodeId,
+        sourceText: outcome.sourceText || "",
+        openingControl: control || null
+      });
+    }
+    function queueRemoveOutcome(state, outcomeIdRaw, control) {
+      if (!state.canEdit) {
+        return;
+      }
+      const outcomeId = parseNullableNumber(outcomeIdRaw);
+      if (!outcomeId) {
+        return;
+      }
+      const outcome = state.outcomes.find(function(item) {
+        return Number(item.outcomeId) === Number(outcomeId);
+      });
+      if (!outcome) {
+        return;
+      }
+      state.removeOutcomeDialogState = {
+        outcomeId,
+        openingControl: control || null
+      };
+      if (state.removeOutcomeDialogMessageElement) {
+        state.removeOutcomeDialogMessageElement.textContent = "Remove this recorded outcome? The bullet will remain in the meeting notes.";
+      }
+      if (!state.removeOutcomeDialogElement.open) {
+        state.removeOutcomeDialogElement.showModal();
+      }
+      document.body.classList.add("mw-dialog-open");
+      window.setTimeout(function() {
+        if (state.removeOutcomeDialogConfirmButton && typeof state.removeOutcomeDialogConfirmButton.focus === "function") {
+          state.removeOutcomeDialogConfirmButton.focus();
+        }
+      }, 0);
+    }
+    function openRemoveOutcomeDialogFromState(state) {
+      if (!state.outcomeDialogState || !state.outcomeDialogState.outcomeId) {
+        return;
+      }
+      queueRemoveOutcome(state, state.outcomeDialogState.outcomeId, state.outcomeDialogRemoveButton);
+    }
+    function confirmRemoveOutcome(state) {
+      if (!state.removeOutcomeDialogState || !state.removeOutcomeDialogState.outcomeId) {
+        return;
+      }
+      const outcomeId = state.removeOutcomeDialogState.outcomeId;
+      const openingControl = state.removeOutcomeDialogState.openingControl;
+      state.removeOutcomeDialogState = null;
+      submitOutcomeRequest(state, {
+        remove: true,
+        outcomeId,
+        expectedEditorVersion: state.editorVersion,
+        openingControl
+      });
+    }
+    function closeOutcomeDialog(state, restoreFocus) {
+      const dialogState = state.outcomeDialogState;
+      if (!state.outcomeDialogElement || !state.outcomeDialogElement.open) {
+        return;
+      }
+      state.outcomeDialogState = null;
+      clearOutcomeDialogFeedback(state);
+      state.outcomeDialogElement.close();
+      if (!state.removeOutcomeDialogElement || !state.removeOutcomeDialogElement.open) {
+        document.body.classList.remove("mw-dialog-open");
+      }
+      if (restoreFocus !== false && dialogState && dialogState.openingControl && typeof dialogState.openingControl.focus === "function") {
+        dialogState.openingControl.focus();
+      }
+    }
+    function closeRemoveOutcomeDialog(state, restoreFocus) {
+      const dialogState = state.removeOutcomeDialogState;
+      if (!state.removeOutcomeDialogElement || !state.removeOutcomeDialogElement.open) {
+        return;
+      }
+      state.removeOutcomeDialogState = null;
+      state.removeOutcomeDialogElement.close();
+      if (!state.outcomeDialogElement || !state.outcomeDialogElement.open) {
+        document.body.classList.remove("mw-dialog-open");
+      }
+      if (restoreFocus !== false && dialogState && dialogState.openingControl && typeof dialogState.openingControl.focus === "function") {
+        dialogState.openingControl.focus();
+      }
+    }
+    function isOutcomeDialogSaving(state) {
+      return Boolean(state.outcomeDialogState && state.outcomeDialogState.submitInProgress);
+    }
+    function readOutcomeDialogData(state) {
+      return {
+        outcomeId: state.outcomeDialogState && state.outcomeDialogState.mode === "edit" ? state.outcomeDialogState.outcomeId : null,
+        sourceNodeId: state.outcomeDialogState ? state.outcomeDialogState.sourceNodeId : null,
+        outcomeType: state.outcomeDialogTypeElement ? trimToNull(state.outcomeDialogTypeElement.value) : null,
+        shortTitle: state.outcomeDialogShortTitleElement ? state.outcomeDialogShortTitleElement.value : "",
+        outcomeText: state.outcomeDialogTextElement ? state.outcomeDialogTextElement.value : ""
+      };
+    }
+    function buildOutcomePayload(state, formData) {
+      const payload = {
+        expectedEditorVersion: state.editorVersion,
+        outcomeType: formData.outcomeType,
+        shortTitle: trimToNull(formData.shortTitle),
+        outcomeText: formData.outcomeText
+      };
+      if (state.outcomeDialogState && state.outcomeDialogState.mode === "edit") {
+        payload.outcomeId = state.outcomeDialogState.outcomeId;
+      } else {
+        payload.noteId = state.noteId;
+        payload.sourceNodeId = state.outcomeDialogState ? state.outcomeDialogState.sourceNodeId : null;
+      }
+      return payload;
+    }
+    function validateOutcomeDialog(state, formData) {
+      const errors = {};
+      if (!formData.outcomeType) {
+        errors.outcomeType = "Select an outcome type.";
+      }
+      if (trimToNull(formData.shortTitle) && String(formData.shortTitle).length > 200) {
+        errors.shortTitle = "Short title must be no more than 200 characters.";
+      }
+      if (!trimToNull(formData.outcomeText)) {
+        errors.outcomeText = "Enter the outcome that should be recorded.";
+      }
+      renderOutcomeDialogErrors(state, errors);
+      if (Object.keys(errors).length) {
+        setOutcomeDialogStatus(state, "Please fix the highlighted fields.", "danger");
+        focusFirstOutcomeError(state);
+        return { valid: false };
+      }
+      return { valid: true };
+    }
+    function renderOutcomeDialogErrors(state, errors) {
+      setOutcomeFieldError(state, "outcomeType", errors.outcomeType || "");
+      setOutcomeFieldError(state, "shortTitle", errors.shortTitle || "");
+      setOutcomeFieldError(state, "outcomeText", errors.outcomeText || "");
+      if (state.outcomeDialogSummaryElement) {
+        const messages = Object.keys(errors).map(function(key) {
+          return errors[key];
+        }).filter(Boolean);
+        state.outcomeDialogSummaryElement.hidden = !messages.length;
+        state.outcomeDialogSummaryElement.textContent = messages.join(" ");
+      }
+    }
+    function clearOutcomeDialogFeedback(state) {
+      renderOutcomeDialogErrors(state, {});
+      setOutcomeDialogStatus(state, "", "");
+    }
+    function setOutcomeFieldError(state, fieldName, message) {
+      const propertyName = "outcomeDialog" + fieldName.charAt(0).toUpperCase() + fieldName.slice(1) + "Element";
+      const element = state[propertyName];
+      const errorElement = state.outcomeDialogElement ? state.outcomeDialogElement.querySelector('[data-outcome-field-error="' + fieldName + '"]') : null;
+      if (element) {
+        if (message) {
+          element.setAttribute("aria-invalid", "true");
+        } else {
+          element.removeAttribute("aria-invalid");
+        }
+      }
+      if (errorElement) {
+        errorElement.hidden = !message;
+        errorElement.textContent = message || "";
+      }
+    }
+    function focusFirstOutcomeError(state) {
+      if (!state.outcomeDialogElement) {
+        return;
+      }
+      const invalid = state.outcomeDialogElement.querySelector('[aria-invalid="true"]');
+      if (invalid && typeof invalid.focus === "function") {
+        invalid.focus();
+      }
+    }
+    function focusOutcomeDialogInitialField(state) {
+      if (!state.outcomeDialogElement || !state.outcomeDialogElement.open) {
+        return;
+      }
+      const invalid = state.outcomeDialogElement.querySelector('[aria-invalid="true"]');
+      if (invalid && typeof invalid.focus === "function") {
+        invalid.focus();
+        return;
+      }
+      if (state.outcomeDialogTypeElement && !state.outcomeDialogTypeElement.disabled) {
+        state.outcomeDialogTypeElement.focus();
+        return;
+      }
+      if (state.outcomeDialogTextElement && !state.outcomeDialogTextElement.disabled) {
+        state.outcomeDialogTextElement.focus();
+        return;
+      }
+      if (state.outcomeDialogSaveButton && !state.outcomeDialogSaveButton.disabled) {
+        state.outcomeDialogSaveButton.focus();
+      }
+    }
+    function setOutcomeDialogStatus(state, text, tone) {
+      if (!state.outcomeDialogStatusElement) {
+        return;
+      }
+      const value = trimToNull(text);
+      state.outcomeDialogStatusElement.hidden = !value;
+      state.outcomeDialogStatusElement.textContent = value || "";
+      state.outcomeDialogStatusElement.className = "mw-outcome-dialog__status aira-meta";
+      if (tone === "danger") {
+        state.outcomeDialogStatusElement.className += " mw-outcome-dialog__status--danger";
+      } else if (tone === "saving") {
+        state.outcomeDialogStatusElement.className += " mw-outcome-dialog__status--saving";
+      }
+    }
+    function setOutcomeDialogError(state, message) {
+      if (!state.outcomeDialogSummaryElement) {
+        return;
+      }
+      const value = trimToNull(message);
+      state.outcomeDialogSummaryElement.hidden = !value;
+      state.outcomeDialogSummaryElement.textContent = value || "";
+    }
+    function syncOutcomeDialogAvailability(state) {
+      const saving = isOutcomeDialogSaving(state) || state.saveInProgress;
+      if (state.outcomeDialogSaveButton) {
+        state.outcomeDialogSaveButton.disabled = saving || !state.canEdit;
+      }
+      if (state.outcomeDialogCancelButton) {
+        state.outcomeDialogCancelButton.disabled = saving;
+      }
+      if (state.outcomeDialogCloseButton) {
+        state.outcomeDialogCloseButton.disabled = saving;
+      }
+      if (state.outcomeDialogTypeElement) {
+        state.outcomeDialogTypeElement.disabled = saving || !state.canEdit;
+      }
+      if (state.outcomeDialogShortTitleElement) {
+        state.outcomeDialogShortTitleElement.disabled = saving || !state.canEdit;
+      }
+      if (state.outcomeDialogTextElement) {
+        state.outcomeDialogTextElement.disabled = saving || !state.canEdit;
+      }
+      if (state.outcomeDialogRemoveButton) {
+        state.outcomeDialogRemoveButton.disabled = saving || !state.canEdit;
+      }
+      if (state.outcomeDialogElement) {
+        state.outcomeDialogElement.setAttribute("aria-busy", saving ? "true" : "false");
+      }
+    }
+    function handleOutcomeConflict(state, conflictError) {
+      if (!state.outcomeDialogState) {
+        handleConflict(state, conflictError);
+        return;
+      }
+      if (conflictError.code === "NOTE_EDITOR_CHANGED") {
+        handleMetadataEvent(state, conflictError.payload);
+        setOutcomeDialogStatus(state, "You are no longer the active note editor. This outcome was not saved.", "danger");
+        setOutcomeDialogError(state, "You are no longer the active note editor. This outcome was not saved.");
+        setMessage(state, "You are no longer the active note editor. This outcome was not saved.", "danger");
+        return;
+      }
+      if (conflictError.code === "NOTE_REVISION_CONFLICT") {
+        state.localConflict = true;
+        setOutcomeDialogStatus(state, "The meeting notes changed after this form was opened. Resolve the note conflict before saving the outcome.", "danger");
+        setOutcomeDialogError(state, "The meeting notes changed after this form was opened. Resolve the note conflict before saving the outcome.");
+        setMessage(state, conflictError.payload.message || "The meeting notes changed after this form was opened. Resolve the note conflict before saving the outcome.", "danger");
+        return;
+      }
+      const message = conflictError.payload.message || "The outcome could not be saved. Your entries have been preserved.";
+      setOutcomeDialogStatus(state, message, "danger");
+      setOutcomeDialogError(state, message);
+      setMessage(state, message, "danger");
+    }
+    function documentContainsListItemNodeId(documentJson, nodeId) {
+      if (!documentJson || !nodeId) {
+        return false;
+      }
+      let found2 = false;
+      walkDocumentNodes(documentJson, function(node) {
+        if (found2 || !node || node.type !== "listItem" || !node.attrs || !node.attrs.nodeId) {
+          return;
+        }
+        if (String(node.attrs.nodeId) === String(nodeId)) {
+          found2 = true;
+        }
+      });
+      return found2;
     }
     function selectedListItemAnchor(state) {
       if (!state.editor || !state.editor.state || !state.editor.state.selection) {
@@ -19381,26 +19840,6 @@ img.ProseMirror-separator {
         };
       }
       return null;
-    }
-    function pickOutcomeType(state, currentValue) {
-      const values = Array.isArray(state.config.outcomeTypes) ? state.config.outcomeTypes : [];
-      if (!values.length) {
-        return null;
-      }
-      const optionsText = values.map(function(value, index) {
-        return String(index + 1) + ". " + humanizeEnum(value);
-      }).join("\n");
-      const defaultIndex = Math.max(0, values.indexOf(currentValue || values[0])) + 1;
-      const answer = window.prompt("Choose outcome type by number:\n" + optionsText, String(defaultIndex));
-      if (answer === null) {
-        return null;
-      }
-      const numeric = Number(answer);
-      if (!Number.isFinite(numeric) || numeric < 1 || numeric > values.length) {
-        setMessage(state, "Invalid outcome type selection.", "danger");
-        return null;
-      }
-      return values[Math.floor(numeric) - 1];
     }
     function canAutosave(state) {
       return Boolean(state.canEdit) && Boolean(state.noteId) && !state.autosaveBlocked && state.noteStatus !== "FINALIZED" && state.meetingStatus !== "CLOSED";
@@ -19452,7 +19891,7 @@ img.ProseMirror-separator {
         state.readOnlyElement.hidden = true;
         return;
       }
-      state.readOnlyElement.hidden = false;
+      state.readOnlyElement.hidden = Boolean(state.canEdit);
       state.readOnlyEditor = createTopicNoteEditor({
         element: state.readOnlyElement,
         editable: false,
@@ -19464,6 +19903,12 @@ img.ProseMirror-separator {
       if (!state.ownerTextElement) {
         return;
       }
+      if (state.canEdit) {
+        state.ownerTextElement.hidden = true;
+        state.ownerTextElement.textContent = "";
+        return;
+      }
+      state.ownerTextElement.hidden = false;
       let message = state.config.responsibilityMessage || "";
       if (state.noteStatus === "FINALIZED" || state.meetingStatus === "CLOSED") {
         if (state.activeEditorDisplayName) {
@@ -19481,27 +19926,28 @@ img.ProseMirror-separator {
       state.ownerTextElement.textContent = message;
     }
     function syncControlVisibility(state) {
-      const showAssume = state.canAssumeEditor && !state.canEdit;
+      const editorVisible = Boolean(state.editPanel && !state.editPanel.hidden);
+      const showTakeNotes = state.canAssumeEditor && !state.canEdit && !editorVisible;
       if (state.assumeButton) {
-        state.assumeButton.hidden = !showAssume;
-        state.assumeButton.textContent = state.activeEditorUserId ? "Take over notes" : "Start taking notes";
-        if (state.activeEditorUserId && state.activeEditorDisplayName) {
-          state.assumeButton.setAttribute("aria-label", "Take over notes from " + state.activeEditorDisplayName);
-        } else {
-          state.assumeButton.setAttribute("aria-label", state.assumeButton.textContent);
-        }
+        state.assumeButton.hidden = !showTakeNotes;
+        state.assumeButton.textContent = "Take Notes";
+        state.assumeButton.setAttribute("aria-label", "Take notes");
         state.assumeButton.disabled = state.saveInProgress;
       }
       if (state.editToggle) {
-        state.editToggle.hidden = !state.canEdit || state.editPanel && !state.editPanel.hidden;
-        state.editToggle.textContent = "Edit notes";
+        state.editToggle.hidden = true;
         state.editToggle.disabled = state.saveInProgress;
+      }
+      if (state.readOnlyElement) {
+        state.readOnlyElement.hidden = !state.noteId || state.canEdit || editorVisible;
+      }
+      if (state.emptyStateElement) {
+        state.emptyStateElement.hidden = !!state.noteId || state.canEdit || editorVisible;
       }
       if (state.saveButton) {
         state.saveButton.disabled = state.saveInProgress || !state.canEdit || !state.isDirty;
       }
       if (state.addOutcomeButton) {
-        const editorVisible = Boolean(state.editPanel && !state.editPanel.hidden);
         state.addOutcomeButton.hidden = !state.canEdit || !state.editor || !state.noteId || !editorVisible;
         state.addOutcomeButton.disabled = state.saveInProgress;
       }

@@ -1,5 +1,5 @@
 .interophub-topic-board-main .tb-shell {
-  border: 1px solid var(--aira-gray-200, #dbe3ea);
+  border: 1px solid var(--aira-border-subtle, #dbe3ea);
   border-radius: 12px;
   background: #ffffff;
   padding: 0.75rem;

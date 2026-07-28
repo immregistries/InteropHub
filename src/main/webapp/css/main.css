@@ -9,23 +9,24 @@
 .mw-note-owner {
   margin: 0;
   padding: 0.5rem 0.75rem;
-  border-left: 3px solid var(--aira-interactive, #0f766e);
-  background: var(--aira-surface-subtle, #f8fafc);
+  border-left: 3px solid var(--aira-primary-action, #0f766e);
+  background: var(--aira-surface-muted, #f8fafc);
   border-radius: 0.5rem;
 }
 
 .mw-note-editor,
 .mw-note-readonly {
-  min-height: 12rem;
-  border: 1px solid var(--aira-border-subtle, #d1d5db);
-  border-radius: 0.75rem;
+  min-height: 8.5rem;
+  border: 1px solid var(--aira-border-subtle, #94a3b8);
+  border-radius: 0.65rem;
   background: var(--aira-surface, #fff);
-  padding: 1rem;
+  padding: 0.7rem 0.8rem;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .mw-note-readonly {
-  min-height: 6rem;
-  background: var(--aira-surface-subtle, #f8fafc);
+  min-height: 5.5rem;
+  background: var(--aira-surface-muted, #f8fafc);
 }
 
 .mw-note-editor .ProseMirror,
@@ -33,6 +34,7 @@
   min-height: 100%;
   outline: none;
   white-space: pre-wrap;
+  line-height: 1.25;
 }
 
 .mw-note-editor .ProseMirror-focused {
@@ -40,8 +42,9 @@
 }
 
 .mw-note-editor:focus-within {
-  border-color: var(--aira-interactive, #0f766e);
-  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+  border-color: var(--aira-primary-action, #0f766e);
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.16);
+  background: #f8fdfc;
 }
 
 .mw-note-editor ul,
@@ -52,7 +55,8 @@
 
 .mw-note-editor li,
 .mw-note-readonly li {
-  margin: 0.35rem 0;
+  margin: 0.08rem 0;
+  padding: 0;
 }
 
 .mw-note-editor p,
@@ -70,18 +74,51 @@
 
 .mw-outcome-panel {
   border-top: 1px solid var(--aira-border-subtle, #d1d5db);
-  padding-top: 0.75rem;
+  padding-top: 0.6rem;
 }
 
-.mw-outcome-item {
-  border: 1px solid var(--aira-border-subtle, #d1d5db);
-  border-radius: 0.65rem;
-  padding: 0.75rem;
-  background: var(--aira-surface-subtle, #f8fafc);
+.mw-outcome-table-wrap {
+  overflow-x: auto;
+}
+
+.mw-outcome-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.mw-outcome-table th,
+.mw-outcome-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--aira-border-subtle, #e2e8f0);
+  text-align: left;
+  vertical-align: top;
+}
+
+.mw-outcome-table th {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--aira-text-muted, #475569);
+  background: var(--aira-surface-muted, #f8fafc);
+}
+
+.mw-outcome-row:last-child td {
+  border-bottom: none;
 }
 
 .mw-outcome-title {
   margin: 0;
+  font-weight: 600;
+}
+
+.mw-outcome-text {
+  margin-top: 0.2rem;
+  color: var(--aira-text-muted, #475569);
+}
+
+.mw-outcome-table__actions {
+  white-space: nowrap;
 }
 
 .mw-note-dirty {
@@ -92,11 +129,17 @@
 
 .mw-note-save-state {
   margin: 0;
-  color: var(--aira-text-subtle, #475569);
+  color: var(--aira-text-muted, #475569);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.mw-note-actions {
+  align-items: center;
 }
 
 .mw-note-save-state--saving {
-  color: var(--aira-interactive, #0f766e);
+  color: var(--aira-primary-action, #0f766e);
 }
 
 .mw-note-save-state--warning {
@@ -1277,6 +1320,113 @@ a.doc-card {
   border: 1px solid #bac6db;
   border-radius: 9px;
   font-size: 1rem;
+}
+
+.mw-outcome-dialog,
+.mw-remove-outcome-dialog {
+  border: 0;
+  padding: 0;
+  width: min(46rem, calc(100vw - 1.5rem));
+  max-width: none;
+  background: transparent;
+  color: inherit;
+}
+
+.mw-outcome-dialog::backdrop,
+.mw-remove-outcome-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.56);
+}
+
+.mw-outcome-dialog__sheet,
+.mw-remove-outcome-dialog__sheet {
+  background: #fff;
+  border: 1px solid #d7e0ea;
+  border-radius: 18px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.22);
+  padding: 1.1rem 1.1rem 1rem;
+}
+
+.mw-outcome-dialog__sheet {
+  max-height: min(82vh, 52rem);
+  overflow: auto;
+}
+
+.mw-remove-outcome-dialog__sheet {
+  width: min(32rem, calc(100vw - 1.5rem));
+}
+
+.mw-outcome-dialog__context {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #d7e0ea;
+  border-radius: 14px;
+  background: #f8fbfe;
+}
+
+.mw-outcome-dialog__preview {
+  margin: 0;
+  line-height: 1.45;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: pre-wrap;
+}
+
+.mw-outcome-dialog__field {
+  display: grid;
+  gap: 0.38rem;
+}
+
+.mw-outcome-dialog__field label {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.mw-outcome-dialog__control {
+  width: 100%;
+  border: 1px solid #bac6db;
+  border-radius: 12px;
+  background: #fff;
+  color: #0f172a;
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+}
+
+.mw-outcome-dialog__control:focus {
+  outline: 3px solid rgba(37, 99, 235, 0.18);
+  border-color: #3b82f6;
+}
+
+.mw-outcome-dialog__control[aria-invalid="true"] {
+  border-color: #dc2626;
+  outline-color: rgba(220, 38, 38, 0.16);
+}
+
+.mw-outcome-dialog__field-help,
+.mw-outcome-dialog__field-error,
+.mw-outcome-dialog__status {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.mw-outcome-dialog__field-help,
+.mw-outcome-dialog__status {
+  color: #475569;
+}
+
+.mw-outcome-dialog__field-error,
+.mw-outcome-dialog__status--danger {
+  color: #b91c1c;
+}
+
+.mw-outcome-dialog__actions {
+  padding-top: 0.2rem;
+}
+
+.mw-outcome-dialog__close {
+  flex-shrink: 0;
+}
+
+.mw-dialog-open {
+  overflow: hidden;
 }
 
 .es-name-row {

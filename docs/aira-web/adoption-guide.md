@@ -10,7 +10,7 @@ Use `aira-web-theme` when an application only needs shared static resources:
 <dependency>
   <groupId>org.immregistries</groupId>
   <artifactId>aira-web-theme</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.1.3</version>
 </dependency>
 ```
 
@@ -20,7 +20,7 @@ Use `aira-web-components` when an application also wants the generated AIRA shel
 <dependency>
   <groupId>org.immregistries</groupId>
   <artifactId>aira-web-components</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>0.1.3</version>
 </dependency>
 ```
 

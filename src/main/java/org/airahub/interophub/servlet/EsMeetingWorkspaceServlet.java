@@ -199,7 +199,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
     private static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view) {
         out.println("    <div class=\"aira-container--wide aira-stack aira-stack--compact\">");
-        if (view.feedbackMessage() != null) {
+        if (view.feedbackMessage() != null && !"Session started.".equals(view.feedbackMessage())
+                && !"Meeting ended.".equals(view.feedbackMessage())) {
             out.println("      <div class=\"aira-alert aira-alert--success\" role=\"status\">"
                     + escapeHtml(view.feedbackMessage()) + "</div>");
         }
@@ -221,8 +222,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                         + escapeHtml(workspaceUrl(contextPath, view.meeting().getEsMeetingId(), item.agendaItemId()))
                         + "\"" + (item.selected() ? " aria-current=\"page\"" : "") + ">");
                 out.println(
-                        "                <span><strong>" + escapeHtml(displayOrder(item.displayOrder())) + "</strong> "
-                                + escapeHtml(item.title()) + "</span>");
+                        "                <span><strong>" + escapeHtml(item.title()) + "</strong></span>");
                 if (item.topicName() != null && !item.topicName().isBlank()) {
                     out.println(
                             "                <span class=\"aira-meta\">" + escapeHtml(item.topicName()) + "</span>");
@@ -247,22 +247,15 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         out.println("          </section>");
 
         out.println("          <section class=\"aira-panel\">");
-        out.println("            <h3 class=\"aira-sidebar-title\">Roles</h3>");
-        out.println("            <div class=\"aira-stack aira-stack--compact\">");
-        for (RoleSummary role : view.roleSummaries()) {
-            out.println("              <div class=\"aira-sidebar-section\">");
-            out.println("                <p class=\"aira-sidebar-title\">" + escapeHtml(role.label()) + "</p>");
-            out.println("                <p><strong>" + escapeHtml(role.name()) + "</strong></p>");
-            if (role.meta() != null && !role.meta().isBlank()) {
-                out.println("                <p class=\"aira-meta\">" + escapeHtml(role.meta()) + "</p>");
-            }
-            out.println("              </div>");
-        }
-        out.println("            </div>");
-        out.println("          </section>");
-
-        out.println("          <section class=\"aira-panel\">");
         out.println("            <h3 class=\"aira-section-title\">Meeting Activity</h3>");
+        out.println("            <div class=\"aira-stack aira-stack--compact\">");
+        out.println("              <a class=\"aira-link\" href=\""
+                + escapeHtml((contextPath == null ? "" : contextPath) + "/es/agenda?meetingId="
+                        + view.meeting().getEsMeetingId())
+                + "\">View Agenda</a>");
+        out.println(
+                "              <button class=\"aira-button aira-button--secondary\" type=\"button\" disabled>Next topic</button>");
+        out.println("            </div>");
         out.println("            <p><strong>" + view.attendeeCount() + "</strong> registered attendee"
                 + (view.attendeeCount() == 1 ? "" : "s") + "</p>");
         out.println("            <p class=\"aira-meta\">Open notes: " + view.openNoteCount() + "</p>");
@@ -325,11 +318,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <input type=\"hidden\" name=\"action\" value=\"startSession\" />");
             out.println("                  <button class=\"aira-button aira-button--primary\" type=\"submit\""
                     + (view.canStartSession() ? "" : " disabled")
-                    + " onclick=\"return confirm('Start session now?')\">Start session</button>");
-            if (view.startSessionHelpText() != null) {
-                out.println(
-                        "                  <p class=\"aira-meta\">" + escapeHtml(view.startSessionHelpText()) + "</p>");
-            }
+                    + ">Start session</button>");
             out.println("                </form>");
             out.println(
                     "                <button class=\"aira-button aira-button--tertiary\" type=\"button\" disabled>Mark item covered</button>");
@@ -347,15 +336,35 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <input type=\"hidden\" name=\"action\" value=\"endMeeting\" />");
             out.println("                  <button class=\"aira-button aira-button--danger\" type=\"submit\""
                     + (view.canEndMeeting() ? "" : " disabled")
-                    + " onclick=\"return confirm('End meeting now?')\">End meeting</button>");
-            if (view.endMeetingHelpText() != null) {
-                out.println(
-                        "                  <p class=\"aira-meta\">" + escapeHtml(view.endMeetingHelpText()) + "</p>");
-            }
+                    + ">End meeting</button>");
             out.println("                </form>");
             out.println("              </div>");
+            out.println("              <div class=\"aira-stack aira-stack--compact\" style=\"margin-top: 1rem;\">");
+            out.println("                <h4 class=\"aira-section-title\">Roles</h4>");
+            out.println("                <table class=\"aira-table\">");
             out.println(
-                    "              <p class=\"aira-meta\">Lifecycle transitions are server-enforced and role-aware.</p>");
+                    "                  <thead><tr><th>Role</th><th>Person assigned</th><th>Action</th></tr></thead>");
+            out.println("                  <tbody>");
+            boolean hasVisibleRole = false;
+            for (RoleSummary role : view.roleSummaries()) {
+                if (!shouldRenderRoleSummary(role)) {
+                    continue;
+                }
+                hasVisibleRole = true;
+                out.println("                    <tr>");
+                out.println("                      <td>" + escapeHtml(role.label()) + "</td>");
+                out.println("                      <td>" + escapeHtml(role.name()) + "</td>");
+                out.println(
+                        "                      <td><button class=\"aira-button aira-button--small\" type=\"button\" disabled>Assign</button></td>");
+                out.println("                    </tr>");
+            }
+            if (!hasVisibleRole) {
+                out.println(
+                        "                    <tr><td colspan=\"3\" class=\"aira-meta\">No assigned roles to display.</td></tr>");
+            }
+            out.println("                  </tbody>");
+            out.println("                </table>");
+            out.println("              </div>");
             out.println("            </article>");
             out.println("          </section>");
         } else {
@@ -496,7 +505,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         String scheduleText = formatMeetingSchedule(meeting);
         String meetingStatusLabel = meetingStatusLabel(meeting.getStatus());
         String meetingStatusClass = meetingStatusClass(meeting.getStatus());
-        boolean canStartSession = meeting.getStatus() == EsMeeting.MeetingStatus.FINALIZED
+        boolean canStartSession = (meeting.getStatus() == EsMeeting.MeetingStatus.FINALIZED
+                || meeting.getStatus() == EsMeeting.MeetingStatus.COMPLETED)
                 && MeetingWindowRules.isMeetingStartWindowOpen(meeting);
         boolean canEndMeeting = meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION;
 
@@ -621,6 +631,12 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         };
     }
 
+    static boolean canStartSession(EsMeeting meeting, boolean startWindowOpen) {
+        return meeting != null
+                && meeting.getStatus() == EsMeeting.MeetingStatus.COMPLETED
+                && startWindowOpen;
+    }
+
     static String effectiveAgendaTitle(EsMeetingAgendaItem item, String topicName) {
         String title = item != null ? trimToNull(item.getTitle()) : null;
         if (title != null) {
@@ -734,6 +750,21 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             return "Not assigned";
         }
         return resolved ? ("User #" + userId) : "Unknown user";
+    }
+
+    private static boolean shouldRenderRoleSummary(RoleSummary role) {
+        if (role == null) {
+            return false;
+        }
+        String label = role.label() != null ? role.label().toLowerCase(Locale.ROOT) : "";
+        String name = role.name() != null ? role.name().trim() : "";
+        if (label.contains("designated") || label.contains("created by")) {
+            return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
+        }
+        if (label.contains("current")) {
+            return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
+        }
+        return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
     }
 
     private static String noteSummary(EsTopicNote note) {
@@ -960,17 +991,16 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         } else {
             out.println("                <div class=\"aira-meta\" data-note-empty-state hidden></div>");
         }
-        if (notePanel.canAssumeEditor()) {
+        if (notePanel.canAssumeEditor() && notePanel.showAssumeAction()) {
             out.println(
                     "                <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-assume-editorship"
-                            + (notePanel.showAssumeAction() ? "" : " hidden") + " aria-label=\""
+                            + " aria-label=\""
                             + escapeHtml(notePanel.assumeActionAriaLabel()) + "\">"
                             + escapeHtml(notePanel.assumeActionLabel()) + "</button>");
         }
-        if (notePanel.canShowEditButton()) {
+        if (notePanel.canShowEditButton() && !notePanel.canEdit()) {
             out.println(
-                    "                <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-edit-toggle"
-                            + (notePanel.canEdit() ? "" : " hidden") + ">"
+                    "                <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-edit-toggle>"
                             + escapeHtml(notePanel.actionLabel()) + "</button>");
         }
         out.println(
@@ -996,8 +1026,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         out.println(
                 "                    <button type=\"button\" class=\"aira-button aira-button--secondary\" data-outcome-add hidden>Add outcome from selected bullet</button>");
         out.println("                  </div>");
-        out.println(
-                "                  <p class=\"aira-meta\">Anchor outcomes to specific bullets in the notes for clear traceability.</p>");
         out.println("                  <div class=\"aira-stack aira-stack--compact\" data-outcome-list></div>");
         out.println("                </section>");
         out.println("                <script type=\"application/json\" data-note-config>"
