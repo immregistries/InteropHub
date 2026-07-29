@@ -119,6 +119,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     .pageHeading(view.meeting().getMeetingName())
                     .pageIntro(buildWorkspaceIntro(view))
                     .mainClass("aira-main interophub-meeting-workspace-main")
+                    .addLocalStylesheet("/css/meeting-workspace.css")
                     .context(new AiraContextConfig(
                             view.seriesName() != null ? view.seriesName() : "Meeting Workspace",
                             List.of(
@@ -197,7 +198,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return schedule + " · " + status;
     }
 
-    private static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view) {
+    static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view) {
         out.println("    <div class=\"aira-container--wide aira-stack aira-stack--compact\">");
         if (view.feedbackMessage() != null && !"Session started.".equals(view.feedbackMessage())
                 && !"Meeting ended.".equals(view.feedbackMessage())) {
@@ -701,23 +702,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return "End meeting is only available when the meeting is in session.";
     }
 
-    static void renderPage(PrintWriter out, String contextPath, WorkspaceView view) {
-        out.println("<!DOCTYPE html>");
-        out.println("<html lang=\"en\">");
-        out.println("<head>");
-        out.println("  <meta charset=\"UTF-8\">");
-        out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">");
-        out.println("  <title>" + escapeHtml(view.meeting().getMeetingName()) + " - Meeting Workspace</title>");
-        out.println("  <link rel=\"stylesheet\" href=\"" + (contextPath == null ? "" : contextPath)
-                + "/css/main.css\">");
-        out.println("</head>");
-        out.println("<body>");
-        renderWorkspaceContent(out, contextPath, view);
-        PageFooterRenderer.render(out);
-        out.println("</body>");
-        out.println("</html>");
-    }
-
     private Map<Long, User> resolveMeetingUsers(EsMeeting meeting) {
         List<Long> userIds = new ArrayList<>();
         addIfNotNull(userIds, meeting.getDesignatedChairUserId());
@@ -961,28 +945,18 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("            </article>");
             return;
         }
-        out.println("              <div class=\"mw-note-root aira-stack aira-stack--compact\" data-meeting-note-root>");
+        out.println("              <div class=\"aira-stack aira-stack--compact\" data-meeting-note-root>");
         out.println("                <div class=\"aira-cluster aira-cluster--between\">");
         out.println("                  <div class=\"aira-stack aira-stack--compact\">");
-        out.println("                    <p class=\"aira-meta\">" + escapeHtml(notePanel.topicName()) + "</p>");
-        out.println("                    <p><strong>" + escapeHtml(notePanel.agendaItemTitle()) + "</strong></p>");
-        out.println("                  </div>");
-        out.println("                  <div class=\"aira-stack aira-stack--compact\">");
-        out.println("                    <span class=\"aira-badge aira-badge--subtle\">"
-                + escapeHtml(notePanel.statusLabel()) + "</span>");
         if (notePanel.noteId() != null) {
             out.println("                    <p class=\"aira-meta\">Revision " + notePanel.revision() + "</p>");
         }
         out.println("                  </div>");
         out.println("                </div>");
-        if (notePanel.lastSavedLabel() != null) {
-            out.println("                <p class=\"aira-meta\">Last saved " + escapeHtml(notePanel.lastSavedLabel())
-                    + "</p>");
-        }
-        out.println("                <p class=\"mw-note-owner aira-meta\" data-note-owner-text>"
+        out.println("                <p class=\"aira-alert aira-alert--info\" data-note-owner-text>"
                 + escapeHtml(notePanel.responsibilityMessage()) + "</p>");
-        out.println("                <div class=\"mw-note-message\" data-note-message hidden></div>");
-        out.println("                <div class=\"mw-note-readonly\" data-note-readonly"
+        out.println("                <div class=\"aira-alert aira-alert--info\" data-note-message hidden></div>");
+        out.println("                <div class=\"aira-panel aira-prose\" data-note-readonly"
                 + (notePanel.noteExists() ? "" : " hidden")
                 + "></div>");
         if (!notePanel.noteExists()) {
@@ -1004,23 +978,27 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                             + escapeHtml(notePanel.actionLabel()) + "</button>");
         }
         out.println(
-                "                <div class=\"mw-note-edit aira-stack aira-stack--compact\" data-note-edit hidden>");
-        out.println("                  <div class=\"aira-cluster aira-cluster--between\">");
-        out.println("                    <p class=\"aira-meta\">Editing notes for " + escapeHtml(notePanel.topicName())
+            "                <div class=\"aira-stack aira-stack--compact\" data-note-edit hidden>");
+        out.println("                  <div class=\"aira-panel aira-prose\" data-note-editor></div>");
+        out.println("                  <div class=\"aira-cluster aira-cluster--between imw-note-edit-footer\">");
+        out.println("                    <div class=\"aira-cluster imw-note-edit-actions\">");
+        out.println(
+            "                      <button type=\"button\" class=\"aira-button aira-button--primary\" data-note-save>Save now</button>");
+        out.println(
+            "                      <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-cancel>Done</button>");
+        out.println("                    </div>");
+        out.println("                    <div class=\"aira-stack aira-stack--compact imw-note-edit-status\">");
+        if (notePanel.lastSavedLabel() != null) {
+            out.println("                      <p class=\"aira-meta\">Last saved " + escapeHtml(notePanel.lastSavedLabel())
                 + "</p>");
-        out.println("                    <span class=\"mw-note-dirty\" data-note-dirty hidden>Unsaved changes</span>");
-        out.println("                  </div>");
-        out.println("                  <p class=\"mw-note-save-state aira-meta\" data-note-save-state>Saved</p>");
-        out.println("                  <div class=\"mw-note-editor\" data-note-editor></div>");
-        out.println("                  <div class=\"aira-cluster\">");
-        out.println(
-                "                    <button type=\"button\" class=\"aira-button aira-button--primary\" data-note-save>Save now</button>");
-        out.println(
-                "                    <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-cancel>Done</button>");
+        }
+        out.println("                      <span class=\"aira-badge aira-badge--warning\" data-note-dirty hidden>Unsaved changes</span>");
+        out.println("                      <p class=\"aira-meta\" data-note-save-state>Saved</p>");
+        out.println("                    </div>");
         out.println("                  </div>");
         out.println("                </div>");
         out.println(
-                "                <section class=\"mw-outcome-panel aira-stack aira-stack--compact\" data-note-outcomes-root>");
+            "                <section class=\"aira-panel aira-stack aira-stack--compact\" data-note-outcomes-root>");
         out.println("                  <div class=\"aira-cluster aira-cluster--between\">");
         out.println("                    <h4 class=\"aira-section-title\">Recorded Outcomes</h4>");
         out.println(
@@ -1099,16 +1077,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return values;
     }
 
-    private static String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r");
-    }
-
     private static String escapeScriptData(String value) {
         if (value == null) {
             return "";
@@ -1167,10 +1135,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         } catch (NumberFormatException ex) {
             return null;
         }
-    }
-
-    private static String displayOrder(Integer order) {
-        return order == null ? "#" : "#" + order;
     }
 
     private static String trimToNull(String value) {

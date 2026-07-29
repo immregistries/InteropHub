@@ -18565,8 +18565,7 @@ img.ProseMirror-separator {
         outcomeDialogState: null,
         removeOutcomeDialogState: null,
         afterNextSuccessfulSave: null,
-        pendingCreateAnchorNodeId: null,
-        pendingActionAfterSave: null
+        pendingCreateAnchorNodeId: null
       };
       if (state.assumeButton) {
         state.assumeButton.addEventListener("click", function() {
@@ -18580,12 +18579,6 @@ img.ProseMirror-separator {
       }
       if (state.saveButton) {
         state.saveButton.addEventListener("click", function() {
-          const action = state.saveButton.getAttribute("data-note-action") === "next-topic" ? "next-topic" : null;
-          state.pendingActionAfterSave = action;
-          if (action === "next-topic" && !state.isDirty) {
-            advanceToNextAgendaItem(state);
-            return;
-          }
           requestSave(state, "manual", true);
         });
       }
@@ -18659,7 +18652,7 @@ img.ProseMirror-separator {
       }
       if (state.readOnlyElement) {
         state.readOnlyElement.addEventListener("click", function(event) {
-          const marker = event.target.closest("li.mw-note-outcome-marker[data-node-id]");
+          const marker = event.target.closest('li[data-outcome-marker="true"][data-node-id]');
           if (marker) {
             openOutcomeForSourceNodeId(state, marker.getAttribute("data-node-id"), marker.textContent || "");
           }
@@ -18667,7 +18660,7 @@ img.ProseMirror-separator {
       }
       if (state.editorElement) {
         state.editorElement.addEventListener("click", function(event) {
-          const marker = event.target.closest("li.mw-note-outcome-marker[data-node-id]");
+          const marker = event.target.closest('li[data-outcome-marker="true"][data-node-id]');
           if (marker) {
             openOutcomeForSourceNodeId(state, marker.getAttribute("data-node-id"), marker.textContent || "");
           }
@@ -18992,13 +18985,6 @@ img.ProseMirror-separator {
         }, Number(state.config.autosaveMaxIntervalMs || 1e4));
       }
     }
-    function advanceToNextAgendaItem(state) {
-      if (!state.config || !state.config.workspaceUrl || !state.config.nextAgendaItemId) {
-        return;
-      }
-      const url = withQueryParam(state.config.workspaceUrl, "itemId", state.config.nextAgendaItemId);
-      window.location.assign(url);
-    }
     function requestSave(state, mode, forceImmediate) {
       if (!canAutosave(state) || !state.editor || !state.isDirty) {
         return;
@@ -19075,12 +19061,6 @@ img.ProseMirror-separator {
         }, 700);
         setMessage(state, "", "");
         loadOutcomes(state);
-        if (state.pendingActionAfterSave === "next-topic") {
-          state.pendingActionAfterSave = null;
-          advanceToNextAgendaItem(state);
-          return;
-        }
-        state.pendingActionAfterSave = null;
         if (typeof state.afterNextSuccessfulSave === "function") {
           const callback = state.afterNextSuccessfulSave;
           state.afterNextSuccessfulSave = null;
@@ -19090,7 +19070,6 @@ img.ProseMirror-separator {
       }).catch(function(error) {
         state.afterNextSuccessfulSave = null;
         state.pendingCreateAnchorNodeId = null;
-        state.pendingActionAfterSave = null;
         if (error instanceof ConflictError) {
           handleConflict(state, error);
           return;
@@ -19283,9 +19262,9 @@ img.ProseMirror-separator {
       }
       let html = '<div class="aira-table-wrap"><table class="aira-table"><thead><tr><th>Type</th><th>Outcome</th>';
       if (Boolean(state.canEdit)) {
-        html += '<th class="mw-outcome-table__actions">Actions</th>';
+        html += '<th class="imw-outcome-table__actions">Actions</th>';
       }
-      html += '</tr></thead><tbody>';
+      html += "</tr></thead><tbody>";
       for (let index = 0; index < state.outcomes.length; index += 1) {
         const outcome = state.outcomes[index];
         const typeLabel = humanizeEnum(outcome.outcomeType || "OUTCOME");
@@ -19293,18 +19272,18 @@ img.ProseMirror-separator {
         const outcomeText = escapeHtml(outcome.outcomeText || "");
         const sourceNodeId = escapeHtml(outcome.sourceNodeId || "");
         const canManage = Boolean(state.canEdit);
-        html += '<tr class="mw-outcome-row" data-source-node-id="' + sourceNodeId + '">';
-        html += '<td><span class="aira-badge aira-badge--subtle">' + escapeHtml(typeLabel) + '</span></td>';
-        html += '<td><div class="mw-outcome-title">' + title + '</div><div class="mw-outcome-text">' + outcomeText + '</div></td>';
+        html += '<tr class="imw-outcome-row" data-source-node-id="' + sourceNodeId + '">';
+        html += '<td><span class="aira-badge aira-badge--subtle">' + escapeHtml(typeLabel) + "</span></td>";
+        html += '<td><div class="imw-outcome-title">' + title + '</div><div class="imw-outcome-text">' + outcomeText + "</div></td>";
         if (canManage) {
-          html += '<td class="mw-outcome-table__actions"><div class="aira-cluster">';
+          html += '<td class="imw-outcome-table__actions"><div class="aira-cluster">';
           html += '<button type="button" class="aira-button aira-button--secondary" data-outcome-edit="' + outcome.outcomeId + '">Edit</button>';
           html += '<button type="button" class="aira-button aira-button--danger" data-outcome-remove="' + outcome.outcomeId + '">Remove</button>';
-          html += '</div></td>';
+          html += "</div></td>";
         }
-        html += '</tr>';
+        html += "</tr>";
       }
-      html += '</tbody></table></div>';
+      html += "</tbody></table></div>";
       state.outcomesListElement.innerHTML = html;
     }
     function applyOutcomeMarkers(state) {
@@ -19317,9 +19296,10 @@ img.ProseMirror-separator {
       }
       for (let i = 0; i < markerTargets.length; i += 1) {
         const target = markerTargets[i];
-        const marked = target.querySelectorAll("li.mw-note-outcome-marker");
+        const marked = target.querySelectorAll('li[data-outcome-marker="true"]');
         for (let m = 0; m < marked.length; m += 1) {
-          marked[m].classList.remove("mw-note-outcome-marker");
+          marked[m].classList.remove("imw-note-outcome-marker");
+          marked[m].removeAttribute("data-outcome-marker");
           marked[m].removeAttribute("data-outcome-type");
           marked[m].removeAttribute("title");
         }
@@ -19333,7 +19313,8 @@ img.ProseMirror-separator {
           if (!outcome) {
             continue;
           }
-          candidates[c].classList.add("mw-note-outcome-marker");
+          candidates[c].classList.add("imw-note-outcome-marker");
+          candidates[c].setAttribute("data-outcome-marker", "true");
           candidates[c].setAttribute("data-outcome-type", String(outcome.outcomeType || "OUTCOME").toLowerCase());
           const hintText = (outcome.shortTitle || humanizeEnum(outcome.outcomeType || "OUTCOME")) + ": " + (trimToNull(outcome.outcomeText) || "");
           candidates[c].setAttribute("title", hintText);
@@ -19443,7 +19424,7 @@ img.ProseMirror-separator {
       if (!state.outcomeDialogElement.open) {
         state.outcomeDialogElement.showModal();
       }
-      document.body.classList.add("mw-dialog-open");
+      document.body.classList.add("imw-dialog-open");
       window.setTimeout(function() {
         focusOutcomeDialogInitialField(state);
       }, 0);
@@ -19568,7 +19549,7 @@ img.ProseMirror-separator {
       if (!state.removeOutcomeDialogElement.open) {
         state.removeOutcomeDialogElement.showModal();
       }
-      document.body.classList.add("mw-dialog-open");
+      document.body.classList.add("imw-dialog-open");
       window.setTimeout(function() {
         if (state.removeOutcomeDialogConfirmButton && typeof state.removeOutcomeDialogConfirmButton.focus === "function") {
           state.removeOutcomeDialogConfirmButton.focus();
@@ -19604,7 +19585,7 @@ img.ProseMirror-separator {
       clearOutcomeDialogFeedback(state);
       state.outcomeDialogElement.close();
       if (!state.removeOutcomeDialogElement || !state.removeOutcomeDialogElement.open) {
-        document.body.classList.remove("mw-dialog-open");
+        document.body.classList.remove("imw-dialog-open");
       }
       if (restoreFocus !== false && dialogState && dialogState.openingControl && typeof dialogState.openingControl.focus === "function") {
         dialogState.openingControl.focus();
@@ -19618,7 +19599,7 @@ img.ProseMirror-separator {
       state.removeOutcomeDialogState = null;
       state.removeOutcomeDialogElement.close();
       if (!state.outcomeDialogElement || !state.outcomeDialogElement.open) {
-        document.body.classList.remove("mw-dialog-open");
+        document.body.classList.remove("imw-dialog-open");
       }
       if (restoreFocus !== false && dialogState && dialogState.openingControl && typeof dialogState.openingControl.focus === "function") {
         dialogState.openingControl.focus();
@@ -19739,11 +19720,11 @@ img.ProseMirror-separator {
       const value = trimToNull(text);
       state.outcomeDialogStatusElement.hidden = !value;
       state.outcomeDialogStatusElement.textContent = value || "";
-      state.outcomeDialogStatusElement.className = "mw-outcome-dialog__status aira-meta";
+      state.outcomeDialogStatusElement.className = "imw-outcome-dialog__status aira-meta";
       if (tone === "danger") {
-        state.outcomeDialogStatusElement.className += " mw-outcome-dialog__status--danger";
+        state.outcomeDialogStatusElement.className += " imw-outcome-dialog__status--danger";
       } else if (tone === "saving") {
-        state.outcomeDialogStatusElement.className += " mw-outcome-dialog__status--saving";
+        state.outcomeDialogStatusElement.className += " imw-outcome-dialog__status--saving";
       }
     }
     function setOutcomeDialogError(state, message) {
@@ -19869,13 +19850,13 @@ img.ProseMirror-separator {
         return;
       }
       state.saveStateElement.textContent = text;
-      state.saveStateElement.className = "mw-note-save-state aira-meta";
+      state.saveStateElement.className = "imw-note-save-state aira-meta";
       if (tone === "warning") {
-        state.saveStateElement.className += " mw-note-save-state--warning";
+        state.saveStateElement.className += " imw-note-save-state--warning";
       } else if (tone === "danger") {
-        state.saveStateElement.className += " mw-note-save-state--danger";
+        state.saveStateElement.className += " imw-note-save-state--danger";
       } else if (tone === "saving") {
-        state.saveStateElement.className += " mw-note-save-state--saving";
+        state.saveStateElement.className += " imw-note-save-state--saving";
       }
     }
     function renderReadOnly(state, documentJson) {
@@ -19974,12 +19955,12 @@ img.ProseMirror-separator {
       if (!value) {
         state.messageElement.hidden = true;
         state.messageElement.textContent = "";
-        state.messageElement.className = "mw-note-message";
+        state.messageElement.className = "imw-note-message";
         return;
       }
       state.messageElement.hidden = false;
       state.messageElement.textContent = value;
-      state.messageElement.className = "mw-note-message aira-alert aira-alert--" + normalizeTone(tone);
+      state.messageElement.className = "imw-note-message aira-alert aira-alert--" + normalizeTone(tone);
     }
     function normalizeTone(tone) {
       switch (tone) {

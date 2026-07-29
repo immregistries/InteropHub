@@ -396,6 +396,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicManageServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicManageServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>TopicSpaceRouteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.TopicSpaceRouteServlet</servlet-class>
   </servlet>
@@ -673,6 +678,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicDetailServlet</servlet-name>
     <url-pattern>/es/topic/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicManageServlet</servlet-name>
+    <url-pattern>/es/topic-manage/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

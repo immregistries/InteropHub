@@ -38,6 +38,7 @@ public class EsTopicCurationServlet extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
         String contextPath = request.getContextPath();
+        boolean returnToManage = "manage".equalsIgnoreCase(trimToNull(request.getParameter("returnTo")));
 
         Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
         if (userOpt.isEmpty()) {
@@ -63,11 +64,11 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (curatorTopicId.equals(curatedTopicId)) {
-                response.sendRedirect(contextPath + "/es/topic/" + curatorTopicId);
+                response.sendRedirect(topicReturnUrl(contextPath, curatorTopicId, returnToManage));
                 return;
             }
             if (!isAdmin && !isChampionOf(user, curatorTopicId)) {
-                response.sendRedirect(contextPath + "/es/topic/" + curatorTopicId + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, curatorTopicId, returnToManage) + "?error=not_authorized");
                 return;
             }
 
@@ -86,7 +87,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             } catch (Exception ex) {
                 // Unique constraint violation means the topic is already in this curated list
             }
-            response.sendRedirect(contextPath + "/es/topic/" + curatorTopicId);
+            response.sendRedirect(topicReturnUrl(contextPath, curatorTopicId, returnToManage));
 
         } else if ("update".equals(action)) {
             Long curationId = parseLong(request.getParameter("curationId"));
@@ -98,7 +99,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             }
             Optional<EsTopicCuration> entryOpt = curationDao.findById(curationId);
             if (entryOpt.isEmpty()) {
-                response.sendRedirect(contextPath + "/es/topic/" + curatorTopicId);
+                response.sendRedirect(topicReturnUrl(contextPath, curatorTopicId, returnToManage));
                 return;
             }
             EsTopicCuration entry = entryOpt.get();
@@ -108,7 +109,7 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
-                response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId() + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage) + "?error=not_authorized");
                 return;
             }
 
@@ -119,7 +120,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             entry.setDisplayOrder(parseIntOrDefault(request.getParameter("displayOrder"), entry.getDisplayOrder()));
             entry.setAgendaCadenceDays(parseIntOrZeroToNull(request.getParameter("agendaCadenceDays")));
             curationDao.saveOrUpdate(entry);
-            response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId());
+            response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage));
 
         } else if ("delete".equals(action)) {
             Long curationId = parseLong(request.getParameter("curationId"));
@@ -132,7 +133,7 @@ public class EsTopicCurationServlet extends HttpServlet {
             Optional<EsTopicCuration> entryOpt = curationDao.findById(curationId);
             if (entryOpt.isEmpty()) {
                 String fallback = curatorTopicId != null
-                        ? contextPath + "/es/topic/" + curatorTopicId
+                        ? topicReturnUrl(contextPath, curatorTopicId, returnToManage)
                         : contextPath + "/es/topics";
                 response.sendRedirect(fallback);
                 return;
@@ -144,11 +145,11 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
-                response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId() + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage) + "?error=not_authorized");
                 return;
             }
             curationDao.delete(curationId);
-            response.sendRedirect(contextPath + "/es/topic/" + entry.getCuratorTopicId());
+            response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage));
 
         } else {
             response.sendRedirect(contextPath + "/es/topics");
@@ -201,5 +202,12 @@ public class EsTopicCurationServlet extends HttpServlet {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private String topicReturnUrl(String contextPath, Long topicId, boolean returnToManage) {
+        if (returnToManage) {
+            return contextPath + "/es/topic-manage/" + topicId;
+        }
+        return contextPath + "/es/topic/" + topicId;
     }
 }

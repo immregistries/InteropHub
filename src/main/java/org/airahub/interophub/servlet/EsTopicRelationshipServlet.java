@@ -38,6 +38,7 @@ public class EsTopicRelationshipServlet extends HttpServlet {
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
         String contextPath = request.getContextPath();
+        boolean returnToManage = "manage".equalsIgnoreCase(trimToNull(request.getParameter("returnTo")));
 
         Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
         if (userOpt.isEmpty()) {
@@ -65,11 +66,11 @@ public class EsTopicRelationshipServlet extends HttpServlet {
             }
             // Prevent self-links
             if (fromTopicId.equals(toTopicId)) {
-                response.sendRedirect(contextPath + "/es/topic/" + fromTopicId);
+                response.sendRedirect(topicReturnUrl(contextPath, fromTopicId, returnToManage));
                 return;
             }
             if (!isAdmin && !isChampionOf(user, fromTopicId)) {
-                response.sendRedirect(contextPath + "/es/topic/" + fromTopicId + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, fromTopicId, returnToManage) + "?error=not_authorized");
                 return;
             }
 
@@ -84,7 +85,7 @@ public class EsTopicRelationshipServlet extends HttpServlet {
                 // Unique constraint violation means the link already exists — not an error for
                 // the user
             }
-            response.sendRedirect(contextPath + "/es/topic/" + fromTopicId);
+            response.sendRedirect(topicReturnUrl(contextPath, fromTopicId, returnToManage));
 
         } else if ("delete".equals(action)) {
             Long relationshipId = parseLong(request.getParameter("relationshipId"));
@@ -97,7 +98,7 @@ public class EsTopicRelationshipServlet extends HttpServlet {
             Optional<EsTopicRelationship> relOpt = relationshipDao.findById(relationshipId);
             if (relOpt.isEmpty()) {
                 String fallback = fromTopicId != null
-                        ? contextPath + "/es/topic/" + fromTopicId
+                        ? topicReturnUrl(contextPath, fromTopicId, returnToManage)
                         : contextPath + "/es/topics";
                 response.sendRedirect(fallback);
                 return;
@@ -109,11 +110,11 @@ public class EsTopicRelationshipServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, rel.getFromTopicId())) {
-                response.sendRedirect(contextPath + "/es/topic/" + rel.getFromTopicId() + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, rel.getFromTopicId(), returnToManage) + "?error=not_authorized");
                 return;
             }
             relationshipDao.delete(relationshipId);
-            response.sendRedirect(contextPath + "/es/topic/" + rel.getFromTopicId());
+            response.sendRedirect(topicReturnUrl(contextPath, rel.getFromTopicId(), returnToManage));
 
         } else {
             response.sendRedirect(contextPath + "/es/topics");
@@ -147,5 +148,12 @@ public class EsTopicRelationshipServlet extends HttpServlet {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    private String topicReturnUrl(String contextPath, Long topicId, boolean returnToManage) {
+        if (returnToManage) {
+            return contextPath + "/es/topic-manage/" + topicId;
+        }
+        return contextPath + "/es/topic/" + topicId;
     }
 }

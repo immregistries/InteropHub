@@ -136,13 +136,7 @@ class EsMeetingWorkspaceServletTest {
                                                 1L,
                                                 "csrf-token"));
 
-                StringWriter buffer = new StringWriter();
-                PrintWriter out = new PrintWriter(buffer);
-                EsMeetingWorkspaceServlet.renderPage(out, "/hub", view);
-                out.flush();
-
-                String html = buffer.toString();
-                assertTrue(html.contains("Meeting Workspace"));
+                String html = renderWorkspaceHtml(view);
                 assertTrue(html.contains("Meeting Controls"));
                 assertTrue(html.contains("View Agenda"));
                 assertTrue(html.contains("Next topic"));
@@ -228,12 +222,7 @@ class EsMeetingWorkspaceServletTest {
                                                 1L,
                                                 "csrf-token"));
 
-                StringWriter buffer = new StringWriter();
-                PrintWriter out = new PrintWriter(buffer);
-                EsMeetingWorkspaceServlet.renderPage(out, "/hub", view);
-                out.flush();
-
-                String html = buffer.toString();
+                String html = renderWorkspaceHtml(view);
                 assertTrue(!html.contains("Session started."));
                 assertTrue(html.contains("Designated Chair"));
                 assertTrue(html.contains("Created By"));
@@ -294,12 +283,7 @@ class EsMeetingWorkspaceServletTest {
                                                 1L,
                                                 "csrf-token"));
 
-                StringWriter buffer = new StringWriter();
-                PrintWriter out = new PrintWriter(buffer);
-                EsMeetingWorkspaceServlet.renderPage(out, "/hub", view);
-                out.flush();
-
-                String html = buffer.toString();
+                String html = renderWorkspaceHtml(view);
                 assertTrue(!html.contains("Meeting ended."));
                 assertTrue(!html.contains("#20"));
         }
@@ -357,12 +341,7 @@ class EsMeetingWorkspaceServletTest {
                                                 1L,
                                                 "csrf-token"));
 
-                StringWriter buffer = new StringWriter();
-                PrintWriter out = new PrintWriter(buffer);
-                EsMeetingWorkspaceServlet.renderPage(out, "/hub", view);
-                out.flush();
-
-                String html = buffer.toString();
+                String html = renderWorkspaceHtml(view);
                 assertTrue(!html.contains("data-note-assume-editorship"));
                 assertTrue(!html.contains("data-note-edit-toggle"));
         }
@@ -414,5 +393,13 @@ class EsMeetingWorkspaceServletTest {
                                 null,
                                 null,
                                 null);
+        }
+
+        private static String renderWorkspaceHtml(EsMeetingWorkspaceServlet.WorkspaceView view) {
+                StringWriter buffer = new StringWriter();
+                PrintWriter out = new PrintWriter(buffer);
+                EsMeetingWorkspaceServlet.renderWorkspaceContent(out, "/hub", view);
+                out.flush();
+                return buffer.toString();
         }
 }
