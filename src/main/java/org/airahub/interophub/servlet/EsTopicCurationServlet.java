@@ -68,7 +68,8 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, curatorTopicId)) {
-                response.sendRedirect(topicReturnUrl(contextPath, curatorTopicId, returnToManage) + "?error=not_authorized");
+                response.sendRedirect(
+                        topicReturnUrl(contextPath, curatorTopicId, returnToManage) + "?error=not_authorized");
                 return;
             }
 
@@ -109,7 +110,8 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
-                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage) + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage)
+                        + "?error=not_authorized");
                 return;
             }
 
@@ -145,7 +147,8 @@ public class EsTopicCurationServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, entry.getCuratorTopicId())) {
-                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage) + "?error=not_authorized");
+                response.sendRedirect(topicReturnUrl(contextPath, entry.getCuratorTopicId(), returnToManage)
+                        + "?error=not_authorized");
                 return;
             }
             curationDao.delete(curationId);

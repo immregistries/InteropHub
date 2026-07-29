@@ -978,27 +978,29 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                             + escapeHtml(notePanel.actionLabel()) + "</button>");
         }
         out.println(
-            "                <div class=\"aira-stack aira-stack--compact\" data-note-edit hidden>");
+                "                <div class=\"aira-stack aira-stack--compact\" data-note-edit hidden>");
         out.println("                  <div class=\"aira-panel aira-prose\" data-note-editor></div>");
         out.println("                  <div class=\"aira-cluster aira-cluster--between imw-note-edit-footer\">");
         out.println("                    <div class=\"aira-cluster imw-note-edit-actions\">");
         out.println(
-            "                      <button type=\"button\" class=\"aira-button aira-button--primary\" data-note-save>Save now</button>");
+                "                      <button type=\"button\" class=\"aira-button aira-button--primary\" data-note-save>Save now</button>");
         out.println(
-            "                      <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-cancel>Done</button>");
+                "                      <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-cancel>Done</button>");
         out.println("                    </div>");
         out.println("                    <div class=\"aira-stack aira-stack--compact imw-note-edit-status\">");
         if (notePanel.lastSavedLabel() != null) {
-            out.println("                      <p class=\"aira-meta\">Last saved " + escapeHtml(notePanel.lastSavedLabel())
-                + "</p>");
+            out.println(
+                    "                      <p class=\"aira-meta\">Last saved " + escapeHtml(notePanel.lastSavedLabel())
+                            + "</p>");
         }
-        out.println("                      <span class=\"aira-badge aira-badge--warning\" data-note-dirty hidden>Unsaved changes</span>");
+        out.println(
+                "                      <span class=\"aira-badge aira-badge--warning\" data-note-dirty hidden>Unsaved changes</span>");
         out.println("                      <p class=\"aira-meta\" data-note-save-state>Saved</p>");
         out.println("                    </div>");
         out.println("                  </div>");
         out.println("                </div>");
         out.println(
-            "                <section class=\"aira-panel aira-stack aira-stack--compact\" data-note-outcomes-root>");
+                "                <section class=\"aira-panel aira-stack aira-stack--compact\" data-note-outcomes-root>");
         out.println("                  <div class=\"aira-cluster aira-cluster--between\">");
         out.println("                    <h4 class=\"aira-section-title\">Recorded Outcomes</h4>");
         out.println(

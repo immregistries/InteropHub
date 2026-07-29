@@ -70,7 +70,8 @@ public class EsTopicRelationshipServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, fromTopicId)) {
-                response.sendRedirect(topicReturnUrl(contextPath, fromTopicId, returnToManage) + "?error=not_authorized");
+                response.sendRedirect(
+                        topicReturnUrl(contextPath, fromTopicId, returnToManage) + "?error=not_authorized");
                 return;
             }
 
@@ -110,7 +111,8 @@ public class EsTopicRelationshipServlet extends HttpServlet {
                 return;
             }
             if (!isAdmin && !isChampionOf(user, rel.getFromTopicId())) {
-                response.sendRedirect(topicReturnUrl(contextPath, rel.getFromTopicId(), returnToManage) + "?error=not_authorized");
+                response.sendRedirect(
+                        topicReturnUrl(contextPath, rel.getFromTopicId(), returnToManage) + "?error=not_authorized");
                 return;
             }
             relationshipDao.delete(relationshipId);
