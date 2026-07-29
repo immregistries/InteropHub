@@ -78,6 +78,7 @@
     <mapping class="org.airahub.interophub.model.EsLiveVoteResponse"/>
     <mapping class="org.airahub.interophub.model.EsTopicRelationship"/>
     <mapping class="org.airahub.interophub.model.EsTopicCuration"/>
+    <mapping class="org.airahub.interophub.model.EsTopicUserView"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
     <mapping class="org.airahub.interophub.model.EsSurvey"/>

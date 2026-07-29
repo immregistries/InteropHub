@@ -6,9 +6,13 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignMeetingBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
@@ -16,6 +20,7 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
@@ -40,15 +45,17 @@ import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.EsTopicSpace;
-import org.immregistries.aira.web.AiraContextConfig;
-import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
+import org.airahub.interophub.service.EsTopicViewHistoryService;
 
 public class EsTopicDetailServlet extends HttpServlet {
+
+        private static final Logger LOGGER = Logger.getLogger(EsTopicDetailServlet.class.getName());
 
         private final AuthFlowService authFlowService;
         private final EsTopicDao esTopicDao;
         private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+        private final EsCampaignDao campaignDao;
         private final EsCampaignTopicDao campaignTopicDao;
         private final EsSubscriptionDao subscriptionDao;
         private final EsTopicMeetingDao esTopicMeetingDao;
@@ -58,11 +65,13 @@ public class EsTopicDetailServlet extends HttpServlet {
         private final EsTopicRelationshipDao relationshipDao;
         private final EsTopicCurationDao curationDao;
         private final TopicSpaceAccessService topicSpaceAccessService;
+        private final EsTopicViewHistoryService topicViewHistoryService;
 
         public EsTopicDetailServlet() {
                 this.authFlowService = new AuthFlowService();
                 this.esTopicDao = new EsTopicDao();
                 this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+                this.campaignDao = new EsCampaignDao();
                 this.campaignTopicDao = new EsCampaignTopicDao();
                 this.subscriptionDao = new EsSubscriptionDao();
                 this.esTopicMeetingDao = new EsTopicMeetingDao();
@@ -72,6 +81,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                 this.relationshipDao = new EsTopicRelationshipDao();
                 this.curationDao = new EsTopicCurationDao();
                 this.topicSpaceAccessService = new TopicSpaceAccessService();
+                this.topicViewHistoryService = new EsTopicViewHistoryService();
         }
 
         @Override
@@ -127,10 +137,22 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 .map(User::getEmailNormalized)
                                 .map(this::trimToNull)
                                 .orElse(null);
+                boolean canInteract = authenticatedUser.isPresent();
+                Optional<EsCampaign> campaign = campaignDao.findMostRecentActive();
+                boolean canReview = canInteract && campaign.isPresent();
+                String campaignCode = campaign.map(EsCampaign::getCampaignCode).orElse(null);
+                boolean followed = false;
+                if (canInteract) {
+                        Long userId = authenticatedUser.get().getUserId();
+                        followed = subscriptionDao.findActiveTopicIdsByUserOrEmailAndTopicIds(
+                                        userId,
+                                        authenticatedEmailNormalized,
+                                        List.of(topicId)).contains(topicId);
+                }
 
                 EsCampaignMeetingBrowseRow meeting = null;
 
-                if (authenticatedUser.isPresent()) {
+                if (canInteract) {
                         // Meeting for this topic
                         List<EsCampaignMeetingBrowseRow> meetingRows = campaignTopicDao
                                         .findAllActiveMeetingRowsOrdered();
@@ -161,6 +183,26 @@ public class EsTopicDetailServlet extends HttpServlet {
                 String normalizedStage = orEmpty(topic.getStage());
                 String normalizedNeighborhood = String.join(", ",
                                 topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
+                List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics = List.of();
+
+                if (authenticatedUser.isPresent()) {
+                        Long viewerUserId = authenticatedUser.get().getUserId();
+                        try {
+                                topicViewHistoryService.recordAuthenticatedTopicView(viewerUserId, topicId);
+                        } catch (RuntimeException ex) {
+                                LOGGER.log(Level.WARNING, "Unable to record topic view for user/topic", ex);
+                        }
+
+                        Set<Long> visibleSpaceIds = topicSpaceAccessService.getVisibleSpaceIds(viewer);
+                        recentlyViewedTopics = topicViewHistoryService
+                                        .findRecentAuthenticatedTopicViews(viewerUserId, 10)
+                                        .stream()
+                                        .filter(item -> item.topicId() != null
+                                                        && item.topicSpaceId() != null
+                                                        && visibleSpaceIds.contains(item.topicSpaceId()))
+                                        .limit(10)
+                                        .toList();
+                }
 
                 List<EsMeeting> upcomingMeetings = List.of();
                 List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
@@ -267,14 +309,12 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                 AiraPage page = InteropAiraPageFactory.base(request, topicName + " - InteropHub")
                                 .applicationSubtitle("Topic display")
-                                .pageHeading(topicName)
                                 .mainClass("aira-main")
-                                .context(new AiraContextConfig(topicSpace.getSpaceName(), List.of(
-                                                new AiraNavigationItem("Workspace", "/workspace", false),
-                                                new AiraNavigationItem("Topics", "/es/topics", true),
-                                                new AiraNavigationItem("Meetings", "/es/meetings", false),
-                                                new AiraNavigationItem("Tables", "/tables", false),
-                                                new AiraNavigationItem("Components", "/components", false))))
+                                .context(InteropAiraPageFactory.topicsMeetingsContext(
+                                                topicSpace.getSpaceName(),
+                                                topicSpace.getSpaceCode(),
+                                                true,
+                                                false))
                                 .build();
 
                 response.setContentType("text/html;charset=UTF-8");
@@ -351,9 +391,24 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + "</p>");
                         out.println("              </div>");
                         out.println("              <div class=\"aira-topic-actions\">");
-                        out.println("                <a class=\"aira-button aira-button--primary\" href=\"#private-intake\">Follow</a>");
-                        out.println(
-                                        "                <a class=\"aira-button aira-button--tertiary\" href=\"#private-intake\">Send info / question</a>");
+                        if (canInteract) {
+                                String followClass = followed ? "aira-button aira-button--tertiary"
+                                                : "aira-button aira-button--primary";
+                                String followLabel = followed ? "Unfollow" : "Follow";
+                                out.println("                <button type=\"button\" id=\"topic-follow-toggle\" class=\""
+                                                + followClass + "\" data-followed=\""
+                                                + (followed ? "1" : "0") + "\">"
+                                                + followLabel + "</button>");
+                                out.println(
+                                                "                <button type=\"button\" id=\"topic-question-open\" class=\"aira-button aira-button--tertiary\">Send info / question</button>");
+                        } else {
+                                out.println("                <a class=\"aira-button aira-button--primary\" href=\""
+                                                + contextPath + "/home\">Follow</a>");
+                                out.println(
+                                                "                <a class=\"aira-button aira-button--tertiary\" href=\""
+                                                                + contextPath
+                                                                + "/home\">Send info / question</a>");
+                        }
                         if (canManageTopic) {
                                 out.println("                <a class=\"aira-button aira-button--secondary\" href=\""
                                                 + contextPath + "/es/topic-manage/" + topicId
@@ -586,18 +641,31 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic activity\">");
                         out.println(
                                         "          <section class=\"aira-section-card\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Recently viewed</h2></div><div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
-                        out.println(
-                                        "            <a class=\"aira-recent-topic\" href=\"#recent\"><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">S</span><span><span class=\"aira-recent-topic__title\">School Data Exchange</span><span class=\"aira-recent-topic__meta\">Updated Jul 2026</span></span></a>");
-                        out.println(
-                                        "            <a class=\"aira-recent-topic\" href=\"#recent\"><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">P</span><span><span class=\"aira-recent-topic__title\">Provider Enrollment Integration</span><span class=\"aira-recent-topic__meta\">Updated Jul 2026</span></span></a>");
-                        out.println(
-                                        "            <a class=\"aira-recent-topic\" href=\"#recent\"><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">C</span><span><span class=\"aira-recent-topic__title\">Certificate Renewal</span><span class=\"aira-recent-topic__meta\">Updated Jun 2026</span></span></a>");
-                        out.println("            <a class=\"aira-recent-topic\" href=\"#recent\" aria-current=\"page\"><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">"
-                                        + escapeHtml(topicName.isBlank() ? "T"
-                                                        : topicName.substring(0, 1).toUpperCase())
-                                        + "</span><span><span class=\"aira-recent-topic__title\">"
-                                        + escapeHtml(topicName)
-                                        + "</span><span class=\"aira-recent-topic__meta\">Current topic</span></span></a>");
+                        if (!canInteract) {
+                                out.println("            <p class=\"aira-meta\">Sign in to keep a persistent recently viewed topic list.</p>");
+                        } else if (recentlyViewedTopics.isEmpty()) {
+                                out.println("            <p class=\"aira-meta\">No recent topic views yet.</p>");
+                        } else {
+                                for (EsTopicViewHistoryService.RecentlyViewedTopic viewedTopic : recentlyViewedTopics) {
+                                        String viewedTopicName = orEmpty(viewedTopic.topicName());
+                                        boolean isCurrentTopic = topicId.equals(viewedTopic.topicId());
+                                        String recentMeta = isCurrentTopic
+                                                        ? "Current topic"
+                                                        : "Viewed " + formatRecentViewedAt(viewedTopic.lastViewedAt());
+                                        String ariaCurrent = isCurrentTopic ? " aria-current=\"page\"" : "";
+                                        out.println("            <a class=\"aira-recent-topic\" href=\""
+                                                        + contextPath
+                                                        + "/es/topic/" + viewedTopic.topicId() + "\""
+                                                        + ariaCurrent
+                                                        + "><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">"
+                                                        + escapeHtml(initialForTopic(viewedTopicName))
+                                                        + "</span><span><span class=\"aira-recent-topic__title\">"
+                                                        + escapeHtml(viewedTopicName)
+                                                        + "</span><span class=\"aira-recent-topic__meta\">"
+                                                        + escapeHtml(recentMeta)
+                                                        + "</span></span></a>");
+                                }
+                        }
                         out.println("          </div></section>");
                         out.println(
                                         "          <section class=\"aira-section-card\" id=\"private-intake\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Next discussion</h2></div><div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
@@ -619,7 +687,143 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("          </div></section>");
                         out.println("        </aside>");
                         out.println("      </div>");
+                        if (canInteract) {
+                                out.println("      <dialog id=\"topic-question-modal\">");
+                                out.println("        <form method=\"dialog\" class=\"aira-stack\" style=\"min-width:22rem; max-width:36rem;\">");
+                                out.println("          <h2>Send info / question</h2>");
+                                if (canReview) {
+                                        out.println("          <p class=\"aira-meta\">Your note will be saved to this topic's review comments.</p>");
+                                } else {
+                                        out.println("          <p class=\"aira-meta\">Questions are not available right now because no active campaign is open.</p>");
+                                }
+                                out.println("          <label for=\"topic-question-input\">Question</label>");
+                                out.println(
+                                                "          <textarea id=\"topic-question-input\" rows=\"5\" maxlength=\"2000\" placeholder=\"Add a question or context for this topic\"></textarea>");
+                                out.println("          <p id=\"topic-question-status\" class=\"aira-meta\" hidden></p>");
+                                out.println("          <div class=\"aira-cluster\">");
+                                out.println("            <button type=\"button\" id=\"topic-question-submit\" class=\"aira-button aira-button--primary\""
+                                                + (canReview ? "" : " disabled") + ">Send</button>");
+                                out.println("            <button type=\"button\" id=\"topic-question-cancel\" class=\"aira-button aira-button--tertiary\">Cancel</button>");
+                                out.println("          </div>");
+                                out.println("        </form>");
+                                out.println("      </dialog>");
+                        }
                         out.println("    </div>");
+
+                        if (canInteract) {
+                                out.println("    <script>");
+                                out.println("      (function() {");
+                                out.println("        var topicId = " + topicId + ";");
+                                out.println("        var canReview = " + canReview + ";");
+                                out.println("        var campaignCode = " + quoteJs(campaignCode) + ";");
+                                out.println("        var followButton = document.getElementById('topic-follow-toggle');");
+                                out.println("        var questionOpen = document.getElementById('topic-question-open');");
+                                out.println("        var questionModal = document.getElementById('topic-question-modal');");
+                                out.println("        var questionInput = document.getElementById('topic-question-input');");
+                                out.println("        var questionSubmit = document.getElementById('topic-question-submit');");
+                                out.println("        var questionCancel = document.getElementById('topic-question-cancel');");
+                                out.println("        var questionStatus = document.getElementById('topic-question-status');");
+
+                                out.println("        function setFollowButtonState(isFollowed) {");
+                                out.println("          if (!followButton) { return; }");
+                                out.println("          followButton.setAttribute('data-followed', isFollowed ? '1' : '0');");
+                                out.println("          followButton.textContent = isFollowed ? 'Unfollow' : 'Follow';");
+                                out.println("          followButton.classList.toggle('aira-button--primary', !isFollowed);");
+                                out.println("          followButton.classList.toggle('aira-button--tertiary', isFollowed);");
+                                out.println("        }");
+
+                                out.println("        if (followButton) {");
+                                out.println("          followButton.addEventListener('click', function() {");
+                                out.println("            var isFollowed = followButton.getAttribute('data-followed') === '1';");
+                                out.println("            var params = new URLSearchParams();");
+                                out.println("            params.set('topicId', String(topicId));");
+                                out.println("            params.set('action', isFollowed ? 'unfollow' : 'follow');");
+                                out.println("            followButton.disabled = true;");
+                                out.println("            fetch('" + contextPath + "/es/topics/follow-toggle', {");
+                                out.println("              method: 'POST',");
+                                out.println("              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },");
+                                out.println("              body: params.toString()");
+                                out.println("            }).then(function(res) { return res.json(); }).then(function(json) {");
+                                out.println("              if (!json || !json.ok) {");
+                                out.println("                window.alert((json && json.error) ? json.error : 'Unable to update follow status.');");
+                                out.println("                return;");
+                                out.println("              }");
+                                out.println("              setFollowButtonState(!!json.followed);");
+                                out.println("            }).catch(function() {");
+                                out.println("              window.alert('Unable to update follow status.');");
+                                out.println("            }).finally(function() {");
+                                out.println("              followButton.disabled = false;");
+                                out.println("            });");
+                                out.println("          });");
+                                out.println("        }");
+
+                                out.println("        if (questionOpen && questionModal) {");
+                                out.println("          questionOpen.addEventListener('click', function() {");
+                                out.println("            if (questionStatus) {");
+                                out.println("              questionStatus.hidden = true;");
+                                out.println("              questionStatus.textContent = ''; ");
+                                out.println("            }");
+                                out.println("            if (questionInput) { questionInput.value = ''; }");
+                                out.println("            questionModal.showModal();");
+                                out.println("          });");
+                                out.println("        }");
+
+                                out.println("        if (questionCancel && questionModal) {");
+                                out.println("          questionCancel.addEventListener('click', function() { questionModal.close(); });");
+                                out.println("        }");
+
+                                out.println("        if (questionSubmit) {");
+                                out.println("          questionSubmit.addEventListener('click', function() {");
+                                out.println("            if (!canReview || !campaignCode) {");
+                                out.println("              if (questionStatus) {");
+                                out.println("                questionStatus.hidden = false;");
+                                out.println("                questionStatus.textContent = 'Questions are unavailable right now.';");
+                                out.println("              }");
+                                out.println("              return;");
+                                out.println("            }");
+                                out.println("            var text = (questionInput && questionInput.value ? questionInput.value.trim() : '');");
+                                out.println("            if (!text) {");
+                                out.println("              if (questionStatus) {");
+                                out.println("                questionStatus.hidden = false;");
+                                out.println("                questionStatus.textContent = 'Enter a question before sending.';");
+                                out.println("              }");
+                                out.println("              return;");
+                                out.println("            }");
+                                out.println("            var params = new URLSearchParams();");
+                                out.println("            params.set('campaignCode', campaignCode);");
+                                out.println("            params.set('topicId', String(topicId));");
+                                out.println("            params.set('commentText', text);");
+                                out.println("            questionSubmit.disabled = true;");
+                                out.println("            fetch('" + contextPath + "/es/review/comment', {");
+                                out.println("              method: 'POST',");
+                                out.println("              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },");
+                                out.println("              body: params.toString()");
+                                out.println("            }).then(function(res) { return res.json(); }).then(function(json) {");
+                                out.println("              if (!json || !json.ok) {");
+                                out.println("                if (questionStatus) {");
+                                out.println("                  questionStatus.hidden = false;");
+                                out.println("                  questionStatus.textContent = (json && json.error) ? json.error : 'Unable to send question.';");
+                                out.println("                }");
+                                out.println("                return;");
+                                out.println("              }");
+                                out.println("              if (questionStatus) {");
+                                out.println("                questionStatus.hidden = false;");
+                                out.println("                questionStatus.textContent = 'Question sent.';");
+                                out.println("              }");
+                                out.println("              if (questionInput) { questionInput.value = ''; }");
+                                out.println("            }).catch(function() {");
+                                out.println("              if (questionStatus) {");
+                                out.println("                questionStatus.hidden = false;");
+                                out.println("                questionStatus.textContent = 'Unable to send question.';");
+                                out.println("              }");
+                                out.println("            }).finally(function() {");
+                                out.println("              questionSubmit.disabled = false;");
+                                out.println("            });");
+                                out.println("          });");
+                                out.println("        }");
+                                out.println("      })();");
+                                out.println("    </script>");
+                        }
 
                         page.writeEnd(out);
                 }
@@ -721,7 +925,35 @@ public class EsTopicDetailServlet extends HttpServlet {
                 return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
         }
 
+        private String quoteJs(String value) {
+                if (value == null) {
+                        return "null";
+                }
+                return "\"" + value
+                                .replace("\\", "\\\\")
+                                .replace("\"", "\\\"")
+                                .replace("\r", "")
+                                .replace("\n", "\\n")
+                                + "\"";
+        }
+
         private static final DateTimeFormatter AGENDA_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
+        private static final DateTimeFormatter RECENT_VIEW_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a");
+
+        private String formatRecentViewedAt(java.time.LocalDateTime viewedAt) {
+                if (viewedAt == null) {
+                        return "recently";
+                }
+                return viewedAt.format(RECENT_VIEW_FMT);
+        }
+
+        private String initialForTopic(String topicName) {
+                String normalized = trimToNull(topicName);
+                if (normalized == null) {
+                        return "T";
+                }
+                return normalized.substring(0, 1).toUpperCase();
+        }
 
         private static final class CuratorNavContext {
                 final Long curatorTopicId;

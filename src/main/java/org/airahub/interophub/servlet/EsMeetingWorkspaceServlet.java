@@ -27,6 +27,7 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicNoteDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
@@ -34,6 +35,7 @@ import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicNote;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.RecordedOutcomeType;
 import org.airahub.interophub.model.TopicNoteStatus;
 import org.airahub.interophub.model.User;
@@ -44,8 +46,6 @@ import org.airahub.interophub.service.MeetingWindowRules;
 import org.airahub.interophub.service.TopicNoteDocumentSupport;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.json.JSONObject;
-import org.immregistries.aira.web.AiraContextConfig;
-import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 
 public class EsMeetingWorkspaceServlet extends HttpServlet {
@@ -64,6 +64,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsTopicDao topicDao;
     private final EsTopicNoteDao noteDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final UserDao userDao;
     private final MeetingLifecycleService meetingLifecycleService;
@@ -79,6 +80,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.topicDao = new EsTopicDao();
         this.noteDao = new EsTopicNoteDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.userDao = new UserDao();
         this.meetingLifecycleService = new MeetingLifecycleService();
@@ -110,6 +112,10 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         String csrfToken = CsrfTokenSupport.getOrCreateToken(request);
         WorkspaceView view = buildWorkspaceView(meeting, selectedItemId, user, feedbackMessage, errorMessage,
                 csrfToken);
+        EsTopicSpace meetingSpace = meeting.getEsTopicSpaceId() == null ? null
+                : topicSpaceDao.findById(meeting.getEsTopicSpaceId()).orElse(null);
+        String meetingSpaceName = meetingSpace == null ? "Meeting Workspace" : meetingSpace.getSpaceName();
+        String meetingSpaceCode = meetingSpace == null ? null : meetingSpace.getSpaceCode();
 
         response.setContentType("text/html; charset=UTF-8");
         try (PrintWriter out = response.getWriter()) {
@@ -120,14 +126,11 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     .pageIntro(buildWorkspaceIntro(view))
                     .mainClass("aira-main interophub-meeting-workspace-main")
                     .addLocalStylesheet("/css/meeting-workspace.css")
-                    .context(new AiraContextConfig(
-                            view.seriesName() != null ? view.seriesName() : "Meeting Workspace",
-                            List.of(
-                                    new AiraNavigationItem("Workspace",
-                                            WORKSPACE_PATH + "?meetingId=" + meeting.getEsMeetingId(), true),
-                                    new AiraNavigationItem("Agenda",
-                                            "/es/agenda?meetingId=" + meeting.getEsMeetingId(), false),
-                                    new AiraNavigationItem("Topics", "/es/topics", false))))
+                    .context(InteropAiraPageFactory.topicsMeetingsContext(
+                            meetingSpaceName,
+                            meetingSpaceCode,
+                            false,
+                            true))
                     .build();
 
             page.writeStart(out);

@@ -1,14 +1,19 @@
 package org.airahub.interophub.servlet;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.PublicUrlService;
 import org.immregistries.aira.web.AiraAccountConfig;
+import org.immregistries.aira.web.AiraContextConfig;
 import org.immregistries.aira.web.AiraDefaults;
 import org.immregistries.aira.web.AiraEnvironmentConfig;
 import org.immregistries.aira.web.AiraLogo;
+import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 import org.immregistries.aira.web.AiraSearchConfig;
 
@@ -52,6 +57,24 @@ final class InteropAiraPageFactory {
         }
 
         return builder;
+    }
+
+    static AiraContextConfig topicsMeetingsContext(String contextLabel, String spaceCode, boolean topicsActive,
+            boolean meetingsActive) {
+        String label = trimToNull(contextLabel);
+        if (label == null) {
+            label = "InteropHub";
+        }
+        String meetingsHref = "/es/topics?view=meetings";
+        String normalizedSpaceCode = trimToNull(spaceCode);
+        if (normalizedSpaceCode != null) {
+            meetingsHref = "/es/topics?space="
+                    + URLEncoder.encode(normalizedSpaceCode, StandardCharsets.UTF_8).replace("+", "%20")
+                    + "&view=meetings";
+        }
+        return new AiraContextConfig(label, List.of(
+                new AiraNavigationItem("Topics", "/es/topics", topicsActive),
+                new AiraNavigationItem("Meetings", meetingsHref, meetingsActive)));
     }
 
     private static AiraAccountConfig buildAccountConfig(Optional<User> authenticatedUser) {

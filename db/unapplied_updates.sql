@@ -1010,3 +1010,19 @@ CREATE TABLE es_topic_meeting_cochair (
   CONSTRAINT fk_es_tm_cchair_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
   CONSTRAINT fk_es_tm_cchair_inactive_by FOREIGN KEY (inactive_by_user_id) REFERENCES auth_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_topic_user_view (
+  es_topic_user_view_id BIGINT NOT NULL AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  es_topic_id BIGINT NOT NULL,
+  first_viewed_at DATETIME(6) NOT NULL,
+  last_viewed_at DATETIME(6) NOT NULL,
+  visit_count BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  last_counted_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (es_topic_user_view_id),
+  UNIQUE KEY uq_es_topic_user_view_user_topic (user_id, es_topic_id),
+  KEY ix_es_topic_user_view_user_recent (user_id, last_viewed_at),
+  KEY ix_es_topic_user_view_topic_recent (es_topic_id, last_viewed_at),
+  CONSTRAINT fk_es_topic_user_view_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_topic_user_view_topic FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
