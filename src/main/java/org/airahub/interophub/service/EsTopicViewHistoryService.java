@@ -83,7 +83,8 @@ public class EsTopicViewHistoryService {
                         row.esTopicId(),
                         row.topicName(),
                         row.esTopicSpaceId(),
-                        row.lastViewedAt()))
+                        row.lastViewedAt(),
+                        row.topicEmoji()))
                 .toList();
     }
 
@@ -116,7 +117,8 @@ public class EsTopicViewHistoryService {
         return false;
     }
 
-    public record RecentlyViewedTopic(Long topicId, String topicName, Long topicSpaceId, LocalDateTime lastViewedAt) {
+    public record RecentlyViewedTopic(Long topicId, String topicName, Long topicSpaceId, LocalDateTime lastViewedAt,
+            String topicEmoji) {
     }
 
     interface TopicViewStore {

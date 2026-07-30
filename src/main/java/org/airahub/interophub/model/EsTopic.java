@@ -36,6 +36,12 @@ public class EsTopic {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "topic_summary", length = 300)
+    private String topicSummary;
+
+    @Column(name = "topic_emoji", length = 64)
+    private String topicEmoji;
+
     @Column(name = "neighborhood", length = 120)
     private String neighborhood;
 
@@ -141,6 +147,22 @@ public class EsTopic {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getTopicSummary() {
+        return topicSummary;
+    }
+
+    public void setTopicSummary(String topicSummary) {
+        this.topicSummary = topicSummary;
+    }
+
+    public String getTopicEmoji() {
+        return topicEmoji;
+    }
+
+    public void setTopicEmoji(String topicEmoji) {
+        this.topicEmoji = topicEmoji;
     }
 
     public String getNeighborhood() {

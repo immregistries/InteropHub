@@ -137,6 +137,8 @@ public class AdminEsTopicServlet extends HttpServlet {
 
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
+        String topicSummary = trimToNull(request.getParameter("topicSummary"));
+        String topicEmoji = trimToNull(request.getParameter("topicEmoji"));
         Set<Long> selectedNeighborhoodIds = parseNeighborhoodIds(request.getParameterValues("esNeighborhoodId"));
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
         String priorityEhrRaw = trimToNull(request.getParameter("priorityEhr"));
@@ -174,6 +176,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setEsTopicSpaceId(targetSpace.getEsTopicSpaceId());
                 newTopic.setTopicName(required(topicName, "Topic name"));
                 newTopic.setDescription(description);
+                newTopic.setTopicSummary(topicSummary);
+                newTopic.setTopicEmoji(topicEmoji);
                 newTopic.setNeighborhood(null);
                 newTopic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
                 newTopic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
@@ -212,6 +216,8 @@ public class AdminEsTopicServlet extends HttpServlet {
                 newTopic.setTopicCode(topicCodeParam);
                 newTopic.setTopicName(topicName);
                 newTopic.setDescription(description);
+                newTopic.setTopicSummary(topicSummary);
+                newTopic.setTopicEmoji(topicEmoji);
                 newTopic.setNeighborhood(null);
                 newTopic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
                 newTopic.setStage(stage);
@@ -282,6 +288,8 @@ public class AdminEsTopicServlet extends HttpServlet {
             topic.setEsTopicSpaceId(requestedSpaceId);
             topic.setTopicName(required(topicName, "Topic name"));
             topic.setDescription(description);
+            topic.setTopicSummary(topicSummary);
+            topic.setTopicEmoji(topicEmoji);
             topic.setNeighborhood(null);
             topic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
             topic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
@@ -323,6 +331,8 @@ public class AdminEsTopicServlet extends HttpServlet {
         } catch (Exception ex) {
             topic.setTopicName(topicName);
             topic.setDescription(description);
+            topic.setTopicSummary(topicSummary);
+            topic.setTopicEmoji(topicEmoji);
             topic.setNeighborhood(null);
             topic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
             topic.setStage(stage);
@@ -499,6 +509,13 @@ public class AdminEsTopicServlet extends HttpServlet {
                         + escapeHtml(orEmpty(topic.getTopicName())) + "</p>");
                 panelOut.println(
                         "          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topic.getDescription()))
+                                + "</p>");
+                panelOut.println(
+                        "          <p><strong>Topic Summary:</strong> "
+                                + escapeHtml(orEmpty(topic.getTopicSummary()))
+                                + "</p>");
+                panelOut.println(
+                        "          <p><strong>Topic Emoji:</strong> " + escapeHtml(orEmpty(topic.getTopicEmoji()))
                                 + "</p>");
                 panelOut.println(
                         "          <p><strong>Neighborhood:</strong> " + escapeHtml(orEmpty(neighborhoodsDisplay))
@@ -688,6 +705,16 @@ public class AdminEsTopicServlet extends HttpServlet {
                         out.println("      <label for=\"description\">Description</label>");
                         out.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
                                 + escapeHtml(orEmpty(topic.getDescription())) + "</textarea>");
+
+                        out.println("      <label for=\"topicSummary\">Topic Summary (one sentence)</label>");
+                        out.println(
+                                "      <input id=\"topicSummary\" name=\"topicSummary\" type=\"text\" maxlength=\"300\" value=\""
+                                        + escapeHtml(orEmpty(topic.getTopicSummary())) + "\" />");
+
+                        out.println("      <label for=\"topicEmoji\">Topic Emoji</label>");
+                        out.println(
+                                "      <input id=\"topicEmoji\" name=\"topicEmoji\" type=\"text\" maxlength=\"64\" placeholder=\"e.g. 🧠\" value=\""
+                                        + escapeHtml(orEmpty(topic.getTopicEmoji())) + "\" />");
 
                         out.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
                         out.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");

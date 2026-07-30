@@ -10,7 +10,7 @@ import org.airahub.interophub.model.EsMeetingCommunication.CommunicationStatus;
  *
  * Three checks (all must pass):
  * 1. Communication is not in a terminal state (SENT, CANCELLED, FAILED).
- * 2. Meeting is not cancelled.
+ * 2. Meeting is not cancelled unless this is a cancellation notice.
  * 3. Meeting status matches the expected status for this communication type
  * (advisory warning — does not hard-block to allow flexibility).
  */
@@ -53,8 +53,9 @@ public class MeetingCommunicationEligibilityService {
                     "This communication is currently being sent.");
         }
 
-        // Check 2: meeting not cancelled
-        if (meeting.getStatus() == EsMeeting.MeetingStatus.CANCELLED) {
+        // Check 2: meeting cancelled is only allowed for cancellation notices
+        if (meeting.getStatus() == EsMeeting.MeetingStatus.CANCELLED
+                && communication.getCommunicationType() != EsMeetingCommunication.CommunicationType.CANCELLED) {
             return CommunicationEligibilityResult.blocked(
                     "The meeting has been cancelled. Cancel this communication or create a "
                             + "cancellation notice instead.");

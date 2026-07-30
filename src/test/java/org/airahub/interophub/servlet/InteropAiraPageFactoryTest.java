@@ -7,7 +7,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.immregistries.aira.web.AiraPage;
 import org.junit.jupiter.api.Test;
@@ -91,6 +94,50 @@ class InteropAiraPageFactoryTest {
                 .base(request, "Header Test", Optional.of(unnamedUser), false)
                 .build());
         assertTrue(fallbackHtml.contains("Signed in user"));
+    }
+
+    @Test
+    void topicSpacePickerContextRendersTitleAndSpaceLinks() {
+        HttpServletRequest request = requestWithContextPath("/hub");
+        List<EsTopicSpace> spaces = List.of(
+                topicSpace("emerging-standards", "Emerging Standards"),
+                topicSpace("building-bridges", "Building Bridges"));
+
+        String html = render(InteropAiraPageFactory
+                .base(request, "Header Test", Optional.empty(), false)
+                .context(InteropAiraPageFactory.topicSpacePickerContext(spaces))
+                .build());
+
+        assertTrue(html.contains("Interoperability Hub"));
+        assertTrue(html.contains("Emerging Standards"));
+        assertTrue(html.contains("/spaces/emerging-standards/topics"));
+        assertTrue(html.contains("Building Bridges"));
+        assertTrue(html.contains("/spaces/building-bridges/topics"));
+    }
+
+    @Test
+    void topicSpacePickerContextCapsAtFiveSpaces() {
+        HttpServletRequest request = requestWithContextPath("/hub");
+        List<EsTopicSpace> spaces = new ArrayList<>();
+        for (int i = 1; i <= 6; i++) {
+            spaces.add(topicSpace("space-" + i, "Space " + i));
+        }
+
+        String html = render(InteropAiraPageFactory
+                .base(request, "Header Test", Optional.empty(), false)
+                .context(InteropAiraPageFactory.topicSpacePickerContext(spaces))
+                .build());
+
+        assertTrue(html.contains("Space 1"));
+        assertTrue(html.contains("Space 5"));
+        assertFalse(html.contains("Space 6"));
+    }
+
+    private EsTopicSpace topicSpace(String code, String name) {
+        EsTopicSpace space = new EsTopicSpace();
+        space.setSpaceCode(code);
+        space.setSpaceName(name);
+        return space;
     }
 
     private String render(AiraPage page) {

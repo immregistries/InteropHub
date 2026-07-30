@@ -20,6 +20,8 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
@@ -45,6 +47,8 @@ import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.EsTopicPathDefinition;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.immregistries.aira.web.AiraPage;
 import org.airahub.interophub.service.EsTopicViewHistoryService;
 
@@ -62,6 +66,8 @@ public class EsTopicDetailServlet extends HttpServlet {
         private final EsMeetingAgendaItemDao agendaItemDao;
         private final EsMeetingDao esMeetingDao;
         private final EsTopicSpaceDao topicSpaceDao;
+        private final EsTopicStageDefinitionDao topicStageDefinitionDao;
+        private final EsTopicPathDefinitionDao topicPathDefinitionDao;
         private final EsTopicRelationshipDao relationshipDao;
         private final EsTopicCurationDao curationDao;
         private final TopicSpaceAccessService topicSpaceAccessService;
@@ -78,6 +84,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                 this.agendaItemDao = new EsMeetingAgendaItemDao();
                 this.esMeetingDao = new EsMeetingDao();
                 this.topicSpaceDao = new EsTopicSpaceDao();
+                this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
+                this.topicPathDefinitionDao = new EsTopicPathDefinitionDao();
                 this.relationshipDao = new EsTopicRelationshipDao();
                 this.curationDao = new EsTopicCurationDao();
                 this.topicSpaceAccessService = new TopicSpaceAccessService();
@@ -181,6 +189,21 @@ public class EsTopicDetailServlet extends HttpServlet {
                 String topicName = orEmpty(topic.getTopicName());
                 String description = orEmpty(topic.getDescription());
                 String normalizedStage = orEmpty(topic.getStage());
+                String normalizedPath = orEmpty(topic.getPath());
+                Long stageDefinitionId = topicEntity.getEsTopicStageDefinitionId();
+                String stageDescription = stageDefinitionId == null
+                                ? null
+                                : topicStageDefinitionDao.findById(stageDefinitionId)
+                                                .map(EsTopicStageDefinition::getStageDescription)
+                                                .map(this::trimToNull)
+                                                .orElse(null);
+                Long pathDefinitionId = topicEntity.getEsTopicPathDefinitionId();
+                String pathDescription = pathDefinitionId == null
+                                ? null
+                                : topicPathDefinitionDao.findById(pathDefinitionId)
+                                                .map(EsTopicPathDefinition::getPathDescription)
+                                                .map(this::trimToNull)
+                                                .orElse(null);
                 String normalizedNeighborhood = String.join(", ",
                                 topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
                 List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics = List.of();
@@ -382,12 +405,14 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("          <header class=\"aira-topic-header\">");
                         out.println("            <div class=\"aira-topic-header__top\">");
                         out.println("              <div>");
-                        out.println("                <a class=\"aira-inline-link\" href=\"" + contextPath
-                                        + "/es/topics\">All Topics</a>");
                         out.println("                <h1 class=\"aira-topic-title\">" + escapeHtml(topicName)
                                         + "</h1>");
+                        String topicSummaryText = trimToNull(topic.getTopicSummary());
+                        if (topicSummaryText == null) {
+                                topicSummaryText = description.isBlank() ? buildTopicSummary(topic) : description;
+                        }
                         out.println("                <p class=\"aira-topic-summary\">"
-                                        + escapeHtml(description.isBlank() ? buildTopicSummary(topic) : description)
+                                        + escapeHtml(topicSummaryText)
                                         + "</p>");
                         out.println("              </div>");
                         out.println("              <div class=\"aira-topic-actions\">");
@@ -420,10 +445,17 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Stage</span><span class=\"aira-meta-chip__value\">"
                                         + escapeHtml(normalizedStage.isBlank() ? "Other" : normalizedStage)
                                         + "</span></span>");
-                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Path</span><span class=\"aira-meta-chip__value\">"
-                                        + escapeHtml(trimToNull(topic.getPolicyStatus()) == null ? "To be defined"
-                                                        : topic.getPolicyStatus())
-                                        + "</span></span>");
+                        if (!normalizedPath.isBlank()) {
+                                out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Path</span><span class=\"aira-meta-chip__value\">"
+                                                + escapeHtml(normalizedPath)
+                                                + "</span></span>");
+                        }
+                        String normalizedPolicyStatus = trimToNull(topic.getPolicyStatus());
+                        if (normalizedPolicyStatus != null) {
+                                out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Policy</span><span class=\"aira-meta-chip__value\">"
+                                                + escapeHtml(normalizedPolicyStatus)
+                                                + "</span></span>");
+                        }
                         out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Topic type</span><span class=\"aira-meta-chip__value\">"
                                         + escapeHtml(trimToNull(topic.getTopicType()) == null ? "Capability"
                                                         : topic.getTopicType())
@@ -447,21 +479,24 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("              <article class=\"aira-topic-status-card aira-topic-status-card--stage\"><span class=\"aira-topic-status-card__icon\" aria-hidden=\"true\">S</span><div><p class=\"aira-topic-status-card__label\">Stage</p><p class=\"aira-topic-status-card__value\">"
                                         + escapeHtml(normalizedStage.isBlank() ? "Other" : normalizedStage)
                                         + "</p><p class=\"aira-topic-status-card__description\">"
-                                        + escapeHtml(description.isBlank()
+                                        + escapeHtml(stageDescription == null
                                                         ? "Active concept development and refinement."
-                                                        : description)
+                                                        : stageDescription)
                                         + "</p></div></article>");
                         out.println("              <article class=\"aira-topic-status-card aira-topic-status-card--path\"><span class=\"aira-topic-status-card__icon\" aria-hidden=\"true\">P</span><div><p class=\"aira-topic-status-card__label\">Path</p><p class=\"aira-topic-status-card__value\">"
-                                        + escapeHtml(trimToNull(topic.getPolicyStatus()) == null ? "Leadership Review"
-                                                        : topic.getPolicyStatus())
-                                        + "</p><p class=\"aira-topic-status-card__description\">Planning and sponsorship details can be added here.</p></div></article>");
+                                        + escapeHtml(normalizedPath.isBlank() ? "Not set" : normalizedPath)
+                                        + "</p><p class=\"aira-topic-status-card__description\">"
+                                        + escapeHtml(pathDescription == null
+                                                        ? "Planning and sponsorship details can be added here."
+                                                        : pathDescription)
+                                        + "</p></div></article>");
                         out.println("            </div>");
                         out.println("          </section>");
 
                         out.println("          <section class=\"aira-section-card\" aria-labelledby=\"overview-title\">");
                         out.println(
                                         "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"overview-title\">Overview</h2>");
-                        if (!trimToNull(topic.getConfluenceUrl()).isEmpty()) {
+                        if (trimToNull(topic.getConfluenceUrl()) != null) {
                                 out.println("              <a class=\"aira-section-card__action\" href=\""
                                                 + escapeHtml(topic.getConfluenceUrl())
                                                 + "\" target=\"_blank\" rel=\"noopener\">Open full background</a>");
@@ -653,12 +688,16 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                         ? "Current topic"
                                                         : "Viewed " + formatRecentViewedAt(viewedTopic.lastViewedAt());
                                         String ariaCurrent = isCurrentTopic ? " aria-current=\"page\"" : "";
+                                        String recentIcon = trimToNull(viewedTopic.topicEmoji());
+                                        if (recentIcon == null) {
+                                                recentIcon = initialForTopic(viewedTopicName);
+                                        }
                                         out.println("            <a class=\"aira-recent-topic\" href=\""
                                                         + contextPath
                                                         + "/es/topic/" + viewedTopic.topicId() + "\""
                                                         + ariaCurrent
                                                         + "><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">"
-                                                        + escapeHtml(initialForTopic(viewedTopicName))
+                                                        + escapeHtml(recentIcon)
                                                         + "</span><span><span class=\"aira-recent-topic__title\">"
                                                         + escapeHtml(viewedTopicName)
                                                         + "</span><span class=\"aira-recent-topic__meta\">"

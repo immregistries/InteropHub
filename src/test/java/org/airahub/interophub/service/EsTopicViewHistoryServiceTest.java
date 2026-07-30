@@ -151,11 +151,11 @@ class EsTopicViewHistoryServiceTest {
         InMemoryTopicViewStore store = new InMemoryTopicViewStore();
         store.recentRows = List.of(
                 new EsTopicUserViewDao.RecentlyViewedTopicRow(1L, "One", 10L,
-                        LocalDateTime.of(2026, 8, 1, 12, 0)),
+                        LocalDateTime.of(2026, 8, 1, 12, 0), "🔵"),
                 new EsTopicUserViewDao.RecentlyViewedTopicRow(2L, "Two", 10L,
-                        LocalDateTime.of(2026, 8, 1, 11, 0)),
+                        LocalDateTime.of(2026, 8, 1, 11, 0), null),
                 new EsTopicUserViewDao.RecentlyViewedTopicRow(3L, "Three", 10L,
-                        LocalDateTime.of(2026, 8, 1, 10, 0)));
+                        LocalDateTime.of(2026, 8, 1, 10, 0), null));
 
         EsTopicViewHistoryService service = serviceAt(store, LocalDateTime.of(2026, 8, 1, 12, 0));
         List<EsTopicViewHistoryService.RecentlyViewedTopic> recent = service.findRecentAuthenticatedTopicViews(7L, 2);
@@ -163,6 +163,23 @@ class EsTopicViewHistoryServiceTest {
         assertEquals(2, store.lastRequestedLimit);
         assertEquals(2, recent.size());
         assertEquals(1L, recent.get(0).topicId());
+    }
+
+    @Test
+    void recentlyViewedRoundTripsThroughRecordingInNewestFirstOrder() {
+        InMemoryTopicViewStore store = new InMemoryTopicViewStore();
+        LocalDateTime base = LocalDateTime.of(2026, 8, 1, 9, 0);
+
+        for (long topicId = 1; topicId <= 12; topicId++) {
+            serviceAt(store, base.plusMinutes(topicId)).recordAuthenticatedTopicView(20L, topicId);
+        }
+
+        List<EsTopicViewHistoryService.RecentlyViewedTopic> recent = serviceAt(store, base.plusMinutes(30))
+                .findRecentAuthenticatedTopicViews(20L);
+
+        assertEquals(10, recent.size());
+        assertEquals(12L, recent.get(0).topicId());
+        assertEquals(3L, recent.get(9).topicId());
     }
 
     @Test
@@ -222,7 +239,8 @@ class EsTopicViewHistoryServiceTest {
                             value.getEsTopicId(),
                             "Topic " + value.getEsTopicId(),
                             1L,
-                            value.getLastViewedAt()));
+                            value.getLastViewedAt(),
+                            null));
                 }
             }
             rows.sort(Comparator.comparing(EsTopicUserViewDao.RecentlyViewedTopicRow::lastViewedAt).reversed());

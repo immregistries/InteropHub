@@ -8,41 +8,44 @@ public final class AdminNavRenderer {
     private AdminNavRenderer() {
     }
 
+    public static List<NavGroup> navGroups(String contextPath) {
+        return List.of(
+                new NavGroup("Platform", List.of(
+                        navItem(contextPath + "/admin", "Admin Home"),
+                        navItem(contextPath + "/admin/settings", "Hub Settings"),
+                        navItem(contextPath + "/admin/apps", "App Registry"),
+                        navItem(contextPath + "/admin/app-login-stats", "App Login Statistics"))),
+                new NavGroup("People and Collaboration", List.of(
+                        navItem(contextPath + "/admin/users", "Registered Users"),
+                        navItem(contextPath + "/admin/emails", "Emails"),
+                        navItem(contextPath + "/admin/workspaces", "Workspaces"))),
+                new NavGroup("Content", List.of(
+                        navItem(contextPath + "/admin/topics", "IG Topics"))),
+                new NavGroup("Emerging Standards", List.of(
+                        navItem(contextPath + "/admin/es", "ES Home"),
+                        navItem(contextPath + "/admin/es/topic-spaces", "Topic Spaces"),
+                        navItem(contextPath + "/admin/es/topic-boards", "Topic Boards"),
+                        navItem(contextPath + "/admin/es/campaigns", "Campaigns"),
+                        navItem(contextPath + "/admin/es/topics", "ES Topics"),
+                        navItem(contextPath + "/admin/es/meetings", "Meetings"),
+                        navItem(contextPath + "/admin/es/meeting-polls", "Meeting Polls"),
+                        navItem(contextPath + "/admin/es/surveys", "Surveys"),
+                        navItem(contextPath + "/admin/es/meeting-survey", "Meeting Surveys"),
+                        navItem(contextPath + "/admin/es/dandelion-sync", "Dandelion Sync"),
+                        navItem(contextPath + "/admin/es/registrations", "Registrations Display"),
+                        navItem(contextPath + "/admin/es/review-results", "Review Results"))),
+                new NavGroup("Utilities", List.of(
+                        navItem(contextPath + "/admin/es-topic-import", "ES Topic Import"),
+                        navItem(contextPath + "/admin/qr", "QR Generator"))));
+    }
+
     public static void renderPanel(PrintWriter out, String contextPath) {
         out.println("    <h2>Admin Navigation</h2>");
         out.println("    <div class=\"admin-nav-panel\">");
 
-        renderGroup(out, "Platform", List.of(
-                navItem(contextPath + "/admin", "Admin Home"),
-                navItem(contextPath + "/admin/settings", "Hub Settings"),
-                navItem(contextPath + "/admin/apps", "App Registry"),
-                navItem(contextPath + "/admin/app-login-stats", "App Login Statistics")));
-
-        renderGroup(out, "People and Collaboration", List.of(
-                navItem(contextPath + "/admin/users", "Registered Users"),
-                navItem(contextPath + "/admin/emails", "Emails"),
-                navItem(contextPath + "/admin/workspaces", "Workspaces")));
-
-        renderGroup(out, "Content", List.of(
-                navItem(contextPath + "/admin/topics", "IG Topics")));
-
-        renderGroup(out, "Emerging Standards", List.of(
-                navItem(contextPath + "/admin/es", "ES Home"),
-                navItem(contextPath + "/admin/es/topic-spaces", "Topic Spaces"),
-                navItem(contextPath + "/admin/es/topic-boards", "Topic Boards"),
-                navItem(contextPath + "/admin/es/campaigns", "Campaigns"),
-                navItem(contextPath + "/admin/es/topics", "ES Topics"),
-                navItem(contextPath + "/admin/es/meetings", "Meetings"),
-                navItem(contextPath + "/admin/es/meeting-polls", "Meeting Polls"),
-                navItem(contextPath + "/admin/es/surveys", "Surveys"),
-                navItem(contextPath + "/admin/es/meeting-survey", "Meeting Surveys"),
-                navItem(contextPath + "/admin/es/dandelion-sync", "Dandelion Sync"),
-                navItem(contextPath + "/admin/es/registrations", "Registrations Display"),
-                navItem(contextPath + "/admin/es/review-results", "Review Results")));
-
-        renderGroup(out, "Utilities", List.of(
-                navItem(contextPath + "/admin/es-topic-import", "ES Topic Import"),
-                navItem(contextPath + "/admin/qr", "QR Generator")));
+        for (NavGroup group : navGroups(contextPath)) {
+            renderGroup(out, group.title(), group.items());
+        }
 
         out.println("    </div>");
     }
@@ -74,13 +77,39 @@ public final class AdminNavRenderer {
                 .replace("'", "&#39;");
     }
 
-    private static class NavItem {
+    public static final class NavGroup {
+        private final String title;
+        private final List<NavItem> items;
+
+        private NavGroup(String title, List<NavItem> items) {
+            this.title = title;
+            this.items = items;
+        }
+
+        public String title() {
+            return title;
+        }
+
+        public List<NavItem> items() {
+            return items;
+        }
+    }
+
+    public static final class NavItem {
         private final String href;
         private final String label;
 
         private NavItem(String href, String label) {
             this.href = href;
             this.label = label;
+        }
+
+        public String href() {
+            return href;
+        }
+
+        public String label() {
+            return label;
         }
     }
 }

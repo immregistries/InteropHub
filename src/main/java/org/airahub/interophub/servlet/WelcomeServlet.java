@@ -3,32 +3,23 @@ package org.airahub.interophub.servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.AppRegistryDao;
-import org.airahub.interophub.dao.ConnectWorkspaceDao;
-import org.airahub.interophub.dao.IgTopicDao;
-import org.airahub.interophub.dao.WorkspaceEnrollmentDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.AppRegistry;
-import org.airahub.interophub.model.ConnectWorkspace;
-import org.airahub.interophub.model.IgTopic;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
+import org.immregistries.aira.web.AiraPage;
 
 public class WelcomeServlet extends HttpServlet {
     private final AuthFlowService authFlowService;
     private final AppRegistryDao appRegistryDao;
-    private final ConnectWorkspaceDao connectWorkspaceDao;
-    private final IgTopicDao igTopicDao;
-    private final WorkspaceEnrollmentDao workspaceEnrollmentDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsInterestService esInterestService;
     private final TopicSpaceAccessService topicSpaceAccessService;
@@ -36,9 +27,6 @@ public class WelcomeServlet extends HttpServlet {
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
         this.appRegistryDao = new AppRegistryDao();
-        this.connectWorkspaceDao = new ConnectWorkspaceDao();
-        this.igTopicDao = new IgTopicDao();
-        this.workspaceEnrollmentDao = new WorkspaceEnrollmentDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.esInterestService = new EsInterestService();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
@@ -46,18 +34,40 @@ public class WelcomeServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        User user = authFlowService.findAuthenticatedUser(request)
-                .orElse(null);
+        User user = authFlowService.findAuthenticatedUser(request).orElse(null);
+        String contextPath = request.getContextPath();
+
+        List<EsTopicSpace> visibleTopicSpaces = topicSpaceAccessService
+                .filterVisibleSpaces(user, topicSpaceDao.findAllActiveOrdered());
+        List<EsTopicSpace> publicSpaces = new ArrayList<>();
+        List<EsTopicSpace> privateSpaces = new ArrayList<>();
+        for (EsTopicSpace topicSpace : visibleTopicSpaces) {
+            if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
+                privateSpaces.add(topicSpace);
+            } else {
+                publicSpaces.add(topicSpace);
+            }
+        }
+        List<EsTopicSpace> spacePickerOrder = new ArrayList<>(publicSpaces);
+        spacePickerOrder.addAll(privateSpaces);
 
         if (user == null) {
-            response.sendRedirect(request.getContextPath() + "/home");
+            response.setContentType("text/html;charset=UTF-8");
+            AiraPage page = InteropAiraPageFactory.base(request, "Welcome - InteropHub")
+                    .applicationSubtitle("Welcome")
+                    .mainClass("aira-main")
+                    .context(InteropAiraPageFactory.topicSpacePickerContext(spacePickerOrder))
+                    .build();
+            try (PrintWriter out = response.getWriter()) {
+                page.writeStart(out);
+                renderAnonymousContent(out, contextPath);
+                page.writeEnd(out);
+            }
             return;
         }
 
         esInterestService.linkAnonymousRecordsByEmail(user.getUserId(), user.getEmailNormalized());
 
-        response.setContentType("text/html;charset=UTF-8");
-        String contextPath = request.getContextPath();
         boolean adminUser = authFlowService.isAdminUser(user);
         String name = user.getFullName() == null || user.getFullName().isBlank()
                 ? user.getEmail()
@@ -69,150 +79,178 @@ public class WelcomeServlet extends HttpServlet {
                 .filter(app -> app.getAppName() != null && !app.getAppName().isBlank())
                 .filter(app -> app.getDefaultRedirectUrl() != null && !app.getDefaultRedirectUrl().isBlank())
                 .toList();
-        List<ConnectWorkspace> activeWorkspaces = connectWorkspaceDao.findActiveOrderedByStartDate();
-        List<Long> activeWorkspaceIds = new ArrayList<>();
-        for (ConnectWorkspace workspace : activeWorkspaces) {
-            activeWorkspaceIds.add(workspace.getWorkspaceId());
-        }
-        long pendingRegistrationCount = adminUser
-                ? workspaceEnrollmentDao.countPendingForWorkspaceIds(activeWorkspaceIds)
-                : 0L;
-        Map<Long, String> topicNameById = new HashMap<>();
-        for (IgTopic topic : igTopicDao.findAllOrdered()) {
-            topicNameById.put(topic.getTopicId(), topic.getTopicName());
-        }
-        List<EsTopicSpace> visibleTopicSpaces = topicSpaceAccessService
-                .filterVisibleSpaces(user, topicSpaceDao.findAllActiveOrdered());
 
+        response.setContentType("text/html;charset=UTF-8");
+        AiraPage page = InteropAiraPageFactory.base(request, "Welcome - InteropHub")
+                .applicationSubtitle("Welcome")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.topicSpacePickerContext(spacePickerOrder))
+                .build();
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Welcome - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            if (adminUser) {
-                out.println("<body class=\"admin-page\">");
-                out.println("  <main class=\"admin-shell\">");
-                out.println("    <aside class=\"admin-rail\">");
-                out.println("      <h1>Admin</h1>");
-                out.println("      <p class=\"admin-rail-subtitle\">Navigation center</p>");
-                AdminNavRenderer.renderPanel(out, contextPath);
-                out.println("      <p class=\"admin-rail-footer-link\"><a href=\"" + contextPath
-                        + "/admin\">Open Admin Home</a></p>");
-                out.println("    </aside>");
-                out.println("    <section class=\"admin-main\">");
-                renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                        visibleTopicSpaces, pendingRegistrationCount, true);
-                out.println("    </section>");
-                out.println("  </main>");
-            } else {
-                out.println("<body>");
-                out.println("  <main class=\"container\">");
-                renderWelcomePanel(out, contextPath, name, user, availableApps, activeWorkspaces, topicNameById,
-                        visibleTopicSpaces, pendingRegistrationCount, false);
-                out.println("  </main>");
-            }
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            page.writeStart(out);
+            renderAuthenticatedContent(out, contextPath, name, user, availableApps, publicSpaces, privateSpaces,
+                    adminUser);
+            page.writeEnd(out);
         }
     }
 
-    private void renderWelcomePanel(PrintWriter out, String contextPath, String name, User user,
-            List<AppRegistry> availableApps, List<ConnectWorkspace> activeWorkspaces, Map<Long, String> topicNameById,
-            List<EsTopicSpace> visibleTopicSpaces, long pendingRegistrationCount, boolean adminUser) {
-        out.println("      <section class=\"panel\">");
-        out.println("        <img class=\"banner\" src=\"" + contextPath
-                + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
-        out.println("        <h2>Welcome " + escapeHtml(name) + "</h2>");
+    private void renderAnonymousContent(PrintWriter out, String contextPath) {
+        out.println("      <div class=\"aira-container--standard\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div>");
+        out.println("            <h1 class=\"aira-public-title\">Immunization InteropHub</h1>");
         out.println(
-                "        <p>You are signed in as <strong>" + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
-
-        if (adminUser && pendingRegistrationCount > 0) {
-            out.println("        <h3>Pending Workspace Registrations</h3>");
-            out.println("        <p>There are currently <strong>" + pendingRegistrationCount
-                    + "</strong> pending registration request(s).</p>");
-            out.println("        <p><a href=\"" + contextPath
-                    + "/workspace?mode=admin-enrollments\">Review Pending Registrations</a></p>");
-        }
-
-        out.println("        <ul>");
-        out.println("          <li><a href=\"" + contextPath + "/es/topics\">Emerging Standard Topics</a></li>");
-        out.println("        </ul>");
-
-        out.println("        <h3>Applications</h3>");
-        if (availableApps.isEmpty()) {
-            out.println("        <p>No applications are currently available.</p>");
-        } else {
-            out.println("        <ul>");
-            for (AppRegistry app : availableApps) {
-                out.println("          <li><a href=\"" + contextPath + "/app-access?appId=" + app.getAppId()
-                        + "\">" + escapeHtml(app.getAppName()) + "</a></li>");
-            }
-            out.println("        </ul>");
-        }
-
-        out.println("        <h3>Workspaces</h3>");
-        if (activeWorkspaces.isEmpty()) {
-            out.println("        <p>No active workspaces are currently available.</p>");
-        } else {
-            out.println("        <ul>");
-            for (ConnectWorkspace workspace : activeWorkspaces) {
-                String topicName = topicNameById.get(workspace.getTopicId());
-                if (topicName == null || topicName.isBlank()) {
-                    topicName = "Unknown Topic";
-                }
-                String workspaceName = workspace.getWorkspaceName();
-                if (workspaceName == null || workspaceName.isBlank()) {
-                    workspaceName = "(Unnamed Workspace)";
-                }
-                out.println("          <li><a href=\"" + contextPath + "/workspace?workspaceId="
-                        + workspace.getWorkspaceId() + "\">"
-                        + escapeHtml(topicName + ": " + workspaceName) + "</a></li>");
-            }
-            out.println("        </ul>");
-        }
-
-        out.println("        <h3>Topic Spaces</h3>");
-        if (visibleTopicSpaces.isEmpty()) {
-            out.println("        <p>No Topic Spaces are currently available.</p>");
-        } else {
-            List<EsTopicSpace> publicSpaces = new ArrayList<>();
-            List<EsTopicSpace> privateSpaces = new ArrayList<>();
-            for (EsTopicSpace topicSpace : visibleTopicSpaces) {
-                if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
-                    privateSpaces.add(topicSpace);
-                } else {
-                    publicSpaces.add(topicSpace);
-                }
-            }
-
-            renderTopicSpaceList(out, contextPath, "Public Topic Spaces", publicSpaces, true);
-            renderTopicSpaceList(out, contextPath, "Private Topic Spaces", privateSpaces, true);
-        }
-
-        out.println("        <form action=\"" + contextPath + "/logout\" method=\"post\">");
-        out.println("          <button type=\"submit\">Logout</button>");
-        out.println("        </form>");
-        out.println("      </section>");
+                "            <p class=\"aira-public-intro\">Connect with other developers working on immunization interoperability.</p>");
+        out.println("          </div>");
+        out.println("          <div class=\"aira-action-group\">");
+        out.println("            <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                + "/home\">Sign In</a>");
+        out.println("          </div>");
+        out.println("        </div>");
+        out.println("      </div>");
     }
 
-    private void renderTopicSpaceList(PrintWriter out, String contextPath, String heading,
-            List<EsTopicSpace> spaces, boolean includeHeading) {
-        if (!spaces.isEmpty() && includeHeading) {
-            out.println("        <h4>" + escapeHtml(heading) + "</h4>");
-            out.println("        <ul>");
-            for (EsTopicSpace topicSpace : spaces) {
-                out.println("          <li><a href=\"" + buildTopicSpaceUrl(contextPath, topicSpace.getSpaceCode())
-                        + "\">" + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</a></li>");
-            }
-            out.println("        </ul>");
-        } else if (spaces.isEmpty()) {
-            out.println("        <p>No " + escapeHtml(heading) + " are currently available.</p>");
+    private void renderAuthenticatedContent(PrintWriter out, String contextPath, String name, User user,
+            List<AppRegistry> availableApps, List<EsTopicSpace> publicSpaces, List<EsTopicSpace> privateSpaces,
+            boolean adminUser) {
+        out.println("      <div class=\"aira-container--standard\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div>");
+        out.println("            <h1 class=\"aira-page-title\">Welcome, " + escapeHtml(name) + "</h1>");
+        out.println("            <p class=\"aira-page-intro\">You are signed in as <strong>"
+                + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
+        out.println("          </div>");
+        out.println("          <div class=\"aira-action-group\">");
+        out.println("            <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                + "/es/topics\">Emerging Standard Topics</a>");
+        out.println("            <form class=\"aira-inline-form\" action=\"" + contextPath
+                + "/logout\" method=\"post\">");
+        out.println(
+                "              <button type=\"submit\" class=\"aira-button aira-button--secondary\">Logout</button>");
+        out.println("            </form>");
+        out.println("          </div>");
+        out.println("        </div>");
+
+        out.println("        <div class=\"aira-stack\">");
+
+        renderApplicationsSection(out, contextPath, availableApps);
+        renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
+
+        if (adminUser) {
+            renderAdminSection(out, contextPath);
         }
+
+        out.println("        </div>");
+        out.println("      </div>");
+    }
+
+    private void renderApplicationsSection(PrintWriter out, String contextPath, List<AppRegistry> availableApps) {
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Applications</h2></div>");
+        out.println("            <div class=\"aira-section-card__body\">");
+        if (availableApps.isEmpty()) {
+            out.println(
+                    "              <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No applications are currently available.</p></div>");
+        } else {
+            out.println("              <div class=\"aira-resource-grid\">");
+            for (AppRegistry app : availableApps) {
+                String appName = orEmpty(app.getAppName());
+                out.println("                <a class=\"aira-resource-link\" href=\"" + contextPath
+                        + "/app-access?appId=" + app.getAppId()
+                        + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">"
+                        + escapeHtml(initialFor(appName))
+                        + "</span><span><span class=\"aira-resource-link__title\">" + escapeHtml(appName)
+                        + "</span>" + renderResourceDescription(app.getAppDescription()) + "</span></a>");
+            }
+            out.println("              </div>");
+        }
+        out.println("            </div>");
+        out.println("          </section>");
+    }
+
+    private void renderTopicSpacesSection(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces,
+            List<EsTopicSpace> privateSpaces) {
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Topic Spaces</h2></div>");
+        out.println("            <div class=\"aira-section-card__body aira-stack\">");
+        if (publicSpaces.isEmpty() && privateSpaces.isEmpty()) {
+            out.println(
+                    "              <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No Topic Spaces are currently available.</p></div>");
+        } else {
+            out.println("              <div>");
+            out.println("                <h3 class=\"aira-subsection-title\">Public</h3>");
+            renderTopicSpaceGrid(out, contextPath, publicSpaces);
+            out.println("              </div>");
+            out.println("              <div>");
+            out.println("                <h3 class=\"aira-subsection-title\">Private</h3>");
+            renderTopicSpaceGrid(out, contextPath, privateSpaces);
+            out.println("              </div>");
+        }
+        out.println("            </div>");
+        out.println("          </section>");
+    }
+
+    private void renderTopicSpaceGrid(PrintWriter out, String contextPath, List<EsTopicSpace> spaces) {
+        if (spaces.isEmpty()) {
+            out.println(
+                    "                <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">None available.</p></div>");
+            return;
+        }
+        out.println("                <div class=\"aira-resource-grid\">");
+        for (EsTopicSpace topicSpace : spaces) {
+            String spaceName = orEmpty(topicSpace.getSpaceName());
+            out.println("                  <a class=\"aira-resource-link\" href=\""
+                    + buildTopicSpaceUrl(contextPath, topicSpace.getSpaceCode())
+                    + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">"
+                    + escapeHtml(initialFor(spaceName))
+                    + "</span><span><span class=\"aira-resource-link__title\">" + escapeHtml(spaceName)
+                    + "</span>" + renderResourceDescription(topicSpace.getDescription()) + "</span></a>");
+        }
+        out.println("                </div>");
+    }
+
+    private void renderAdminSection(PrintWriter out, String contextPath) {
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Admin</h2></div>");
+        out.println("            <div class=\"aira-section-card__body aira-stack\">");
+        for (AdminNavRenderer.NavGroup group : AdminNavRenderer.navGroups(contextPath)) {
+            out.println("              <div>");
+            out.println("                <h3 class=\"aira-subsection-title\">" + escapeHtml(group.title())
+                    + "</h3>");
+            out.println("                <div class=\"aira-resource-grid\">");
+            for (AdminNavRenderer.NavItem item : group.items()) {
+                String label = orEmpty(item.label());
+                out.println("                  <a class=\"aira-resource-link\" href=\"" + item.href()
+                        + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">"
+                        + escapeHtml(initialFor(label))
+                        + "</span><span class=\"aira-resource-link__title\">" + escapeHtml(label)
+                        + "</span></a>");
+            }
+            out.println("                </div>");
+            out.println("              </div>");
+        }
+        out.println("            </div>");
+        out.println("          </section>");
+    }
+
+    private String renderResourceDescription(String description) {
+        String trimmed = trimToNull(description);
+        if (trimmed == null) {
+            return "";
+        }
+        String preview = trimmed.length() <= 110 ? trimmed : trimmed.substring(0, 107) + "...";
+        return "<span class=\"aira-resource-link__description\">" + escapeHtml(preview) + "</span>";
+    }
+
+    private String initialFor(String name) {
+        String trimmed = trimToNull(name);
+        if (trimmed == null) {
+            return "?";
+        }
+        return trimmed.substring(0, 1).toUpperCase();
     }
 
     private String buildTopicSpaceUrl(String contextPath, String spaceCode) {
@@ -236,5 +274,13 @@ public class WelcomeServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

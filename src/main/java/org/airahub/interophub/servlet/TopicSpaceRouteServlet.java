@@ -150,7 +150,7 @@ public class TopicSpaceRouteServlet extends HttpServlet {
         appendIfPresent(target, "view", request.getParameter("view"));
         appendIfPresent(target, "n", request.getParameter("n"));
         appendIfPresent(target, "s", request.getParameter("s"));
-        appendIfPresent(target, "r", request.getParameter("r"));
+        appendIfPresent(target, "p", request.getParameter("p"));
         appendIfPresent(target, "q", request.getParameter("q"));
 
         response.sendRedirect(target.toString());

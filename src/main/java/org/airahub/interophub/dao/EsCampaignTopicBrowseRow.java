@@ -10,10 +10,16 @@ public class EsCampaignTopicBrowseRow {
     private final String stage;
     private final Integer displayOrder;
     private final String confluenceUrl;
+    private final String topicSummary;
+    private final String topicEmoji;
+    private final String path;
+    private final Long esTopicStageDefinitionId;
+    private final Long esTopicPathDefinitionId;
 
     public EsCampaignTopicBrowseRow(Long esTopicId, String topicName, String description,
             String topicType, String policyStatus, String neighborhood, String stage, Integer displayOrder,
-            String confluenceUrl) {
+            String confluenceUrl, String topicSummary, String topicEmoji, String path,
+            Long esTopicStageDefinitionId, Long esTopicPathDefinitionId) {
         this.esTopicId = esTopicId;
         this.topicName = topicName;
         this.description = description;
@@ -23,6 +29,11 @@ public class EsCampaignTopicBrowseRow {
         this.stage = stage;
         this.displayOrder = displayOrder;
         this.confluenceUrl = confluenceUrl;
+        this.topicSummary = topicSummary;
+        this.topicEmoji = topicEmoji;
+        this.path = path;
+        this.esTopicStageDefinitionId = esTopicStageDefinitionId;
+        this.esTopicPathDefinitionId = esTopicPathDefinitionId;
     }
 
     public Long getEsTopicId() {
@@ -63,5 +74,25 @@ public class EsCampaignTopicBrowseRow {
 
     public String getConfluenceUrl() {
         return confluenceUrl;
+    }
+
+    public String getTopicSummary() {
+        return topicSummary;
+    }
+
+    public String getTopicEmoji() {
+        return topicEmoji;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public Long getEsTopicStageDefinitionId() {
+        return esTopicStageDefinitionId;
+    }
+
+    public Long getEsTopicPathDefinitionId() {
+        return esTopicPathDefinitionId;
     }
 }

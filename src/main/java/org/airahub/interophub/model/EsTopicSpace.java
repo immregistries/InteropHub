@@ -42,6 +42,9 @@ public class EsTopicSpace {
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 
+    @Column(name = "primary_es_topic_board_definition_id")
+    private Long primaryEsTopicBoardDefinitionId;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive;
 
@@ -117,6 +120,14 @@ public class EsTopicSpace {
 
     public void setDisplayOrder(Integer displayOrder) {
         this.displayOrder = displayOrder;
+    }
+
+    public Long getPrimaryEsTopicBoardDefinitionId() {
+        return primaryEsTopicBoardDefinitionId;
+    }
+
+    public void setPrimaryEsTopicBoardDefinitionId(Long primaryEsTopicBoardDefinitionId) {
+        this.primaryEsTopicBoardDefinitionId = primaryEsTopicBoardDefinitionId;
     }
 
     public Boolean getIsActive() {

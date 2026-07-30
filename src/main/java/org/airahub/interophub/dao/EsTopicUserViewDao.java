@@ -50,7 +50,7 @@ public class EsTopicUserViewDao extends GenericDao<EsTopicUserView, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsTopicUserViewDao$RecentlyViewedTopicRow(" +
-                            " t.esTopicId, t.topicName, t.esTopicSpaceId, v.lastViewedAt)" +
+                            " t.esTopicId, t.topicName, t.esTopicSpaceId, v.lastViewedAt, t.topicEmoji)" +
                             " from EsTopicUserView v, EsTopic t" +
                             " where v.userId = :userId" +
                             " and t.esTopicId = v.esTopicId" +
@@ -65,6 +65,6 @@ public class EsTopicUserViewDao extends GenericDao<EsTopicUserView, Long> {
     }
 
     public record RecentlyViewedTopicRow(Long esTopicId, String topicName, Long esTopicSpaceId,
-            LocalDateTime lastViewedAt) {
+            LocalDateTime lastViewedAt, String topicEmoji) {
     }
 }

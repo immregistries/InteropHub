@@ -3,8 +3,10 @@ package org.airahub.interophub.servlet;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.PublicUrlService;
@@ -28,6 +30,8 @@ final class InteropAiraPageFactory {
     private static final String LOCAL_ENV_LABEL = "Local";
     private static final String LOCAL_ENV_DESCRIPTION = "Running in localhost mode";
     private static final String SIGNED_IN_USER_FALLBACK = "Signed in user";
+    private static final String WELCOME_CONTEXT_TITLE = "Interoperability Hub";
+    private static final int MAX_WELCOME_SPACE_ITEMS = 5;
 
     private static final AuthFlowService AUTH_FLOW_SERVICE = new AuthFlowService();
     private static final PublicUrlService PUBLIC_URL_SERVICE = new PublicUrlService();
@@ -75,6 +79,26 @@ final class InteropAiraPageFactory {
         return new AiraContextConfig(label, List.of(
                 new AiraNavigationItem("Topics", "/es/topics", topicsActive),
                 new AiraNavigationItem("Meetings", meetingsHref, meetingsActive)));
+    }
+
+    static AiraContextConfig topicSpacePickerContext(List<EsTopicSpace> orderedTopicSpaces) {
+        List<AiraNavigationItem> items = new ArrayList<>();
+        for (EsTopicSpace topicSpace : orderedTopicSpaces) {
+            if (items.size() >= MAX_WELCOME_SPACE_ITEMS) {
+                break;
+            }
+            String spaceCode = trimToNull(topicSpace.getSpaceCode());
+            if (spaceCode == null) {
+                continue;
+            }
+            String spaceName = trimToNull(topicSpace.getSpaceName());
+            items.add(new AiraNavigationItem(
+                    spaceName == null ? "Topic Space" : spaceName,
+                    "/spaces/" + URLEncoder.encode(spaceCode, StandardCharsets.UTF_8).replace("+", "%20")
+                            + "/topics",
+                    false));
+        }
+        return new AiraContextConfig(WELCOME_CONTEXT_TITLE, items);
     }
 
     private static AiraAccountConfig buildAccountConfig(Optional<User> authenticatedUser) {
