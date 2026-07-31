@@ -1,8 +1,15 @@
 # AIRA Web CSS Proposed Changes
 
-This log records reusable AIRA Web styling gaps discovered while adopting `aira.css` in InteropHub. See `docs/aira-web/Migrating Servlets to AIRA CSS.md` section 14 for the process this file follows.
+Start at [`README.md`](README.md) for how this file fits into the InteropHub ↔ aira-web workflow. This log records reusable AIRA Web styling gaps discovered while adopting `aira.css` in InteropHub. See `docs/aira-web/Migrating Servlets to AIRA CSS.md` section 14 for the detailed decision process.
 
-The prior proposal in this file (matrix/board grid table component) was implemented in `0.1.5` and is tracked as resolved in `docs/aira-web/aira-css-changes-revision-5.md`. This file now tracks the next round of findings, targeted for release `0.1.6`.
+Entries below the revision history are the **active queue** — proposals not yet implemented upstream. Once a proposal is resolved, its status changes to `Available in this project` with a resolution note (entries are not deleted, so the full reasoning stays visible here); the revision-history table below is the index across releases.
+
+## Revision history
+
+| Version | Date | Revision notes | Proposals addressed |
+|---|---|---|---|
+| 0.1.5 | 2026-07-31 | [`aira-css-changes-revision-5.md`](aira-css-changes-revision-5.md) | Matrix/board grid table component (`aira-matrix-table`, `aira-entity-card`) |
+| 0.1.6 | 2026-07-31 | [`aira-css-changes-revision-6.md`](aira-css-changes-revision-6.md) | Stronger `aira-matrix-table` grid lines; reliable left alignment for `aira-matrix-table__header-inner` |
 
 ---
 

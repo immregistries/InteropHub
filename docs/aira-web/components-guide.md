@@ -1,6 +1,11 @@
+> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.6`.
+> Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
+
 # AIRA Web Components Guide
 
 `aira-web-components` is a plain Java library for rendering the common AIRA application shell around servlet-generated page content.
+
+The shared CSS is tuned for dense, desktop-first AIRA technical applications. It provides defensive responsive behavior for wrapping, overflow, sidebars, right rails, and browser zoom, but mobile-optimized workflows should be explicit application-specific patterns.
 
 It does not provide a base servlet and does not render page-specific business components. Applications keep their own servlet classes and compose `AiraPage` where they write the response.
 
@@ -106,10 +111,237 @@ The renderer only emits the shell. Page content should use the shared `aira-` CS
 - Badges, tags, and statuses.
 - Cards, panels, choice rows, and empty states.
 - Event lists.
+- Right-rail layouts and compact topic-page patterns.
 - Tables.
 - Alerts.
 - Management sidebars/layouts.
 - Utilities.
+
+### Density, Panels, and Cards
+
+Dense application layouts are the default. Use `aira-panel` or `aira-section-card` for ordinary structural sections. Use `aira-card` for repeated content items. Cards are flat by default; add `aira-card--elevated` only for intentionally emphasized content, floating surfaces, or highlighted cards. Interactive card hover uses the smaller card shadow; reserve elevated shadows for overlays or explicitly elevated content.
+
+```html
+<section class="aira-section-card">
+  <div class="aira-section-card__header">
+    <h2 class="aira-section-card__title">Recent Outcomes</h2>
+  </div>
+  <div class="aira-section-card__body">...</div>
+</section>
+```
+
+### Right-Rail Layout
+
+Use `aira-right-rail-layout` when the main content should remain first in document order and a sticky secondary rail should sit to the right on desktop. The rail is sticky but scrolls naturally with the page; it does not create its own nested scrollbar. The rail stacks below the main content when the viewport can no longer support both columns and is excluded from print.
+
+```html
+<div class="aira-right-rail-layout">
+  <div class="aira-stack">Main topic content</div>
+  <aside class="aira-right-rail" aria-label="Topic activity">Rail content</aside>
+</div>
+```
+
+### Metadata Chips
+
+Use metadata chips for compact label/value facts such as stage, path, champion, visibility, and last updated. Use tags for categorization and badges/status styles for state.
+
+```html
+<span class="aira-meta-chip">
+  <span class="aira-meta-chip__label">Stage</span>
+  <span class="aira-meta-chip__value">Growing Idea</span>
+</span>
+```
+
+### Links
+
+Application links are visually quiet by default: links inside `aira-main` are not underlined until hover. Use `aira-prose` or `aira-inline-link` when inline prose links need to be visibly underlined without hover. Buttons, navigation links, resource links, recently viewed topics, sidebar links, and other structured controls suppress inappropriate underlines through their component styles.
+
+### Tables
+
+Use semantic tables for technical data. The standard header is light and restrained; use `aira-table--brand-header` sparingly when a stronger branded summary is appropriate. Tables preserve columns on narrow screens and should sit inside `aira-table-wrap` for horizontal overflow rather than converting rows into cards or hiding columns.
+
+```html
+<section class="aira-table-panel">
+  <div class="aira-table-panel__header">
+    <div>
+      <h2 class="aira-table-panel__title">Topics under review</h2>
+      <p class="aira-table-panel__description">Current review queue.</p>
+    </div>
+    <div class="aira-table-panel__actions">
+      <button class="aira-button aira-button--small aira-button--secondary" type="button">Export</button>
+    </div>
+  </div>
+  <div class="aira-table-wrap">
+    <table class="aira-table">
+      <caption class="aira-visually-hidden">Topics under review</caption>
+      <thead>
+        <tr>
+          <th scope="col" class="aira-table__cell--primary">Topic</th>
+          <th scope="col">Stage</th>
+          <th scope="col" class="aira-table__cell--date">Last Updated</th>
+          <th scope="col" class="aira-table__cell--actions"><span class="aira-visually-hidden">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr aria-selected="true">
+          <th scope="row" class="aira-table__cell--primary">PHACT <span class="aira-badge aira-badge--subtle">Selected</span></th>
+          <td><span class="aira-badge aira-badge--info">Growing Idea</span></td>
+          <td class="aira-table__cell--date">Jul 2026</td>
+          <td class="aira-table__cell--actions"><a href="/topics/phact">Open</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+```
+
+Standard cell classes include `aira-table__cell--primary`, `aira-table__cell--secondary`, `aira-table__cell--numeric`, `aira-table__cell--date`, `aira-table__cell--nowrap`, `aira-table__cell--actions`, `aira-table__cell--code`, and `aira-table__cell--wrap`.
+
+Sortable headings are presentational only; applications own sorting behavior. Put `aria-sort` on the sorted `th` and include a visible non-color indicator.
+
+```html
+<th scope="col" aria-sort="ascending">
+  <a class="aira-table__sort" href="?sort=topic&amp;direction=desc">Topic <span aria-hidden="true">▲</span></a>
+</th>
+```
+
+Use `aira-table-scroll` with `aira-table--sticky-header` only when a constrained table region is intentional. Empty tables should render one cell with the correct `colspan`.
+
+### Matrix Tables and Entity Cards
+
+Use `aira-matrix-table` for two-axis boards where a row header and column header both define the meaning of each cell. The wrapper supports two-direction scrolling; the corner, column headers, and row headers remain sticky while the matrix scrolls. Header labels stay left-aligned whether or not a trailing control is present.
+
+Use `aira-entity-card` for compact records inside matrix cells or other dense lists. The leading handle and trailing action are optional. Applications own drag-and-drop behavior, dialogs, and data-grid logic.
+
+```html
+<div class="aira-matrix-table-wrap">
+  <table class="aira-matrix-table">
+    <caption class="aira-visually-hidden">Topic board by path and stage</caption>
+    <thead>
+      <tr>
+        <th scope="col" class="aira-matrix-table__corner">
+          <div class="aira-matrix-table__header-inner">
+            <span class="aira-matrix-table__label">Path / Stage</span>
+          </div>
+        </th>
+        <th scope="col" class="aira-matrix-table__col-header">
+          <div class="aira-matrix-table__header-inner">
+            <span class="aira-matrix-table__label">Growing Idea</span>
+            <button class="aira-button aira-button--small aira-button--ghost" type="button">Add</button>
+          </div>
+        </th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row" class="aira-matrix-table__row-header">
+          <div class="aira-matrix-table__header-inner">
+            <span class="aira-matrix-table__label">Leadership Review</span>
+          </div>
+        </th>
+        <td class="aira-matrix-table__cell">
+          <div class="aira-stack aira-stack--compact">
+            <article class="aira-entity-card">
+              <span class="aira-entity-card__handle" aria-hidden="true">::</span>
+              <a class="aira-entity-card__title" href="/topics/phact">PHACT</a>
+              <a class="aira-entity-card__action" href="/topics/phact">Open</a>
+            </article>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <th scope="row" class="aira-matrix-table__row-header">Inactive path</th>
+        <td class="aira-matrix-table__cell aira-matrix-table__cell--disabled">Not used for this path</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+```
+
+### Buttons and Actions
+
+Use shared button variants before defining application-specific action colors:
+
+| Variant | Intended use |
+|---|---|
+| `aira-button--primary` | Main action for the page or workflow step. |
+| `aira-button--secondary` | Standard alternative action with clear affordance. |
+| `aira-button--tertiary` | Low-emphasis action that should still read as a button, more visible than link style and less dominant than secondary. |
+| `aira-button--ghost` | Quiet action inside dense toolbars or secondary action groups. |
+| `aira-button--link` | Inline or text-like action where button chrome would add too much weight. |
+| `aira-button--success` | Explicit positive/confirming action when the action outcome is semantic. |
+| `aira-button--danger` | Destructive or negative action. |
+
+Button variants work on both native buttons and links:
+
+```html
+<button class="aira-button aira-button--tertiary" type="button">Preview</button>
+<a class="aira-button aira-button--tertiary" href="/reports">Open report</a>
+```
+
+### Badges and Status Guidance
+
+Use shared badge variants for status labels and secondary metadata before defining local status colors. The CSS contract includes `aira-badge`, `aira-badge--outline`, `aira-badge--subtle`, `aira-badge--info`, `aira-badge--success`, `aira-badge--warning`, and `aira-badge--danger`.
+
+`aira-badge--subtle` is for low-emphasis metadata, counts, secondary state, or labels that should read softer than semantic information, success, warning, or danger.
+
+```html
+<span class="aira-badge aira-badge--subtle">Draft</span>
+<span class="aira-badge aira-badge--info">Proposed</span>
+```
+
+Recommended baseline status mapping:
+
+| Domain status meaning | Recommended shared badge variant |
+|---|---|
+| Neutral or draft | `aira-badge--outline` or `aira-badge--subtle` |
+| Informational or proposed | `aira-badge--info` |
+| Positive, accepted, or finalized | `aira-badge--success` |
+| Caution, needs revision, or postponed | `aira-badge--warning` |
+| Negative, cancelled, or blocked | `aira-badge--danger` |
+
+This mapping is guidance for consistent presentation. Applications remain responsible for their own domain logic and status text.
+
+### Topic and Meeting Components
+
+Topic pages can compose `aira-topic-header`, `aira-topic-status-grid`, `aira-topic-overview`, `aira-figure`, `aira-outcome-list`, `aira-meeting-list`, `aira-relationship-list`, `aira-resource-grid`, `aira-recent-topic`, and `aira-topic-details-strip`.
+
+Stage and Path status cards use white surfaces with restrained left-border accents. Stage uses the warning accent and Path uses the information accent.
+
+Use `aira-figure` for screenshots, diagrams, architecture graphics, and explanatory images. `aira-topic-overview` supports overview text beside an optional figure. Add `aira-figure--scroll` when a technical diagram must retain its natural width and scroll horizontally inside the frame.
+
+```html
+<figure class="aira-figure">
+  <div class="aira-figure__frame">
+    <img class="aira-figure__image" src="/images/topic-diagram.svg" alt="Diagram explaining the topic concept">
+  </div>
+  <figcaption class="aira-figure__caption">Topic concept overview</figcaption>
+</figure>
+```
+
+```html
+<div class="aira-outcome-list">
+  <article class="aira-outcome-row">
+    <span class="aira-outcome-row__type aira-badge aira-badge--info">Decision</span>
+    <span class="aira-outcome-row__summary">Use leadership review as the next checkpoint.</span>
+    <span class="aira-outcome-row__source">Leadership Review</span>
+    <span class="aira-outcome-row__date">Jul 2026</span>
+    <a class="aira-outcome-row__action" href="/meetings/summary">View meeting summary</a>
+  </article>
+</div>
+```
+
+Use compact meeting rows for summaries inside dashboards or topic pages. Keep the larger event-row component for more prominent event lists.
+
+```html
+<article class="aira-meeting-row">
+  <span class="aira-meeting-row__title">Immunization Focus Group</span>
+  <span class="aira-meeting-row__meta">Aug 2026</span>
+  <a class="aira-meeting-row__action" href="/meetings/focus-group">Open meeting</a>
+</article>
+```
+
+Default table padding is already compact for technical applications.
 
 ## Deliberately Not Included
 

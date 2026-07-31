@@ -1,6 +1,11 @@
+> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.6`.
+> Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
+
 # AIRA Web Adoption Guide
 
 This guide explains how Java Servlet applications can adopt shared AIRA web resources.
+
+AIRA Web is intended for dense AIRA-branded technical applications, not AIRA marketing or public-facing website pages. The default stylesheet favors compact operational layouts, desktop information density, and predictable application controls while preserving AIRA identity and accessibility support.
 
 ## Maven Dependencies
 
@@ -10,7 +15,7 @@ Use `aira-web-theme` when an application only needs shared static resources:
 <dependency>
   <groupId>org.immregistries</groupId>
   <artifactId>aira-web-theme</artifactId>
-  <version>0.1.3</version>
+  <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -20,7 +25,7 @@ Use `aira-web-components` when an application also wants the generated AIRA shel
 <dependency>
   <groupId>org.immregistries</groupId>
   <artifactId>aira-web-components</artifactId>
-  <version>0.1.3</version>
+  <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -131,6 +136,68 @@ page.writeEnd(writer);
 The stable public CSS contract is the `aira-` class namespace and the CSS custom properties. The theme provides component categories for shell, layout, typography, buttons, forms, badges, cards, choice rows, event lists, tables, alerts, management layouts, footer, and small utilities.
 
 Applications may add local classes for domain-specific composition. They should not duplicate or redefine the shared shell, footer, brand tokens, button system, form controls, or table baseline.
+
+Layouts are desktop-first. The core CSS provides defensive wrapping and overflow behavior for headers, search, tables, technical figures, sidebars, right rails, and browser zoom. Mobile-optimized task flows should be explicit application-specific patterns rather than implicit overrides of every shared component.
+
+Links in `aira-main` are intentionally quiet and underline on hover. Use `aira-prose` or `aira-inline-link` when inline prose links should be underlined without hover.
+
+First-release shared variants include:
+
+| Component | Public variants |
+|---|---|
+| Buttons | `aira-button--primary`, `aira-button--secondary`, `aira-button--tertiary`, `aira-button--success`, `aira-button--danger`, `aira-button--ghost`, `aira-button--link`, `aira-button--small`, `aira-button--icon` |
+| Badges | `aira-badge`, `aira-badge--outline`, `aira-badge--subtle`, `aira-badge--info`, `aira-badge--success`, `aira-badge--warning`, `aira-badge--danger` |
+
+Use `aira-button--tertiary` for low-emphasis actions that should still look like actionable controls. It is appropriate for preview, refresh, view details, or optional workflow actions that need more presence than `aira-button--link` but less emphasis than `aira-button--secondary`.
+
+Use `aira-badge--subtle` for secondary metadata and low-emphasis status labels. It should read softer than `info`, `success`, `warning`, or `danger` while retaining readable text contrast in the light theme.
+
+Prefer shared badge variants before defining local status colors. Recommended baseline mapping:
+
+| Domain status meaning | Recommended shared badge variant |
+|---|---|
+| Neutral or draft | `aira-badge--outline` or `aira-badge--subtle` |
+| Informational or proposed | `aira-badge--info` |
+| Positive, accepted, or finalized | `aira-badge--success` |
+| Caution, needs revision, or postponed | `aira-badge--warning` |
+| Negative, cancelled, or blocked | `aira-badge--danger` |
+
+This mapping is presentation guidance only. Applications should keep domain-specific status logic in application code.
+
+Use panels, cards, and elevation deliberately:
+
+| Pattern | Use |
+|---|---|
+| `aira-panel` | General grouped application sections and forms. |
+| `aira-section-card` | Compact dashboard/topic sections with a header and body. |
+| `aira-card` | Repeated content items such as resources or topic summaries. |
+| `aira-card--elevated` | Emphasized or intentionally highlighted cards only. |
+
+Use `aira-right-rail-layout` for pages with a sticky secondary rail:
+
+```html
+<div class="aira-right-rail-layout">
+  <div class="aira-stack">Main content appears first in document order.</div>
+  <aside class="aira-right-rail" aria-label="Recently viewed topics">...</aside>
+</div>
+```
+
+The right rail scrolls naturally with the page and is excluded from print so the main content can use the printable width.
+
+Use `aira-meta-chip` for label/value metadata, not for categorical tags or semantic statuses:
+
+```html
+<span class="aira-meta-chip">
+  <span class="aira-meta-chip__label">Path</span>
+  <span class="aira-meta-chip__value">Leadership Review</span>
+</span>
+```
+
+The theme also includes compact topic-page components for curated outcomes, meeting summaries, related-topic rows, resource links, recently viewed topics, figures, and bottom topic detail strips. Outcome rows use explicitly named fields for type, summary, source, date, and action. Stage and Path cards use white surfaces with restrained warning or information accents. These are presentational building blocks only; applications keep meeting, task, intake, and domain rules in application code.
+
+Default table density is already compact for technical applications.
+
+Tables use light headers by default and should remain semantic HTML tables. Wrap wide tables in `aira-table-wrap` so columns scroll horizontally instead of being hidden or converted into cards. Use `aira-table-panel` when a table needs a title, description, or actions. Use `aira-table--brand-header` only for occasional branded summary tables, `aira-table__sort` with `aria-sort` for application-owned sorting controls, `aira-table-scroll` plus `aira-table--sticky-header` for explicit constrained scrolling, and `aira-table__empty` for no-records states.
 
 ## Application-Specific Behavior
 
