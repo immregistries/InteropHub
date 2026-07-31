@@ -364,6 +364,49 @@ public class TopicBoardService {
         }
     }
 
+    public PlacementResult clearPlacement(String boardCode, Long topicId, User actingUser) {
+        if (actingUser == null || actingUser.getUserId() == null) {
+            throw new ValidationException("Authentication is required.");
+        }
+        if (topicId == null) {
+            throw new ValidationException("Topic is required.");
+        }
+
+        BoardView boardView = loadBoardByCodeForDisplay(boardCode, actingUser)
+                .orElseThrow(() -> new ValidationException("Board was not found."));
+
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+
+            EsTopic topic = session.get(EsTopic.class, topicId);
+            if (topic == null || topic.getStatus() != EsTopic.EsTopicStatus.ACTIVE) {
+                throw new ValidationException("Topic was not found.");
+            }
+            if (!boardView.board().getEsTopicSpaceId().equals(topic.getEsTopicSpaceId())) {
+                throw new ValidationException("Topic does not belong to this board's Topic Space.");
+            }
+
+            topic.setEsTopicStageDefinitionId(null);
+            topic.setEsTopicPathDefinitionId(null);
+            topic.setStage(null);
+            topic.setPath(null);
+            session.merge(topic);
+
+            tx.commit();
+
+            new DandelionSyncService().enqueueTopicUpsert(topic.getEsTopicId());
+
+            return new PlacementResult(topic.getEsTopicId(), safe(topic.getTopicName()), null, null,
+                    boardView.isCurated());
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public void removeFromCuratedBoard(String boardCode, Long topicId, User actingUser) {
         if (actingUser == null || actingUser.getUserId() == null) {
             throw new ValidationException("Authentication is required.");

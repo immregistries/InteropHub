@@ -197,7 +197,7 @@ public class EsTopicsServlet extends HttpServlet {
             out.println("        <div class=\"aira-stack\">");
 
             if (showOverview && primaryBoard.isPresent()) {
-                renderBoard(out, contextPath, primaryBoard.get());
+                renderBoard(out, contextPath, primaryBoard.get(), authenticatedUser.isPresent());
             }
 
             if (showOverview) {
@@ -341,14 +341,20 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("          </div>");
     }
 
-    private void renderBoard(PrintWriter out, String contextPath, TopicBoardService.BoardView boardView) {
+    private void renderBoard(PrintWriter out, String contextPath, TopicBoardService.BoardView boardView,
+            boolean canEdit) {
         List<EsTopicStageDefinition> stages = boardView.displayedStages();
         List<EsTopicPathDefinition> paths = boardView.displayedPaths();
         Map<TopicBoardService.CellKey, List<TopicBoardService.TopicCard>> cardsByCell = boardView.cardsByCell();
 
         out.println("          <section class=\"aira-section-card\">");
         out.println("            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">"
-                + escapeHtml(orEmpty(boardView.board().getBoardName())) + "</h2></div>");
+                + escapeHtml(orEmpty(boardView.board().getBoardName())) + "</h2>");
+        if (canEdit) {
+            out.println("              <a class=\"aira-section-card__action\" href=\"" + contextPath
+                    + "/es/board/" + escapeHtml(orEmpty(boardView.board().getBoardCode())) + "\">Edit board</a>");
+        }
+        out.println("            </div>");
         out.println("            <div class=\"aira-section-card__body\">");
 
         if (stages.isEmpty()) {
@@ -365,19 +371,22 @@ public class EsTopicsServlet extends HttpServlet {
             return cards != null && !cards.isEmpty();
         });
 
-        out.println("              <div class=\"aira-table-wrap\">");
-        out.println("                <table class=\"aira-table\">");
+        out.println("              <div class=\"aira-matrix-table-wrap\">");
+        out.println("                <table class=\"aira-matrix-table\">");
         out.println("                  <thead>");
-        out.println("                    <tr><th scope=\"col\">Path</th>");
+        out.println(
+                "                    <tr><th class=\"aira-matrix-table__corner\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">Path</span></div></th>");
         for (EsTopicStageDefinition stage : stages) {
-            out.println("<th scope=\"col\">" + escapeHtml(orEmpty(stage.getStageName())) + "</th>");
+            out.println("<th class=\"aira-matrix-table__col-header\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">"
+                    + escapeHtml(orEmpty(stage.getStageName())) + "</span></div></th>");
         }
         out.println("</tr>");
         out.println("                  </thead>");
         out.println("                  <tbody>");
         for (EsTopicPathDefinition path : paths) {
-            out.println("                    <tr><th scope=\"row\">" + escapeHtml(orEmpty(path.getPathName()))
-                    + "</th>");
+            out.println(
+                    "                    <tr><th class=\"aira-matrix-table__row-header\" scope=\"row\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">"
+                            + escapeHtml(orEmpty(path.getPathName())) + "</span></div></th>");
             for (EsTopicStageDefinition stage : stages) {
                 renderBoardCell(out, contextPath, cardsByCell.get(new TopicBoardService.CellKey(
                         stage.getEsTopicStageDefinitionId(), path.getEsTopicPathDefinitionId())));
@@ -385,7 +394,8 @@ public class EsTopicsServlet extends HttpServlet {
             out.println("</tr>");
         }
         if (hasUnassignedPathCards) {
-            out.println("                    <tr><th scope=\"row\">No Path</th>");
+            out.println(
+                    "                    <tr><th class=\"aira-matrix-table__row-header\" scope=\"row\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">No Path</span></div></th>");
             for (EsTopicStageDefinition stage : stages) {
                 renderBoardCell(out, contextPath,
                         cardsByCell.get(new TopicBoardService.CellKey(stage.getEsTopicStageDefinitionId(), null)));
@@ -402,13 +412,14 @@ public class EsTopicsServlet extends HttpServlet {
     private void renderBoardCell(PrintWriter out, String contextPath,
             List<TopicBoardService.TopicCard> cards) {
         if (cards == null || cards.isEmpty()) {
-            out.println("<td></td>");
+            out.println("<td class=\"aira-matrix-table__cell\"></td>");
             return;
         }
-        out.println("<td><div class=\"aira-stack aira-stack--compact\">");
+        out.println("<td class=\"aira-matrix-table__cell\"><div class=\"aira-stack aira-stack--compact\">");
         for (TopicBoardService.TopicCard card : cards) {
-            out.println("<a class=\"aira-link\" href=\"" + contextPath + "/es/topic/" + card.topicId() + "\">"
-                    + escapeHtml(card.topicName()) + "</a>");
+            out.println("<article class=\"aira-entity-card\"><a class=\"aira-entity-card__title\" href=\""
+                    + contextPath + "/es/topic/" + card.topicId() + "\">"
+                    + escapeHtml(card.topicName()) + "</a></article>");
         }
         out.println("</div></td>");
     }

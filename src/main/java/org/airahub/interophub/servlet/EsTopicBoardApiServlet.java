@@ -42,6 +42,9 @@ public class EsTopicBoardApiServlet extends HttpServlet {
                 case "place":
                     handlePlace(request, response);
                     return;
+                case "clear":
+                    handleClear(request, response);
+                    return;
                 case "remove":
                     handleRemove(request, response);
                     return;
@@ -129,6 +132,34 @@ public class EsTopicBoardApiServlet extends HttpServlet {
                 out.print(placement.pathDefinitionId());
             }
             out.print(",\"curatedBoard\":");
+            out.print(placement.curatedBoard());
+            out.print("}");
+        }
+    }
+
+    private void handleClear(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Optional<User> user = authFlowService.findAuthenticatedUser(request);
+        if (user.isEmpty()) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            writeError(response, "Authentication is required.");
+            return;
+        }
+
+        String boardCode = trimToNull(request.getParameter("boardCode"));
+        Long topicId = parseLong(request.getParameter("topicId"));
+
+        TopicBoardService.PlacementResult placement = topicBoardService.clearPlacement(boardCode, topicId,
+                user.get());
+
+        try (PrintWriter out = response.getWriter()) {
+            out.print("{\"ok\":true,\"topic\":{");
+            out.print("\"topicId\":");
+            out.print(placement.topicId());
+            out.print(",\"topicName\":\"");
+            out.print(escapeJson(placement.topicName()));
+            out.print("\",\"topicUrl\":\"");
+            out.print(escapeJson(request.getContextPath() + "/es/topic/" + placement.topicId()));
+            out.print("\"},\"curatedBoard\":");
             out.print(placement.curatedBoard());
             out.print("}");
         }

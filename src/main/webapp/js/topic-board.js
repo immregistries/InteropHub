@@ -10,13 +10,20 @@
     + window.location.pathname.split('/es/board/')[0]
     + '/es/board/action';
 
+  const addModal = document.getElementById('tb-add-modal');
+  const addModalTitle = document.getElementById('tb-add-modal-title');
+  const addModalInput = document.getElementById('tb-add-modal-input');
+  const addModalResults = document.getElementById('tb-add-modal-results');
+  const addModalCancel = document.getElementById('tb-add-modal-cancel');
+  const pendingPathId = addModal ? (addModal.dataset.firstPathId || '') : '';
+
   let draggedTopicId = null;
+  let pendingStageId = '';
 
   shell.addEventListener('click', function (event) {
-    const addToggle = event.target.closest('.tb-add-toggle');
-    if (addToggle) {
-      const cell = addToggle.closest('.tb-cell');
-      toggleAddPanel(cell);
+    const headerAdd = event.target.closest('.tb-header-add');
+    if (headerAdd) {
+      openAddModal(headerAdd.dataset.stageId || '', headerAdd.dataset.stageName || '');
       return;
     }
 
@@ -32,34 +39,57 @@
     }
 
     const searchOption = event.target.closest('.tb-search-option');
-    if (searchOption) {
-      const panel = searchOption.closest('.tb-add-panel');
-      const cell = searchOption.closest('.tb-cell');
-      if (!panel || !cell) {
-        return;
-      }
+    if (searchOption && addModal && addModal.open) {
       const topicId = searchOption.dataset.topicId;
-      placeTopicInCell(topicId, cell, panel);
+      placeTopic(topicId, pendingStageId, pendingPathId, function () {
+        if (addModal.open) {
+          addModal.close();
+        }
+      });
       return;
     }
   });
 
-  shell.addEventListener('input', function (event) {
-    const input = event.target.closest('.tb-add-input');
-    if (!input) {
+  if (addModalInput) {
+    addModalInput.addEventListener('input', function () {
+      searchTopics(addModalResults, addModalInput.value || '');
+    });
+    addModalInput.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+      }
+    });
+  }
+
+  if (addModalCancel && addModal) {
+    addModalCancel.addEventListener('click', function () {
+      addModal.close();
+    });
+  }
+
+  function openAddModal(stageId, stageName) {
+    if (!addModal) {
       return;
     }
-    const panel = input.closest('.tb-add-panel');
-    const query = input.value || '';
-    searchTopics(panel, query);
-  });
+    pendingStageId = stageId || '';
+    if (addModalTitle) {
+      addModalTitle.textContent = stageName ? ('Add topic to ' + stageName) : 'Add topic';
+    }
+    if (addModalInput) {
+      addModalInput.value = '';
+    }
+    if (addModalResults) {
+      addModalResults.innerHTML = '';
+    }
+    addModal.showModal();
+    if (addModalInput) {
+      addModalInput.focus();
+    }
+    searchTopics(addModalResults, '');
+  }
 
   shell.addEventListener('dragstart', function (event) {
-    const handle = event.target.closest('.tb-drag-handle');
-    if (!handle) {
-      return;
-    }
-    const card = handle.closest('.tb-card');
+    const card = event.target.closest('.tb-card');
     if (!card) {
       return;
     }
@@ -75,64 +105,61 @@
     clearDropTargets();
   });
 
-  shell.addEventListener('dragover', function (event) {
-    const cell = event.target.closest('.tb-cell');
-    if (!cell || !draggedTopicId) {
+  shell.addEventListener('dragenter', function (event) {
+    const zone = event.target.closest('.tb-drop-zone');
+    if (!zone || !draggedTopicId) {
       return;
     }
     event.preventDefault();
-    cell.classList.add('tb-drop-target');
+    zone.classList.add(isTrashZone(zone) ? 'tb-drop-target-trash' : 'tb-drop-target');
+  });
+
+  shell.addEventListener('dragover', function (event) {
+    const zone = event.target.closest('.tb-drop-zone');
+    if (!zone || !draggedTopicId) {
+      return;
+    }
+    event.preventDefault();
+    zone.classList.add(isTrashZone(zone) ? 'tb-drop-target-trash' : 'tb-drop-target');
   });
 
   shell.addEventListener('dragleave', function (event) {
-    const cell = event.target.closest('.tb-cell');
-    if (!cell) {
+    const zone = event.target.closest('.tb-drop-zone');
+    if (!zone) {
       return;
     }
-    cell.classList.remove('tb-drop-target');
+    zone.classList.remove('tb-drop-target');
+    zone.classList.remove('tb-drop-target-trash');
   });
 
   shell.addEventListener('drop', function (event) {
-    const cell = event.target.closest('.tb-cell');
-    if (!cell || !draggedTopicId) {
+    const zone = event.target.closest('.tb-drop-zone');
+    if (!zone || !draggedTopicId) {
       return;
     }
     event.preventDefault();
-    placeTopicInCell(draggedTopicId, cell, null);
+    const topicId = draggedTopicId;
+    if (isTrashZone(zone)) {
+      clearTopic(topicId);
+    } else {
+      placeTopic(topicId, zone.dataset.stageId || '', zone.dataset.pathId || '');
+    }
     draggedTopicId = null;
     clearDropTargets();
   });
 
+  function isTrashZone(zone) {
+    return zone.classList.contains('tb-path--trash');
+  }
+
   function clearDropTargets() {
-    shell.querySelectorAll('.tb-drop-target').forEach(function (cell) {
-      cell.classList.remove('tb-drop-target');
+    shell.querySelectorAll('.tb-drop-target, .tb-drop-target-trash').forEach(function (zone) {
+      zone.classList.remove('tb-drop-target');
+      zone.classList.remove('tb-drop-target-trash');
     });
   }
 
-  function toggleAddPanel(cell) {
-    if (!cell) {
-      return;
-    }
-    const panel = cell.querySelector('.tb-add-panel');
-    if (!panel) {
-      return;
-    }
-    const hidden = panel.hasAttribute('hidden');
-    panel.toggleAttribute('hidden');
-    if (hidden) {
-      const input = panel.querySelector('.tb-add-input');
-      if (input) {
-        input.focus();
-        searchTopics(panel, input.value || '');
-      }
-    }
-  }
-
-  function searchTopics(panel, query) {
-    if (!panel) {
-      return;
-    }
-    const resultsList = panel.querySelector('.tb-search-results');
+  function searchTopics(resultsList, query) {
     if (!resultsList) {
       return;
     }
@@ -155,8 +182,8 @@
         }
         renderSearchResults(resultsList, json.topics || []);
       })
-      .catch(function () {
-        renderSearchResults(resultsList, []);
+      .catch(function (err) {
+        renderSearchError(resultsList, (err && err.message) ? err.message : 'Unable to search topics.');
       });
   }
 
@@ -184,7 +211,7 @@
 
       const sub = document.createElement('span');
       sub.className = 'tb-search-sub';
-      sub.textContent = (topic.currentStage || 'Not assigned') + ' · ' + (topic.currentPath || 'Not assigned');
+      sub.textContent = (topic.currentStage || 'Not assigned') + ' \u00b7 ' + (topic.currentPath || 'Not assigned');
       button.appendChild(sub);
 
       li.appendChild(button);
@@ -192,8 +219,25 @@
     });
   }
 
-  function placeTopicInCell(topicId, cell, panelToClose) {
-    if (!topicId || !cell) {
+  function renderSearchError(resultsList, message) {
+    resultsList.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'tb-empty tb-error';
+    li.textContent = message;
+    resultsList.appendChild(li);
+  }
+
+  function findCell(stageId, pathId) {
+    const selector = '.tb-cell[data-stage-id="' + cssEscape(stageId) + '"][data-path-id="' + cssEscape(pathId) + '"]';
+    return shell.querySelector(selector);
+  }
+
+  function cssEscape(value) {
+    return String(value == null ? '' : value).replace(/["\\]/g, '\\$&');
+  }
+
+  function placeTopic(topicId, stageId, pathId, onSuccess) {
+    if (!topicId) {
       return;
     }
 
@@ -201,8 +245,8 @@
     body.set('action', 'place');
     body.set('boardCode', boardCode);
     body.set('topicId', topicId);
-    body.set('stageDefinitionId', cell.dataset.stageId || '');
-    body.set('pathDefinitionId', cell.dataset.pathId || '');
+    body.set('stageDefinitionId', stageId || '');
+    body.set('pathDefinitionId', pathId || '');
 
     fetch(apiUrl, {
       method: 'POST',
@@ -214,12 +258,41 @@
         if (!json.ok) {
           throw new Error(json.error || 'Place failed');
         }
-        if (panelToClose) {
-          panelToClose.setAttribute('hidden', 'hidden');
+        moveOrInsertCard(json.topic, json.curatedBoard, findCell(stageId || '', pathId || ''));
+        if (onSuccess) {
+          onSuccess();
         }
-        moveOrInsertCard(json.topic, json.curatedBoard, cell);
       })
-      .catch(function () {
+      .catch(function (err) {
+        window.alert((err && err.message) ? err.message : 'Unable to place topic on the board.');
+        window.location.reload();
+      });
+  }
+
+  function clearTopic(topicId) {
+    if (!topicId) {
+      return;
+    }
+
+    const body = new URLSearchParams();
+    body.set('action', 'clear');
+    body.set('boardCode', boardCode);
+    body.set('topicId', topicId);
+
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+      body: body.toString()
+    })
+      .then(readJson)
+      .then(function (json) {
+        if (!json.ok) {
+          throw new Error(json.error || 'Remove failed');
+        }
+        moveOrInsertCard(json.topic, json.curatedBoard, findCell('', ''));
+      })
+      .catch(function (err) {
+        window.alert((err && err.message) ? err.message : 'Unable to remove topic from the board.');
         window.location.reload();
       });
   }
@@ -246,7 +319,8 @@
         }
         removeCardEverywhere(topicId);
       })
-      .catch(function () {
+      .catch(function (err) {
+        window.alert((err && err.message) ? err.message : 'Unable to remove topic from the board.');
         window.location.reload();
       });
   }
@@ -254,6 +328,9 @@
   function moveOrInsertCard(topic, curatedBoard, targetCell) {
     removeCardEverywhere(topic.topicId);
 
+    if (!targetCell) {
+      return;
+    }
     const cardsContainer = targetCell.querySelector('.tb-cards');
     if (!cardsContainer) {
       return;
@@ -272,12 +349,13 @@
 
   function buildCard(topic, curatedBoard) {
     const article = document.createElement('article');
-    article.className = 'tb-card';
+    article.className = 'aira-entity-card tb-card';
+    article.setAttribute('draggable', 'true');
     article.dataset.topicId = String(topic.topicId);
 
     const handle = document.createElement('button');
     handle.type = 'button';
-    handle.className = 'tb-drag-handle';
+    handle.className = 'aira-entity-card__handle tb-drag-handle';
     handle.setAttribute('draggable', 'true');
     handle.setAttribute('title', 'Move topic');
     handle.setAttribute('aria-label', 'Move topic');
@@ -285,7 +363,8 @@
     article.appendChild(handle);
 
     const link = document.createElement('a');
-    link.className = 'tb-topic-link';
+    link.className = 'aira-entity-card__title tb-topic-link';
+    link.setAttribute('draggable', 'false');
     link.href = topic.topicUrl;
     link.textContent = topic.topicName || '';
     article.appendChild(link);
@@ -293,7 +372,7 @@
     if (curatedBoard) {
       const remove = document.createElement('button');
       remove.type = 'button';
-      remove.className = 'tb-remove-btn';
+      remove.className = 'aira-entity-card__action aira-danger-text tb-remove-btn';
       remove.setAttribute('title', 'Remove from board');
       remove.setAttribute('aria-label', 'Remove from board');
       remove.textContent = 'Remove from board';

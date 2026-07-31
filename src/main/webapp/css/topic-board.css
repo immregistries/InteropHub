@@ -1,78 +1,35 @@
-.interophub-topic-board-main .tb-shell {
-  border: 1px solid var(--aira-border-subtle, #dbe3ea);
-  border-radius: 12px;
-  background: #ffffff;
-  padding: 0.75rem;
+/*
+ * Board structure, header/cell layout, and card visuals come from the shared
+ * aira-matrix-table / aira-entity-card components (aira-web-components 0.1.5+).
+ * This stylesheet only carries drag-and-drop and other interactive states
+ * that AIRA Web deliberately does not provide. See
+ * docs/aira-web/aira-css-changes-revision-5.md.
+ */
+
+.interophub-topic-board-main .tb-header-add {
+  flex: 0 0 auto;
+  border: 1px solid #1b5f93;
+  background: #0b6fb8;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  cursor: pointer;
 }
 
-.interophub-topic-board-main .tb-board-scroll {
-  overflow: auto;
-  max-width: 100%;
+.interophub-topic-board-main .tb-path--trash {
+  background: var(--aira-error-surface, #fffafa);
 }
 
-.interophub-topic-board-main .tb-board {
-  border-collapse: separate;
-  border-spacing: 0;
-  width: max(100%, 980px);
-  table-layout: fixed;
-}
-
-.interophub-topic-board-main .tb-board th,
-.interophub-topic-board-main .tb-board td {
-  border: 1px solid #d7e1e9;
-  vertical-align: top;
-  background: #fff;
-}
-
-.interophub-topic-board-main .tb-corner {
-  position: sticky;
-  left: 0;
-  top: 0;
-  z-index: 4;
-  min-width: 210px;
-  max-width: 210px;
-  background: #f4f8fb;
-  padding: 0.6rem;
-}
-
-.interophub-topic-board-main .tb-stage {
-  position: sticky;
-  top: 0;
-  z-index: 3;
-  min-width: 240px;
-  background: #f4f8fb;
-  padding: 0.6rem;
-}
-
-.interophub-topic-board-main .tb-path {
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  min-width: 210px;
-  max-width: 210px;
-  background: #f8fbfd;
-  padding: 0.55rem;
-}
-
-.interophub-topic-board-main .tb-cell {
-  min-width: 240px;
-  padding: 0.45rem;
-}
-
-.interophub-topic-board-main .tb-cell-controls {
-  margin-bottom: 0.4rem;
-}
-
-.interophub-topic-board-main .tb-add-toggle {
-  width: 100%;
-}
-
-.interophub-topic-board-main .tb-add-panel {
-  border: 1px solid #d7e1e9;
-  border-radius: 8px;
-  padding: 0.4rem;
-  margin-bottom: 0.45rem;
-  background: #fbfdff;
+.interophub-topic-board-main .tb-trash-toggle {
+  flex: 0 0 auto;
+  border: 1px solid var(--aira-danger, #b42318);
+  background: var(--aira-error-surface, #fff6f6);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: default;
 }
 
 .interophub-topic-board-main .tb-add-label {
@@ -125,57 +82,35 @@
   font-size: 0.82rem;
 }
 
-.interophub-topic-board-main .tb-cards {
-  display: grid;
-  gap: 0.4rem;
+/* Drag-and-drop is not part of the shared aira-entity-card contract. */
+.interophub-topic-board-main .tb-card {
+  cursor: grab;
 }
 
-.interophub-topic-board-main .tb-card {
-  display: grid;
-  grid-template-columns: 1.5rem 1fr auto;
-  gap: 0.4rem;
-  align-items: center;
-  border: 1px solid #d7e1e9;
-  border-radius: 8px;
-  background: #ffffff;
-  padding: 0.35rem 0.4rem;
+.interophub-topic-board-main .tb-card:active {
+  cursor: grabbing;
 }
 
 .interophub-topic-board-main .tb-drag-handle {
-  border: 1px solid #bfd0de;
-  background: #f2f8fd;
-  border-radius: 5px;
   cursor: grab;
-  line-height: 1;
-  padding: 0.2rem;
 }
 
 .interophub-topic-board-main .tb-drag-handle:active {
   cursor: grabbing;
 }
 
+/* Overrides the inherited grab cursor from .tb-card for the link itself. */
 .interophub-topic-board-main .tb-topic-link {
-  color: #084d7a;
-  text-decoration: none;
-  font-weight: 600;
-  font-size: 0.92rem;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  cursor: pointer;
 }
 
-.interophub-topic-board-main .tb-topic-link:hover {
-  text-decoration: underline;
-}
-
+/* Resets native button chrome so the action reads as the plain-text
+   aira-entity-card__action style rather than a default <button>. */
 .interophub-topic-board-main .tb-remove-btn {
-  border: 1px solid #d8c1c1;
-  background: #fff6f6;
-  color: #8a1f1f;
-  border-radius: 6px;
-  padding: 0.2rem 0.35rem;
-  font-size: 0.75rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
   cursor: pointer;
 }
 
@@ -184,8 +119,33 @@
   outline-offset: -3px;
 }
 
+.interophub-topic-board-main .tb-drop-target-trash {
+  outline: 2px dashed #b53a3a;
+  outline-offset: -3px;
+  background: #fff0f0;
+}
+
+#tb-add-modal {
+  border: 1px solid #d7e1e9;
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+#tb-add-modal::backdrop {
+  background: rgba(15, 23, 32, 0.45);
+}
+
+#tb-add-modal .tb-search-results {
+  max-height: 260px;
+}
+
 .interophub-topic-board-main .tb-empty {
   color: #657381;
   font-size: 0.82rem;
   padding: 0.25rem;
+}
+
+.interophub-topic-board-main .tb-error {
+  color: var(--aira-danger, #8a1f1f);
+  font-weight: 600;
 }
