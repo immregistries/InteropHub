@@ -21,6 +21,16 @@ public class EsTopicSpace {
         PRIVATE
     }
 
+    /** Fallback shown wherever a Topic Space hasn't set its own "what does Stage mean here" text. */
+    public static final String DEFAULT_STAGE_CONCEPT_DESCRIPTION =
+            "A Stage marks how far along a topic currently is, from first being raised through active work"
+                    + " to being ready for broader use.";
+
+    /** Fallback shown wherever a Topic Space hasn't set its own "what does Advancement Path mean here" text. */
+    public static final String DEFAULT_PATH_CONCEPT_DESCRIPTION =
+            "An Advancement Path describes what a topic currently needs in order to keep moving forward,"
+                    + " such as funding, a decision, technical direction, or outside participation.";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "es_topic_space_id")
@@ -34,6 +44,12 @@ public class EsTopicSpace {
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
+
+    @Column(name = "stage_concept_description", columnDefinition = "TEXT")
+    private String stageConceptDescription;
+
+    @Column(name = "path_concept_description", columnDefinition = "TEXT")
+    private String pathConceptDescription;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "visibility", nullable = false, length = 16)
@@ -104,6 +120,22 @@ public class EsTopicSpace {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getStageConceptDescription() {
+        return stageConceptDescription;
+    }
+
+    public void setStageConceptDescription(String stageConceptDescription) {
+        this.stageConceptDescription = stageConceptDescription;
+    }
+
+    public String getPathConceptDescription() {
+        return pathConceptDescription;
+    }
+
+    public void setPathConceptDescription(String pathConceptDescription) {
+        this.pathConceptDescription = pathConceptDescription;
     }
 
     public Visibility getVisibility() {

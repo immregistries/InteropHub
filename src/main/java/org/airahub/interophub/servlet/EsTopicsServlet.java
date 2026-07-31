@@ -189,9 +189,8 @@ public class EsTopicsServlet extends HttpServlet {
             page.writeStart(out);
             out.println("    <div class=\"aira-container--wide aira-stack\">");
 
-            renderPageHeader(out, contextPath, selectedSpace, myTopicsView, selectedNeighborhood, stageName, pathName,
-                    pageRows.size(), showOverview, query, selectedSpaceCode, view, stageDefinitionIdParam,
-                    pathDefinitionIdParam);
+            renderPageHeader(out, selectedSpace, myTopicsView, selectedNeighborhood, stageName, pathName,
+                    pageRows.size(), showOverview, query);
 
             out.println("      <div class=\"aira-right-rail-layout\">");
             out.println("        <div class=\"aira-stack\">");
@@ -201,7 +200,7 @@ public class EsTopicsServlet extends HttpServlet {
             }
 
             if (showOverview) {
-                renderOverview(out, stageDefinitions, pathDefinitions, neighborhoods);
+                renderOverview(out, selectedSpace, stageDefinitions, pathDefinitions, neighborhoods);
             } else if (myTopicsView && authenticatedUser.isEmpty()) {
                 out.println("          <p class=\"aira-alert aira-alert--info\"><a href=\"" + contextPath
                         + "/home\">Log in</a> to view topics you follow.</p>");
@@ -214,7 +213,7 @@ public class EsTopicsServlet extends HttpServlet {
 
             out.println("        </div>");
 
-            renderFilterRail(out, contextPath, selectedSpaceCode, query, stageDefinitions, pathDefinitions,
+            renderFilterRail(out, contextPath, selectedSpaceCode, query, view, stageDefinitions, pathDefinitions,
                     neighborhoods, stageDefinitionIdParam, pathDefinitionIdParam, selectedNeighborhood,
                     activeNeighborhoodLookup, stageCounts, pathCounts, neighborhoodCounts, searchActive,
                     authenticatedUser.isPresent(), myTopicsView, followedTopicIds.size());
@@ -225,10 +224,13 @@ public class EsTopicsServlet extends HttpServlet {
         }
     }
 
-    private void renderPageHeader(PrintWriter out, String contextPath, EsTopicSpace selectedSpace,
+    private void renderPageHeader(PrintWriter out, EsTopicSpace selectedSpace,
             boolean myTopicsView, String selectedNeighborhood, String stageName, String pathName, int topicCount,
-            boolean showOverview, String query, String selectedSpaceCode, String view, Long stageDefinitionIdParam,
-            Long pathDefinitionIdParam) {
+            boolean showOverview, String query) {
+        if (showOverview) {
+            return;
+        }
+
         String selectedSpaceName = orEmpty(selectedSpace.getSpaceName());
 
         String title;
@@ -237,7 +239,7 @@ public class EsTopicsServlet extends HttpServlet {
         } else if (stageName != null) {
             title = "Stage: " + stageName;
         } else if (pathName != null) {
-            title = "Path: " + pathName;
+            title = "Advancement Path: " + pathName;
         } else if (selectedNeighborhood != null) {
             title = "Neighborhood: " + selectedNeighborhood;
         } else {
@@ -247,47 +249,29 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("      <div class=\"aira-page-header\">");
         out.println("        <div>");
         out.println("          <h1 class=\"aira-page-title\">" + escapeHtml(title) + "</h1>");
-        String intro = showOverview
-                ? "Browse " + escapeHtml(selectedSpaceName) + " topics by stage, path, or neighborhood, or search below."
-                : topicCount + " active topic" + (topicCount == 1 ? "" : "s") + (query != null
-                        ? " matching \"" + escapeHtml(query) + "\""
-                        : "");
+        String intro = topicCount + " active topic" + (topicCount == 1 ? "" : "s") + (query != null
+                ? " matching \"" + escapeHtml(query) + "\""
+                : "");
         out.println("          <p class=\"aira-page-intro\">" + intro + "</p>");
         out.println("        </div>");
         out.println("      </div>");
-
-        out.println(
-                "      <form class=\"aira-inline-form\" method=\"get\" action=\"" + contextPath + "/es/topics\">");
-        out.println("        <input type=\"hidden\" name=\"space\" value=\"" + escapeHtml(selectedSpaceCode)
-                + "\" />");
-        if (trimToNull(view) != null) {
-            out.println("        <input type=\"hidden\" name=\"view\" value=\"" + escapeHtml(view) + "\" />");
-        }
-        if (stageDefinitionIdParam != null) {
-            out.println("        <input type=\"hidden\" name=\"s\" value=\"" + stageDefinitionIdParam + "\" />");
-        }
-        if (pathDefinitionIdParam != null) {
-            out.println("        <input type=\"hidden\" name=\"p\" value=\"" + pathDefinitionIdParam + "\" />");
-        }
-        if (selectedNeighborhood != null) {
-            out.println("        <input type=\"hidden\" name=\"n\" value=\"" + escapeHtml(selectedNeighborhood)
-                    + "\" />");
-        }
-        out.println("        <input class=\"aira-input\" type=\"search\" name=\"q\" value=\""
-                + escapeHtml(orEmpty(query))
-                + "\" placeholder=\"Search by topic name or description\" autocomplete=\"off\" />");
-        out.println("        <button class=\"aira-button aira-button--primary\" type=\"submit\">Search</button>");
-        out.println("      </form>");
     }
 
-    private void renderOverview(PrintWriter out, List<EsTopicStageDefinition> stageDefinitions,
+    private void renderOverview(PrintWriter out, EsTopicSpace selectedSpace,
+            List<EsTopicStageDefinition> stageDefinitions,
             List<EsTopicPathDefinition> pathDefinitions, List<EsNeighborhood> neighborhoods) {
+        String stageConceptDescription = trimToNull(selectedSpace.getStageConceptDescription());
+        String pathConceptDescription = trimToNull(selectedSpace.getPathConceptDescription());
+
         out.println("          <div class=\"aira-card-grid\">");
 
         out.println("            <article class=\"aira-panel\">");
         out.println(
                 "              <div class=\"aira-panel__header\"><h2 class=\"aira-panel__title\">Stages</h2></div>");
         out.println("              <div class=\"aira-panel__body aira-stack aira-stack--compact\">");
+        out.println("                <p class=\"aira-meta\">" + escapeHtml(stageConceptDescription == null
+                ? EsTopicSpace.DEFAULT_STAGE_CONCEPT_DESCRIPTION
+                : stageConceptDescription) + "</p>");
         if (stageDefinitions.isEmpty()) {
             out.println("                <p class=\"aira-meta\">No stages configured for this Topic Space yet.</p>");
         } else {
@@ -302,8 +286,11 @@ public class EsTopicsServlet extends HttpServlet {
 
         out.println("            <article class=\"aira-panel\">");
         out.println(
-                "              <div class=\"aira-panel__header\"><h2 class=\"aira-panel__title\">Paths</h2></div>");
+                "              <div class=\"aira-panel__header\"><h2 class=\"aira-panel__title\">Advancement Paths</h2></div>");
         out.println("              <div class=\"aira-panel__body aira-stack aira-stack--compact\">");
+        out.println("                <p class=\"aira-meta\">" + escapeHtml(pathConceptDescription == null
+                ? EsTopicSpace.DEFAULT_PATH_CONCEPT_DESCRIPTION
+                : pathConceptDescription) + "</p>");
         if (pathDefinitions.isEmpty()) {
             out.println(
                     "                <p class=\"aira-meta\">No advancement paths configured for this Topic Space yet.</p>");
@@ -375,7 +362,7 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("                <table class=\"aira-matrix-table\">");
         out.println("                  <thead>");
         out.println(
-                "                    <tr><th class=\"aira-matrix-table__corner\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">Path</span></div></th>");
+                "                    <tr><th class=\"aira-matrix-table__corner\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">Advancement Path</span></div></th>");
         for (EsTopicStageDefinition stage : stages) {
             out.println("<th class=\"aira-matrix-table__col-header\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">"
                     + escapeHtml(orEmpty(stage.getStageName())) + "</span></div></th>");
@@ -395,7 +382,7 @@ public class EsTopicsServlet extends HttpServlet {
         }
         if (hasUnassignedPathCards) {
             out.println(
-                    "                    <tr><th class=\"aira-matrix-table__row-header\" scope=\"row\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">No Path</span></div></th>");
+                    "                    <tr><th class=\"aira-matrix-table__row-header\" scope=\"row\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">No Advancement Path</span></div></th>");
             for (EsTopicStageDefinition stage : stages) {
                 renderBoardCell(out, contextPath,
                         cardsByCell.get(new TopicBoardService.CellKey(stage.getEsTopicStageDefinitionId(), null)));
@@ -460,12 +447,41 @@ public class EsTopicsServlet extends HttpServlet {
     }
 
     private void renderFilterRail(PrintWriter out, String contextPath, String selectedSpaceCode, String query,
-            List<EsTopicStageDefinition> stageDefinitions, List<EsTopicPathDefinition> pathDefinitions,
+            String view, List<EsTopicStageDefinition> stageDefinitions, List<EsTopicPathDefinition> pathDefinitions,
             List<EsNeighborhood> neighborhoods, Long selectedStageId, Long selectedPathId,
             String selectedNeighborhood, Map<String, String> activeNeighborhoodLookup,
             Map<Long, Integer> stageCounts, Map<Long, Integer> pathCounts, Map<String, Integer> neighborhoodCounts,
             boolean searchActive, boolean authenticated, boolean myTopicsView, int followedTopicCount) {
         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic filters\">");
+
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Search</h2></div>");
+        out.println("            <div class=\"aira-section-card__body\">");
+        out.println(
+                "              <form class=\"aira-inline-form\" method=\"get\" action=\"" + contextPath + "/es/topics\">");
+        out.println("                <input type=\"hidden\" name=\"space\" value=\"" + escapeHtml(selectedSpaceCode)
+                + "\" />");
+        if (trimToNull(view) != null) {
+            out.println("                <input type=\"hidden\" name=\"view\" value=\"" + escapeHtml(view) + "\" />");
+        }
+        if (selectedStageId != null) {
+            out.println("                <input type=\"hidden\" name=\"s\" value=\"" + selectedStageId + "\" />");
+        }
+        if (selectedPathId != null) {
+            out.println("                <input type=\"hidden\" name=\"p\" value=\"" + selectedPathId + "\" />");
+        }
+        if (selectedNeighborhood != null) {
+            out.println("                <input type=\"hidden\" name=\"n\" value=\"" + escapeHtml(selectedNeighborhood)
+                    + "\" />");
+        }
+        out.println("                <input class=\"aira-input\" type=\"search\" name=\"q\" value=\""
+                + escapeHtml(orEmpty(query))
+                + "\" placeholder=\"Search by topic name or description\" autocomplete=\"off\" />");
+        out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Search</button>");
+        out.println("              </form>");
+        out.println("            </div>");
+        out.println("          </section>");
 
         out.println("          <section class=\"aira-section-card\">");
         out.println(
@@ -506,7 +522,7 @@ public class EsTopicsServlet extends HttpServlet {
 
         out.println("          <section class=\"aira-section-card\">");
         out.println(
-                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Path</h2></div>");
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Advancement Path</h2></div>");
         out.println("            <div class=\"aira-section-card__body\">");
         out.println("              <nav class=\"aira-sidebar-nav\" aria-label=\"Filter by path\">");
         for (EsTopicPathDefinition path : pathDefinitions) {

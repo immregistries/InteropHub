@@ -75,6 +75,56 @@ local state mid-testing without waiting for a new daily download.
    between releases — it accumulates everything pending for the next
    release.
 
+**Editing statements already sitting in `unapplied_updates.sql`, vs. adding
+new ones:** because nothing in this file has reached production yet, and
+every refresh runs it fresh against a freshly-restored prod snapshot, there
+is no live production state to migrate away from. If you're refining a
+change that's already in `unapplied_updates.sql` for a feature that hasn't
+released — renaming a value, fixing seed data, reordering rows — it's
+usually cleaner to edit those statements in place than to append another
+statement that overrides them. Save the append-only pattern above for
+genuinely new, separately-motivated changes. Either way, re-run the restore
+script and re-check the local database afterward (see below) — an in-place
+edit is only safe if the file is still internally self-consistent (e.g. any
+row-count validation in the same script still matches what you inserted).
+
+## Syncing local admin/UI changes back into `unapplied_updates.sql`
+
+Some data — Topic Board layouts, Topic Space stage/path definitions, and
+similar admin-configurable structures — is normally edited by using the
+running app itself (e.g. dragging stages/paths around on a board admin
+screen) rather than by hand-writing SQL. Those edits land directly in the
+local MySQL tables. They are **not** captured anywhere in source control by
+that action alone, and the next local refresh (daily, or an on-demand
+`restore_interophub_db_from_latest_local.py` run) wipes and rebuilds the
+local database from the production snapshot plus `unapplied_updates.sql` —
+silently discarding any local-only UI edit that was never written back into
+the SQL file.
+
+If you've been iterating on this kind of config locally and want it to
+survive a refresh (and eventually ship to production), read the change back
+out of the local database and encode it into `unapplied_updates.sql`:
+
+1. Query the local database directly for the current state of the relevant
+   tables, e.g.:
+   ```
+   mysql -uroot -pgoldenroot interophub -e "SELECT ... FROM es_topic_stage_definition ..."
+   ```
+2. Compare that against what `unapplied_updates.sql` currently produces for
+   the same tables.
+3. Edit `unapplied_updates.sql` to match (in place if the statements are
+   already there for this not-yet-released feature — see the note above).
+4. Re-run `restore_interophub_db_from_latest_local.py` and re-query the
+   local database to confirm the edited file reproduces the state you
+   captured in step 1.
+
+Some blocks in `unapplied_updates.sql` are explicitly designed around this
+cycle and say so inline — e.g. the Emerging Standards topic classification
+snapshot carries a header comment noting it should be regenerated and
+*replaced* wholesale (not appended to) the next time local classifications
+change. Follow a block's own header comment when it gives more specific
+instructions than this doc does.
+
 ## Releasing to production
 
 When it's time to release (schema changes go live):

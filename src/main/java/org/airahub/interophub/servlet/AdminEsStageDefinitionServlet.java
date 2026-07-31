@@ -75,6 +75,9 @@ public class AdminEsStageDefinitionServlet extends HttpServlet {
         if (request.getParameter("bulkSaved") != null) {
             message = "Stage block imported.";
         }
+        if (request.getParameter("conceptSaved") != null) {
+            message = "Stage meaning saved.";
+        }
         renderList(response, contextPath, message, null, selectedTopicSpaceId);
     }
 
@@ -89,6 +92,10 @@ public class AdminEsStageDefinitionServlet extends HttpServlet {
         String action = trimToNull(request.getParameter("action"));
         if ("bulkUpsert".equalsIgnoreCase(action)) {
             handleBulkUpsert(request, response, contextPath);
+            return;
+        }
+        if ("saveConceptDescription".equalsIgnoreCase(action)) {
+            handleSaveConceptDescription(request, response, contextPath);
             return;
         }
 
@@ -235,6 +242,25 @@ public class AdminEsStageDefinitionServlet extends HttpServlet {
                 + "&esTopicSpaceId=" + topicSpaceId);
     }
 
+    private void handleSaveConceptDescription(HttpServletRequest request, HttpServletResponse response,
+            String contextPath) throws IOException {
+        Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
+        if (topicSpaceId == null) {
+            renderList(response, contextPath, "Topic Space is required.", null, null);
+            return;
+        }
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId).orElse(null);
+        if (topicSpace == null) {
+            renderList(response, contextPath, "Topic Space was not found.", null, null);
+            return;
+        }
+
+        topicSpace.setStageConceptDescription(trimToNull(request.getParameter("stageConceptDescription")));
+        topicSpaceDao.saveOrUpdate(topicSpace);
+        response.sendRedirect(
+                contextPath + "/admin/es/stages?conceptSaved=1&esTopicSpaceId=" + topicSpaceId);
+    }
+
     private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         if (authenticatedUser.isEmpty()) {
@@ -313,6 +339,28 @@ public class AdminEsStageDefinitionServlet extends HttpServlet {
                     panelOut.println("      </section>");
                     return;
                 }
+
+                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("          <h3>What \"Stage\" Means for "
+                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
+                String stageConceptDescription = trimToNull(selectedTopicSpace.getStageConceptDescription());
+                panelOut.println("          <p>" + (stageConceptDescription == null
+                        ? "No custom meaning set. The standard description below is shown instead."
+                        : "Custom meaning set for this Topic Space.") + "</p>");
+                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
+                        + "/admin/es/stages\" method=\"post\">");
+                panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"saveConceptDescription\" />");
+                panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                        + selectedTopicSpaceId + "\" />");
+                panelOut.println(
+                        "            <label for=\"stageConceptDescription\">Stage Meaning (leave blank to use the standard description)</label>");
+                panelOut.println(
+                        "            <textarea id=\"stageConceptDescription\" name=\"stageConceptDescription\" rows=\"3\""
+                                + " placeholder=\"" + escapeHtml(EsTopicSpace.DEFAULT_STAGE_CONCEPT_DESCRIPTION)
+                                + "\">" + escapeHtml(orEmpty(stageConceptDescription)) + "</textarea>");
+                panelOut.println("            <button type=\"submit\">Save Stage Meaning</button>");
+                panelOut.println("          </form>");
+                panelOut.println("        </section>");
 
                 panelOut.println("        <h3>Current Stages for "
                         + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");

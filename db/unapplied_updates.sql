@@ -1,3 +1,7 @@
+-- Pending schema/data changes for the next production release.
+-- Process, conventions, and how to fold local admin/UI edits (e.g. Topic
+-- Board layout changes made in the running app) back into this file before
+-- a refresh discards them: see docs/database-release-practice.md.
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
 
@@ -6,6 +10,8 @@ CREATE TABLE es_topic_space (
   space_code        VARCHAR(80) NOT NULL,
   space_name        VARCHAR(140) NOT NULL,
   description       TEXT NULL,
+  stage_concept_description TEXT NULL,
+  path_concept_description  TEXT NULL,
   visibility        ENUM('PUBLIC','PRIVATE') NOT NULL,
   display_order     INT NOT NULL DEFAULT 0,
   is_active         TINYINT(1) NOT NULL DEFAULT 1,
@@ -254,18 +260,18 @@ BEGIN
     updated_at
   )
   VALUES
-    (v_emerging_standards_space_id, 'rollout', 'Rollout', 'Rollout topics are ready for broader adoption and implementation support.', 10, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
-    (v_emerging_standards_space_id, 'pilot', 'Pilot', 'Pilot topics are in trial implementations to validate feasibility and workflow impact.', 20, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
-    (v_emerging_standards_space_id, 'draft', 'Draft', 'Draft topics are early-stage ideas gathering initial interest and problem framing.', 30, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'parked', 'Parked', 'Parked topics are intentionally paused while dependencies or timing constraints are addressed.', 10, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'monitor', 'Monitor', 'Monitor topics are active efforts being tracked for readiness and real-world momentum.', 20, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'gather', 'Gather', 'Gather topics are collecting broader input from implementers and stakeholders.', 30, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
     (v_emerging_standards_space_id, 'start', 'Start', 'Start topics are beginning active development work toward practical implementation.', 40, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
-    (v_emerging_standards_space_id, 'gather', 'Gather', 'Gather topics are collecting broader input from implementers and stakeholders.', 50, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
-    (v_emerging_standards_space_id, 'monitor', 'Monitor', 'Monitor topics are active efforts being tracked for readiness and real-world momentum.', 60, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
-    (v_emerging_standards_space_id, 'parked', 'Parked', 'Parked topics are intentionally paused while dependencies or timing constraints are addressed.', 70, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'draft', 'Draft', 'Draft topics are early-stage ideas gathering initial interest and problem framing.', 50, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'pilot', 'Pilot', 'Pilot topics are in trial implementations to validate feasibility and workflow impact.', 60, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
+    (v_emerging_standards_space_id, 'rollout', 'Rollout', 'Rollout topics are ready for broader adoption and implementation support.', 70, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()),
     (
   v_building_bridges_space_id,
   'IDENTIFIED',
   'Identified',
-  'A country, organization, community, or relationship has been identified as potentially relevant, but substantive research or engagement has not yet begun.',
+  'A country, organization, community, or relationship has been identified as potentially relevant, but little engagement or analysis has occurred.',
   10,
   1,
   UTC_TIMESTAMP(),
@@ -273,9 +279,9 @@ BEGIN
 ),
 (
   v_building_bridges_space_id,
-  'CONTEXT-BUILDING',
-  'Context Building',
-  'Background, relevant participants, existing relationships, needs, priorities, and reasons for engagement are being researched and documented.',
+  'CONTEXT-DEVELOPING',
+  'Context Developing',
+  'Background, participants, needs, priorities, and strategic relevance are being researched and understood.',
   20,
   1,
   UTC_TIMESTAMP(),
@@ -283,9 +289,9 @@ BEGIN
 ),
 (
   v_building_bridges_space_id,
-  'READY-TO-ENGAGE',
-  'Ready to Engage',
-  'Enough context, purpose, and contact information exist to begin, renew, or broaden substantive outreach.',
+  'READY-FOR-ENGAGEMENT',
+  'Ready for Engagement',
+  'Enough context and a clear purpose exist to begin, renew, or broaden substantive outreach.',
   30,
   1,
   UTC_TIMESTAMP(),
@@ -295,7 +301,7 @@ BEGIN
   v_building_bridges_space_id,
   'ENGAGEMENT-UNDERWAY',
   'Engagement Underway',
-  'Outreach, scheduling, interviews, meetings, information exchange, or follow-up activities are actively occurring.',
+  'Outreach, interviews, meetings, or substantive conversations are actively occurring.',
   40,
   1,
   UTC_TIMESTAMP(),
@@ -303,10 +309,30 @@ BEGIN
 ),
 (
   v_building_bridges_space_id,
-  'INITIAL-CONNECTION-ESTABLISHED',
-  'Initial Connection Established',
-  'At least one substantive exchange has occurred, useful context has been captured, and a viable continuing contact or next step exists.',
+  'RELATIONSHIP-ESTABLISHED',
+  'Relationship Established',
+  'Mutual understanding and a continuing relationship now exist, even if no specific collaboration has been selected.',
   50,
+  1,
+  UTC_TIMESTAMP(),
+  UTC_TIMESTAMP()
+),
+(
+  v_building_bridges_space_id,
+  'OPPORTUNITY-SHAPING',
+  'Opportunity Shaping',
+  'A specific collaboration, exchange, demonstration, proposal, or strategic opportunity is being developed.',
+  60,
+  1,
+  UTC_TIMESTAMP(),
+  UTC_TIMESTAMP()
+),
+(
+  v_building_bridges_space_id,
+  'ACTIVE-COLLABORATION',
+  'Active Collaboration',
+  'Concrete joint work or an ongoing partnership is underway.',
+  70,
   1,
   UTC_TIMESTAMP(),
   UTC_TIMESTAMP()
@@ -345,7 +371,7 @@ VALUES
   (
     v_emerging_standards_space_id,
     'ADVANCING',
-    'Advancing Normally',
+    'Working on Now',
     'The next meaningful work is understood, owned, and moving forward without a material constraint.',
     10,
     1,
@@ -355,7 +381,7 @@ VALUES
   (
     v_emerging_standards_space_id,
     'EXTERNAL-DEPENDENCY',
-    'External Action Needed',
+    'External Project',
     'Advancement depends on a decision, deliverable, policy, specification, or participation controlled primarily by another organization.',
     20,
     1,
@@ -404,29 +430,19 @@ VALUES
   ),
   (
     v_emerging_standards_space_id,
-    'OWNERSHIP-DECISION-NEEDED',
-    'Ownership or Decision Needed',
-    'The topic lacks a clear owner, accountable group, governance decision, or authority to select and direct the next step.',
-    70,
-    1,
-    UTC_TIMESTAMP(),
-    UTC_TIMESTAMP()
-  ),
-  (
-    v_emerging_standards_space_id,
     'NO-ACTIVE-PLAN',
     'No Active Advancement',
     'The topic and its history are being retained, but no meaningful next step is currently planned.',
-    80,
+    70,
     1,
     UTC_TIMESTAMP(),
     UTC_TIMESTAMP()
   ),
 (
   v_building_bridges_space_id,
-  'ADVANCING',
-  'Advancing Normally',
-  'The next meaningful engagement step is understood, owned, and moving forward without a material constraint.',
+  'LEARN-AND-LISTEN',
+  'Learn and Listen',
+  'Use the relationship primarily to understand the country, organization, ecosystem, needs, and perspectives.',
   10,
   1,
   UTC_TIMESTAMP(),
@@ -434,9 +450,9 @@ VALUES
 ),
 (
   v_building_bridges_space_id,
-  'INTERNAL-ACTION-NEEDED',
-  'Internal Direction or Capacity Needed',
-  'Advancement requires internal clarification of purpose or priority, preparation of materials, assignment of an owner, leadership direction, or additional staff capacity.',
+  'MAINTAIN-RELATIONSHIP',
+  'Maintain the Relationship',
+  'Preserve trust and communication without actively expanding the relationship or pursuing a specific opportunity.',
   20,
   1,
   UTC_TIMESTAMP(),
@@ -444,9 +460,9 @@ VALUES
 ),
 (
   v_building_bridges_space_id,
-  'CONTACT-NEEDED',
-  'Contact or Introduction Needed',
-  'Advancement requires identifying a credible contact, obtaining an introduction, or finding a viable outreach channel.',
+  'DEEPEN-RELATIONSHIP',
+  'Deepen the Relationship',
+  'Invest in more sustained engagement, reciprocal exchange, and stronger mutual understanding.',
   30,
   1,
   UTC_TIMESTAMP(),
@@ -454,9 +470,9 @@ VALUES
 ),
 (
   v_building_bridges_space_id,
-  'EXTERNAL-RESPONSE-NEEDED',
-  'External Response or Participation Needed',
-  'Outreach or a request has occurred, but progress depends on a response, scheduling, information, participation, approval, or follow-through from another party.',
+  'CONNECT-TO-AIRA-WORK',
+  'Connect to AIRA Work',
+  'Link the relationship to an existing AIRA initiative, community, standard, service, or area of expertise.',
   40,
   1,
   UTC_TIMESTAMP(),
@@ -464,10 +480,20 @@ VALUES
 ),
 (
   v_building_bridges_space_id,
-  'NO-ACTIVE-PLAN',
-  'No Active Advancement',
-  'The relationship history and context are being retained, but no meaningful next step is currently planned.',
+  'DEVELOP-JOINT-OPPORTUNITY',
+  'Develop a Joint Opportunity',
+  'Shape a new collaboration, pilot, proposal, service, funding opportunity, or formal partnership.',
   50,
+  1,
+  UTC_TIMESTAMP(),
+  UTC_TIMESTAMP()
+),
+(
+  v_building_bridges_space_id,
+  'PAUSE',
+  'Pause',
+  'Preserve the relationship history and context, but stop active advancement until conditions change.',
+  60,
   1,
   UTC_TIMESTAMP(),
   UTC_TIMESTAMP()
@@ -558,9 +584,9 @@ VALUES
   FROM es_topic_path_definition
   WHERE es_topic_space_id = v_emerging_standards_space_id;
 
-  IF v_count <> 8 THEN
+  IF v_count <> 7 THEN
     SIGNAL SQLSTATE '45000'
-      SET MESSAGE_TEXT = 'Topic Space conversion failed: Emerging Standards must have exactly eight advancement path definitions.';
+      SET MESSAGE_TEXT = 'Topic Space conversion failed: Emerging Standards must have exactly seven advancement path definitions.';
   END IF;
 
   SELECT COUNT(*)
@@ -832,12 +858,13 @@ SELECT
     WHEN 'gather' THEN 20
     WHEN 'start' THEN 30
     WHEN 'draft' THEN 40
+    WHEN 'pilot' THEN 50
   END AS board_display_order
 FROM es_topic_board_definition b
 JOIN es_topic_stage_definition sd
   ON sd.es_topic_space_id = 1
  AND sd.is_active = 1
- AND sd.stage_code IN ('monitor', 'gather', 'start', 'draft')
+ AND sd.stage_code IN ('monitor', 'gather', 'start', 'draft', 'pilot')
 WHERE b.board_code = 'emerging-standards'
 ON DUPLICATE KEY UPDATE
   display_order = VALUES(display_order);
@@ -891,13 +918,20 @@ INSERT INTO es_topic_board_path (
 SELECT
   b.es_topic_board_definition_id,
   pd.es_topic_path_definition_id,
-  pd.display_order
+  CASE pd.path_code
+    WHEN 'ADVANCING' THEN 10
+    WHEN 'EXTERNAL-DEPENDENCY' THEN 20
+    WHEN 'TECHNICAL-DIRECTION-NEEDED' THEN 30
+    WHEN 'RESOURCES-NEEDED' THEN 40
+    WHEN 'PARTICIPATION-NEEDED' THEN 50
+    WHEN 'USE-CASE-NEEDED' THEN 60
+    WHEN 'NO-ACTIVE-PLAN' THEN 70
+  END AS board_display_order
 FROM es_topic_board_definition b
 JOIN es_topic_path_definition pd
   ON pd.es_topic_space_id = 1
  AND pd.is_active = 1
 WHERE b.board_code = 'emerging-standards'
-ORDER BY pd.display_order, pd.path_name
 ON DUPLICATE KEY UPDATE
   display_order = VALUES(display_order);
 
@@ -1986,74 +2020,148 @@ WHERE space_code = 'aira-opportunity-nursery';
 
 COMMIT;
 
--- Emerging Standards topic classification snapshot (Stage + Path), captured 2026-07-30.
+-- Emerging Standards topic classification snapshot (Stage + Path), captured 2026-07-31.
 -- Reflects manual Topic Board placements made during local testing, so this work
 -- carries forward through daily local database refreshes and rides along into the
 -- eventual production release instead of being lost on the next refresh.
 -- Looks up definition ids by stable stage_code/path_code (not raw numeric ids) so
 -- this stays correct even if those rows are ever re-created with different ids.
 -- Regenerate and REPLACE this whole block (rather than appending another copy)
--- the next time this snapshot needs to be refreshed.
+-- the next time this snapshot needs to be refreshed. See "Syncing local
+-- admin/UI changes back into unapplied_updates.sql" in
+-- docs/database-release-practice.md for the read-back procedure.
 START TRANSACTION;
 
 SET @es_id := (SELECT es_topic_space_id FROM es_topic_space WHERE space_code = 'emerging-standards');
 
+SET @stage_parked := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'parked');
 SET @stage_monitor := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'monitor');
 SET @stage_gather := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'gather');
-SET @stage_draft := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'draft');
 SET @stage_start := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'start');
+SET @stage_draft := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'draft');
+SET @stage_pilot := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'pilot');
+SET @stage_rollout := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @es_id AND stage_code = 'rollout');
 
 SET @path_advancing := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'ADVANCING');
-SET @path_participation := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'PARTICIPATION-NEEDED');
-SET @path_technical := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'TECHNICAL-DIRECTION-NEEDED');
 SET @path_external := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'EXTERNAL-DEPENDENCY');
+SET @path_resources := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'RESOURCES-NEEDED');
+SET @path_participation := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'PARTICIPATION-NEEDED');
+SET @path_usecase := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'USE-CASE-NEEDED');
+SET @path_technical := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @es_id AND path_code = 'TECHNICAL-DIRECTION-NEEDED');
 
--- Monitor / Advancing Normally: TEFCA (National Exchange Framework), Population Analytics,
--- Data Provenance Tracking, Received Code Validation, Data Validation Services, Patient Updates (ADT),
--- Data Merge Visibility, Provider Enrollment Integration, Record Synchronization,
--- Newborn Identity Handling, Inventory Reconciliation, IIS Metrics Access (IISAR)
+-- Explicitly unclassified: Immunization Decision Support (ImmDS), Vaccine Barcode Scanning,
+-- Data Quality Reporting, Official Record Documents (PDF), Pharmacy Integration, Machine Learning.
+-- These still carry a legacy stage value from the production `stage` text column, which the
+-- earlier legacy-stage auto-mapping in this script would otherwise reattach. Cleared here so
+-- they drop off the board as not-yet-triaged, matching local testing.
 UPDATE es_topic
-SET stage = 'Monitor', path = 'Advancing Normally',
-    es_topic_stage_definition_id = @stage_monitor, es_topic_path_definition_id = @path_advancing
-WHERE es_topic_id IN (8, 10, 11, 15, 21, 22, 23, 24, 30, 38, 39, 61);
+SET stage = NULL, path = NULL,
+    es_topic_stage_definition_id = NULL, es_topic_path_definition_id = NULL
+WHERE es_topic_id IN (13, 16, 35, 40, 42, 86);
 
--- Gather / Advancing Normally: Consumer Access to Records, Data Quality Notifications,
--- Vaccine Lot Validation, Event-Based Exchange (FHIR Subscriptions), CDC WSDL Authentication,
--- International Patient Summary (IPS), Digital Vaccine Cards (SMART Health Links), VXU on FHIR, QBP on FHIR
+-- Parked / (no path): topics intentionally paused with no active advancement path assigned yet.
 UPDATE es_topic
-SET stage = 'Gather', path = 'Advancing Normally',
+SET stage = 'Parked', path = NULL,
+    es_topic_stage_definition_id = @stage_parked, es_topic_path_definition_id = NULL
+WHERE es_topic_id IN (5, 6, 9, 12, 17, 18, 19, 27, 29, 34, 36, 41, 46, 47, 48, 49, 50, 54, 55, 56, 57, 58, 59, 60, 63, 64, 67, 68, 69, 70, 71, 72, 73, 78, 79, 80, 81, 82, 83, 84, 85, 87, 88, 89, 90, 92, 93, 94, 95, 99, 100, 101, 102, 119, 123);
+
+-- Monitor / External Project: TEFCA (National Exchange Framework), Race/Ethnicity,
+-- IIP Collaborative, NDC Transition to 12-Digit Format
+UPDATE es_topic
+SET stage = 'Monitor', path = 'External Project',
+    es_topic_stage_definition_id = @stage_monitor, es_topic_path_definition_id = @path_external
+WHERE es_topic_id IN (8, 91, 97, 103);
+
+-- Monitor / Sponsorship or Resources Needed: Received Code Validation, Data Validation Services,
+-- Patient Updates (ADT), IIS Terminology Services, Newborn Identity Handling
+UPDATE es_topic
+SET stage = 'Monitor', path = 'Sponsorship or Resources Needed',
+    es_topic_stage_definition_id = @stage_monitor, es_topic_path_definition_id = @path_resources
+WHERE es_topic_id IN (15, 21, 22, 28, 38);
+
+-- Monitor / Use Case or Value Needs Clarification: Population Analytics, Record Synchronization,
+-- IIS Metrics Access (IISAR)
+UPDATE es_topic
+SET stage = 'Monitor', path = 'Use Case or Value Needs Clarification',
+    es_topic_stage_definition_id = @stage_monitor, es_topic_path_definition_id = @path_usecase
+WHERE es_topic_id IN (10, 30, 61);
+
+-- Monitor / Technical Direction Needed: Data Provenance Tracking, Data Merge Visibility,
+-- Provider Enrollment Integration, Inventory Reconciliation
+UPDATE es_topic
+SET stage = 'Monitor', path = 'Technical Direction Needed',
+    es_topic_stage_definition_id = @stage_monitor, es_topic_path_definition_id = @path_technical
+WHERE es_topic_id IN (11, 23, 24, 39);
+
+-- Gather / Working on Now: CDC WSDL Authentication, Certificate Management
+UPDATE es_topic
+SET stage = 'Gather', path = 'Working on Now',
     es_topic_stage_definition_id = @stage_gather, es_topic_path_definition_id = @path_advancing
-WHERE es_topic_id IN (2, 3, 4, 14, 26, 32, 43, 75, 76);
+WHERE es_topic_id IN (26, 124);
 
--- Draft / Advancing Normally: Immunization CDS (ImmDS + HALO), CDS Contextual Conditions,
--- CDS Shared Decision Support (SCDM), CDC HL7 v2 Guide (Release 2)
+-- Gather / Sponsorship or Resources Needed: Consumer Access to Records, Data Quality Notifications,
+-- Vaccine Lot Validation, Event-Based Exchange (FHIR Subscriptions), Digital Vaccine Cards (SMART Health Links)
 UPDATE es_topic
-SET stage = 'Draft', path = 'Advancing Normally',
-    es_topic_stage_definition_id = @stage_draft, es_topic_path_definition_id = @path_advancing
-WHERE es_topic_id IN (1, 7, 20, 52);
+SET stage = 'Gather', path = 'Sponsorship or Resources Needed',
+    es_topic_stage_definition_id = @stage_gather, es_topic_path_definition_id = @path_resources
+WHERE es_topic_id IN (2, 3, 4, 14, 43);
 
--- Start / Advancing Normally: CDS Schedule Source
+-- Gather / Use Case or Value Needs Clarification: International Patient Summary (IPS)
 UPDATE es_topic
-SET stage = 'Start', path = 'Advancing Normally',
+SET stage = 'Gather', path = 'Use Case or Value Needs Clarification',
+    es_topic_stage_definition_id = @stage_gather, es_topic_path_definition_id = @path_usecase
+WHERE es_topic_id IN (32);
+
+-- Start / Working on Now: VXU on FHIR, QBP on FHIR
+UPDATE es_topic
+SET stage = 'Start', path = 'Working on Now',
     es_topic_stage_definition_id = @stage_start, es_topic_path_definition_id = @path_advancing
-WHERE es_topic_id IN (25);
+WHERE es_topic_id IN (75, 76);
 
--- Draft / Community Participation Needed: Bulk Data Exchange (FHIR Bulk Data)
+-- Start / Sponsorship or Resources Needed: HL7 v2.5.1 School Roster Reporting
 UPDATE es_topic
-SET stage = 'Draft', path = 'Community Participation Needed',
-    es_topic_stage_definition_id = @stage_draft, es_topic_path_definition_id = @path_participation
-WHERE es_topic_id IN (33);
+SET stage = 'Start', path = 'Sponsorship or Resources Needed',
+    es_topic_stage_definition_id = @stage_start, es_topic_path_definition_id = @path_resources
+WHERE es_topic_id IN (77);
 
--- Start / Technical Direction Needed: School Data Exchange
+-- Start / Use Case or Value Needs Clarification: School Data Exchange
 UPDATE es_topic
-SET stage = 'Start', path = 'Technical Direction Needed',
-    es_topic_stage_definition_id = @stage_start, es_topic_path_definition_id = @path_technical
+SET stage = 'Start', path = 'Use Case or Value Needs Clarification',
+    es_topic_stage_definition_id = @stage_start, es_topic_path_definition_id = @path_usecase
 WHERE es_topic_id IN (37);
 
--- Start / External Action Needed: HL7 v2.5.1 School Roster Reporting
+-- Draft / Working on Now: CDS Contextual Conditions, CDS Shared Decision Support (SCDM),
+-- CDS Schedule Source, FHIR Open Tickets
 UPDATE es_topic
-SET stage = 'Start', path = 'External Action Needed',
-    es_topic_stage_definition_id = @stage_start, es_topic_path_definition_id = @path_external
-WHERE es_topic_id IN (77);
+SET stage = 'Draft', path = 'Working on Now',
+    es_topic_stage_definition_id = @stage_draft, es_topic_path_definition_id = @path_advancing
+WHERE es_topic_id IN (7, 20, 25, 96);
+
+-- Draft / External Project: CDC HL7 v2 Guide (Release 2)
+UPDATE es_topic
+SET stage = 'Draft', path = 'External Project',
+    es_topic_stage_definition_id = @stage_draft, es_topic_path_definition_id = @path_external
+WHERE es_topic_id IN (52);
+
+-- Draft / Sponsorship or Resources Needed: Immunization CDS (ImmDS + HALO),
+-- Immunization Vocabularies Collaboration (IVC)
+UPDATE es_topic
+SET stage = 'Draft', path = 'Sponsorship or Resources Needed',
+    es_topic_stage_definition_id = @stage_draft, es_topic_path_definition_id = @path_resources
+WHERE es_topic_id IN (1, 31);
+
+-- Pilot / Community Participation Needed: Bulk Data Exchange (FHIR Bulk Data)
+UPDATE es_topic
+SET stage = 'Pilot', path = 'Community Participation Needed',
+    es_topic_stage_definition_id = @stage_pilot, es_topic_path_definition_id = @path_participation
+WHERE es_topic_id IN (33);
+
+-- Rollout / (no path): ACK Error Reporting (ERR-5), Acknowledgements (ACK),
+-- CDC HL7 v2 Guide (Release 1.5), CDS Response Improvements (RSP), IIS-to-IIS Exchange,
+-- LOINC Usage in OBX, Preferred Name (Patient), Immunization Focus Group (IFG)
+UPDATE es_topic
+SET stage = 'Rollout', path = NULL,
+    es_topic_stage_definition_id = @stage_rollout, es_topic_path_definition_id = NULL
+WHERE es_topic_id IN (44, 45, 51, 53, 62, 65, 66, 74);
 
 COMMIT;

@@ -75,6 +75,9 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         if (request.getParameter("bulkSaved") != null) {
             message = "Advancement Path block imported.";
         }
+        if (request.getParameter("conceptSaved") != null) {
+            message = "Advancement Path meaning saved.";
+        }
         renderList(response, contextPath, message, null, selectedTopicSpaceId);
     }
 
@@ -89,6 +92,10 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         String action = trimToNull(request.getParameter("action"));
         if ("bulkUpsert".equalsIgnoreCase(action)) {
             handleBulkUpsert(request, response, contextPath);
+            return;
+        }
+        if ("saveConceptDescription".equalsIgnoreCase(action)) {
+            handleSaveConceptDescription(request, response, contextPath);
             return;
         }
 
@@ -235,6 +242,25 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
                 + "&esTopicSpaceId=" + topicSpaceId);
     }
 
+    private void handleSaveConceptDescription(HttpServletRequest request, HttpServletResponse response,
+            String contextPath) throws IOException {
+        Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
+        if (topicSpaceId == null) {
+            renderList(response, contextPath, "Topic Space is required.", null, null);
+            return;
+        }
+        EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId).orElse(null);
+        if (topicSpace == null) {
+            renderList(response, contextPath, "Topic Space was not found.", null, null);
+            return;
+        }
+
+        topicSpace.setPathConceptDescription(trimToNull(request.getParameter("pathConceptDescription")));
+        topicSpaceDao.saveOrUpdate(topicSpace);
+        response.sendRedirect(
+                contextPath + "/admin/es/paths?conceptSaved=1&esTopicSpaceId=" + topicSpaceId);
+    }
+
     private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         if (authenticatedUser.isEmpty()) {
@@ -315,6 +341,28 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
                     panelOut.println("      </section>");
                     return;
                 }
+
+                panelOut.println("        <section class=\"panel\">");
+                panelOut.println("          <h3>What \"Advancement Path\" Means for "
+                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
+                String pathConceptDescription = trimToNull(selectedTopicSpace.getPathConceptDescription());
+                panelOut.println("          <p>" + (pathConceptDescription == null
+                        ? "No custom meaning set. The standard description below is shown instead."
+                        : "Custom meaning set for this Topic Space.") + "</p>");
+                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
+                        + "/admin/es/paths\" method=\"post\">");
+                panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"saveConceptDescription\" />");
+                panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                        + selectedTopicSpaceId + "\" />");
+                panelOut.println(
+                        "            <label for=\"pathConceptDescription\">Advancement Path Meaning (leave blank to use the standard description)</label>");
+                panelOut.println(
+                        "            <textarea id=\"pathConceptDescription\" name=\"pathConceptDescription\" rows=\"3\""
+                                + " placeholder=\"" + escapeHtml(EsTopicSpace.DEFAULT_PATH_CONCEPT_DESCRIPTION)
+                                + "\">" + escapeHtml(orEmpty(pathConceptDescription)) + "</textarea>");
+                panelOut.println("            <button type=\"submit\">Save Advancement Path Meaning</button>");
+                panelOut.println("          </form>");
+                panelOut.println("        </section>");
 
                 panelOut.println("        <h3>Current Advancement Paths for "
                         + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
