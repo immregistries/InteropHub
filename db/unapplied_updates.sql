@@ -2165,3 +2165,145 @@ SET stage = 'Rollout', path = NULL,
 WHERE es_topic_id IN (44, 45, 51, 53, 62, 65, 66, 74);
 
 COMMIT;
+
+-- AIRA Opportunity Nursery: initial set of twelve strategic opportunity topics.
+-- Six of these (matched below by topic_code: PHACT, IVC-STEWARDSHIP, IMMDS-SERVICES,
+-- INTERNATIONAL-IMMUNIZATION-EXCHANGE, V2-FHIR-TRANSLATION, VIRS) already existed locally as
+-- shorter drafts created through the admin UI; this block updates them to the finalized
+-- name/description below and adds the remaining six as new topics. Uses ON DUPLICATE KEY UPDATE
+-- on topic_code so this block is safe to re-run. All twelve begin with no stage or advancement
+-- path assignment, which the AIRA Opportunity Nursery board is configured to show
+-- (show_unassigned_stage/show_unassigned_path), so they appear immediately as a starting point.
+SET @nursery_space_id := (SELECT es_topic_space_id FROM es_topic_space WHERE space_code = 'aira-opportunity-nursery');
+
+INSERT INTO es_topic (
+  es_topic_space_id,
+  topic_code,
+  topic_name,
+  description,
+  topic_summary,
+  status,
+  priority_cdc,
+  priority_ehr,
+  priority_iis,
+  created_at,
+  created_by_user_id,
+  updated_at
+)
+VALUES
+  (@nursery_space_id, 'PHACT', 'PHACT: Public Health Artifact Curation and Terminology',
+   'Develop a platform for governing, managing, versioning, and publishing immunization terminology and other computable interoperability artifacts. Initial uses could include data quality codes and contextual conditions, with more complex vocabulary integration added after the governance and publication model is proven. PHACT could give AIRA a durable technical foundation for supporting standards and shared community assets that are difficult to manage through documents and informal processes alone.',
+   'A platform for governing, versioning, and publishing immunization terminology and other computable interoperability artifacts, starting with data quality codes and contextual conditions.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'IVC-STEWARDSHIP', 'IVC Stewardship and Vocabulary Leadership',
+   'Establish AIRA as a central coordinating organization for immunization vocabulary work through active participation in the Immunization Vocabularies Collaborative. This would give AIRA and its members access to the best available information about vaccine codes, products, mappings, translations, and emerging international needs. It would also position AIRA to participate early in technical initiatives across the immunization community. Work could include strengthening CVX for continued United States use, including the representation of vaccines administered internationally, while coordinating with NUVA and other vocabulary initiatives.',
+   'Positions AIRA as a coordinating leader in immunization vocabulary work through the Immunization Vocabularies Collaborative, strengthening CVX and aligning with NUVA and other initiatives.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'IMMDS-SERVICES', 'Shared Immunization Decision Support Services',
+   'Advance ImmDS and HALO from standards development into widely reusable immunization forecasting capabilities, including reference software, testing, documentation, implementation support, and potentially hosted services. Shared solutions could reduce the cost of developing and maintaining separate forecasting systems, improve consistency and quality across implementations, and make high-quality immunization decision support available to IIS, EHRs, CDS systems, and international partners. This could also create a sustainable source of revenue that supports AIRA’s long-term mission and reduces its dependence on federal funding.',
+   'Advances ImmDS and HALO from standards into reusable, shared immunization forecasting services for IIS, EHRs, CDS systems, and international partners.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'INTERNATIONAL-IMMUNIZATION-EXCHANGE', 'International Immunization Exchange Leadership',
+   'Ensure that AIRA and its members are actively represented as international immunization record exchange develops. AIRA could contribute IIS experience, standards expertise, implementation guidance, vocabulary knowledge, validation tools, and demonstrations while learning from international partners working with the International Patient Summary and related FHIR standards. Participation would help ensure that United States IIS interests are considered, that AIRA members benefit from international developments, and that AIRA remains connected to the broader global immunization interoperability community.',
+   'Ensures AIRA and its members are represented as international immunization record exchange develops, contributing IIS expertise to global FHIR efforts.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'V2-FHIR-TRANSLATION', 'FHIR Bridge for IIS Modernization and Global Collaboration',
+   'Develop the standards, tools, and expertise needed to bridge existing HL7 v2 IIS infrastructure with emerging FHIR-based exchange. This would allow IIS and their partners to continue using established HL7 v2 systems while communicating through FHIR with international programs, healthcare systems, and new technical initiatives. The effort could make decades of AIRA and IIS knowledge reusable in countries now developing immunization information systems, while giving AIRA a practical pathway into FHIR standards development, translation, migration, and hybrid architectures.',
+   'Bridges existing HL7 v2 IIS infrastructure with emerging FHIR exchange, so IIS can communicate internationally while reusing decades of AIRA and IIS expertise.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'VIRS', 'VIRS: Vaccine Intelligence and Resolution Service',
+   'Develop VIRS as a trusted shared service for validating and resolving vaccine lot numbers, products, manufacturers, codes, and related reference information. Its strategic value would come from the curated knowledge, matching capabilities, and resolution processes behind the service, not simply the API. VIRS could become an indispensable vaccine information utility for IIS, clinical systems, pharmacies, vendors, and other partners, while supporting a sustainable service-based business model for AIRA.',
+   'A trusted shared service for validating and resolving vaccine lots, products, manufacturers, and codes, built on curated knowledge rather than just an API.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'GLOBAL-INTELLIGENCE-PARTNERSHIPS', 'Building Bridges: Global Intelligence and Partnerships',
+   'Build AIRA’s knowledge and relationships through structured engagement with national immunization programs, standards organizations, vendors, researchers, and technical partners. These connections would help AIRA better understand how immunization systems are developing internationally, improve its domestic work, identify areas where AIRA expertise and assets could help others, and create opportunities for collaboration. Over time, these relationships could also generate new projects and diversified funding beyond AIRA’s traditional federal sources.',
+   'Builds AIRA’s knowledge and relationships through structured engagement with international immunization programs, standards bodies, vendors, and partners.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'SIGNAL', 'SIGNAL: Community-Powered IIS Intelligence',
+   'Develop SIGNAL as a trusted source of voluntary, aggregated information about IIS exchange volume, scale, trends, capabilities, and operational value. The larger opportunity is to turn the collective experience of the IIS community into highly valuable intelligence for both participating members and external partners. SIGNAL could help members understand their systems in context while increasing AIRA’s value to federal agencies, policymakers, funders, researchers, and future strategic partners.',
+   'A trusted source of voluntary, aggregated IIS exchange data that turns community experience into intelligence for members and external partners.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'MQE-SHARED-DATA-QUALITY', 'MQE Shared Data Quality Services',
+   'Expand MQE and related AIRA data quality assets into shared services that can support data quality improvement across IIS, submitters, healthcare systems, and other immunization exchanges. Potential capabilities include message validation, onboarding support, continuous monitoring, issue classification, longitudinal reporting, and shared resolution guidance. Like VIRS, MQE could evolve from a software asset into a community resource that concentrates expertise and reduces the need for every organization to solve the same data quality problems independently.',
+   'Expands MQE into shared data quality services such as validation, onboarding, monitoring, and reporting that reduce duplicated effort across IIS.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'SECURE-IIS-ONBOARDING', 'Secure IIS Onboarding and Credential Leadership',
+   'Establish AIRA as a strategic leader in reducing the cost, complexity, and operational risk of establishing and maintaining IIS interfaces. The work could connect provider enrollment, organizational identity, certificate issuance and renewal, authentication, authorization, credential rotation, and operational monitoring. The initial benefit would be stronger guidance, shared practices, and coordinated leadership that help AIRA members manage these responsibilities more effectively. Future service or automation opportunities could be considered as the need and AIRA’s role become clearer.',
+   'Positions AIRA as a leader in reducing the cost and risk of establishing and maintaining IIS interfaces, from enrollment through credential management.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'INTEROPHUB-COMMUNITY-PLATFORM', 'InteropHub and Community Intelligence Platform',
+   'Develop InteropHub as reusable infrastructure for organizing technical portfolios, community participation, emerging topics, meetings, decisions, consensus, and leadership visibility. AIRA’s internal use and the Emerging Standards process can establish and refine the model. The broader opportunity is to apply the platform across additional AIRA programs and potentially offer it to partner organizations that need to coordinate complex technical communities and make their work visible and actionable.',
+   'Reusable infrastructure for organizing technical portfolios, community participation, and decisions, refined via Emerging Standards for use across AIRA.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP()),
+  (@nursery_space_id, 'LEAP-FEDERAL-INNOVATION', 'LEAP and Federal Innovation Pilots',
+   'Track and develop opportunities to convert AIRA expertise, software assets, and emerging standards into federally funded demonstrations and innovation pilots, including ASTP and ONC LEAP opportunities. This topic can serve as a home for current LEAP participation, potential pilot concepts, partner discussions, funding announcements, and reusable proposal components. It provides a flexible mechanism for connecting AIRA’s developing ideas with federal programs that can fund experimentation and implementation.',
+   'Tracks and develops opportunities to convert AIRA expertise and standards work into federally funded demonstrations and innovation pilots like ASTP/ONC LEAP.',
+   'ACTIVE', 0, 0, 0, UTC_TIMESTAMP(), 2, UTC_TIMESTAMP())
+ON DUPLICATE KEY UPDATE
+  topic_name = VALUES(topic_name),
+  description = VALUES(description),
+  topic_summary = VALUES(topic_summary),
+  status = VALUES(status),
+  updated_at = UTC_TIMESTAMP();
+
+-- AIRA Opportunity Nursery topic classification (Stage + Path), captured 2026-07-31.
+-- Reflects manual Topic Board placements made during local testing, so this work
+-- carries forward through daily local database refreshes and rides along into the
+-- eventual production release instead of being lost on the next refresh.
+-- Looks up topics by stable topic_code (not raw numeric ids), since a fresh production
+-- upgrade will assign these new topics different auto-increment ids than local testing did.
+-- Regenerate and REPLACE this whole block (rather than appending another copy) the next
+-- time this snapshot needs to be refreshed.
+START TRANSACTION;
+
+SET @nursery_id := (SELECT es_topic_space_id FROM es_topic_space WHERE space_code = 'aira-opportunity-nursery');
+
+SET @stage_new_seedlings := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @nursery_id AND stage_code = 'NEW-SEEDLINGS');
+SET @stage_growing_ideas := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @nursery_id AND stage_code = 'GROWING-IDEAS');
+SET @stage_ready_for_review := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @nursery_id AND stage_code = 'READY-FOR-REVIEW');
+SET @stage_directed_next_steps := (SELECT es_topic_stage_definition_id FROM es_topic_stage_definition WHERE es_topic_space_id = @nursery_id AND stage_code = 'DIRECTED-NEXT-STEPS');
+
+SET @path_keep_growing := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @nursery_id AND path_code = 'KEEP-GROWING');
+SET @path_cultivate := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @nursery_id AND path_code = 'CULTIVATE-IN-AIRA');
+SET @path_cross_pollinate := (SELECT es_topic_path_definition_id FROM es_topic_path_definition WHERE es_topic_space_id = @nursery_id AND path_code = 'CROSS-POLLINATE-EXTERNALLY');
+
+-- New Seedlings / Cultivate inside AIRA: PHACT, Shared Immunization Decision Support Services,
+-- Secure IIS Onboarding and Credential Leadership
+UPDATE es_topic
+SET stage = 'New Seedlings', path = 'Cultivate inside AIRA',
+    es_topic_stage_definition_id = @stage_new_seedlings, es_topic_path_definition_id = @path_cultivate
+WHERE es_topic_space_id = @nursery_id
+  AND topic_code IN ('PHACT', 'IMMDS-SERVICES', 'SECURE-IIS-ONBOARDING');
+
+-- New Seedlings / Cross-pollinate Externally: International Immunization Exchange Leadership
+UPDATE es_topic
+SET stage = 'New Seedlings', path = 'Cross-pollinate Externally',
+    es_topic_stage_definition_id = @stage_new_seedlings, es_topic_path_definition_id = @path_cross_pollinate
+WHERE es_topic_space_id = @nursery_id
+  AND topic_code IN ('INTERNATIONAL-IMMUNIZATION-EXCHANGE');
+
+-- Growing Ideas / Cultivate inside AIRA: FHIR Bridge for IIS Modernization and Global Collaboration,
+-- VIRS, MQE Shared Data Quality Services
+UPDATE es_topic
+SET stage = 'Growing Ideas', path = 'Cultivate inside AIRA',
+    es_topic_stage_definition_id = @stage_growing_ideas, es_topic_path_definition_id = @path_cultivate
+WHERE es_topic_space_id = @nursery_id
+  AND topic_code IN ('V2-FHIR-TRANSLATION', 'VIRS', 'MQE-SHARED-DATA-QUALITY');
+
+-- Ready for Review / Cultivate inside AIRA: SIGNAL
+UPDATE es_topic
+SET stage = 'Ready for Review', path = 'Cultivate inside AIRA',
+    es_topic_stage_definition_id = @stage_ready_for_review, es_topic_path_definition_id = @path_cultivate
+WHERE es_topic_space_id = @nursery_id
+  AND topic_code IN ('SIGNAL');
+
+-- Directed Next Steps / Keep Growing: IVC Stewardship and Vocabulary Leadership,
+-- Building Bridges: Global Intelligence and Partnerships, InteropHub and Community Intelligence Platform,
+-- LEAP and Federal Innovation Pilots
+UPDATE es_topic
+SET stage = 'Directed Next Steps', path = 'Keep Growing',
+    es_topic_stage_definition_id = @stage_directed_next_steps, es_topic_path_definition_id = @path_keep_growing
+WHERE es_topic_space_id = @nursery_id
+  AND topic_code IN ('IVC-STEWARDSHIP', 'GLOBAL-INTELLIGENCE-PARTNERSHIPS', 'INTEROPHUB-COMMUNITY-PLATFORM', 'LEAP-FEDERAL-INNOVATION');
+
+COMMIT;

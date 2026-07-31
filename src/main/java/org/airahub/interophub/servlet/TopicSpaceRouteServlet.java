@@ -97,12 +97,13 @@ public class TopicSpaceRouteServlet extends HttpServlet {
                 return;
             }
             String targetCode = actualSpace.getSpaceCode();
-            String target = contextPath + "/es/topic/" + topicId + "?space=" + urlEncode(targetCode);
-            String query = trimToNull(request.getQueryString());
-            if (query != null) {
-                target = target + "&" + query;
-            }
-            response.sendRedirect(target);
+            StringBuilder target = new StringBuilder(contextPath)
+                    .append("/es/topic/")
+                    .append(topicId)
+                    .append("?space=")
+                    .append(urlEncode(targetCode));
+            appendIfPresent(target, "curator", request.getParameter("curator"));
+            response.sendRedirect(target.toString());
             return;
         }
 

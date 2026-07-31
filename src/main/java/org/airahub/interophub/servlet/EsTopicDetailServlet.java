@@ -2,8 +2,6 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -134,13 +132,6 @@ public class EsTopicDetailServlet extends HttpServlet {
                         return;
                 }
 
-                String servletPath = trimToNull(request.getServletPath());
-                boolean isLegacyTopicUrl = "/es/topic".equals(servletPath);
-                if (isLegacyTopicUrl && !"emerging-standards".equalsIgnoreCase(topicSpace.getSpaceCode())) {
-                        response.sendRedirect(buildSpaceTopicUrl(contextPath, topicSpace.getSpaceCode(), topicId,
-                                        request.getQueryString()));
-                        return;
-                }
                 String authenticatedEmailNormalized = authenticatedUser
                                 .map(User::getEmailNormalized)
                                 .map(this::trimToNull)
@@ -945,23 +936,6 @@ public class EsTopicDetailServlet extends HttpServlet {
                         return "Topic details will be added here.";
                 }
                 return String.join(" · ", parts);
-        }
-
-        private String buildSpaceTopicUrl(String contextPath, String spaceCode, Long topicId, String queryString) {
-                StringBuilder url = new StringBuilder(contextPath)
-                                .append("/spaces/")
-                                .append(urlEncodePathSegment(orEmpty(spaceCode)))
-                                .append("/topic/")
-                                .append(topicId);
-                String normalizedQuery = trimToNull(queryString);
-                if (normalizedQuery != null) {
-                        url.append('?').append(normalizedQuery);
-                }
-                return url.toString();
-        }
-
-        private String urlEncodePathSegment(String value) {
-                return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
         }
 
         private String quoteJs(String value) {
