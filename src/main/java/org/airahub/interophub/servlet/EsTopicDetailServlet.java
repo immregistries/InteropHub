@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
@@ -68,6 +69,7 @@ public class EsTopicDetailServlet extends HttpServlet {
         private final EsTopicPathDefinitionDao topicPathDefinitionDao;
         private final EsTopicRelationshipDao relationshipDao;
         private final EsTopicCurationDao curationDao;
+        private final EsCommentDao commentDao;
         private final TopicSpaceAccessService topicSpaceAccessService;
         private final EsTopicViewHistoryService topicViewHistoryService;
 
@@ -86,6 +88,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                 this.topicPathDefinitionDao = new EsTopicPathDefinitionDao();
                 this.relationshipDao = new EsTopicRelationshipDao();
                 this.curationDao = new EsTopicCurationDao();
+                this.commentDao = new EsCommentDao();
                 this.topicSpaceAccessService = new TopicSpaceAccessService();
                 this.topicViewHistoryService = new EsTopicViewHistoryService();
         }
@@ -197,26 +200,15 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 .orElse(null);
                 String normalizedNeighborhood = String.join(", ",
                                 topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
-                List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics = List.of();
-
                 if (authenticatedUser.isPresent()) {
-                        Long viewerUserId = authenticatedUser.get().getUserId();
                         try {
-                                topicViewHistoryService.recordAuthenticatedTopicView(viewerUserId, topicId);
+                                topicViewHistoryService.recordAuthenticatedTopicView(authenticatedUser.get().getUserId(), topicId);
                         } catch (RuntimeException ex) {
                                 LOGGER.log(Level.WARNING, "Unable to record topic view for user/topic", ex);
                         }
-
-                        Set<Long> visibleSpaceIds = topicSpaceAccessService.getVisibleSpaceIds(viewer);
-                        recentlyViewedTopics = topicViewHistoryService
-                                        .findRecentAuthenticatedTopicViews(viewerUserId, 10)
-                                        .stream()
-                                        .filter(item -> item.topicId() != null
-                                                        && item.topicSpaceId() != null
-                                                        && visibleSpaceIds.contains(item.topicSpaceId()))
-                                        .limit(10)
-                                        .toList();
                 }
+                List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics = RecentlyViewedTopicsRenderer
+                                .fetchVisible(topicViewHistoryService, topicSpaceAccessService, viewer);
 
                 List<EsMeeting> upcomingMeetings = List.of();
                 List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByTopicId(topicId);
@@ -425,11 +417,6 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                                 + contextPath
                                                                 + "/home\">Send info / question</a>");
                         }
-                        if (canManageTopic) {
-                                out.println("                <a class=\"aira-button aira-button--secondary\" href=\""
-                                                + contextPath + "/es/topic-manage/" + topicId
-                                                + "\">Champion/Support &amp; Admin View</a>");
-                        }
                         out.println("              </div>");
                         out.println("            </div>");
                         out.println("            <div class=\"aira-topic-meta\" aria-label=\"Topic metadata\">");
@@ -633,6 +620,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         "              <a class=\"aira-resource-link\" href=\"" + contextPath
                                                         + "/es/topic-manage/"
                                                         + topicId
+                                                        + "/followers"
                                                         + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">D</span><span><span class=\"aira-resource-link__title\">Background notes</span><span class=\"aira-resource-link__description\">Topic setup and follow-up notes</span></span></a>");
                         out.println(
                                         "              <a class=\"aira-resource-link\" href=\"" + contextPath
@@ -665,38 +653,15 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                         out.println("        </div>");
                         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic activity\">");
-                        out.println(
-                                        "          <section class=\"aira-section-card\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Recently viewed</h2></div><div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
-                        if (!canInteract) {
-                                out.println("            <p class=\"aira-meta\">Sign in to keep a persistent recently viewed topic list.</p>");
-                        } else if (recentlyViewedTopics.isEmpty()) {
-                                out.println("            <p class=\"aira-meta\">No recent topic views yet.</p>");
-                        } else {
-                                for (EsTopicViewHistoryService.RecentlyViewedTopic viewedTopic : recentlyViewedTopics) {
-                                        String viewedTopicName = orEmpty(viewedTopic.topicName());
-                                        boolean isCurrentTopic = topicId.equals(viewedTopic.topicId());
-                                        String recentMeta = isCurrentTopic
-                                                        ? "Current topic"
-                                                        : "Viewed " + formatRecentViewedAt(viewedTopic.lastViewedAt());
-                                        String ariaCurrent = isCurrentTopic ? " aria-current=\"page\"" : "";
-                                        String recentIcon = trimToNull(viewedTopic.topicEmoji());
-                                        if (recentIcon == null) {
-                                                recentIcon = initialForTopic(viewedTopicName);
-                                        }
-                                        out.println("            <a class=\"aira-recent-topic\" href=\""
-                                                        + contextPath
-                                                        + "/es/topic/" + viewedTopic.topicId() + "\""
-                                                        + ariaCurrent
-                                                        + "><span class=\"aira-recent-topic__icon\" aria-hidden=\"true\">"
-                                                        + escapeHtml(recentIcon)
-                                                        + "</span><span><span class=\"aira-recent-topic__title\">"
-                                                        + escapeHtml(viewedTopicName)
-                                                        + "</span><span class=\"aira-recent-topic__meta\">"
-                                                        + escapeHtml(recentMeta)
-                                                        + "</span></span></a>");
-                                }
+                        RecentlyViewedTopicsRenderer.render(out, topicId, recentlyViewedTopics, canInteract,
+                                        otherTopicId -> contextPath + "/es/topic/" + otherTopicId);
+                        if (canManageTopic) {
+                                TopicManageNavRenderer.TopicManageCounts manageCounts = TopicManageNavRenderer.computeCounts(
+                                                topicId, viewer, subscriptionDao, agendaItemDao, esMeetingDao, commentDao,
+                                                relationshipDao, curationDao, topicSpaceAccessService);
+                                TopicManageNavRenderer.render(out, contextPath, topicId, null, isAdmin,
+                                                meeting != null ? meeting.getEsTopicMeetingId() : null, false, manageCounts);
                         }
-                        out.println("          </div></section>");
                         out.println(
                                         "          <section class=\"aira-section-card\" id=\"private-intake\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Next discussion</h2></div><div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
                         if (meeting != null) {
@@ -951,22 +916,6 @@ public class EsTopicDetailServlet extends HttpServlet {
         }
 
         private static final DateTimeFormatter AGENDA_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
-        private static final DateTimeFormatter RECENT_VIEW_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a");
-
-        private String formatRecentViewedAt(java.time.LocalDateTime viewedAt) {
-                if (viewedAt == null) {
-                        return "recently";
-                }
-                return viewedAt.format(RECENT_VIEW_FMT);
-        }
-
-        private String initialForTopic(String topicName) {
-                String normalized = trimToNull(topicName);
-                if (normalized == null) {
-                        return "T";
-                }
-                return normalized.substring(0, 1).toUpperCase();
-        }
 
         private static final class CuratorNavContext {
                 final Long curatorTopicId;

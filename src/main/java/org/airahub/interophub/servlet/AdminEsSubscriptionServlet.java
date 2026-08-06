@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Optional;
@@ -14,19 +13,16 @@ import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsSubscriptionServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    private final AuthFlowService authFlowService;
     private final EsSubscriptionDao esSubscriptionDao;
     private final EsTopicDao esTopicDao;
     private final UserDao userDao;
 
     public AdminEsSubscriptionServlet() {
-        this.authFlowService = new AuthFlowService();
         this.esSubscriptionDao = new EsSubscriptionDao();
         this.esTopicDao = new EsTopicDao();
         this.userDao = new UserDao();
@@ -34,22 +30,21 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> admin = requireAdmin(request, response);
+        Optional<User> admin = AdminAccessGuard.requireAdmin(request, response);
         if (admin.isEmpty()) {
             return;
         }
-        String contextPath = request.getContextPath();
         Long subscriptionId = parseId(trimToNull(request.getParameter("subscriptionId")));
         Long topicIdParam = parseId(trimToNull(request.getParameter("topicId")));
         boolean saved = "true".equals(request.getParameter("saved"));
 
         if (subscriptionId == null) {
-            renderNotFound(response, contextPath, "No subscription ID provided.");
+            renderNotFound(request, response, "No subscription ID provided.");
             return;
         }
         Optional<EsSubscription> subOpt = esSubscriptionDao.findById(subscriptionId);
         if (subOpt.isEmpty()) {
-            renderNotFound(response, contextPath, "Subscription not found.");
+            renderNotFound(request, response, "Subscription not found.");
             return;
         }
         EsSubscription sub = subOpt.get();
@@ -60,12 +55,12 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
                 ? userDao.findById(sub.getUserId()).orElse(null)
                 : null;
 
-        renderDetail(response, contextPath, sub, topic, subUser, topicIdParam, saved);
+        renderDetail(request, response, sub, topic, subUser, topicIdParam, saved);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> admin = requireAdmin(request, response);
+        Optional<User> admin = AdminAccessGuard.requireAdmin(request, response);
         if (admin.isEmpty()) {
             return;
         }
@@ -108,154 +103,115 @@ public class AdminEsSubscriptionServlet extends HttpServlet {
         response.sendRedirect(redirect.toString());
     }
 
-    private void renderDetail(HttpServletResponse response, String contextPath, EsSubscription sub,
+    private void renderDetail(HttpServletRequest request, HttpServletResponse response, EsSubscription sub,
             EsTopic topic, User subUser, Long topicIdParam, boolean saved) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         boolean isTopic = sub.getSubscriptionType() == EsSubscription.SubscriptionType.TOPIC;
         EsSubscription.SubscriptionStatus status = sub.getStatus();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Subscription Detail - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Subscription Detail</h2>");
+        AdminShellRenderer.render(request, response, "Subscription Detail - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/topics", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Subscription Detail</h2>");
 
-                if (saved) {
-                    panelOut.println("        <p><strong>Status updated.</strong></p>");
-                }
+                    if (saved) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>Status updated.</p></div>");
+                    }
 
-                panelOut.println("        <section>");
-                panelOut.println("          <p><strong>Email:</strong> "
-                        + escapeHtml(orEmpty(sub.getEmail())) + "</p>");
-                String displayName = subUser != null ? orEmpty(subUser.getFullName()) : "";
-                panelOut.println("          <p><strong>Display Name:</strong> "
-                        + escapeHtml(displayName) + "</p>");
-                String org = subUser != null ? orEmpty(subUser.getOrganization()) : "";
-                panelOut.println("          <p><strong>Organization:</strong> "
-                        + escapeHtml(org) + "</p>");
-                String typeLabel = isTopic ? "Topic Following" : "General ES Updates";
-                panelOut.println("          <p><strong>Type:</strong> "
-                        + escapeHtml(typeLabel) + "</p>");
-                if (topic != null) {
-                    panelOut.println("          <p><strong>Topic:</strong> <a href=\"" + contextPath
-                            + "/admin/es/topics?esTopicId=" + topic.getEsTopicId() + "\">"
-                            + escapeHtml(orEmpty(topic.getTopicName())) + "</a></p>");
-                }
-                panelOut.println("          <p><strong>Current Status:</strong> "
-                        + escapeHtml(statusLabel(status)) + "</p>");
-                panelOut.println("          <p><strong>Subscribed On:</strong> "
-                        + escapeHtml(formatDate(sub.getCreatedAt())) + "</p>");
-                panelOut.println("        </section>");
+                    out.println("            <p><strong>Email:</strong> " + escapeHtml(orEmpty(sub.getEmail()))
+                            + "</p>");
+                    String displayName = subUser != null ? orEmpty(subUser.getFullName()) : "";
+                    out.println("            <p><strong>Display Name:</strong> " + escapeHtml(displayName)
+                            + "</p>");
+                    String org = subUser != null ? orEmpty(subUser.getOrganization()) : "";
+                    out.println("            <p><strong>Organization:</strong> " + escapeHtml(org) + "</p>");
+                    String typeLabel = isTopic ? "Topic Following" : "General ES Updates";
+                    out.println("            <p><strong>Type:</strong> " + escapeHtml(typeLabel) + "</p>");
+                    if (topic != null) {
+                        out.println("            <p><strong>Topic:</strong> <a class=\"aira-inline-link\" href=\""
+                                + contextPath + "/es/topic/" + topic.getEsTopicId() + "\">"
+                                + escapeHtml(orEmpty(topic.getTopicName())) + "</a></p>");
+                    }
+                    out.println("            <p><strong>Current Status:</strong> " + escapeHtml(statusLabel(status))
+                            + "</p>");
+                    out.println("            <p><strong>Subscribed On:</strong> "
+                            + escapeHtml(formatDate(sub.getCreatedAt())) + "</p>");
 
-                panelOut.println("        <section>");
-                panelOut.println("          <h3>Change Status</h3>");
-                panelOut.println("          <form method=\"post\" action=\"" + contextPath
-                        + "/admin/es/subscription\">");
-                panelOut.println("            <input type=\"hidden\" name=\"subscriptionId\" value=\""
-                        + sub.getEsSubscriptionId() + "\" />");
-                if (topicIdParam != null) {
-                    panelOut.println("            <input type=\"hidden\" name=\"topicId\" value=\""
-                            + topicIdParam + "\" />");
-                }
-                panelOut.println(
-                        "            <div class=\"login-form\" style=\"display:flex;gap:0.5rem;flex-wrap:wrap;\">");
-                String disabledSubscribed = !canTransitionTo(
-                        status,
-                        EsSubscription.SubscriptionStatus.SUBSCRIBED,
-                        isTopic)
-                                ? " disabled"
-                                : "";
-                String disabledChampion = !canTransitionTo(
-                        status,
-                        EsSubscription.SubscriptionStatus.CHAMPION,
-                        isTopic)
-                                ? " disabled"
-                                : "";
-                String disabledSupport = !canTransitionTo(
-                        status,
-                        EsSubscription.SubscriptionStatus.SUPPORT,
-                        isTopic)
-                                ? " disabled"
-                                : "";
-                String disabledUnsubscribed = !canTransitionTo(
-                        status,
-                        EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
-                        isTopic)
-                                ? " disabled"
-                                : "";
-                panelOut.println(
-                        "              <button type=\"submit\" name=\"action\" value=\"SUBSCRIBED\""
-                                + disabledSubscribed + ">Set Subscribed</button>");
-                if (isTopic) {
-                    panelOut.println(
-                            "              <button type=\"submit\" name=\"action\" value=\"CHAMPION\""
-                                    + disabledChampion + ">Set Champion</button>");
-                    panelOut.println(
-                            "              <button type=\"submit\" name=\"action\" value=\"SUPPORT\""
-                                    + disabledSupport + ">Set Support</button>");
-                }
-                panelOut.println(
-                        "              <button type=\"submit\" name=\"action\" value=\"UNSUBSCRIBED\""
-                                + disabledUnsubscribed + ">Unsubscribe</button>");
-                panelOut.println("            </div>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
+                    out.println("            <h3 class=\"aira-subsection-title\">Change Status</h3>");
+                    out.println("            <form method=\"post\" action=\"" + contextPath
+                            + "/admin/es/subscription\">");
+                    out.println("              <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                            + sub.getEsSubscriptionId() + "\" />");
+                    if (topicIdParam != null) {
+                        out.println("              <input type=\"hidden\" name=\"topicId\" value=\""
+                                + topicIdParam + "\" />");
+                    }
+                    String disabledSubscribed = !canTransitionTo(
+                            status,
+                            EsSubscription.SubscriptionStatus.SUBSCRIBED,
+                            isTopic)
+                                    ? " disabled"
+                                    : "";
+                    String disabledChampion = !canTransitionTo(
+                            status,
+                            EsSubscription.SubscriptionStatus.CHAMPION,
+                            isTopic)
+                                    ? " disabled"
+                                    : "";
+                    String disabledSupport = !canTransitionTo(
+                            status,
+                            EsSubscription.SubscriptionStatus.SUPPORT,
+                            isTopic)
+                                    ? " disabled"
+                                    : "";
+                    String disabledUnsubscribed = !canTransitionTo(
+                            status,
+                            EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
+                            isTopic)
+                                    ? " disabled"
+                                    : "";
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--secondary\" type=\"submit\" name=\"action\" value=\"SUBSCRIBED\""
+                                    + disabledSubscribed + ">Set Subscribed</button>");
+                    if (isTopic) {
+                        out.println(
+                                "                <button class=\"aira-button aira-button--secondary\" type=\"submit\" name=\"action\" value=\"CHAMPION\""
+                                        + disabledChampion + ">Set Champion</button>");
+                        out.println(
+                                "                <button class=\"aira-button aira-button--secondary\" type=\"submit\" name=\"action\" value=\"SUPPORT\""
+                                        + disabledSupport + ">Set Support</button>");
+                    }
+                    out.println(
+                            "                <button class=\"aira-button aira-button--danger\" type=\"submit\" name=\"action\" value=\"UNSUBSCRIBED\""
+                                    + disabledUnsubscribed + ">Unsubscribe</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
 
-                if (topicIdParam != null) {
-                    panelOut.println("        <p><a href=\"" + contextPath
-                            + "/admin/es/topics?esTopicId=" + topicIdParam
-                            + "\">\u2190 Back to Topic</a></p>");
-                }
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topics\">Back to Topics List</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    if (topicIdParam != null) {
+                        out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/es/topic/" + topicIdParam
+                                + "\">← Back to Topic</a></p>");
+                    }
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/topics\">Back to Topics List</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderNotFound(HttpServletResponse response, String contextPath,
+    private void renderNotFound(HttpServletRequest request, HttpServletResponse response,
             String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Not Found - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Not Found</h2>");
-                panelOut.println("        <p>" + escapeHtml(message) + "</p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topics\">Back to Topics</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request,
-            HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println(
-                        "        <p>You must be an InteropHub admin to access subscription management.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Not Found - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/topics", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Not Found</h2>");
+                    out.println("            <p>" + escapeHtml(message) + "</p>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/topics\">Back to Topics</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private String statusLabel(EsSubscription.SubscriptionStatus status) {

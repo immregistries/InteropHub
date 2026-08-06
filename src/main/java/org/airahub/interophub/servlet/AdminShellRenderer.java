@@ -2,67 +2,44 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.immregistries.aira.web.AiraPage;
 
+/**
+ * Shared shell for every admin page: the standard AIRA header, the dark
+ * "Platform | People | Content | Topic Spaces" context-nav row, and the
+ * right-rail admin menu (via {@link AdminSectionNavRenderer}) for whichever
+ * {@link AdminSection} is active. Callers supply only their own main-content
+ * markup - the menu is never duplicated per page.
+ */
 final class AdminShellRenderer {
 
     private AdminShellRenderer() {
     }
 
-    static void render(PrintWriter out, String title, String contextPath, ContentRenderer contentRenderer)
-            throws IOException {
-        String pageHeading = extractPageHeading(title);
-        out.println("<!DOCTYPE html>");
-        out.println("<html lang=\"en\">");
-        out.println("<head>");
-        out.println("  <meta charset=\"UTF-8\" />");
-        out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-        out.println("  <title>" + escapeHtml(title) + "</title>");
-        out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-        out.println("</head>");
-        out.println("<body class=\"admin-page\">");
-        out.println("  <main class=\"admin-shell\">");
-        out.println("    <aside class=\"admin-rail\">");
-        out.println("      <h1>Admin</h1>");
-        out.println("      <p class=\"admin-rail-subtitle\">Navigation center</p>");
-        AdminNavRenderer.renderPanel(out, contextPath);
-        out.println("      <p class=\"admin-rail-footer-link\"><a href=\"" + contextPath
-                + "/welcome\">Back to Welcome</a></p>");
-        out.println("    </aside>");
-        out.println("    <section class=\"admin-main\">");
-        out.println("      <section class=\"panel admin-page-intro\">");
-        out.println("        <h2>" + escapeHtml(pageHeading) + "</h2>");
-        out.println(
-                "        <p>This page helps administrators manage this area of InteropHub. Replace this placeholder text with page-specific guidance.</p>");
-        out.println("      </section>");
-        contentRenderer.render(out);
-        out.println("    </section>");
-        out.println("  </main>");
-        PageFooterRenderer.render(out);
-        out.println("</body>");
-        out.println("</html>");
-    }
+    static void render(HttpServletRequest request, HttpServletResponse response, String documentTitle,
+            AdminSection section, String activeHref, ContentRenderer contentRenderer) throws IOException {
+        String contextPath = request.getContextPath();
+        AiraPage page = InteropAiraPageFactory.base(request, documentTitle)
+                .applicationSubtitle("Admin")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.adminContext(section))
+                .build();
 
-    private static String escapeHtml(String value) {
-        if (value == null) {
-            return "";
+        response.setContentType("text/html;charset=UTF-8");
+        try (PrintWriter out = response.getWriter()) {
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container--wide aira-stack\">");
+            out.println("      <div class=\"aira-right-rail-layout\">");
+            out.println("        <div class=\"aira-stack\">");
+            contentRenderer.render(out);
+            out.println("        </div>");
+            AdminSectionNavRenderer.render(out, contextPath, section, contextPath + activeHref);
+            out.println("      </div>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&#39;");
-    }
-
-    private static String extractPageHeading(String title) {
-        if (title == null || title.isBlank()) {
-            return "Admin Page";
-        }
-        String normalized = title.trim();
-        if (normalized.endsWith(" - InteropHub")) {
-            normalized = normalized.substring(0, normalized.length() - " - InteropHub".length()).trim();
-        }
-        return normalized.isBlank() ? "Admin Page" : normalized;
     }
 
     @FunctionalInterface

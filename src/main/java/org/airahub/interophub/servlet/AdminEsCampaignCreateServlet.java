@@ -20,7 +20,6 @@ import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 /**
  * Admin page to create a new campaign and one-time import curated topics from a
@@ -29,14 +28,14 @@ import org.airahub.interophub.service.AuthFlowService;
  */
 public class AdminEsCampaignCreateServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/campaigns";
+
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicDao topicDao;
     private final EsTopicCurationDao topicCurationDao;
 
     public AdminEsCampaignCreateServlet() {
-        this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.topicDao = new EsTopicDao();
@@ -45,45 +44,44 @@ public class AdminEsCampaignCreateServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        renderForm(response, request.getContextPath(), null, null, null, null, topicDao.findAllActive());
+        renderForm(request, response, null, null, null, null, topicDao.findAllActive());
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String campaignCode = trimToNull(request.getParameter("newCampaignCode"));
         String campaignName = trimToNull(request.getParameter("newCampaignName"));
         Long sourceTopicId = parseId(trimToNull(request.getParameter("sourceTopicId")));
         List<EsTopic> sourceTopics = topicDao.findAllActive();
 
         if (campaignCode == null) {
-            renderForm(response, contextPath, "New Campaign Code is required.", campaignCode, campaignName,
+            renderForm(request, response, "New Campaign Code is required.", campaignCode, campaignName,
                     sourceTopicId, sourceTopics);
             return;
         }
         if (campaignName == null) {
-            renderForm(response, contextPath, "New Campaign Name is required.", campaignCode, campaignName,
+            renderForm(request, response, "New Campaign Name is required.", campaignCode, campaignName,
                     sourceTopicId, sourceTopics);
             return;
         }
         if (sourceTopicId == null) {
-            renderForm(response, contextPath, "Select Project is required.", campaignCode, campaignName,
+            renderForm(request, response, "Select Project is required.", campaignCode, campaignName,
                     null, sourceTopics);
             return;
         }
 
         if (campaignDao.findByCampaignCode(campaignCode).isPresent()) {
-            renderForm(response, contextPath,
+            renderForm(request, response,
                     "A campaign with that code already exists.", campaignCode, campaignName,
                     sourceTopicId, sourceTopics);
             return;
@@ -91,7 +89,7 @@ public class AdminEsCampaignCreateServlet extends HttpServlet {
 
         Optional<EsTopic> sourceTopicOpt = topicDao.findById(sourceTopicId);
         if (sourceTopicOpt.isEmpty() || sourceTopicOpt.get().getStatus() != EsTopic.EsTopicStatus.ACTIVE) {
-            renderForm(response, contextPath,
+            renderForm(request, response,
                     "Selected project was not found or is not active.", campaignCode, campaignName,
                     sourceTopicId, sourceTopics);
             return;
@@ -161,134 +159,116 @@ public class AdminEsCampaignCreateServlet extends HttpServlet {
             }
         }
 
-        renderResult(response, contextPath, campaign, sourceTopicOpt.get(), curatedEntries.size(), topicsImported,
+        renderResult(request, response, campaign, sourceTopicOpt.get(), curatedEntries.size(), topicsImported,
                 topicsUpdated, skippedSourceTopic, duplicateCuratedTopicRows);
     }
 
-    private void renderForm(HttpServletResponse response, String contextPath,
+    private void renderForm(HttpServletRequest request, HttpServletResponse response,
             String errorMessage, String campaignCode, String campaignName,
             Long selectedSourceTopicId, List<EsTopic> sourceTopics) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Create Campaign - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Create New Campaign</h2>");
-                panelOut.println(
-                        "        <p>Create a new campaign and do a one-time import of curated topics from a selected project.</p>");
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Create Campaign - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Create New Campaign</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Create a new campaign and do a one-time import of curated topics from a selected project.</p>");
 
-                if (errorMessage != null) {
-                    panelOut.println("        <p class=\"error\"><strong>Error:</strong> " + escapeHtml(errorMessage)
+                    if (errorMessage != null) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--danger\"><p><strong>Error:</strong> "
+                                        + escapeHtml(errorMessage) + "</p></div>");
+                    }
+
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\""
+                            + contextPath + "/admin/es/campaigns/create\">");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"newCampaignCode\">New Campaign Code</label>");
+                    out.println("                <input class=\"aira-input\" id=\"newCampaignCode\" name=\"newCampaignCode\" type=\"text\""
+                            + " value=\"" + escapeHtml(orEmpty(campaignCode)) + "\" required />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"newCampaignName\">New Campaign Name</label>");
+                    out.println("                <input class=\"aira-input\" id=\"newCampaignName\" name=\"newCampaignName\" type=\"text\""
+                            + " value=\"" + escapeHtml(orEmpty(campaignName)) + "\" required />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"sourceTopicId\">Select Project</label>");
+                    out.println("                <select class=\"aira-select\" id=\"sourceTopicId\" name=\"sourceTopicId\" required>");
+                    out.println("                  <option value=\"\">(select a project)</option>");
+                    for (EsTopic topic : sourceTopics) {
+                        boolean selected = selectedSourceTopicId != null
+                                && selectedSourceTopicId.equals(topic.getEsTopicId());
+                        out.println("                  <option value=\"" + topic.getEsTopicId() + "\""
+                                + (selected ? " selected" : "") + ">"
+                                + escapeHtml(topic.getTopicCode() + " — " + topic.getTopicName()) + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+
+                    out.println("            <p class=\"aira-meta\">"
+                            + "This is a one-time import. Curated child topics are copied into <code>es_campaign_topic</code>"
+                            + " with <code>table_no=1</code> and <code>topic_set_no=1</code>."
+                            + " The selected project itself is not imported."
                             + "</p>");
-                }
 
-                panelOut.println("        <form class=\"login-form\" method=\"post\" action=\""
-                        + contextPath + "/admin/es/campaigns/create\">");
-
-                panelOut.println("          <label for=\"newCampaignCode\">New Campaign Code</label>");
-                panelOut.println("          <input id=\"newCampaignCode\" name=\"newCampaignCode\" type=\"text\""
-                        + " value=\"" + escapeHtml(orEmpty(campaignCode)) + "\" required />");
-
-                panelOut.println("          <label for=\"newCampaignName\">New Campaign Name</label>");
-                panelOut.println("          <input id=\"newCampaignName\" name=\"newCampaignName\" type=\"text\""
-                        + " value=\"" + escapeHtml(orEmpty(campaignName)) + "\" required />");
-
-                panelOut.println("          <label for=\"sourceTopicId\">Select Project</label>");
-                panelOut.println("          <select id=\"sourceTopicId\" name=\"sourceTopicId\" required>");
-                panelOut.println("            <option value=\"\">(select a project)</option>");
-                for (EsTopic topic : sourceTopics) {
-                    boolean selected = selectedSourceTopicId != null
-                            && selectedSourceTopicId.equals(topic.getEsTopicId());
-                    panelOut.println("            <option value=\"" + topic.getEsTopicId() + "\""
-                            + (selected ? " selected" : "") + ">"
-                            + escapeHtml(topic.getTopicCode() + " \u2014 " + topic.getTopicName()) + "</option>");
-                }
-                panelOut.println("          </select>");
-
-                panelOut.println("          <p style=\"margin-top:0;font-size:.85em;color:#555\">"
-                        + "This is a one-time import. Curated child topics are copied into <code>es_campaign_topic</code>"
-                        + " with <code>table_no=1</code> and <code>topic_set_no=1</code>."
-                        + " The selected project itself is not imported."
-                        + "</p>");
-
-                panelOut.println("          <div class=\"form-actions\">");
-                panelOut.println("            <button type=\"submit\">Create Campaign</button>");
-                panelOut.println("            <a class=\"button-link\" href=\"" + contextPath
-                        + "/admin/es/campaigns\">Cancel</a>");
-                panelOut.println("          </div>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Campaign</button>");
+                    out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/campaigns\">Cancel</a>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderResult(HttpServletResponse response, String contextPath,
+    private void renderResult(HttpServletRequest request, HttpServletResponse response,
             EsCampaign campaign, EsTopic sourceTopic, int curatedRowsFound,
             int topicsImported, int topicsUpdated,
             int skippedSourceTopic, int duplicateCuratedTopicRows) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Campaign Created - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Campaign Created</h2>");
-                panelOut.println("        <p><strong>" + escapeHtml(campaign.getCampaignCode()) + "</strong> &mdash; "
-                        + escapeHtml(campaign.getCampaignName()) + "</p>");
-                panelOut.println("        <p>Source project: <strong>" + escapeHtml(sourceTopic.getTopicCode())
-                        + "</strong> &mdash; "
-                        + escapeHtml(sourceTopic.getTopicName()) + "</p>");
-                panelOut.println("        <p>Curation rows found: <strong>" + curatedRowsFound + "</strong></p>");
-                panelOut.println("        <p>Campaign topics imported: <strong>" + topicsImported + "</strong></p>");
-                if (topicsUpdated > 0) {
-                    panelOut.println("        <p>Campaign topics updated: <strong>" + topicsUpdated + "</strong></p>");
-                }
-                if (skippedSourceTopic > 0) {
-                    panelOut.println(
-                            "        <p>Skipped source-topic rows: <strong>" + skippedSourceTopic + "</strong></p>");
-                }
-                if (duplicateCuratedTopicRows > 0) {
-                    panelOut.println(
-                            "        <p>Duplicate curated-topic rows merged: <strong>" + duplicateCuratedTopicRows
-                                    + "</strong></p>");
-                }
-                if (topicsImported == 0 && topicsUpdated == 0) {
-                    panelOut.println(
-                            "        <p>No curated child topics were imported. The campaign was created successfully.</p>");
-                }
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Campaign Created - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Campaign Created</h2>");
+                    out.println("            <div class=\"aira-alert aira-alert--success\"><p><strong>"
+                            + escapeHtml(campaign.getCampaignCode()) + "</strong> &mdash; "
+                            + escapeHtml(campaign.getCampaignName()) + "</p></div>");
+                    out.println("            <p>Source project: <strong>" + escapeHtml(sourceTopic.getTopicCode())
+                            + "</strong> &mdash; "
+                            + escapeHtml(sourceTopic.getTopicName()) + "</p>");
+                    out.println("            <p>Curation rows found: <strong>" + curatedRowsFound + "</strong></p>");
+                    out.println("            <p>Campaign topics imported: <strong>" + topicsImported + "</strong></p>");
+                    if (topicsUpdated > 0) {
+                        out.println("            <p>Campaign topics updated: <strong>" + topicsUpdated + "</strong></p>");
+                    }
+                    if (skippedSourceTopic > 0) {
+                        out.println(
+                                "            <p>Skipped source-topic rows: <strong>" + skippedSourceTopic + "</strong></p>");
+                    }
+                    if (duplicateCuratedTopicRows > 0) {
+                        out.println(
+                                "            <p>Duplicate curated-topic rows merged: <strong>" + duplicateCuratedTopicRows
+                                        + "</strong></p>");
+                    }
+                    if (topicsImported == 0 && topicsUpdated == 0) {
+                        out.println(
+                                "            <p class=\"aira-meta\">No curated child topics were imported. The campaign was created successfully.</p>");
+                    }
 
-                String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
-                        + URLEncoder.encode(campaign.getCampaignCode(), StandardCharsets.UTF_8);
-                panelOut.println("        <p><a href=\"" + detailUrl + "\">View Campaign Details</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access this page.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    String detailUrl = contextPath + "/admin/es/campaigns/detail?campaignCode="
+                            + URLEncoder.encode(campaign.getCampaignCode(), StandardCharsets.UTF_8);
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + detailUrl
+                            + "\">View Campaign Details</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/campaigns\">Back to Campaigns</a>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 
     private Long parseId(String value) {

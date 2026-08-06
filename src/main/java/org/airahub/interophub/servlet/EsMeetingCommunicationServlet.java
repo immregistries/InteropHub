@@ -17,7 +17,6 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 
 /**
@@ -40,19 +39,17 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
             "Australia/Sydney",
             "Pacific/Auckland");
 
-    private final AuthFlowService authFlowService;
     private final MeetingCommunicationService communicationService;
     private final EsMeetingDao meetingDao;
 
     public EsMeetingCommunicationServlet() {
-        this.authFlowService = new AuthFlowService();
         this.communicationService = new MeetingCommunicationService();
         this.meetingDao = new EsMeetingDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty())
             return;
 
@@ -73,120 +70,130 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
         // Pre-select type if suggestType param is present
         String suggestType = trimToNull(request.getParameter("suggestType"));
 
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            String title = escapeHtml(orEmpty(meeting.getMeetingName())) + " — Communications";
-            AdminShellRenderer.render(out, title + " - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println(
-                        "        <h2>Communications — " + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
-                panelOut.println("        <p>"
-                        + "<a href=\"" + contextPath + "/es/agenda?meetingId=" + meetingId
-                        + "\">&larr; Back to Meeting</a>"
-                        + " &nbsp;|&nbsp; "
-                        + "<a href=\"" + contextPath + "/es/meeting-communications\">All Communications</a>"
-                        + "</p>");
+        String title = escapeHtml(orEmpty(meeting.getMeetingName())) + " — Communications";
+        AdminShellRenderer.render(request, response, title + " - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/meetings", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println(
+                            "            <h2 class=\"aira-section-title\">Communications — "
+                                    + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
+                    out.println("            <p>"
+                            + "<a class=\"aira-inline-link\" href=\"" + contextPath + "/es/agenda?meetingId="
+                            + meetingId + "\">&larr; Back to Meeting</a>"
+                            + " &nbsp;|&nbsp; "
+                            + "<a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/es/meeting-communications\">All Communications</a>"
+                            + "</p>");
 
-                // Existing communications table
-                panelOut.println("        <h3>Existing Communications</h3>");
-                if (communications.isEmpty()) {
-                    panelOut.println("        <p>No communications created yet for this meeting.</p>");
-                } else {
-                    panelOut.println("        <table class=\"data-table\">");
-                    panelOut.println("          <thead><tr>");
-                    panelOut.println(
-                            "            <th>Type</th><th>Status</th><th>Scheduled Send</th><th>Created</th><th></th>");
-                    panelOut.println("          </tr></thead><tbody>");
-                    for (EsMeetingCommunication comm : communications) {
-                        String scheduledAt = formatScheduledSendInCommunicationTimezone(comm);
-                        String createdAt = comm.getCreatedAt() != null
-                                ? DATETIME_FMT.format(comm.getCreatedAt())
-                                : "";
-                        panelOut.println("            <tr>");
-                        panelOut.println(
-                                "              <td>" + escapeHtml(comm.getCommunicationType().name()) + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(comm.getStatus().name()) + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(scheduledAt) + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(createdAt) + "</td>");
-                        panelOut.println("              <td><a href=\"" + contextPath
-                                + "/es/meeting-communication-preview?id=" + comm.getEsMeetingCommunicationId()
-                                + "\">Preview / Manage</a></td>");
-                        panelOut.println("            </tr>");
+                    // Existing communications table
+                    out.println("            <h3 class=\"aira-subsection-title\">Existing Communications</h3>");
+                    if (communications.isEmpty()) {
+                        out.println("            <p class=\"aira-meta\">No communications created yet for this meeting.</p>");
+                    } else {
+                        out.println("            <div class=\"aira-table-wrap\">");
+                        out.println("            <table class=\"aira-table\">");
+                        out.println("              <thead><tr>");
+                        out.println(
+                                "                <th>Type</th><th>Status</th><th>Scheduled Send</th><th>Created</th><th></th>");
+                        out.println("              </tr></thead><tbody>");
+                        for (EsMeetingCommunication comm : communications) {
+                            String scheduledAt = formatScheduledSendInCommunicationTimezone(comm);
+                            String createdAt = comm.getCreatedAt() != null
+                                    ? DATETIME_FMT.format(comm.getCreatedAt())
+                                    : "";
+                            out.println("                <tr>");
+                            out.println(
+                                    "                  <td>" + escapeHtml(comm.getCommunicationType().name())
+                                            + "</td>");
+                            out.println("                  <td>" + escapeHtml(comm.getStatus().name()) + "</td>");
+                            out.println("                  <td>" + escapeHtml(scheduledAt) + "</td>");
+                            out.println("                  <td>" + escapeHtml(createdAt) + "</td>");
+                            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                    + "/es/meeting-communication-preview?id=" + comm.getEsMeetingCommunicationId()
+                                    + "\">Preview / Manage</a></td>");
+                            out.println("                </tr>");
+                        }
+                        out.println("              </tbody></table>");
+                        out.println("            </div>");
                     }
-                    panelOut.println("          </tbody></table>");
-                }
 
-                // Create form
-                panelOut.println("        <h3>Create New Communication</h3>");
-                panelOut.println(
-                        "        <form method=\"post\" action=\"" + contextPath + "/es/meeting-communication\">");
-                panelOut.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\" />");
+                    // Create form
+                    out.println("            <h3 class=\"aira-subsection-title\">Create New Communication</h3>");
+                    out.println(
+                            "            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                                    + "/es/meeting-communication\">");
+                    out.println("              <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId
+                            + "\" />");
 
-                // Type
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label for=\"communicationType\">Communication Type</label>");
-                panelOut.println("            <select id=\"communicationType\" name=\"communicationType\" required>");
-                for (EsMeetingCommunication.CommunicationType type : EsMeetingCommunication.CommunicationType
-                        .values()) {
-                    String selected = type.name().equals(suggestType) ? " selected" : "";
-                    panelOut.println("              <option value=\"" + type.name() + "\"" + selected + ">"
-                            + escapeHtml(type.name()) + "</option>");
-                }
-                panelOut.println("            </select>");
-                panelOut.println("          </div>");
+                    // Type
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"communicationType\">Communication Type</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"communicationType\" name=\"communicationType\" required>");
+                    for (EsMeetingCommunication.CommunicationType type : EsMeetingCommunication.CommunicationType
+                            .values()) {
+                        String selected = type.name().equals(suggestType) ? " selected" : "";
+                        out.println("                  <option value=\"" + type.name() + "\"" + selected + ">"
+                                + escapeHtml(type.name()) + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                // Scheduled send at
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label for=\"scheduledSendAt\">Scheduled Send At</label>");
-                panelOut.println(
-                        "            <input type=\"datetime-local\" id=\"scheduledSendAt\" name=\"scheduledSendAt\" />");
-                panelOut.println("            <small>Leave blank to save as draft without scheduling.</small>");
-                panelOut.println("          </div>");
+                    // Scheduled send at
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"scheduledSendAt\">Scheduled Send At</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" type=\"datetime-local\" id=\"scheduledSendAt\" name=\"scheduledSendAt\" />");
+                    out.println(
+                            "                <p class=\"aira-field-help\">Leave blank to save as draft without scheduling.</p>");
+                    out.println("              </div>");
 
-                // Timezone
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label for=\"timezoneId\">Timezone</label>");
-                panelOut.println(
-                        "            <input type=\"text\" id=\"timezoneId\" name=\"timezoneId\" value=\"America/New_York\" maxlength=\"64\" />");
-                panelOut.println("          </div>");
+                    // Timezone
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"timezoneId\">Timezone</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" type=\"text\" id=\"timezoneId\" name=\"timezoneId\" value=\"America/New_York\" maxlength=\"64\" />");
+                    out.println("              </div>");
 
-                // Subject override
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label for=\"subjectOverride\">Subject Override (optional)</label>");
-                panelOut.println(
-                        "            <input type=\"text\" id=\"subjectOverride\" name=\"subjectOverride\" maxlength=\"500\" />");
-                panelOut.println("          </div>");
+                    // Subject override
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"subjectOverride\">Subject Override (optional)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" type=\"text\" id=\"subjectOverride\" name=\"subjectOverride\" maxlength=\"500\" />");
+                    out.println("              </div>");
 
-                // Note to include
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label for=\"noteToInclude\">Note to Include (optional)</label>");
-                panelOut.println(
-                        "            <textarea id=\"noteToInclude\" name=\"noteToInclude\" rows=\"4\"></textarea>");
-                panelOut.println("          </div>");
+                    // Note to include
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"noteToInclude\">Note to Include (optional)</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"noteToInclude\" name=\"noteToInclude\" rows=\"4\"></textarea>");
+                    out.println("              </div>");
 
-                // Recipient group checkboxes
-                panelOut.println("          <div class=\"form-group\">");
-                panelOut.println("            <label>Recipient Groups</label>");
-                renderCheckbox(panelOut, "includeGeneralMembers", "General meeting members",
-                        isGroupDefaulted(suggestType, "GENERAL"), suggestType);
-                renderCheckbox(panelOut, "includeTopicSubscribers", "Topic subscribers",
-                        isGroupDefaulted(suggestType, "SUBSCRIBER"), suggestType);
-                renderCheckbox(panelOut, "includeTopicChampions", "Topic champions/support",
-                        isGroupDefaulted(suggestType, "CHAMPION"), suggestType);
-                renderCheckbox(panelOut, "includePresenters", "Agenda presenters",
-                        isGroupDefaulted(suggestType, "PRESENTER"), suggestType);
-                panelOut.println("          </div>");
+                    // Recipient group checkboxes
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label>Recipient Groups</label>");
+                    renderCheckbox(out, "includeGeneralMembers", "General meeting members",
+                            isGroupDefaulted(suggestType, "GENERAL"), suggestType);
+                    renderCheckbox(out, "includeTopicSubscribers", "Topic subscribers",
+                            isGroupDefaulted(suggestType, "SUBSCRIBER"), suggestType);
+                    renderCheckbox(out, "includeTopicChampions", "Topic champions/support",
+                            isGroupDefaulted(suggestType, "CHAMPION"), suggestType);
+                    renderCheckbox(out, "includePresenters", "Agenda presenters",
+                            isGroupDefaulted(suggestType, "PRESENTER"), suggestType);
+                    out.println("              </div>");
 
-                panelOut.println("          <button type=\"submit\">Create Communication</button>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Communication</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty())
             return;
 
@@ -270,34 +277,8 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
     private static void renderCheckbox(PrintWriter out, String name, String label,
             boolean checked, String suggestType) {
         String checkedAttr = checked ? " checked" : "";
-        out.println("            <label style=\"display:block;\">");
-        out.println("              <input type=\"checkbox\" name=\"" + name + "\"" + checkedAttr + " /> "
-                + escapeHtml(label));
-        out.println("            </label>");
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
-        Optional<User> user = authFlowService.findAuthenticatedUser(request);
-        if (user.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(user.get())) {
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                AdminShellRenderer.render(out, "Access Denied - InteropHub", request.getContextPath(), panelOut -> {
-                    panelOut.println("      <section class=\"panel\">");
-                    panelOut.println("        <h2>Access Denied</h2>");
-                    panelOut.println("        <p>Admin access required.</p>");
-                    panelOut.println("        <p><a href=\"" + request.getContextPath()
-                            + "/welcome\">Return to Welcome</a></p>");
-                    panelOut.println("      </section>");
-                });
-            }
-            return Optional.empty();
-        }
-        return user;
+        out.println("                <label class=\"aira-radio\"><input type=\"checkbox\" name=\"" + name + "\""
+                + checkedAttr + " /> " + escapeHtml(label) + "</label>");
     }
 
     private static Long parseId(String value) {

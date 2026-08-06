@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.logging.Logger;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.immregistries.aira.web.AiraPage;
 
 public class HomeServlet extends HttpServlet {
         private static final Logger LOGGER = Logger.getLogger(HomeServlet.class.getName());
@@ -63,80 +64,102 @@ public class HomeServlet extends HttpServlet {
 
                 response.setContentType("text/html;charset=UTF-8");
 
+                AiraPage page = InteropAiraPageFactory.base(request, "Sign In - InteropHub")
+                                .applicationSubtitle("Sign In")
+                                .mainClass("aira-main")
+                                .context(InteropAiraPageFactory.publicTopicSpacePickerContext())
+                                .build();
+
                 try (PrintWriter out = response.getWriter()) {
-                        out.println("<!DOCTYPE html>");
-                        out.println("<html lang=\"en\">");
-                        out.println("<head>");
-                        out.println("  <meta charset=\"UTF-8\" />");
-                        out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-                        out.println("  <title>InteropHub Login</title>");
-                        out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-                        out.println("</head>");
-                        out.println("<body>");
-                        out.println("  <main class=\"login-page\">");
-                        out.println("    <section class=\"panel\">");
-                        out.println("      <img class=\"banner\" src=\"" + contextPath
-                                        + "/image/Splashpage_connectathon.png\" alt=\"Developers collaborating on connectathon work\" />");
-                        out.println("      <h1>Immunization InteropHub</h1>");
-                        out.println(
-                                        "      <p class=\"tagline\">Connect with other developers working on immunization interoperability</p>");
-                        out.println("    </section>");
-
-                        out.println("    <section class=\"panel\">");
-                        out.println("      <p class=\"section-title\">Enter your email to continue</p>");
-                        if (externalAuthRequest.isPresent()) {
-                                out.println(
-                                                "      <p>You are signing in for external application <strong>"
-                                                                + escapeHtml(externalAuthRequest.get().getAppCode())
-                                                                + "</strong>.</p>");
-                        }
-                        if (externalAuthError != null) {
-                                out.println("      <p><strong>External login request is invalid:</strong> "
-                                                + escapeHtml(externalAuthError) + "</p>");
-                        }
-                        out.println("      <form class=\"login-form\" action=\"" + contextPath
-                                        + "/send-welcome-email\" method=\"post\">");
-                        out.println("        <label for=\"email\">Email Address</label>");
-                        if (emailValidationError != null) {
-                                out.println(
-                                                "        <div class=\"field-error field-error-block\">Enter a valid email address using standard format (for example, you@example.org).</div>");
-                        }
-                        out.println(
-                                        "        <input id=\"email\" name=\"email\" type=\"email\" placeholder=\"you@example.org\" autocomplete=\"email\" required maxlength=\"254\" value=\""
-                                                        + escapeHtml(orEmpty(submittedEmail))
-                                                        + "\" pattern=\"[A-Za-z0-9.!#$%&amp;'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+\" title=\"Enter a valid email address like you@example.org\" />");
-                        if (externalAuthRequest.isPresent()) {
-                                renderExternalAuthHiddenInputs(out, externalAuthRequest.get());
-                        }
-                        out.println("        <button type=\"submit\">Send Email Link</button>");
-                        out.println("      </form>");
-                        out.println("    </section>");
-
-                        out.println("    <section class=\"panel\">");
-                        out.println(
-                                        "      <p>New here? We\'ll ask for a few details after you confirm your email so we can connect you with other participants.");
-                        out.println(
-                                        "      Your information is only shared with people who join the same connectathon workspace.</p>");
-                        out.println("    </section>");
-
-                        out.println("    <section class=\"panel\">");
-                        out.println("      <h2>About this project</h2>");
-                        out.println(
-                                        "      <p>InteropHub is operated by the American Immunization Registry Association (AIRA) to support the development of standards and interoperability for immunization information systems.</p>");
-                        out.println("      <p>By registering you can:</p>");
-                        out.println("      <ul>");
-                        out.println("        <li>Access demonstration systems</li>");
-                        out.println("        <li>Generate API secrets</li>");
-                        out.println("        <li>Connect with other developers</li>");
-                        out.println("        <li>Participate in connectathon workspaces</li>");
-                        out.println("      </ul>");
-                        out.println("      <p>Come join the community.</p>");
-                        out.println("    </section>");
-                        out.println("  </main>");
-                        PageFooterRenderer.render(out);
-                        out.println("</body>");
-                        out.println("</html>");
+                        page.writeStart(out);
+                        renderPageContent(out, contextPath, emailValidationError, submittedEmail,
+                                        externalAuthRequest, externalAuthError);
+                        page.writeEnd(out);
                 }
+        }
+
+        private void renderPageContent(PrintWriter out, String contextPath, String emailValidationError,
+                        String submittedEmail, Optional<AuthFlowService.ExternalAuthRequest> externalAuthRequest,
+                        String externalAuthError) {
+                out.println("      <div class=\"aira-container--standard\">");
+                out.println("        <div class=\"aira-page-header\">");
+                out.println("          <div>");
+                out.println("            <h1 class=\"aira-public-title\">Immunization InteropHub</h1>");
+                SignInInfoRenderer.renderIntroParagraphs(out);
+                out.println("          </div>");
+                out.println("          <div class=\"aira-action-group\">");
+                out.println("            <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                                + "/welcome\">Browse public topics</a>");
+                out.println("          </div>");
+                out.println("        </div>");
+
+                out.println("        <div class=\"aira-stack\">");
+
+                out.println("          <div class=\"aira-grid\">");
+
+                out.println("            <section class=\"aira-panel\">");
+                out.println("              <h2 class=\"aira-section-title\">Sign in with your email</h2>");
+                out.println(
+                                "              <p>Enter your email address and we will send you a sign-in link. No password is required.</p>");
+                if (externalAuthRequest.isPresent()) {
+                        out.println("              <div class=\"aira-alert aira-alert--info\">");
+                        out.println("                <p>You are signing in for external application <strong>"
+                                        + escapeHtml(externalAuthRequest.get().getAppCode())
+                                        + "</strong>.</p>");
+                        out.println("              </div>");
+                }
+                if (externalAuthError != null) {
+                        out.println("              <div class=\"aira-alert aira-alert--error\">");
+                        out.println("                <p><strong>External login request is invalid:</strong> "
+                                        + escapeHtml(externalAuthError) + "</p>");
+                        out.println("              </div>");
+                }
+                out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                                + "/send-welcome-email\" method=\"post\">");
+                out.println("                <div class=\"aira-field\">");
+                out.println("                  <label for=\"email\">Email Address</label>");
+                boolean hasEmailError = emailValidationError != null;
+                if (hasEmailError) {
+                        out.println(
+                                        "                  <div class=\"aira-field-error\" id=\"email-error\">Enter a valid email address using standard format (for example, you@example.org).</div>");
+                }
+                out.println(
+                                "                  <input class=\"aira-input\" id=\"email\" name=\"email\" type=\"email\" placeholder=\"you@example.org\" autocomplete=\"email\" required maxlength=\"254\" value=\""
+                                                + escapeHtml(orEmpty(submittedEmail))
+                                                + "\" pattern=\"[A-Za-z0-9.!#$%&amp;'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)+\" title=\"Enter a valid email address like you@example.org\""
+                                                + (hasEmailError ? " aria-invalid=\"true\" aria-describedby=\"email-error\"" : "")
+                                                + " />");
+                out.println("                </div>");
+                if (externalAuthRequest.isPresent()) {
+                        renderExternalAuthHiddenInputs(out, externalAuthRequest.get());
+                }
+                out.println("                <div class=\"aira-action-group\">");
+                out.println(
+                                "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Send sign-in link</button>");
+                out.println("                </div>");
+                out.println("              </form>");
+                out.println("            </section>");
+
+                out.println("            <section class=\"aira-panel\">");
+                out.println("              <h2 class=\"aira-section-title\">What happens next</h2>");
+                out.println(
+                                "              <p>If you already have an account, we will email you a link that signs you in. If you are new to InteropHub, you will first provide a few account details and accept the applicable terms; we will then email your sign-in link.</p>");
+                out.println(
+                                "              <p>After you sign in, InteropHub will keep you signed in for up to 30 days. Continued activity renews that period, so people who use InteropHub regularly should rarely need to sign in again. You may still be asked to sign in again for security or account-related reasons.</p>");
+                out.println("              <div class=\"aira-alert aira-alert--info\">");
+                out.println("                <p class=\"aira-alert__title\">You can browse without an account</p>");
+                out.println(
+                                "                <p>Public Topic Spaces, topics, meeting information, notes, presentations, and other public resources remain available without signing in.</p>");
+                out.println("              </div>");
+                out.println("            </section>");
+
+                out.println("          </div>");
+
+                SignInInfoRenderer.renderCapabilitiesSection(out);
+                SignInInfoRenderer.renderDetailsSection(out);
+
+                out.println("        </div>");
+                out.println("      </div>");
         }
 
         private void renderExternalAuthHiddenInputs(PrintWriter out,

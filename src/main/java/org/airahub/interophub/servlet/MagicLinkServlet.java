@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
+import org.immregistries.aira.web.AiraPage;
 
 public class MagicLinkServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(MagicLinkServlet.class.getName());
@@ -29,11 +30,11 @@ public class MagicLinkServlet extends HttpServlet {
             if (!authFlowService.isMagicLinkTokenValid(token)) {
                 throw new IllegalArgumentException("Magic link is invalid or expired.");
             }
-            renderConfirmation(response, request.getContextPath(), token);
+            renderConfirmation(request, response, token);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Magic link sign-in failed.", ex);
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            renderError(response, request.getContextPath(), ex.getMessage());
+            renderError(request, response, ex.getMessage());
         }
     }
 
@@ -57,61 +58,76 @@ public class MagicLinkServlet extends HttpServlet {
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Magic link sign-in failed.", ex);
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            renderError(response, request.getContextPath(), ex.getMessage());
+            renderError(request, response, ex.getMessage());
         }
     }
 
-    private void renderConfirmation(HttpServletResponse response, String contextPath, String token) throws IOException {
+    private void renderConfirmation(HttpServletRequest request, HttpServletResponse response, String token)
+            throws IOException {
         response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+
+        AiraPage page = InteropAiraPageFactory.base(request, "Confirm Sign-In - InteropHub")
+                .applicationSubtitle("Sign In")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.publicTopicSpacePickerContext())
+                .build();
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Confirm Sign-In - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Welcome to the Immunization InteropHub</h1>");
-            out.println("    <p>Your access link is valid.</p>");
-            out.println("    <p>Please press OK to continue.</p>");
-            out.println("    <form class=\"login-form\" action=\"" + contextPath + "/magic-link\" method=\"post\">");
-            out.println("      <input type=\"hidden\" name=\"token\" value=\"" + escapeHtml(token) + "\" />");
-            out.println("      <button type=\"submit\">OK</button>");
-            out.println("    </form>");
-            out.println("    <p><a href=\"" + contextPath + "/home\">Cancel and return to Home</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            page.writeStart(out);
+            out.println("      <div class=\"aira-container--narrow\">");
+            out.println("        <div class=\"aira-page-header\">");
+            out.println("          <div>");
+            out.println("            <h1 class=\"aira-page-title\">Welcome to the Immunization InteropHub</h1>");
+            out.println("            <p class=\"aira-page-intro\">Your access link is valid.</p>");
+            out.println("          </div>");
+            out.println("        </div>");
+            out.println("        <section class=\"aira-panel\">");
+            out.println("          <p>Please press OK to continue.</p>");
+            out.println(
+                    "          <form class=\"aira-form\" action=\"" + contextPath + "/magic-link\" method=\"post\">");
+            out.println("            <input type=\"hidden\" name=\"token\" value=\"" + escapeHtml(token) + "\" />");
+            out.println("            <div class=\"aira-action-group\">");
+            out.println("              <button class=\"aira-button aira-button--primary\" type=\"submit\">OK</button>");
+            out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                    + "/home\">Cancel and return to Home</a>");
+            out.println("            </div>");
+            out.println("          </form>");
+            out.println("        </section>");
+            out.println("      </div>");
+            page.writeEnd(out);
         }
     }
 
-    private void renderError(HttpServletResponse response, String contextPath, String message) throws IOException {
+    private void renderError(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
         response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+
+        AiraPage page = InteropAiraPageFactory.base(request, "Magic Link Invalid - InteropHub")
+                .applicationSubtitle("Sign In")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.publicTopicSpacePickerContext())
+                .build();
 
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Magic Link Invalid - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Magic Link Invalid</h1>");
-            out.println("    <p>Could not sign you in with that link.</p>");
-            out.println("    <p>Reason: " + escapeHtml(message) + "</p>");
-            out.println("    <p><a href=\"" + contextPath + "/home\">Return to Home</a></p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            page.writeStart(out);
+            out.println("      <div class=\"aira-container--narrow\">");
+            out.println("        <div class=\"aira-page-header\">");
+            out.println("          <div>");
+            out.println("            <h1 class=\"aira-page-title\">Magic Link Invalid</h1>");
+            out.println("            <p class=\"aira-page-intro\">Could not sign you in with that link.</p>");
+            out.println("          </div>");
+            out.println("        </div>");
+            out.println("        <div class=\"aira-alert aira-alert--error\">");
+            out.println("          <p>Reason: " + escapeHtml(message) + "</p>");
+            out.println("        </div>");
+            out.println("        <div class=\"aira-action-group\">");
+            out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                    + "/home\">Return to Home</a>");
+            out.println("        </div>");
+            out.println("      </div>");
+            page.writeEnd(out);
         }
     }
 

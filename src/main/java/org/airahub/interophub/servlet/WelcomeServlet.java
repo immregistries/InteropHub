@@ -60,7 +60,7 @@ public class WelcomeServlet extends HttpServlet {
                     .build();
             try (PrintWriter out = response.getWriter()) {
                 page.writeStart(out);
-                renderAnonymousContent(out, contextPath);
+                renderAnonymousContent(out, contextPath, publicSpaces);
                 page.writeEnd(out);
             }
             return;
@@ -88,53 +88,67 @@ public class WelcomeServlet extends HttpServlet {
                 .build();
         try (PrintWriter out = response.getWriter()) {
             page.writeStart(out);
-            renderAuthenticatedContent(out, contextPath, name, user, availableApps, publicSpaces, privateSpaces,
+            renderAuthenticatedContent(out, contextPath, name, availableApps, publicSpaces, privateSpaces,
                     adminUser);
             page.writeEnd(out);
         }
     }
 
-    private void renderAnonymousContent(PrintWriter out, String contextPath) {
+    private void renderAnonymousContent(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces) {
         out.println("      <div class=\"aira-container--standard\">");
         out.println("        <div class=\"aira-page-header\">");
         out.println("          <div>");
         out.println("            <h1 class=\"aira-public-title\">Immunization InteropHub</h1>");
-        out.println(
-                "            <p class=\"aira-public-intro\">Connect with other developers working on immunization interoperability.</p>");
+        SignInInfoRenderer.renderIntroParagraphs(out);
         out.println("          </div>");
         out.println("          <div class=\"aira-action-group\">");
         out.println("            <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
                 + "/home\">Sign In</a>");
         out.println("          </div>");
         out.println("        </div>");
+
+        out.println("        <div class=\"aira-stack\">");
+
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Public Topic Spaces</h2>");
+        renderTopicSpaceGrid(out, contextPath, publicSpaces);
+        out.println("          </section>");
+
+        SignInInfoRenderer.renderCapabilitiesSection(out);
+        SignInInfoRenderer.renderDetailsSection(out);
+
+        out.println("        </div>");
         out.println("      </div>");
     }
 
-    private void renderAuthenticatedContent(PrintWriter out, String contextPath, String name, User user,
+    private void renderAuthenticatedContent(PrintWriter out, String contextPath, String name,
             List<AppRegistry> availableApps, List<EsTopicSpace> publicSpaces, List<EsTopicSpace> privateSpaces,
             boolean adminUser) {
         out.println("      <div class=\"aira-container--standard\">");
         out.println("        <div class=\"aira-page-header\">");
         out.println("          <div>");
         out.println("            <h1 class=\"aira-page-title\">Welcome, " + escapeHtml(name) + "</h1>");
-        out.println("            <p class=\"aira-page-intro\">You are signed in as <strong>"
-                + escapeHtml(orEmpty(user.getEmail())) + "</strong>.</p>");
+        out.println(
+                "            <p class=\"aira-page-intro\"><strong>Discover, participate in, and advance immunization interoperability work.</strong></p>");
+        out.println("            <p class=\"aira-page-intro\">InteropHub connects topics, meetings, people, "
+                + "resources, and testing systems used by the immunization interoperability community. Start "
+                + "with a Topic Space to explore a related body of work, or open an application when you need "
+                + "a demonstration or testing system.</p>");
         out.println("          </div>");
         out.println("          <div class=\"aira-action-group\">");
-        out.println("            <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
-                + "/es/topics\">Emerging Standard Topics</a>");
         out.println("            <form class=\"aira-inline-form\" action=\"" + contextPath
                 + "/logout\" method=\"post\">");
         out.println(
-                "              <button type=\"submit\" class=\"aira-button aira-button--secondary\">Logout</button>");
+                "              <button type=\"submit\" class=\"aira-button aira-button--tertiary aira-button--small\">Logout</button>");
         out.println("            </form>");
         out.println("          </div>");
         out.println("        </div>");
 
         out.println("        <div class=\"aira-stack\">");
 
-        renderApplicationsSection(out, contextPath, availableApps);
         renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
+        renderApplicationsSection(out, contextPath, availableApps);
+        renderHowInteropHubSupportsSection(out);
 
         if (adminUser) {
             renderAdminSection(out, contextPath);
@@ -144,52 +158,94 @@ public class WelcomeServlet extends HttpServlet {
         out.println("      </div>");
     }
 
-    private void renderApplicationsSection(PrintWriter out, String contextPath, List<AppRegistry> availableApps) {
-        out.println("          <section class=\"aira-section-card\">");
-        out.println(
-                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Applications</h2></div>");
-        out.println("            <div class=\"aira-section-card__body\">");
-        if (availableApps.isEmpty()) {
+    private void renderTopicSpacesSection(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces,
+            List<EsTopicSpace> privateSpaces) {
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Explore work through Topic Spaces</h2>");
+        out.println("            <p class=\"aira-meta\">Topic Spaces organize related topics, meetings, resources, "
+                + "participants, and outcomes. Select a Topic Space from the navigation above to explore the work "
+                + "available to you.</p>");
+        List<EsTopicSpace> allSpaces = new ArrayList<>(publicSpaces);
+        allSpaces.addAll(privateSpaces);
+        if (allSpaces.isEmpty()) {
             out.println(
-                    "              <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No applications are currently available.</p></div>");
+                    "            <p class=\"aira-meta\">No Topic Spaces are currently available.</p>");
         } else {
-            out.println("              <div class=\"aira-resource-grid\">");
+            out.println("            <div class=\"aira-stack aira-stack--compact\">");
+            for (EsTopicSpace topicSpace : allSpaces) {
+                boolean isPrivate = topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE;
+                String spaceName = orEmpty(topicSpace.getSpaceName());
+                out.println("              <div>");
+                out.println("                <p><a class=\"aira-inline-link\" href=\""
+                        + buildTopicSpaceUrl(contextPath, topicSpace.getSpaceCode()) + "\">" + escapeHtml(spaceName)
+                        + "</a>"
+                        + (isPrivate ? " <span class=\"aira-badge aira-badge--subtle\">Private</span>" : "")
+                        + "</p>");
+                String description = trimToNull(topicSpace.getDescription());
+                if (description != null) {
+                    out.println("                <p class=\"aira-meta\">" + escapeHtml(description) + "</p>");
+                }
+                out.println("              </div>");
+            }
+            out.println("            </div>");
+        }
+        out.println("          </section>");
+    }
+
+    private void renderApplicationsSection(PrintWriter out, String contextPath, List<AppRegistry> availableApps) {
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Use demonstration and testing applications</h2>");
+        out.println("            <p class=\"aira-meta\">InteropHub provides access to applications that support "
+                + "standards development, demonstration, and interoperability testing. Applications may relate to "
+                + "work found in one or more Topic Spaces.</p>");
+        if (availableApps.isEmpty()) {
+            out.println("            <p class=\"aira-meta\">No applications are currently available.</p>");
+        } else {
+            out.println("            <div class=\"aira-grid\">");
             for (AppRegistry app : availableApps) {
                 String appName = orEmpty(app.getAppName());
-                out.println("                <a class=\"aira-resource-link\" href=\"" + contextPath
-                        + "/app-access?appId=" + app.getAppId()
-                        + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">"
-                        + escapeHtml(initialFor(appName))
-                        + "</span><span><span class=\"aira-resource-link__title\">" + escapeHtml(appName)
-                        + "</span>" + renderResourceDescription(app.getAppDescription()) + "</span></a>");
+                out.println("              <div>");
+                out.println("                <h3 class=\"aira-subsection-title\">" + escapeHtml(appName) + "</h3>");
+                String description = trimToNull(app.getAppDescription());
+                if (description != null) {
+                    out.println("                <p class=\"aira-meta\">" + escapeHtml(description) + "</p>");
+                }
+                out.println("                <a class=\"aira-button aira-button--secondary aira-button--small\" href=\""
+                        + contextPath + "/app-access?appId=" + app.getAppId() + "\">Open application</a>");
+                out.println("              </div>");
             }
-            out.println("              </div>");
+            out.println("            </div>");
         }
+        out.println("          </section>");
+    }
+
+    private void renderHowInteropHubSupportsSection(PrintWriter out) {
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">One place to follow interoperability work</h2>");
+        out.println("            <p class=\"aira-meta\">InteropHub connects the activities that move "
+                + "interoperability work from initial discovery through participation, testing, and durable "
+                + "results.</p>");
+        out.println("            <div class=\"aira-grid\">");
+        renderSupportItem(out, "Discover topics",
+                "Find emerging issues, understand why they matter, and see how they relate to other work.");
+        renderSupportItem(out, "Follow work",
+                "Stay connected to the topics and recurring meeting series that matter to you.");
+        renderSupportItem(out, "Join meetings",
+                "Find upcoming discussions, review agendas, and remain connected to the topics discussed.");
+        renderSupportItem(out, "Use testing systems",
+                "Access demonstration applications, technical resources, and organized interoperability activities.");
+        renderSupportItem(out, "Preserve outcomes",
+                "Return to meeting notes, decisions, presentations, resources, and prior work without "
+                        + "reconstructing the history from separate systems.");
         out.println("            </div>");
         out.println("          </section>");
     }
 
-    private void renderTopicSpacesSection(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces,
-            List<EsTopicSpace> privateSpaces) {
-        out.println("          <section class=\"aira-section-card\">");
-        out.println(
-                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Topic Spaces</h2></div>");
-        out.println("            <div class=\"aira-section-card__body aira-stack\">");
-        if (publicSpaces.isEmpty() && privateSpaces.isEmpty()) {
-            out.println(
-                    "              <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No Topic Spaces are currently available.</p></div>");
-        } else {
-            out.println("              <div>");
-            out.println("                <h3 class=\"aira-subsection-title\">Public</h3>");
-            renderTopicSpaceGrid(out, contextPath, publicSpaces);
-            out.println("              </div>");
-            out.println("              <div>");
-            out.println("                <h3 class=\"aira-subsection-title\">Private</h3>");
-            renderTopicSpaceGrid(out, contextPath, privateSpaces);
-            out.println("              </div>");
-        }
-        out.println("            </div>");
-        out.println("          </section>");
+    private void renderSupportItem(PrintWriter out, String title, String description) {
+        out.println("              <div>");
+        out.println("                <h3 class=\"aira-subsection-title\">" + escapeHtml(title) + "</h3>");
+        out.println("                <p class=\"aira-meta\">" + escapeHtml(description) + "</p>");
+        out.println("              </div>");
     }
 
     private void renderTopicSpaceGrid(PrintWriter out, String contextPath, List<EsTopicSpace> spaces) {
@@ -214,24 +270,12 @@ public class WelcomeServlet extends HttpServlet {
     private void renderAdminSection(PrintWriter out, String contextPath) {
         out.println("          <section class=\"aira-section-card\">");
         out.println(
-                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Admin</h2></div>");
-        out.println("            <div class=\"aira-section-card__body aira-stack\">");
-        for (AdminNavRenderer.NavGroup group : AdminNavRenderer.navGroups(contextPath)) {
-            out.println("              <div>");
-            out.println("                <h3 class=\"aira-subsection-title\">" + escapeHtml(group.title())
-                    + "</h3>");
-            out.println("                <div class=\"aira-resource-grid\">");
-            for (AdminNavRenderer.NavItem item : group.items()) {
-                String label = orEmpty(item.label());
-                out.println("                  <a class=\"aira-resource-link\" href=\"" + item.href()
-                        + "\"><span class=\"aira-resource-link__icon\" aria-hidden=\"true\">"
-                        + escapeHtml(initialFor(label))
-                        + "</span><span class=\"aira-resource-link__title\">" + escapeHtml(label)
-                        + "</span></a>");
-            }
-            out.println("                </div>");
-            out.println("              </div>");
-        }
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Administration</h2></div>");
+        out.println("            <div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
+        out.println(
+                "              <p class=\"aira-meta\">Visible because you have admin access. Not part of the general participant experience.</p>");
+        out.println("              <a class=\"aira-button aira-button--secondary aira-button--small\" href=\""
+                + contextPath + "/admin\">Open Admin Home</a>");
         out.println("            </div>");
         out.println("          </section>");
     }

@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.List;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
@@ -11,19 +10,18 @@ import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingPoll;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicMeetingPollService;
 import org.airahub.interophub.service.PublicUrlService;
 
 public class AdminEsMeetingPollsServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/meeting-polls";
+
     private final EsTopicMeetingDao topicMeetingDao;
     private final EsTopicMeetingPollService pollService;
     private final PublicUrlService publicUrlService;
 
     public AdminEsMeetingPollsServlet() {
-        this.authFlowService = new AuthFlowService();
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.pollService = new EsTopicMeetingPollService();
         this.publicUrlService = new PublicUrlService();
@@ -31,7 +29,7 @@ public class AdminEsMeetingPollsServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -39,24 +37,24 @@ public class AdminEsMeetingPollsServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         Long esTopicMeetingId = parseId(trimToNull(request.getParameter("esTopicMeetingId")));
         if (esTopicMeetingId == null) {
-            renderMeetingSelector(response, contextPath, "Select a meeting to manage polls.");
+            renderMeetingSelector(request, response, "Select a meeting to manage polls.");
             return;
         }
 
         EsTopicMeeting meeting = topicMeetingDao.findById(esTopicMeetingId).orElse(null);
         if (meeting == null) {
-            renderMeetingSelector(response, contextPath, "Meeting not found.");
+            renderMeetingSelector(request, response, "Meeting not found.");
             return;
         }
 
         List<EsTopicMeetingPoll> polls = pollService.listPollsForMeeting(esTopicMeetingId);
         String message = trimToNull(request.getParameter("message"));
-        renderMeetingPolls(response, contextPath, meeting, polls, message);
+        renderMeetingPolls(request, response, meeting, polls, message);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -83,113 +81,113 @@ public class AdminEsMeetingPollsServlet extends HttpServlet {
         }
     }
 
-    private void renderMeetingSelector(HttpServletResponse response, String contextPath, String message)
+    private void renderMeetingSelector(HttpServletRequest request, HttpServletResponse response, String message)
             throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicMeeting> meetings = topicMeetingDao.findAll();
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Meeting Polls - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Meeting Polls</h2>");
-                if (message != null) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                panelOut.println("        <form method=\"get\" action=\"" + contextPath + "/admin/es/meeting-polls\">");
-                panelOut.println("          <label>Meeting:<br><select name=\"esTopicMeetingId\">");
-                for (EsTopicMeeting m : meetings) {
-                    panelOut.println("            <option value=\"" + m.getEsTopicMeetingId() + "\">"
-                            + escapeHtml(orEmpty(m.getMeetingName()))
-                            + " (id=" + m.getEsTopicMeetingId() + ")</option>");
-                }
-                panelOut.println("          </select></label>");
-                panelOut.println("          <button type=\"submit\">Open Polls</button>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    private void renderMeetingPolls(HttpServletResponse response, String contextPath,
-            EsTopicMeeting meeting, List<EsTopicMeetingPoll> polls, String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Meeting Polls - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Meeting Polls</h2>");
-                panelOut.println("        <p><strong>Meeting:</strong> " + escapeHtml(orEmpty(meeting.getMeetingName()))
-                        + "</p>");
-                if (message != null) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println(
-                        "          <thead><tr><th>Poll Name</th><th>Timezone</th><th>Public Link</th><th>Actions</th></tr></thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopicMeetingPoll poll : polls) {
-                    String pollPath = "/es/meeting-poll?pollId=" + poll.getEsTopicMeetingPollId();
-                    String publicLink = publicUrlService.resolveExternalUrl(pollPath);
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(poll.getPollName())) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(poll.getDefaultTimezone())) + "</td>");
-                    panelOut.println("              <td><a href=\"" + escapeHtml(publicLink) + "\">View</a></td>");
-                    panelOut.println("              <td><a href=\"" + contextPath + "/admin/es/meeting-poll?pollId="
-                            + poll.getEsTopicMeetingPollId() + "\">Edit</a></td>");
-                    panelOut.println("            </tr>");
-                }
-                if (polls.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"4\">No polls for this meeting yet.</td></tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-
-                panelOut.println("        <h3>Create Poll</h3>");
-                panelOut.println(
-                        "        <form method=\"post\" action=\"" + contextPath + "/admin/es/meeting-polls\">");
-                panelOut.println("          <input type=\"hidden\" name=\"esTopicMeetingId\" value=\""
-                        + meeting.getEsTopicMeetingId() + "\">\n");
-                panelOut.println(
-                        "          <label>Poll Name<br><input type=\"text\" name=\"pollName\" maxlength=\"160\" required></label><br><br>");
-                panelOut.println(
-                        "          <label>Description<br><textarea name=\"pollDescription\" rows=\"3\"></textarea></label><br><br>");
-                panelOut.println("          <label>Default Timezone<br><select name=\"defaultTimezone\">");
-                for (String timezone : EsTopicMeetingPollService.ALLOWED_TIMEZONES) {
-                    String selected = EsTopicMeetingPollService.DEFAULT_TIMEZONE.equals(timezone) ? " selected" : "";
-                    panelOut.println("            <option value=\"" + timezone + "\"" + selected + ">"
-                            + timezone + "</option>");
-                }
-                panelOut.println("          </select></label><br><br>");
-                panelOut.println("          <button type=\"submit\">Create Poll</button>");
-                panelOut.println("        </form>");
-
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/meetings?meetingId="
-                        + meeting.getEsTopicMeetingId() + "\">Back to Meeting</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
-        Optional<User> user = authFlowService.findAuthenticatedUser(request);
-        if (user.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(user.get())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                AdminShellRenderer.render(out, "Access Denied - InteropHub", request.getContextPath(), panelOut -> {
-                    panelOut.println("      <section class=\"panel\">");
-                    panelOut.println("        <h2>Access Denied</h2>");
-                    panelOut.println("        <p>Admin access required.</p>");
-                    panelOut.println("      </section>");
+        AdminShellRenderer.render(request, response, "Meeting Polls - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Polls</h2>");
+                    if (message != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <form class=\"aira-form\" method=\"get\" action=\"" + contextPath
+                            + "/admin/es/meeting-polls\">");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esTopicMeetingId\">Meeting</label>");
+                    out.println("                <select class=\"aira-select\" id=\"esTopicMeetingId\" name=\"esTopicMeetingId\">");
+                    for (EsTopicMeeting m : meetings) {
+                        out.println("                  <option value=\"" + m.getEsTopicMeetingId() + "\">"
+                                + escapeHtml(orEmpty(m.getMeetingName()))
+                                + " (id=" + m.getEsTopicMeetingId() + ")</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Open Polls</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
                 });
-            }
-            return Optional.empty();
-        }
-        return user;
+    }
+
+    private void renderMeetingPolls(HttpServletRequest request, HttpServletResponse response,
+            EsTopicMeeting meeting, List<EsTopicMeetingPoll> polls, String message) throws IOException {
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Meeting Polls - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Polls</h2>");
+                    out.println("            <p><strong>Meeting:</strong> " + escapeHtml(orEmpty(meeting.getMeetingName()))
+                            + "</p>");
+                    if (message != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println(
+                            "              <thead><tr><th>Poll Name</th><th>Timezone</th><th>Public Link</th><th>Actions</th></tr></thead>");
+                    out.println("              <tbody>");
+                    for (EsTopicMeetingPoll poll : polls) {
+                        String pollPath = "/es/meeting-poll?pollId=" + poll.getEsTopicMeetingPollId();
+                        String publicLink = publicUrlService.resolveExternalUrl(pollPath);
+                        out.println("                <tr>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(poll.getPollName())) + "</td>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(poll.getDefaultTimezone())) + "</td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + escapeHtml(publicLink)
+                                + "\">View</a></td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/meeting-poll?pollId="
+                                + poll.getEsTopicMeetingPollId() + "\">Edit</a></td>");
+                        out.println("                </tr>");
+                    }
+                    if (polls.isEmpty()) {
+                        out.println("                <tr><td colspan=\"4\">No polls for this meeting yet.</td></tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+
+                    out.println("            <h3 class=\"aira-subsection-title\">Create Poll</h3>");
+                    out.println(
+                            "            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                                    + "/admin/es/meeting-polls\">");
+                    out.println("              <input type=\"hidden\" name=\"esTopicMeetingId\" value=\""
+                            + meeting.getEsTopicMeetingId() + "\">");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"pollName\">Poll Name</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"pollName\" type=\"text\" name=\"pollName\" maxlength=\"160\" required>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"pollDescription\">Description</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"pollDescription\" name=\"pollDescription\" rows=\"3\"></textarea>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"defaultTimezone\">Default Timezone</label>");
+                    out.println("                <select class=\"aira-select\" id=\"defaultTimezone\" name=\"defaultTimezone\">");
+                    for (String timezone : EsTopicMeetingPollService.ALLOWED_TIMEZONES) {
+                        String selected = EsTopicMeetingPollService.DEFAULT_TIMEZONE.equals(timezone) ? " selected" : "";
+                        out.println("                  <option value=\"" + timezone + "\"" + selected + ">"
+                                + timezone + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Poll</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/meetings?meetingId="
+                            + meeting.getEsTopicMeetingId() + "\">Back to Meeting</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private Long parseId(String value) {

@@ -154,7 +154,7 @@ public class EsTopicRelationshipServlet extends HttpServlet {
 
     private String topicReturnUrl(String contextPath, Long topicId, boolean returnToManage) {
         if (returnToManage) {
-            return contextPath + "/es/topic-manage/" + topicId;
+            return contextPath + "/es/topic-manage/" + topicId + "/relationships";
         }
         return contextPath + "/es/topic/" + topicId;
     }

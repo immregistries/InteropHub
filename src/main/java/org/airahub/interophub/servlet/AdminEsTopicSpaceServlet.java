@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
@@ -23,13 +22,12 @@ import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicSpaceMember;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsTopicSpaceServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final String ACTIVE_HREF = "/admin/es/topic-spaces";
 
-    private final AuthFlowService authFlowService;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsTopicSpaceMemberDao memberDao;
     private final EsTopicDao topicDao;
@@ -37,7 +35,6 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
     private final UserDao userDao;
 
     public AdminEsTopicSpaceServlet() {
-        this.authFlowService = new AuthFlowService();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.memberDao = new EsTopicSpaceMemberDao();
         this.topicDao = new EsTopicDao();
@@ -47,12 +44,11 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
         String spaceIdRaw = trimToNull(request.getParameter("esTopicSpaceId"));
 
@@ -61,29 +57,29 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             blank.setDisplayOrder(0);
             blank.setIsActive(Boolean.TRUE);
             blank.setVisibility(EsTopicSpace.Visibility.PUBLIC);
-            renderEditForm(response, contextPath, blank, true, null);
+            renderEditForm(request, response, blank, true, null);
             return;
         }
 
         if (spaceIdRaw != null) {
             Long spaceId = parseId(spaceIdRaw);
             if (spaceId == null) {
-                renderList(response, contextPath, "Invalid Topic Space identifier.");
+                renderList(request, response, "Invalid Topic Space identifier.");
                 return;
             }
             EsTopicSpace topicSpace = topicSpaceDao.findById(spaceId).orElse(null);
             if (topicSpace == null) {
-                renderList(response, contextPath, "Topic Space was not found.");
+                renderList(request, response, "Topic Space was not found.");
                 return;
             }
 
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, topicSpace, false, null);
+                renderEditForm(request, response, topicSpace, false, null);
                 return;
             }
 
             if ("report".equalsIgnoreCase(mode)) {
-                renderTopicNarrativeReport(response, contextPath, topicSpace);
+                renderTopicNarrativeReport(request, response, topicSpace);
                 return;
             }
 
@@ -91,17 +87,17 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             if (request.getParameter("memberSaved") != null) {
                 message = "Membership updated.";
             }
-            renderDetails(response, contextPath, topicSpace, message);
+            renderDetails(request, response, topicSpace, message);
             return;
         }
 
         String message = request.getParameter("saved") != null ? "Topic Space created." : null;
-        renderList(response, contextPath, message);
+        renderList(request, response, message);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -126,12 +122,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         } else {
             Long spaceId = parseId(spaceIdRaw);
             if (spaceId == null) {
-                renderList(response, contextPath, "Invalid Topic Space identifier.");
+                renderList(request, response, "Invalid Topic Space identifier.");
                 return;
             }
             topicSpace = topicSpaceDao.findById(spaceId).orElse(null);
             if (topicSpace == null) {
-                renderList(response, contextPath, "Topic Space was not found.");
+                renderList(request, response, "Topic Space was not found.");
                 return;
             }
         }
@@ -177,7 +173,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 } catch (Exception ignored) {
                 }
             }
-            renderEditForm(response, contextPath, topicSpace, creating, ex.getMessage());
+            renderEditForm(request, response, topicSpace, creating, ex.getMessage());
         }
     }
 
@@ -185,18 +181,18 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             throws IOException {
         Long spaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         if (spaceId == null) {
-            renderList(response, contextPath, "Invalid Topic Space identifier.");
+            renderList(request, response, "Invalid Topic Space identifier.");
             return;
         }
 
         EsTopicSpace topicSpace = topicSpaceDao.findById(spaceId).orElse(null);
         if (topicSpace == null) {
-            renderList(response, contextPath, "Topic Space was not found.");
+            renderList(request, response, "Topic Space was not found.");
             return;
         }
 
         if (topicSpace.getVisibility() != EsTopicSpace.Visibility.PRIVATE) {
-            renderDetails(response, contextPath, topicSpace,
+            renderDetails(request, response, topicSpace,
                     "Membership is managed only for private Topic Spaces.");
             return;
         }
@@ -222,7 +218,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             response.sendRedirect(contextPath + "/admin/es/topic-spaces?esTopicSpaceId=" + spaceId
                     + "&memberSaved=1");
         } catch (Exception ex) {
-            renderDetails(response, contextPath, topicSpace, ex.getMessage());
+            renderDetails(request, response, topicSpace, ex.getMessage());
         }
     }
 
@@ -231,19 +227,19 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         Long spaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         Long memberId = parseId(trimToNull(request.getParameter("esTopicSpaceMemberId")));
         if (spaceId == null || memberId == null) {
-            renderList(response, contextPath, "Invalid membership identifier.");
+            renderList(request, response, "Invalid membership identifier.");
             return;
         }
 
         EsTopicSpace topicSpace = topicSpaceDao.findById(spaceId).orElse(null);
         if (topicSpace == null) {
-            renderList(response, contextPath, "Topic Space was not found.");
+            renderList(request, response, "Topic Space was not found.");
             return;
         }
 
         EsTopicSpaceMember member = memberDao.findById(memberId).orElse(null);
         if (member == null || !spaceId.equals(member.getEsTopicSpaceId())) {
-            renderDetails(response, contextPath, topicSpace, "Membership record was not found.");
+            renderDetails(request, response, topicSpace, "Membership record was not found.");
             return;
         }
 
@@ -251,308 +247,347 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         response.sendRedirect(contextPath + "/admin/es/topic-spaces?esTopicSpaceId=" + spaceId + "&memberSaved=1");
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        String contextPath = request.getContextPath();
         List<EsTopicSpace> spaces = topicSpaceDao.findAllOrdered();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Topic Spaces Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Topic Spaces</h2>");
-                panelOut.println("        <p>Create and maintain Topic Spaces and private-space membership.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topic-spaces?mode=new\">Add Topic Space</a></p>");
+        AdminShellRenderer.render(request, response, "Topic Spaces Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Topic Spaces</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Create and maintain Topic Spaces and private-space membership.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces?mode=new\">Add Topic Space</a>");
+                    out.println("            </div>");
 
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Name</th>");
-                panelOut.println("              <th>Code</th>");
-                panelOut.println("              <th>Visibility</th>");
-                panelOut.println("              <th>Active</th>");
-                panelOut.println("              <th>Topics</th>");
-                panelOut.println("              <th>Meetings</th>");
-                panelOut.println("              <th>Members</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopicSpace space : spaces) {
-                    long topicCount = topicDao.countBySpaceId(space.getEsTopicSpaceId());
-                    long meetingCount = meetingDao.countBySpaceId(space.getEsTopicSpaceId());
-                    long memberCount = memberDao.findAllBySpaceId(space.getEsTopicSpaceId()).size();
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/admin/es/topic-spaces?esTopicSpaceId=" + space.getEsTopicSpaceId()
-                            + "\">" + escapeHtml(orEmpty(space.getSpaceName())) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(space.getSpaceCode())) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(space.getVisibility() == null
-                            ? ""
-                            : space.getVisibility().name()) + "</td>");
-                    panelOut.println("              <td>" + (Boolean.TRUE.equals(space.getIsActive()) ? "Yes" : "No")
-                            + "</td>");
-                    panelOut.println("              <td>" + topicCount + "</td>");
-                    panelOut.println("              <td>" + meetingCount + "</td>");
-                    panelOut.println("              <td>" + memberCount + "</td>");
-                    panelOut.println("            </tr>");
-                }
-                if (spaces.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"7\">No Topic Spaces found.</td></tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Name</th>");
+                    out.println("                  <th>Code</th>");
+                    out.println("                  <th>Visibility</th>");
+                    out.println("                  <th>Active</th>");
+                    out.println("                  <th>Topics</th>");
+                    out.println("                  <th>Meetings</th>");
+                    out.println("                  <th>Members</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (EsTopicSpace space : spaces) {
+                        long topicCount = topicDao.countBySpaceId(space.getEsTopicSpaceId());
+                        long meetingCount = meetingDao.countBySpaceId(space.getEsTopicSpaceId());
+                        long memberCount = memberDao.findAllBySpaceId(space.getEsTopicSpaceId()).size();
+                        out.println("                <tr>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/topic-spaces?esTopicSpaceId=" + space.getEsTopicSpaceId()
+                                + "\">" + escapeHtml(orEmpty(space.getSpaceName())) + "</a></td>");
+                        out.println(
+                                "                  <td>" + escapeHtml(orEmpty(space.getSpaceCode())) + "</td>");
+                        out.println("                  <td>" + escapeHtml(space.getVisibility() == null
+                                ? ""
+                                : space.getVisibility().name()) + "</td>");
+                        out.println("                  <td>" + activeBadge(Boolean.TRUE.equals(space.getIsActive()))
+                                + "</td>");
+                        out.println("                  <td>" + topicCount + "</td>");
+                        out.println("                  <td>" + meetingCount + "</td>");
+                        out.println("                  <td>" + memberCount + "</td>");
+                        out.println("                </tr>");
+                    }
+                    if (spaces.isEmpty()) {
+                        out.println("                <tr><td colspan=\"7\">No Topic Spaces found.</td></tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderDetails(HttpServletResponse response, String contextPath, EsTopicSpace topicSpace,
+    private void renderDetails(HttpServletRequest request, HttpServletResponse response, EsTopicSpace topicSpace,
             String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicSpaceMember> members = memberDao.findAllBySpaceId(topicSpace.getEsTopicSpaceId());
         Map<Long, User> usersById = loadUsersByMembers(members);
 
         long topicCount = topicDao.countBySpaceId(topicSpace.getEsTopicSpaceId());
         long meetingCount = meetingDao.countBySpaceId(topicSpace.getEsTopicSpaceId());
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Topic Space - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>" + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</h2>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <p><strong>Code:</strong> " + escapeHtml(orEmpty(topicSpace.getSpaceCode()))
-                        + "</p>");
-                panelOut.println("          <p><strong>Visibility:</strong> "
-                        + escapeHtml(topicSpace.getVisibility() == null ? "" : topicSpace.getVisibility().name())
-                        + "</p>");
-                panelOut.println(
-                        "          <p><strong>Description:</strong> " + escapeHtml(orEmpty(topicSpace.getDescription()))
-                                + "</p>");
-                panelOut.println("          <p><strong>Display Order:</strong> "
-                        + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder()))) + "</p>");
-                panelOut.println("          <p><strong>Active:</strong> "
-                        + (Boolean.TRUE.equals(topicSpace.getIsActive()) ? "Yes" : "No") + "</p>");
-                panelOut.println(
-                        "          <p><strong>Created:</strong> " + escapeHtml(formatDate(topicSpace.getCreatedAt()))
-                                + "</p>");
-                panelOut.println(
-                        "          <p><strong>Updated:</strong> " + escapeHtml(formatDate(topicSpace.getUpdatedAt()))
-                                + "</p>");
-                panelOut.println("          <p><strong>Topics:</strong> " + topicCount + "</p>");
-                panelOut.println("          <p><strong>Meetings:</strong> " + meetingCount + "</p>");
-                panelOut.println("        </section>");
-
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "&mode=edit\">Edit Topic Space</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/neighborhoods?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "\">Edit Neighborhoods</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/stages?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "\">Edit Stages</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/paths?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "\">Edit Advancement Paths</a></p>");
-                panelOut.println("        <p><a href=\"" + buildTopicSpaceTopicsUrl(contextPath, topicSpace)
-                        + "\">View Topic Space</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?space="
-                        + topicSpace.getEsTopicSpaceId() + "\">Manage ES Topics for this Workspace</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topic-spaces?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
-                        + "&mode=report\">Printable Topic Narrative Report</a></p>");
-
-                if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
-                    panelOut.println("        <h3>Members</h3>");
-                    panelOut.println("        <table class=\"data-table\">");
-                    panelOut.println("          <thead><tr>");
-                    panelOut.println(
-                            "            <th>Email</th><th>Name</th><th>Role</th><th>Added</th><th>Action</th>");
-                    panelOut.println("          </tr></thead>");
-                    panelOut.println("          <tbody>");
-                    for (EsTopicSpaceMember member : members) {
-                        User user = usersById.get(member.getUserId());
-                        panelOut.println("            <tr>");
-                        panelOut.println("              <td>" + escapeHtml(user == null ? "" : orEmpty(user.getEmail()))
-                                + "</td>");
-                        panelOut.println(
-                                "              <td>" + escapeHtml(user == null ? "" : orEmpty(user.getFullName()))
-                                        + "</td>");
-                        panelOut.println("              <td>" + escapeHtml(member.getRole() == null
-                                ? ""
-                                : member.getRole().name()) + "</td>");
-                        panelOut.println(
-                                "              <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
-                        panelOut.println("              <td>");
-                        panelOut.println("                <form method=\"post\" action=\"" + contextPath
-                                + "/admin/es/topic-spaces\" style=\"display:inline;\">");
-                        panelOut.println(
-                                "                  <input type=\"hidden\" name=\"action\" value=\"removeMember\" />");
-                        panelOut.println("                  <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
-                                + topicSpace.getEsTopicSpaceId() + "\" />");
-                        panelOut.println(
-                                "                  <input type=\"hidden\" name=\"esTopicSpaceMemberId\" value=\""
-                                        + member.getEsTopicSpaceMemberId() + "\" />");
-                        panelOut.println("                  <button type=\"submit\">Remove</button>");
-                        panelOut.println("                </form>");
-                        panelOut.println("              </td>");
-                        panelOut.println("            </tr>");
+        AdminShellRenderer.render(request, response, "Topic Space - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">"
+                            + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</h2>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
                     }
-                    if (members.isEmpty()) {
-                        panelOut.println("            <tr><td colspan=\"5\">No members added.</td></tr>");
-                    }
-                    panelOut.println("          </tbody>");
-                    panelOut.println("        </table>");
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <p><strong>Code:</strong> "
+                            + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "</p>");
+                    out.println("              <p><strong>Visibility:</strong> "
+                            + escapeHtml(topicSpace.getVisibility() == null ? "" : topicSpace.getVisibility().name())
+                            + "</p>");
+                    out.println("              <p><strong>Description:</strong> "
+                            + escapeHtml(orEmpty(topicSpace.getDescription())) + "</p>");
+                    out.println("              <p><strong>Display Order:</strong> "
+                            + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder()))) + "</p>");
+                    out.println("              <p><strong>Active:</strong> "
+                            + activeBadge(Boolean.TRUE.equals(topicSpace.getIsActive())) + "</p>");
+                    out.println("              <p><strong>Created:</strong> "
+                            + escapeHtml(formatDate(topicSpace.getCreatedAt())) + "</p>");
+                    out.println("              <p><strong>Updated:</strong> "
+                            + escapeHtml(formatDate(topicSpace.getUpdatedAt())) + "</p>");
+                    out.println("              <p><strong>Topics:</strong> " + topicCount + "</p>");
+                    out.println("              <p><strong>Meetings:</strong> " + meetingCount + "</p>");
+                    out.println("            </section>");
 
-                    panelOut.println("        <h3>Add Member</h3>");
-                    panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                            + "/admin/es/topic-spaces\" method=\"post\">");
-                    panelOut.println("          <input type=\"hidden\" name=\"action\" value=\"addMember\" />");
-                    panelOut.println("          <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
-                            + topicSpace.getEsTopicSpaceId() + "\" />");
-                    panelOut.println("          <label for=\"memberEmail\">User Email (required)</label>");
-                    panelOut.println(
-                            "          <input id=\"memberEmail\" name=\"memberEmail\" type=\"email\" required />");
-                    panelOut.println("          <label for=\"memberRole\">Role</label>");
-                    panelOut.println("          <select id=\"memberRole\" name=\"memberRole\">");
-                    panelOut.println("            <option value=\"MEMBER\">MEMBER</option>");
-                    panelOut.println("            <option value=\"ADMIN\">ADMIN</option>");
-                    panelOut.println("          </select>");
-                    panelOut.println("          <button type=\"submit\">Add Member</button>");
-                    panelOut.println("        </form>");
-                } else {
-                    panelOut.println("        <p>Membership is not used for public Topic Spaces.</p>");
-                }
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "&mode=edit\">Edit Topic Space</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/neighborhoods?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Edit Neighborhoods</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/stages?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Edit Stages</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/paths?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Edit Advancement Paths</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\""
+                            + buildTopicSpaceTopicsUrl(contextPath, topicSpace) + "\">View Topic Space</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/topics?space=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Manage ES Topics for this Workspace</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "&mode=report\">Printable Topic Narrative Report</a>");
+                    out.println("            </div>");
 
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topic-spaces\">Back to Topic Spaces</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    private void renderEditForm(HttpServletResponse response, String contextPath, EsTopicSpace topicSpace,
-            boolean creating, String errorMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Topic Space - InteropHub", contextPath,
-                    panelOut -> {
-                        panelOut.println("      <section class=\"panel\">");
-                        panelOut.println("        <h2>" + (creating ? "Create" : "Edit") + " Topic Space</h2>");
-                        if (errorMessage != null && !errorMessage.isBlank()) {
-                            panelOut.println("        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage)
-                                    + "</p>");
-                        }
-
-                        panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/es/topic-spaces\" method=\"post\">");
-                        if (!creating && topicSpace.getEsTopicSpaceId() != null) {
-                            panelOut.println("          <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                    if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Members</h3>");
+                        out.println("            <div class=\"aira-table-wrap\">");
+                        out.println("            <table class=\"aira-table\">");
+                        out.println("              <thead><tr>");
+                        out.println(
+                                "                <th>Email</th><th>Name</th><th>Role</th><th>Added</th><th>Action</th>");
+                        out.println("              </tr></thead>");
+                        out.println("              <tbody>");
+                        for (EsTopicSpaceMember member : members) {
+                            User user = usersById.get(member.getUserId());
+                            out.println("                <tr>");
+                            out.println("                  <td>"
+                                    + escapeHtml(user == null ? "" : orEmpty(user.getEmail())) + "</td>");
+                            out.println("                  <td>"
+                                    + escapeHtml(user == null ? "" : orEmpty(user.getFullName())) + "</td>");
+                            out.println("                  <td>" + escapeHtml(member.getRole() == null
+                                    ? ""
+                                    : member.getRole().name()) + "</td>");
+                            out.println(
+                                    "                  <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
+                            out.println("                  <td>");
+                            out.println("                    <form method=\"post\" action=\"" + contextPath
+                                    + "/admin/es/topic-spaces\">");
+                            out.println(
+                                    "                      <input type=\"hidden\" name=\"action\" value=\"removeMember\" />");
+                            out.println("                      <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
                                     + topicSpace.getEsTopicSpaceId() + "\" />");
+                            out.println(
+                                    "                      <input type=\"hidden\" name=\"esTopicSpaceMemberId\" value=\""
+                                            + member.getEsTopicSpaceMemberId() + "\" />");
+                            out.println(
+                                    "                      <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\">Remove</button>");
+                            out.println("                    </form>");
+                            out.println("                  </td>");
+                            out.println("                </tr>");
                         }
-
-                        panelOut.println("          <label for=\"spaceCode\">Topic Space Code"
-                                + (creating ? " (required)" : "") + "</label>");
-                        if (creating) {
-                            panelOut.println(
-                                    "          <input id=\"spaceCode\" name=\"spaceCode\" type=\"text\" required"
-                                            + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
-                        } else {
-                            panelOut.println("          <input id=\"spaceCode\" type=\"text\" disabled"
-                                    + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
+                        if (members.isEmpty()) {
+                            out.println("                <tr><td colspan=\"5\">No members added.</td></tr>");
                         }
+                        out.println("              </tbody>");
+                        out.println("            </table>");
+                        out.println("            </div>");
 
-                        panelOut.println("          <label for=\"spaceName\">Topic Space Name (required)</label>");
-                        panelOut.println("          <input id=\"spaceName\" name=\"spaceName\" type=\"text\" required"
-                                + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "\" />");
+                        out.println("            <h3 class=\"aira-subsection-title\">Add Member</h3>");
+                        out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                                + "/admin/es/topic-spaces\" method=\"post\">");
+                        out.println("              <input type=\"hidden\" name=\"action\" value=\"addMember\" />");
+                        out.println("              <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                                + topicSpace.getEsTopicSpaceId() + "\" />");
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"memberEmail\">User Email (required)</label>");
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"memberEmail\" name=\"memberEmail\" type=\"email\" required />");
+                        out.println("              </div>");
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"memberRole\">Role</label>");
+                        out.println(
+                                "                <select class=\"aira-select\" id=\"memberRole\" name=\"memberRole\">");
+                        out.println("                  <option value=\"MEMBER\">MEMBER</option>");
+                        out.println("                  <option value=\"ADMIN\">ADMIN</option>");
+                        out.println("                </select>");
+                        out.println("              </div>");
+                        out.println("              <div class=\"aira-action-group\">");
+                        out.println(
+                                "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Add Member</button>");
+                        out.println("              </div>");
+                        out.println("            </form>");
+                    } else {
+                        out.println("            <p class=\"aira-meta\">Membership is not used for public Topic Spaces.</p>");
+                    }
 
-                        panelOut.println("          <label for=\"description\">Description</label>");
-                        panelOut.println("          <textarea id=\"description\" name=\"description\" rows=\"4\">"
-                                + escapeHtml(orEmpty(topicSpace.getDescription())) + "</textarea>");
-
-                        panelOut.println("          <label for=\"visibility\">Visibility"
-                                + (creating ? " (required)" : "") + "</label>");
-                        if (creating) {
-                            panelOut.println("          <select id=\"visibility\" name=\"visibility\">");
-                            panelOut.println("            <option value=\"PUBLIC\""
-                                    + (topicSpace.getVisibility() == EsTopicSpace.Visibility.PUBLIC ? " selected" : "")
-                                    + ">PUBLIC</option>");
-                            panelOut.println("            <option value=\"PRIVATE\""
-                                    + (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE ? " selected" : "")
-                                    + ">PRIVATE</option>");
-                            panelOut.println("          </select>");
-                        } else {
-                            panelOut.println("          <input id=\"visibility\" type=\"text\" disabled value=\""
-                                    + escapeHtml(topicSpace.getVisibility() == null
-                                            ? ""
-                                            : topicSpace.getVisibility().name())
-                                    + "\" />");
-                        }
-
-                        panelOut.println("          <label for=\"displayOrder\">Display Order (required)</label>");
-                        panelOut.println(
-                                "          <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required"
-                                        + " value=\"" + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder())))
-                                        + "\" />");
-
-                        panelOut.println("          <label><input type=\"checkbox\" name=\"isActive\""
-                                + (Boolean.TRUE.equals(topicSpace.getIsActive()) ? " checked" : "")
-                                + " /> Active</label>");
-
-                        panelOut.println("          <button type=\"submit\">Save</button>");
-                        panelOut.println("        </form>");
-                        panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces"
-                                + (creating ? "" : "?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId())
-                                + "\">Back</a></p>");
-                        panelOut.println("      </section>");
-                    });
-        }
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces\">Back to Topic Spaces</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderTopicNarrativeReport(HttpServletResponse response, String contextPath, EsTopicSpace topicSpace)
-            throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderEditForm(HttpServletRequest request, HttpServletResponse response, EsTopicSpace topicSpace,
+            boolean creating, String errorMessage) throws IOException {
+        String contextPath = request.getContextPath();
+
+        AdminShellRenderer.render(request, response, (creating ? "Create" : "Edit") + " Topic Space - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">" + (creating ? "Create" : "Edit")
+                            + " Topic Space</h2>");
+                    if (errorMessage != null && !errorMessage.isBlank()) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--danger\"><p><strong>Could not save:</strong> "
+                                        + escapeHtml(errorMessage) + "</p></div>");
+                    }
+
+                    out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/topic-spaces\" method=\"post\">");
+                    if (!creating && topicSpace.getEsTopicSpaceId() != null) {
+                        out.println("              <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                                + topicSpace.getEsTopicSpaceId() + "\" />");
+                    }
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"spaceCode\">Topic Space Code"
+                            + (creating ? " (required)" : "") + "</label>");
+                    if (creating) {
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"spaceCode\" name=\"spaceCode\" type=\"text\" required"
+                                        + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
+                    } else {
+                        out.println("                <input class=\"aira-input\" id=\"spaceCode\" type=\"text\" disabled"
+                                + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
+                    }
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"spaceName\">Topic Space Name (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"spaceName\" name=\"spaceName\" type=\"text\" required"
+                                    + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"description\">Description</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"description\" name=\"description\" rows=\"4\">"
+                                    + escapeHtml(orEmpty(topicSpace.getDescription())) + "</textarea>");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"visibility\">Visibility"
+                            + (creating ? " (required)" : "") + "</label>");
+                    if (creating) {
+                        out.println(
+                                "                <select class=\"aira-select\" id=\"visibility\" name=\"visibility\">");
+                        out.println("                  <option value=\"PUBLIC\""
+                                + (topicSpace.getVisibility() == EsTopicSpace.Visibility.PUBLIC ? " selected" : "")
+                                + ">PUBLIC</option>");
+                        out.println("                  <option value=\"PRIVATE\""
+                                + (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE ? " selected" : "")
+                                + ">PRIVATE</option>");
+                        out.println("                </select>");
+                    } else {
+                        out.println("                <input class=\"aira-input\" id=\"visibility\" type=\"text\" disabled value=\""
+                                + escapeHtml(topicSpace.getVisibility() == null
+                                        ? ""
+                                        : topicSpace.getVisibility().name())
+                                + "\" />");
+                    }
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"displayOrder\">Display Order (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required"
+                                    + " value=\"" + escapeHtml(String.valueOf(orZero(topicSpace.getDisplayOrder())))
+                                    + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"isActive\""
+                            + (Boolean.TRUE.equals(topicSpace.getIsActive()) ? " checked" : "")
+                            + " /> Active</label>");
+
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces"
+                            + (creating ? "" : "?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()) + "\">Back</a></p>");
+                    out.println("          </section>");
+                });
+    }
+
+    private void renderTopicNarrativeReport(HttpServletRequest request, HttpServletResponse response,
+            EsTopicSpace topicSpace) throws IOException {
+        String contextPath = request.getContextPath();
         List<EsTopic> topics = topicDao.findAllOrderByTopicName().stream()
                 .filter(topic -> topicSpace.getEsTopicSpaceId() != null
                         && topicSpace.getEsTopicSpaceId().equals(topic.getEsTopicSpaceId()))
                 .toList();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Topic Narrative Report - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Topic Narrative Report</h2>");
-                panelOut.println("        <p><strong>Topic Space:</strong> "
-                        + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</p>");
-                panelOut.println("        <p><strong>Generated:</strong> " + escapeHtml(formatDate(LocalDateTime.now()))
-                        + "</p>");
-                panelOut.println("        <p>This is an alphabetical, human-readable list of topics.</p>");
-                panelOut.println(
-                        "        <p><button type=\"button\" onclick=\"window.print()\">Print This Report</button></p>");
+        AdminShellRenderer.render(request, response, "Topic Narrative Report - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Topic Narrative Report</h2>");
+                    out.println("            <p><strong>Topic Space:</strong> "
+                            + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</p>");
+                    out.println("            <p><strong>Generated:</strong> "
+                            + escapeHtml(formatDate(LocalDateTime.now())) + "</p>");
+                    out.println("            <p class=\"aira-meta\">This is an alphabetical, human-readable list of topics.</p>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println(
+                            "              <button class=\"aira-button aira-button--secondary\" type=\"button\" onclick=\"window.print()\">Print This Report</button>");
+                    out.println("            </div>");
 
-                if (topics.isEmpty()) {
-                    panelOut.println("        <p>No topics were found for this Topic Space.</p>");
-                } else {
-                    for (EsTopic topic : topics) {
-                        panelOut.println("        <section class=\"panel\">");
-                        panelOut.println("          <h3>" + escapeHtml(orEmpty(topic.getTopicName())) + "</h3>");
-                        if (topic.getStatus() != null && topic.getStatus() != EsTopic.EsTopicStatus.ACTIVE) {
-                            panelOut.println("          <p><strong>Status:</strong> "
-                                    + escapeHtml(topic.getStatus().name()) + "</p>");
+                    if (topics.isEmpty()) {
+                        out.println("            <p class=\"aira-meta\">No topics were found for this Topic Space.</p>");
+                    } else {
+                        for (EsTopic topic : topics) {
+                            out.println("            <section class=\"aira-panel\">");
+                            out.println("              <h3 class=\"aira-subsection-title\">"
+                                    + escapeHtml(orEmpty(topic.getTopicName())) + "</h3>");
+                            if (topic.getStatus() != null && topic.getStatus() != EsTopic.EsTopicStatus.ACTIVE) {
+                                out.println("              <p><strong>Status:</strong> "
+                                        + escapeHtml(topic.getStatus().name()) + "</p>");
+                            }
+                            out.println("              <p>" + escapeHtml(orEmpty(topic.getDescription())) + "</p>");
+                            out.println("            </section>");
                         }
-                        panelOut.println("          <p>" + escapeHtml(orEmpty(topic.getDescription())) + "</p>");
-                        panelOut.println("        </section>");
                     }
-                }
 
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "\">Back to Topic Space</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/topic-spaces?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Back to Topic Space</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private Map<Long, User> loadUsersByMembers(List<EsTopicSpaceMember> members) {
@@ -569,35 +604,6 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             usersById.put(user.getUserId(), user);
         }
         return usersById;
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access Topic Space settings.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Return to Admin Home</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
     }
 
     private Long parseId(String value) {
@@ -690,6 +696,13 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         return contextPath + "/spaces/"
                 + URLEncoder.encode(spaceCode == null ? "" : spaceCode, StandardCharsets.UTF_8).replace("+", "%20")
                 + "/topics";
+    }
+
+    private String activeBadge(boolean active) {
+        if (active) {
+            return "<span class=\"aira-badge aira-badge--success\">Yes</span>";
+        }
+        return "<span class=\"aira-badge aira-badge--subtle\">No</span>";
     }
 
     private String escapeHtml(String value) {

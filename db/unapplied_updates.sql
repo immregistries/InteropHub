@@ -2307,3 +2307,28 @@ WHERE es_topic_space_id = @nursery_id
   AND topic_code IN ('IVC-STEWARDSHIP', 'GLOBAL-INTELLIGENCE-PARTNERSHIPS', 'INTEROPHUB-COMMUNITY-PLATFORM', 'LEAP-FEDERAL-INNOVATION');
 
 COMMIT;
+
+-- Meetings calendar page (/es/meetings): user calendar preferences and
+-- recently-viewed meeting tracking. Mirrors the existing timezone_id column
+-- and es_topic_user_view table conventions.
+SET NAMES utf8mb4;
+SET time_zone = '+00:00';
+
+ALTER TABLE auth_user
+  ADD COLUMN week_start_day ENUM('SUNDAY','MONDAY') NULL AFTER timezone_id;
+
+CREATE TABLE es_meeting_user_view (
+  es_meeting_user_view_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  es_meeting_id BIGINT NOT NULL,
+  first_viewed_at DATETIME NOT NULL,
+  last_viewed_at DATETIME NOT NULL,
+  visit_count BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  last_counted_at DATETIME NOT NULL,
+  PRIMARY KEY (es_meeting_user_view_id),
+  UNIQUE KEY uq_es_meeting_user_view_user_meeting (user_id, es_meeting_id),
+  KEY ix_es_meeting_user_view_user_recent (user_id, last_viewed_at),
+  KEY ix_es_meeting_user_view_meeting_recent (es_meeting_id, last_viewed_at),
+  CONSTRAINT fk_es_meeting_user_view_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_meeting_user_view_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

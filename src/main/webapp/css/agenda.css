@@ -1,0 +1,53 @@
+/* InteropHub agenda page — mechanics and compositions not covered by aira.css. */
+
+.click-to-edit {
+  cursor: pointer;
+}
+
+.click-to-edit:hover {
+  outline: 1px dashed var(--aira-border);
+  outline-offset: 2px;
+}
+
+.agenda-item-title {
+  font-weight: 600;
+}
+
+.agenda-topic-link {
+  text-decoration: underline;
+}
+
+.agenda-topic-following-indicator {
+  color: var(--aira-success);
+  font-weight: 600;
+}
+
+.agenda-topic-engagement,
+.agenda-item-time,
+.agenda-item-duration {
+  font-size: 0.8125rem;
+  color: var(--aira-text-secondary);
+}
+
+.agenda-item-text {
+  white-space: pre-wrap;
+}
+
+.agenda-presenter {
+  margin-bottom: 0.3rem;
+}
+
+.role-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--aira-border-subtle);
+}
+
+.role-option-active {
+  background: var(--aira-focus);
+  color: #fff;
+  border-color: var(--aira-focus);
+}

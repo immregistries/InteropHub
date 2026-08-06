@@ -1,4 +1,4 @@
-> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.6`.
+> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.8`.
 > Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
 
 # AIRA Web Adoption Guide
@@ -201,7 +201,7 @@ Tables use light headers by default and should remain semantic HTML tables. Wrap
 
 ## Application-Specific Behavior
 
-AIRA Web does not implement JavaScript interactions, authentication, routing, form processing, menu behavior, dialogs, bottom sheets, drag-and-drop, or domain rules. Use native HTML controls where possible and layer application behavior separately.
+AIRA Web does not implement JavaScript interactions, authentication, routing, form processing, menu behavior, dialog behavior, bottom sheets, drag-and-drop, or domain rules. Use native HTML controls where possible and layer application behavior separately.
 
 ## Upgrades
 

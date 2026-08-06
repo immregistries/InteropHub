@@ -19,12 +19,15 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
+import org.immregistries.aira.web.AiraPage;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.AuthService;
 import org.airahub.interophub.service.EmailReason;
@@ -51,6 +54,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
     private final EsTopicDao topicDao;
     private final EsTopicMeetingDao topicMeetingDao;
+    private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingDao meetingDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final EsMeetingAgendaItemDao agendaItemDao;
@@ -66,6 +70,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     public EsMeetingAttendanceServlet() {
         this.topicDao = new EsTopicDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
         this.meetingDao = new EsMeetingDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.agendaItemDao = new EsMeetingAgendaItemDao();
@@ -83,13 +88,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         ParsedPath parsed = parseTopicCode(request);
         if (parsed == null) {
-            renderNotFound(response, request.getContextPath(), "Meeting link is incomplete.");
+            renderNotFound(request, response, request.getContextPath(), "Meeting link is incomplete.");
             return;
         }
 
         MeetingResolution resolution = resolveMeeting(parsed);
         if (!resolution.valid()) {
-            renderNotFound(response, request.getContextPath(), resolution.errorMessage());
+            renderNotFound(request, response, request.getContextPath(), resolution.errorMessage());
             return;
         }
 
@@ -98,7 +103,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
                 || (resolution.explicitMeeting() != null
                         && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
-            renderNotFound(response, request.getContextPath(), "Meeting not found.");
+            renderNotFound(request, response, request.getContextPath(), "Meeting not found.");
             return;
         }
         boolean submitted = "1".equals(request.getParameter("submitted"));
@@ -108,7 +113,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         Long userIdForSubs = authenticatedUser.map(User::getUserId).orElse(null);
         TopicInterestData topicData = loadTopicInterestData(resolution, emailForSubs, userIdForSubs);
 
-        renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+        renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                 anonymousMode, null, null, null, null, null, false, topicData, submitted);
     }
 
@@ -118,13 +123,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
         ParsedPath parsed = parseTopicCode(request);
         if (parsed == null) {
-            renderNotFound(response, request.getContextPath(), "Meeting link is incomplete.");
+            renderNotFound(request, response, request.getContextPath(), "Meeting link is incomplete.");
             return;
         }
 
         MeetingResolution resolution = resolveMeeting(parsed);
         if (!resolution.valid()) {
-            renderNotFound(response, request.getContextPath(), resolution.errorMessage());
+            renderNotFound(request, response, request.getContextPath(), resolution.errorMessage());
             return;
         }
 
@@ -133,7 +138,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (!topicSpaceAccessService.canViewTopic(viewer, resolution.topic())
                 || (resolution.explicitMeeting() != null
                         && !topicSpaceAccessService.canViewMeeting(viewer, resolution.explicitMeeting()))) {
-            renderNotFound(response, request.getContextPath(), "Meeting not found.");
+            renderNotFound(request, response, request.getContextPath(), "Meeting not found.");
             return;
         }
 
@@ -151,7 +156,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
         boolean attending = request.getParameter("attending") != null;
         if (!attending) {
-            renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+            renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "Please check the attendance checkbox to confirm you are attending.",
                     trimToNull(request.getParameter("firstName")),
                     trimToNull(request.getParameter("lastName")),
@@ -192,13 +197,13 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         }
 
         if (firstName == null || firstName.isBlank()) {
-            renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+            renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "First name is required.",
                     firstName, lastName, email, organization, false, topicData, false);
             return;
         }
         if (anonymousMode && (email == null || email.isBlank())) {
-            renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+            renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "Email address is required.",
                     firstName, lastName, email, organization, false, topicData, false);
             return;
@@ -209,7 +214,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                 : EsNormalizer.normalizeEmail(authenticatedUser.map(User::getEmail).orElse(email));
 
         if (emailNormalized == null) {
-            renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+            renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "A valid email address is required.",
                     firstName, lastName, email, organization, false, topicData, false);
             return;
@@ -265,7 +270,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             attendanceDao.saveOrUpdate(record);
         } catch (Exception ex) {
             LOGGER.log(Level.WARNING, "Failed to save meeting attendance", ex);
-            renderPage(response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
+            renderPage(request, response, request.getContextPath(), resolution, authenticatedUser.orElse(null),
                     anonymousMode, "Could not save your attendance. Please try again.",
                     firstName, lastName, email, organization, false, topicData, false);
             return;
@@ -356,7 +361,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             return contextPath + "/es/agenda?meetingId=" + meeting.get().getEsMeetingId();
         }
         if (esTopicMeetingId != null) {
-            return contextPath + "/es/meetings?seriesId=" + esTopicMeetingId;
+            return contextPath + "/es/meeting-series?seriesId=" + esTopicMeetingId;
         }
         return contextPath + "/es/topics";
     }
@@ -400,8 +405,8 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
     // Rendering
     // -------------------------------------------------------------------------
 
-    private void renderPage(HttpServletResponse response, String contextPath, MeetingResolution resolution,
-            User authenticatedUser, boolean anonymousMode, String errorMessage,
+    private void renderPage(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            MeetingResolution resolution, User authenticatedUser, boolean anonymousMode, String errorMessage,
             String firstName, String lastName, String email, String organization,
             boolean generalUpdatesOptIn, TopicInterestData topicData, boolean submitted) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
@@ -411,44 +416,54 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         List<EsMeetingAttendance> todayAttendees = attendanceDao
                 .findByMeetingIdAndDate(resolution.meeting().getEsTopicMeetingId(), today);
 
-        try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Meeting Attendance - " + escapeHtml(resolution.meeting().getMeetingName())
-                    + " - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container attend-page\">");
+        EsTopicSpace hostTopicSpace = findTopicHostSpace(resolution.topic());
 
-            out.println(
-                    "    <h1 class=\"attend-heading\">" + escapeHtml(resolution.meeting().getMeetingName()) + "</h1>");
+        AiraPage page = InteropAiraPageFactory.base(request,
+                "Meeting Attendance - " + orEmpty(resolution.meeting().getMeetingName()) + " - InteropHub")
+                .applicationSubtitle("Meeting Attendance")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.topicsMeetingsContext(
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceName() : "InteropHub",
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceCode() : null,
+                        false,
+                        true))
+                .build();
+
+        try (PrintWriter out = response.getWriter()) {
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container aira-stack\">");
+
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">"
+                    + escapeHtml(resolution.meeting().getMeetingName()) + "</h1>");
             if (resolution.meeting().getMeetingDescription() != null
                     && !resolution.meeting().getMeetingDescription().isBlank()) {
-                out.println("    <p class=\"attend-description\">"
+                out.println("          <p class=\"aira-page-intro\">"
                         + escapeHtml(resolution.meeting().getMeetingDescription()) + "</p>");
             }
+            out.println("        </div>");
+            out.println("      </div>");
 
             if (submitted) {
-                out.println("    <p class=\"attend-success-msg\">Your attendance has been recorded. Thank you!</p>");
+                out.println(
+                        "      <div class=\"aira-alert aira-alert--success\"><p>Your attendance has been recorded. Thank you!</p></div>");
+            }
+            if (errorMessage != null) {
+                out.println("      <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(errorMessage)
+                        + "</p></div>");
             }
 
             // --- Registration form ---
-            out.println("    <form class=\"attend-form\" method=\"post\" action=\""
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <form class=\"aira-form\" method=\"post\" action=\""
                     + contextPath + "/attend/" + topicCodeEncoded + "\">");
-
-            if (errorMessage != null) {
-                out.println("      <p class=\"attend-error\">" + escapeHtml(errorMessage) + "</p>");
-            }
 
             // Logged-in, non-anonymous mode: show current user info (pre-populated,
             // editable)
             if (authenticatedUser != null && !anonymousMode) {
-                out.println("      <input type=\"hidden\" name=\"anonymousMode\" value=\"false\" />");
-                out.println("      <p class=\"attend-logged-in-notice\">Registering as: <strong>"
+                out.println("          <input type=\"hidden\" name=\"anonymousMode\" value=\"false\" />");
+                out.println("          <p class=\"aira-meta\">Registering as: <strong>"
                         + escapeHtml(authenticatedUser.getFirstName() + " " + orEmpty(authenticatedUser.getLastName()))
                                 .trim()
                         + "</strong> &lt;" + escapeHtml(authenticatedUser.getEmail()) + "&gt;</p>");
@@ -457,164 +472,185 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                 String displayLast = lastName != null ? lastName : orEmpty(authenticatedUser.getLastName());
                 String displayOrg = organization != null ? organization : orEmpty(authenticatedUser.getOrganization());
 
-                out.println("      <label for=\"firstName\">First Name</label>");
-                out.println("      <input id=\"firstName\" name=\"firstName\" type=\"text\" value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"firstName\">First Name</label>");
+                out.println("            <input class=\"aira-input\" id=\"firstName\" name=\"firstName\" type=\"text\" value=\""
                         + escapeHtml(displayFirst) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <label for=\"lastName\">Last Name</label>");
-                out.println("      <input id=\"lastName\" name=\"lastName\" type=\"text\" value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"lastName\">Last Name</label>");
+                out.println("            <input class=\"aira-input\" id=\"lastName\" name=\"lastName\" type=\"text\" value=\""
                         + escapeHtml(displayLast) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <label for=\"organization\">Organization</label>");
-                out.println("      <input id=\"organization\" name=\"organization\" type=\"text\" value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"organization\">Organization</label>");
+                out.println("            <input class=\"aira-input\" id=\"organization\" name=\"organization\" type=\"text\" value=\""
                         + escapeHtml(displayOrg) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <p class=\"attend-mode-toggle\">"
-                        + "<a href=\"" + contextPath + "/attend/" + topicCodeEncoded + "?anon=1\">"
-                        + "Register under a different name or email</a></p>");
+                out.println("          <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/attend/"
+                        + topicCodeEncoded + "?anon=1\">Register under a different name or email</a></p>");
 
             } else {
                 // Anonymous form (not logged in, or toggled)
-                out.println("      <input type=\"hidden\" name=\"anonymousMode\" value=\"true\" />");
+                out.println("          <input type=\"hidden\" name=\"anonymousMode\" value=\"true\" />");
 
-                out.println(
-                        "      <label for=\"firstName\">First Name <span class=\"attend-required\">*</span></label>");
-                out.println("      <input id=\"firstName\" name=\"firstName\" type=\"text\" required value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"firstName\">First Name *</label>");
+                out.println("            <input class=\"aira-input\" id=\"firstName\" name=\"firstName\" type=\"text\" required value=\""
                         + escapeHtml(orEmpty(firstName)) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <label for=\"lastName\">Last Name</label>");
-                out.println("      <input id=\"lastName\" name=\"lastName\" type=\"text\" value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"lastName\">Last Name</label>");
+                out.println("            <input class=\"aira-input\" id=\"lastName\" name=\"lastName\" type=\"text\" value=\""
                         + escapeHtml(orEmpty(lastName)) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <label for=\"email\">Email <span class=\"attend-required\">*</span></label>");
-                out.println("      <input id=\"email\" name=\"email\" type=\"email\" required value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"email\">Email *</label>");
+                out.println("            <input class=\"aira-input\" id=\"email\" name=\"email\" type=\"email\" required value=\""
                         + escapeHtml(orEmpty(email)) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <label for=\"organization\">Organization</label>");
-                out.println("      <input id=\"organization\" name=\"organization\" type=\"text\" value=\""
+                out.println("          <div class=\"aira-field\">");
+                out.println("            <label for=\"organization\">Organization</label>");
+                out.println("            <input class=\"aira-input\" id=\"organization\" name=\"organization\" type=\"text\" value=\""
                         + escapeHtml(orEmpty(organization)) + "\" />");
+                out.println("          </div>");
 
-                out.println("      <fieldset class=\"attend-action-fieldset\">");
-                out.println("        <legend>Account Options</legend>");
-                out.println("        <label class=\"attend-radio-label\">");
+                out.println("          <fieldset class=\"aira-fieldset\">");
+                out.println("            <legend class=\"aira-legend\">Account Options</legend>");
+                out.println("            <label class=\"aira-radio\">");
                 out.println(
-                        "          <input type=\"radio\" name=\"registrationAction\" value=\"registerOnly\" checked />");
-                out.println("          Register me for today&rsquo;s meeting");
-                out.println("        </label>");
-                out.println("        <label class=\"attend-radio-label\">");
-                out.println("          <input type=\"radio\" name=\"registrationAction\" value=\"sendLink\" />");
-                out.println("          Register me and send a link to access InteropHub");
-                out.println("        </label>");
-                out.println("      </fieldset>");
+                        "              <input type=\"radio\" name=\"registrationAction\" value=\"registerOnly\" checked />");
+                out.println("              Register me for today&rsquo;s meeting");
+                out.println("            </label>");
+                out.println("            <label class=\"aira-radio\">");
+                out.println("              <input type=\"radio\" name=\"registrationAction\" value=\"sendLink\" />");
+                out.println("              Register me and send a link to access InteropHub");
+                out.println("            </label>");
+                out.println("          </fieldset>");
             }
 
             // Meeting attendance checkbox (always shown)
-            out.println("      <div class=\"attend-checkbox-row\">");
-            out.println("        <label class=\"attend-checkbox-label\">");
-            out.println("          <input type=\"checkbox\" name=\"attending\" value=\"1\" checked required />");
-            out.println("          I am attending today&rsquo;s meeting: <strong>"
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label class=\"aira-radio\">");
+            out.println("              <input type=\"checkbox\" name=\"attending\" value=\"1\" checked required />");
+            out.println("              I am attending today&rsquo;s meeting: <strong>"
                     + escapeHtml(resolution.meeting().getMeetingName()) + "</strong>");
-            out.println("        </label>");
-            out.println("      </div>");
+            out.println("            </label>");
+            out.println("          </div>");
 
             // Topics of interest (if agenda is known for this meeting)
             renderTopicInterestFields(out, topicData);
 
             // Hope text (optional)
+            out.println("          <div class=\"aira-field\">");
             out.println(
-                    "      <label for=\"hopeText\">What are you hoping to get out of the meeting today? (optional)</label>");
-            out.println("      <textarea id=\"hopeText\" name=\"hopeText\" rows=\"3\" class=\"attend-hope-textarea\">"
-                    + escapeHtml(orEmpty(null)) + "</textarea>");
+                    "            <label for=\"hopeText\">What are you hoping to get out of the meeting today? (optional)</label>");
+            out.println("            <textarea class=\"aira-textarea\" id=\"hopeText\" name=\"hopeText\" rows=\"3\"></textarea>");
+            out.println("          </div>");
 
-            out.println("      <button type=\"submit\" class=\"attend-submit-btn\">Submit Attendance</button>");
-            out.println("    </form>");
+            out.println("          <div class=\"aira-action-group\">");
+            out.println(
+                    "            <button class=\"aira-button aira-button--primary\" type=\"submit\">Submit Attendance</button>");
+            out.println("          </div>");
+            out.println("        </form>");
+            out.println("      </section>");
 
             // --- Today's attendees ---
             renderAttendeeSections(out, todayAttendees, today);
 
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
     }
 
+    private EsTopicSpace findTopicHostSpace(EsTopic topic) {
+        if (topic == null || topic.getEsTopicSpaceId() == null) {
+            return null;
+        }
+        return topicSpaceDao.findById(topic.getEsTopicSpaceId()).orElse(null);
+    }
+
     private void renderAttendeeSections(PrintWriter out, List<EsMeetingAttendance> attendees, LocalDate date) {
-        out.println("    <section class=\"attend-attendees-section\">");
-        out.println("      <h2 class=\"attend-attendees-heading\">Today&rsquo;s Attendees</h2>");
+        out.println("      <section class=\"aira-panel\">");
+        out.println("        <h2 class=\"aira-section-title\">Today&rsquo;s Attendees</h2>");
 
         if (attendees.isEmpty()) {
-            out.println("      <p class=\"attend-no-attendees\">No attendees recorded yet for today.</p>");
+            out.println("        <p class=\"aira-meta\">No attendees recorded yet for today.</p>");
         } else {
-            out.println("      <table class=\"attend-attendee-table\">");
-            out.println("        <thead>");
-            out.println("          <tr>");
-            out.println("            <th>Name</th>");
-            out.println("            <th>Organization</th>");
-            out.println("            <th>Email</th>");
-            out.println("          </tr>");
-            out.println("        </thead>");
-            out.println("        <tbody>");
+            out.println("        <div class=\"aira-table-wrap\">");
+            out.println("        <table class=\"aira-table\">");
+            out.println("          <thead>");
+            out.println("            <tr>");
+            out.println("              <th>Name</th>");
+            out.println("              <th>Organization</th>");
+            out.println("              <th>Email</th>");
+            out.println("            </tr>");
+            out.println("          </thead>");
+            out.println("          <tbody>");
             for (EsMeetingAttendance a : attendees) {
                 String name = escapeHtml(orEmpty(a.getFirstName()));
                 if (a.getLastName() != null && !a.getLastName().isBlank()) {
                     name = name + " " + escapeHtml(a.getLastName());
                 }
-                out.println("          <tr>");
-                out.println("            <td>" + name + "</td>");
-                out.println("            <td>" + escapeHtml(orEmpty(a.getOrganization())) + "</td>");
-                out.println("            <td>" + escapeHtml(orEmpty(a.getEmail())) + "</td>");
-                out.println("          </tr>");
+                out.println("            <tr>");
+                out.println("              <td>" + name + "</td>");
+                out.println("              <td>" + escapeHtml(orEmpty(a.getOrganization())) + "</td>");
+                out.println("              <td>" + escapeHtml(orEmpty(a.getEmail())) + "</td>");
+                out.println("            </tr>");
             }
-            out.println("        </tbody>");
-            out.println("      </table>");
+            out.println("          </tbody>");
+            out.println("        </table>");
+            out.println("        </div>");
 
             // Hopes section — only rendered if at least one hope_text is non-empty
             boolean anyHopes = attendees.stream()
                     .anyMatch(a -> a.getHopeText() != null && !a.getHopeText().isBlank());
             if (anyHopes) {
-                out.println("      <div class=\"attend-hopes-section\">");
+                out.println("        <div class=\"aira-stack\">");
                 out.println(
-                        "        <h3 class=\"attend-hopes-heading\">What attendees are hoping to get out of today&rsquo;s meeting</h3>");
-                out.println("        <ul class=\"attend-hopes-list\">");
+                        "          <h3 class=\"aira-section-title\">What attendees are hoping to get out of today&rsquo;s meeting</h3>");
+                out.println("          <ul>");
                 for (EsMeetingAttendance a : attendees) {
                     if (a.getHopeText() != null && !a.getHopeText().isBlank()) {
                         String name = escapeHtml(orEmpty(a.getFirstName()));
                         if (a.getLastName() != null && !a.getLastName().isBlank()) {
                             name = name + " " + escapeHtml(a.getLastName());
                         }
-                        out.println("          <li><strong>" + name + ":</strong> "
+                        out.println("            <li><strong>" + name + ":</strong> "
                                 + escapeHtml(a.getHopeText()) + "</li>");
                     }
                 }
-                out.println("        </ul>");
-                out.println("      </div>");
+                out.println("          </ul>");
+                out.println("        </div>");
             }
         }
 
-        out.println("    </section>");
+        out.println("      </section>");
     }
 
-    private void renderNotFound(HttpServletResponse response, String contextPath, String message) throws IOException {
+    private void renderNotFound(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentType("text/html;charset=UTF-8");
+        AiraPage page = InteropAiraPageFactory.base(request, "Meeting Not Found - InteropHub").build();
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>Meeting Not Found - InteropHub</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
-            out.println("    <h1>Meeting Not Found</h1>");
-            out.println("    <p>" + escapeHtml(orEmpty(message)) + "</p>");
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container aira-stack\">");
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">Meeting Not Found</h1>");
+            out.println("        </div>");
+            out.println("      </div>");
+            out.println("      <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(orEmpty(message))
+                    + "</p></div>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
     }
 
@@ -858,10 +894,10 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
         if (topicData == null || topicData.agendaItems().isEmpty()) {
             return;
         }
-        out.println("      <div class=\"attend-topic-interest\">");
-        out.println("        <p class=\"attend-topic-interest-label\">Topics on today&rsquo;s agenda"
-                + " &mdash; check any you&rsquo;d like to follow:</p>");
-        out.println("        <ul class=\"attend-topic-list\">");
+        out.println("          <div class=\"aira-field\">");
+        out.println("            <span class=\"aira-label\">Topics on today&rsquo;s agenda"
+                + " &mdash; check any you&rsquo;d like to follow</span>");
+        out.println("            <div class=\"aira-choice-list\">");
         for (EsMeetingAgendaItem item : topicData.agendaItems()) {
             EsTopic topic = topicData.topicById().get(item.getEsTopicId());
             if (topic == null)
@@ -872,24 +908,25 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
                     && isChampionEquivalentStatus(sub.getStatus());
             boolean isChecked = sub != null && (sub.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED
                     || isChampionEquivalentStatus(sub.getStatus()));
-            out.println("          <li class=\"attend-topic-item\">");
-            out.println("            <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
-            out.println("            <label class=\"attend-topic-label\">");
-            out.print("              <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
-                    + (isChecked ? " checked" : "") + "> ");
-            out.print(escapeHtml(topic.getTopicName()));
+            out.println("              <label class=\"aira-choice-row" + (isChecked ? " is-selected" : "") + "\">");
+            out.println("                <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
+            out.println("                <span class=\"aira-choice-row__control\">"
+                    + "<input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
+                    + (isChecked ? " checked" : "") + "></span>");
+            out.println("                <span>");
+            out.print("                  <p class=\"aira-choice-row__title\">" + escapeHtml(topic.getTopicName()));
             if (isChampionEquivalent) {
                 String roleLabel = sub.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT
-                        ? "(support)"
-                        : "(champion)";
-                out.print(" <span class=\"attend-champion-badge\">" + roleLabel + "</span>");
+                        ? "Support"
+                        : "Champion";
+                out.print(" <span class=\"aira-badge aira-badge--info\">" + roleLabel + "</span>");
             }
-            out.println();
-            out.println("            </label>");
-            out.println("          </li>");
+            out.println("</p>");
+            out.println("                </span>");
+            out.println("              </label>");
         }
-        out.println("        </ul>");
-        out.println("      </div>");
+        out.println("            </div>");
+        out.println("          </div>");
     }
 
     private static EsSubscription preferHigherRankSub(EsSubscription a, EsSubscription b) {

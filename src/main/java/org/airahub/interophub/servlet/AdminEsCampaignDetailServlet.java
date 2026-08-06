@@ -15,8 +15,8 @@ import org.airahub.interophub.dao.EsCampaignRegistrationDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.PublicUrlService;
+import org.immregistries.aira.web.AiraPage;
 
 /**
  * Admin detail page for a single ES campaign: shows campaign info and a table
@@ -25,14 +25,14 @@ import org.airahub.interophub.service.PublicUrlService;
  */
 public class AdminEsCampaignDetailServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/campaigns";
+
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsCampaignRegistrationDao registrationDao;
     private final PublicUrlService publicUrlService;
 
     public AdminEsCampaignDetailServlet() {
-        this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.registrationDao = new EsCampaignRegistrationDao();
@@ -41,7 +41,7 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -57,17 +57,7 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
 
         Optional<EsCampaign> campaignOpt = campaignDao.findByCampaignCode(campaignCode);
         if (campaignOpt.isEmpty()) {
-            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                out.println("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-                out.println("<title>Campaign Not Found - InteropHub</title>");
-                out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
-                out.println("<body><main class=\"container\"><h1>Campaign Not Found</h1>");
-                out.println("<p>No campaign found with code: <strong>" + escapeHtml(campaignCode) + "</strong></p>");
-                out.println("<p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-                out.println("</main></body></html>");
-            }
+            renderCampaignNotFound(request, response, campaignCode);
             return;
         }
 
@@ -88,153 +78,168 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
         List<EsCampaignMeetingBrowseRow> meetingRows = campaignTopicDao
                 .findActiveMeetingRowsByCampaignIdOrdered(campaignId);
 
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, campaign.getCampaignName() + " - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                if (saved) {
-                    panelOut.println("        <p><strong>Campaign changes saved.</strong></p>");
-                }
-                panelOut.println("        <table class=\"admin-table\" style=\"margin-bottom:1.5rem\">");
-                panelOut.println("          <tbody>");
-                panelOut.println(
-                        "            <tr><th>Campaign Code</th><td>" + escapeHtml(campaign.getCampaignCode())
-                                + "</td></tr>");
-                panelOut.println(
-                        "            <tr><th>Status</th><td>" + escapeHtml(String.valueOf(campaign.getStatus()))
-                                + "</td></tr>");
-                panelOut.println(
-                        "            <tr><th>Current Round</th><td>" + campaign.getCurrentRoundNo() + "</td></tr>");
-                panelOut.println("            <tr><th>Total Topics</th><td>" + topicCount + "</td></tr>");
-                panelOut.println("            <tr><th>Registrations</th><td>" + regCount + "</td></tr>");
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-
-                panelOut.println(
-                        "        <p><strong>Registration URL:</strong> <a href=\"" + escapeHtml(registrationAbsoluteUrl)
-                                + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a href=\""
-                                + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
-                panelOut.println(
-                        "        <p><strong>Engagement Hub URL:</strong> <a href=\"" + escapeHtml(hubAbsoluteUrl)
-                                + "\">" + escapeHtml(hubAbsoluteUrl) + "</a> (<a href=\""
-                                + escapeHtml(hubQrUrl) + "\">qr code</a>)</p>");
-
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/registrations?campaignCode="
-                        + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/es/review/"
-                        + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/es/cdc-review/"
-                        + escapeHtml(campaign.getCampaignCode()) + "\">Open CDC Signal Instrument</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/review-results?campaignCode="
-                        + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns/edit?campaignCode="
-                        + escapeHtml(campaign.getCampaignCode()) + "\">Edit Campaign</a></p>");
-
-                if (tableNos.isEmpty()) {
-                    panelOut.println(
-                            "        <p>No tables assigned yet. Import topics with a Tables per Set value &gt; 0.</p>");
-                } else {
-                    panelOut.println("        <h2>Tables</h2>");
-                    panelOut.println("        <table class=\"admin-table\">");
-                    panelOut.println("          <thead>");
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <th>Table</th>");
-                    panelOut.println("              <th>Topics</th>");
-                    panelOut.println("              <th>Vote</th>");
-                    panelOut.println("              <th>Results</th>");
-                    panelOut.println("            </tr>");
-                    panelOut.println("          </thead>");
-                    panelOut.println("          <tbody>");
-                    for (Integer tableNo : tableNos) {
-                        long tableTopicCount = campaignTopicDao.countByCampaignIdAndTableNo(campaignId, tableNo);
-                        String votePath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=vote";
-                        String resultsPath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=results";
-                        String voteUrl = contextPath + votePath;
-                        String resultsUrl = contextPath + resultsPath;
-                        String voteQrUrl = buildQrPageUrl(contextPath, votePath, "Table " + tableNo + " Vote",
-                                detailPath);
-                        String resultsQrUrl = buildQrPageUrl(contextPath, resultsPath,
-                                "Table " + tableNo + " Results", detailPath);
-                        panelOut.println("            <tr>");
-                        panelOut.println("              <td>Table " + tableNo + "</td>");
-                        panelOut.println("              <td>" + tableTopicCount + "</td>");
-                        panelOut.println("              <td><a href=\"" + escapeHtml(voteUrl)
-                                + "\">Vote</a> (<a href=\"" + escapeHtml(voteQrUrl)
-                                + "\">qr code</a>)</td>");
-                        panelOut.println("              <td><a href=\"" + escapeHtml(resultsUrl)
-                                + "\">Results</a> (<a href=\"" + escapeHtml(resultsQrUrl)
-                                + "\">qr code</a>)</td>");
-                        panelOut.println("            </tr>");
+        AdminShellRenderer.render(request, response, campaign.getCampaignName() + " - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    if (saved) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--success\"><p>Campaign changes saved.</p></div>");
                     }
-                    panelOut.println("          </tbody>");
-                    panelOut.println("        </table>");
-                }
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <tbody>");
+                    out.println(
+                            "                <tr><th>Campaign Code</th><td>" + escapeHtml(campaign.getCampaignCode())
+                                    + "</td></tr>");
+                    out.println(
+                            "                <tr><th>Status</th><td>" + escapeHtml(String.valueOf(campaign.getStatus()))
+                                    + "</td></tr>");
+                    out.println(
+                            "                <tr><th>Current Round</th><td>" + campaign.getCurrentRoundNo() + "</td></tr>");
+                    out.println("                <tr><th>Total Topics</th><td>" + topicCount + "</td></tr>");
+                    out.println("                <tr><th>Registrations</th><td>" + regCount + "</td></tr>");
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
 
-                panelOut.println("        <h2 style=\"margin-top:1.5rem\">Meeting Registration Links</h2>");
-                if (meetingRows.isEmpty()) {
-                    panelOut.println("        <p>No active meetings are configured for this campaign.</p>");
-                } else {
-                    panelOut.println("        <table class=\"admin-table\">");
-                    panelOut.println("          <thead>");
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <th>Meeting</th>");
-                    panelOut.println("              <th>Register for Meeting</th>");
-                    panelOut.println("            </tr>");
-                    panelOut.println("          </thead>");
-                    panelOut.println("          <tbody>");
-                    for (EsCampaignMeetingBrowseRow row : meetingRows) {
-                        if (row.getTopicCode() == null || row.getTopicCode().isBlank()) {
-                            continue;
+                    out.println(
+                            "            <p><strong>Registration URL:</strong> <a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(registrationAbsoluteUrl)
+                                    + "\">" + escapeHtml(registrationAbsoluteUrl) + "</a> (<a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(registrationQrUrl) + "\">qr code</a>)</p>");
+                    out.println(
+                            "            <p><strong>Engagement Hub URL:</strong> <a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(hubAbsoluteUrl)
+                                    + "\">" + escapeHtml(hubAbsoluteUrl) + "</a> (<a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(hubQrUrl) + "\">qr code</a>)</p>");
+
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/registrations?campaignCode="
+                            + escapeHtml(campaign.getCampaignCode()) + "\">Registration Display</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/es/review/"
+                            + escapeHtml(campaign.getCampaignCode()) + "\">Open Review Instrument</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/es/cdc-review/"
+                            + escapeHtml(campaign.getCampaignCode()) + "\">Open CDC Signal Instrument</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/review-results?campaignCode="
+                            + escapeHtml(campaign.getCampaignCode()) + "\">Review Results</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/campaigns/edit?campaignCode="
+                            + escapeHtml(campaign.getCampaignCode()) + "\">Edit Campaign</a>");
+                    out.println("            </div>");
+
+                    if (tableNos.isEmpty()) {
+                        out.println(
+                                "            <p class=\"aira-meta\">No tables assigned yet. Import topics with a Tables per Set value &gt; 0.</p>");
+                    } else {
+                        out.println("            <h3 class=\"aira-subsection-title\">Tables</h3>");
+                        out.println("            <div class=\"aira-table-wrap\">");
+                        out.println("            <table class=\"aira-table\">");
+                        out.println("              <thead>");
+                        out.println("                <tr>");
+                        out.println("                  <th>Table</th>");
+                        out.println("                  <th>Topics</th>");
+                        out.println("                  <th>Vote</th>");
+                        out.println("                  <th>Results</th>");
+                        out.println("                </tr>");
+                        out.println("              </thead>");
+                        out.println("              <tbody>");
+                        for (Integer tableNo : tableNos) {
+                            long tableTopicCount = campaignTopicDao.countByCampaignIdAndTableNo(campaignId, tableNo);
+                            String votePath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=vote";
+                            String resultsPath = "/table/" + encodedCampaignCode + "/" + tableNo + "?view=results";
+                            String voteUrl = contextPath + votePath;
+                            String resultsUrl = contextPath + resultsPath;
+                            String voteQrUrl = buildQrPageUrl(contextPath, votePath, "Table " + tableNo + " Vote",
+                                    detailPath);
+                            String resultsQrUrl = buildQrPageUrl(contextPath, resultsPath,
+                                    "Table " + tableNo + " Results", detailPath);
+                            out.println("                <tr>");
+                            out.println("                  <td>Table " + tableNo + "</td>");
+                            out.println("                  <td>" + tableTopicCount + "</td>");
+                            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + escapeHtml(voteUrl)
+                                    + "\">Vote</a> (<a class=\"aira-inline-link\" href=\"" + escapeHtml(voteQrUrl)
+                                    + "\">qr code</a>)</td>");
+                            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + escapeHtml(resultsUrl)
+                                    + "\">Results</a> (<a class=\"aira-inline-link\" href=\"" + escapeHtml(resultsQrUrl)
+                                    + "\">qr code</a>)</td>");
+                            out.println("                </tr>");
                         }
-                        String meetingPath = "/registerForMeeting/" + encodedCampaignCode + "/"
-                                + encodePathSegment(row.getTopicCode());
-                        String meetingAbsoluteUrl = publicUrlService.resolveExternalUrl(meetingPath);
-                        String meetingLabel = row.getMeetingName() == null || row.getMeetingName().isBlank()
-                                ? row.getTopicName()
-                                : row.getMeetingName();
-                        String meetingQrUrl = buildQrPageUrl(contextPath, meetingPath,
-                                "Meeting registration: " + meetingLabel, detailPath);
-
-                        panelOut.println("            <tr>");
-                        panelOut.println("              <td>" + escapeHtml(meetingLabel) + "</td>");
-                        panelOut.println("              <td><a href=\"" + escapeHtml(meetingAbsoluteUrl)
-                                + "\">Register for Meeting</a> (<a href=\"" + escapeHtml(meetingQrUrl)
-                                + "\">qr code</a>)</td>");
-                        panelOut.println("            </tr>");
+                        out.println("              </tbody>");
+                        out.println("            </table>");
+                        out.println("            </div>");
                     }
-                    panelOut.println("          </tbody>");
-                    panelOut.println("        </table>");
-                }
 
-                panelOut.println("        <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
-                        + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <h3 class=\"aira-subsection-title\">Meeting Registration Links</h3>");
+                    if (meetingRows.isEmpty()) {
+                        out.println(
+                                "            <p class=\"aira-meta\">No active meetings are configured for this campaign.</p>");
+                    } else {
+                        out.println("            <div class=\"aira-table-wrap\">");
+                        out.println("            <table class=\"aira-table\">");
+                        out.println("              <thead>");
+                        out.println("                <tr>");
+                        out.println("                  <th>Meeting</th>");
+                        out.println("                  <th>Register for Meeting</th>");
+                        out.println("                </tr>");
+                        out.println("              </thead>");
+                        out.println("              <tbody>");
+                        for (EsCampaignMeetingBrowseRow row : meetingRows) {
+                            if (row.getTopicCode() == null || row.getTopicCode().isBlank()) {
+                                continue;
+                            }
+                            String meetingPath = "/registerForMeeting/" + encodedCampaignCode + "/"
+                                    + encodePathSegment(row.getTopicCode());
+                            String meetingAbsoluteUrl = publicUrlService.resolveExternalUrl(meetingPath);
+                            String meetingLabel = row.getMeetingName() == null || row.getMeetingName().isBlank()
+                                    ? row.getTopicName()
+                                    : row.getMeetingName();
+                            String meetingQrUrl = buildQrPageUrl(contextPath, meetingPath,
+                                    "Meeting registration: " + meetingLabel, detailPath);
+
+                            out.println("                <tr>");
+                            out.println("                  <td>" + escapeHtml(meetingLabel) + "</td>");
+                            out.println("                  <td><a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(meetingAbsoluteUrl)
+                                    + "\">Register for Meeting</a> (<a class=\"aira-inline-link\" href=\""
+                                    + escapeHtml(meetingQrUrl)
+                                    + "\">qr code</a>)</td>");
+                            out.println("                </tr>");
+                        }
+                        out.println("              </tbody>");
+                        out.println("            </table>");
+                        out.println("            </div>");
+                    }
+
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
+    private void renderCampaignNotFound(HttpServletRequest request, HttpServletResponse response, String campaignCode)
+            throws IOException {
+        response.setStatus(HttpServletResponse.SC_NOT_FOUND);
+        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+        AiraPage page = InteropAiraPageFactory.base(request, "Campaign Not Found - InteropHub").build();
+        try (PrintWriter out = response.getWriter()) {
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container aira-stack\">");
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">Campaign Not Found</h1>");
+            out.println("        </div>");
+            out.println("      </div>");
+            out.println("      <p>No campaign found with code: <strong>" + escapeHtml(campaignCode) + "</strong></p>");
+            out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                    + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                out.println("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-                out.println("<title>Access Denied - InteropHub</title>");
-                out.println(
-                        "<link rel=\"stylesheet\" href=\"" + request.getContextPath() + "/css/main.css\" /></head>");
-                out.println("<body><main class=\"container\"><h1>Access Denied</h1>");
-                out.println("<p>You must be an InteropHub admin to access this page.</p>");
-                out.println("<p><a href=\"" + request.getContextPath() + "/welcome\">Return to Welcome</a></p>");
-                out.println("</main></body></html>");
-            }
-            return Optional.empty();
-        }
-        return authenticatedUser;
     }
 
     private String trimToNull(String value) {

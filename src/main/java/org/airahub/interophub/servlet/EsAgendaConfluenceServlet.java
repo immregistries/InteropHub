@@ -321,7 +321,7 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
         // All meetings link
         if (meeting.getEsTopicMeetingId() != null) {
             String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
-            String allUrl = linkBase + "/es/meetings?seriesId=" + meeting.getEsTopicMeetingId();
+            String allUrl = linkBase + "/es/meeting-series?seriesId=" + meeting.getEsTopicMeetingId();
             out.println("    <p><a href=\"" + escapeHtml(allUrl) + "\">" + escapeHtml(allLabel) + "</a></p>");
         }
 

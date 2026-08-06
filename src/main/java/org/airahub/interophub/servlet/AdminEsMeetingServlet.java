@@ -39,7 +39,6 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.model.EsSurvey;
 import org.airahub.interophub.model.EsTopicMeetingSurvey;
 import org.airahub.interophub.service.EsSurveyService;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.PublicUrlService;
 
@@ -48,8 +47,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_ONLY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String DEFAULT_TIMEZONE = "America/New_York";
+    private static final String ACTIVE_HREF = "/admin/es/meetings";
 
-    private final AuthFlowService authFlowService;
     private final EsTopicMeetingDao meetingDao;
     private final EsTopicMeetingMemberDao memberDao;
     private final EsTopicDao topicDao;
@@ -62,7 +61,6 @@ public class AdminEsMeetingServlet extends HttpServlet {
     private final EsSurveyService esSurveyService;
 
     public AdminEsMeetingServlet() {
-        this.authFlowService = new AuthFlowService();
         this.meetingDao = new EsTopicMeetingDao();
         this.memberDao = new EsTopicMeetingMemberDao();
         this.topicDao = new EsTopicDao();
@@ -77,7 +75,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -88,27 +86,27 @@ public class AdminEsMeetingServlet extends HttpServlet {
         if (meetingIdRaw != null) {
             Long meetingId = parseId(meetingIdRaw);
             if (meetingId == null) {
-                renderList(response, contextPath, "Invalid meeting identifier.");
+                renderList(request, response, "Invalid meeting identifier.");
                 return;
             }
 
             EsTopicMeeting meeting = meetingDao.findById(meetingId).orElse(null);
             if (meeting == null) {
-                renderList(response, contextPath, "Meeting not found.");
+                renderList(request, response, "Meeting not found.");
                 return;
             }
 
             String savedMsg = request.getParameter("saved") != null ? "Membership status updated." : null;
-            renderDetail(response, contextPath, meeting, savedMsg);
+            renderDetail(request, response, meeting, savedMsg);
             return;
         }
 
-        renderList(response, contextPath, null);
+        renderList(request, response, null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -124,7 +122,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         }
 
         if ("createAgenda".equals(action)) {
-            handleCreateAgenda(request, response, contextPath, meetingId, adminUser.get());
+            handleCreateAgenda(request, response, meetingId, adminUser.get());
             return;
         }
 
@@ -181,10 +179,11 @@ public class AdminEsMeetingServlet extends HttpServlet {
     }
 
     private void handleCreateAgenda(HttpServletRequest request, HttpServletResponse response,
-            String contextPath, Long meetingId, User adminUser) throws IOException {
+            Long meetingId, User adminUser) throws IOException {
+        String contextPath = request.getContextPath();
         EsTopicMeeting topicMeeting = meetingDao.findById(meetingId).orElse(null);
         if (topicMeeting == null) {
-            renderList(response, contextPath, "Meeting not found.");
+            renderList(request, response, "Meeting not found.");
             return;
         }
 
@@ -192,14 +191,14 @@ public class AdminEsMeetingServlet extends HttpServlet {
                 ? null
                 : topicDao.findById(topicMeeting.getEsTopicId()).orElse(null);
         if (hostTopic == null || !topicSpaceDao.isActiveSpaceId(hostTopic.getEsTopicSpaceId())) {
-            renderDetail(response, contextPath, topicMeeting,
+            renderDetail(request, response, topicMeeting,
                     "Cannot create a new meeting because the host Topic Space is inactive.");
             return;
         }
 
         String agendaDateRaw = trimToNull(request.getParameter("agendaDate"));
         if (agendaDateRaw == null) {
-            renderDetail(response, contextPath, topicMeeting, "Date is required to create an agenda.");
+            renderDetail(request, response, topicMeeting, "Date is required to create an agenda.");
             return;
         }
 
@@ -207,7 +206,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
         try {
             submittedDate = LocalDate.parse(agendaDateRaw, DATE_ONLY_FORMAT);
         } catch (DateTimeParseException ex) {
-            renderDetail(response, contextPath, topicMeeting,
+            renderDetail(request, response, topicMeeting,
                     "Invalid date: \"" + agendaDateRaw + "\". Use YYYY-MM-DD format.");
             return;
         }
@@ -258,102 +257,114 @@ public class AdminEsMeetingServlet extends HttpServlet {
         response.sendRedirect(contextPath + "/admin/es/meetings?meetingId=" + meetingId + "&saved=1");
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        String contextPath = request.getContextPath();
         List<AdminMeetingBrowseRow> meetings = meetingDao.findAllActiveBrowseRows();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "ES Meetings Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>ES Meetings</h2>");
-                panelOut.println("        <p>View and manage Emerging Standards topic meeting memberships.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Meeting Name</th>");
-                panelOut.println("              <th>Approved</th>");
-                panelOut.println("              <th>Requested</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (AdminMeetingBrowseRow row : meetings) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td><a href=\"" + contextPath + "/admin/es/meetings?meetingId="
-                            + row.getEsTopicMeetingId() + "\">"
-                            + escapeHtml(orEmpty(row.getMeetingName())) + "</a></td>");
-                    panelOut.println("              <td>" + row.getApprovedCount() + "</td>");
-                    panelOut.println("              <td>" + row.getRequestedCount() + "</td>");
-                    panelOut.println("            </tr>");
-                }
-                if (meetings.isEmpty()) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td colspan=\"3\">No active meetings found.</td>");
-                    panelOut.println("            </tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                panelOut.println("      </section>");
-                // Meeting Surveys section
-                panelOut.println("      <hr>");
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Meeting Survey Assignments</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/meeting-survey?action=new\" class=\"button\">+ New Assignment</a>"
-                        + " &nbsp; <a href=\"" + contextPath + "/admin/es/meeting-survey\">All Assignments</a>"
-                        + " &nbsp; <a href=\"" + contextPath + "/admin/es/surveys\">Manage Surveys</a></p>");
-                List<EsTopicMeetingSurvey> assignments = topicMeetingSurveyDao.findAllOrdered();
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead><tr>"
-                        + "<th>ID</th><th>Meeting ID</th><th>Survey</th>"
-                        + "<th>Start</th><th>End</th><th>Status</th><th>Responses</th><th>Actions</th>"
-                        + "</tr></thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopicMeetingSurvey a : assignments) {
-                    EsSurvey s = esSurveyService.getSurvey(a.getEsSurveyId()).orElse(null);
-                    long responseCount = 0;
-                    try {
-                        responseCount = new org.airahub.interophub.dao.EsSurveyResponseDao()
-                                .countByTopicMeetingSurveyId(a.getEsTopicMeetingSurveyId());
-                    } catch (Exception ignore) {
+        AdminShellRenderer.render(request, response, "ES Meetings Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">ES Meetings</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">View and manage Emerging Standards topic meeting memberships.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
                     }
-                    String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
-                            + a.getEsTopicMeetingSurveyId();
-                    String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
-                            + a.getEsTopicMeetingSurveyId();
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + a.getEsTopicMeetingSurveyId() + "</td>");
-                    panelOut.println("              <td>" + a.getEsTopicMeetingId() + "</td>");
-                    panelOut.println("              <td>"
-                            + escapeHtml(s != null ? s.getSurveyName() : "?") + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(a.getEndDate().toString()) + "</td>");
-                    panelOut.println("              <td>"
-                            + escapeHtml(a.getStatus() != null ? a.getStatus().name() : "") + "</td>");
-                    panelOut.println("              <td>" + responseCount + "</td>");
-                    panelOut.println("              <td><a href=\"" + editUrl + "\">Edit</a>"
-                            + " | <a href=\"" + resultsUrl + "\">Results</a></td>");
-                    panelOut.println("            </tr>");
-                }
-                if (assignments.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"8\">No survey assignments found.</td></tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-                panelOut.println("      </section>");
-            });
-        }
+
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Meeting Name</th>");
+                    out.println("                  <th>Approved</th>");
+                    out.println("                  <th>Requested</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (AdminMeetingBrowseRow row : meetings) {
+                        out.println("                <tr>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/meetings?meetingId="
+                                + row.getEsTopicMeetingId() + "\">"
+                                + escapeHtml(orEmpty(row.getMeetingName())) + "</a></td>");
+                        out.println("                  <td>" + row.getApprovedCount() + "</td>");
+                        out.println("                  <td>" + row.getRequestedCount() + "</td>");
+                        out.println("                </tr>");
+                    }
+                    if (meetings.isEmpty()) {
+                        out.println("                <tr>");
+                        out.println("                  <td colspan=\"3\">No active meetings found.</td>");
+                        out.println("                </tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es\">Back to Emerging Standards</a></p>");
+                    out.println("          </section>");
+                    // Meeting Surveys section
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Survey Assignments</h2>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/meeting-survey?action=new\">+ New Assignment</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/meeting-survey\">All Assignments</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/surveys\">Manage Surveys</a>");
+                    out.println("            </div>");
+                    List<EsTopicMeetingSurvey> assignments = topicMeetingSurveyDao.findAllOrdered();
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead><tr>"
+                            + "<th>ID</th><th>Meeting ID</th><th>Survey</th>"
+                            + "<th>Start</th><th>End</th><th>Status</th><th>Responses</th><th>Actions</th>"
+                            + "</tr></thead>");
+                    out.println("              <tbody>");
+                    for (EsTopicMeetingSurvey a : assignments) {
+                        EsSurvey s = esSurveyService.getSurvey(a.getEsSurveyId()).orElse(null);
+                        long responseCount = 0;
+                        try {
+                            responseCount = new org.airahub.interophub.dao.EsSurveyResponseDao()
+                                    .countByTopicMeetingSurveyId(a.getEsTopicMeetingSurveyId());
+                        } catch (Exception ignore) {
+                        }
+                        String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
+                                + a.getEsTopicMeetingSurveyId();
+                        String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
+                                + a.getEsTopicMeetingSurveyId();
+                        out.println("                <tr>");
+                        out.println("                  <td>" + a.getEsTopicMeetingSurveyId() + "</td>");
+                        out.println("                  <td>" + a.getEsTopicMeetingId() + "</td>");
+                        out.println("                  <td>"
+                                + escapeHtml(s != null ? s.getSurveyName() : "?") + "</td>");
+                        out.println("                  <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
+                        out.println("                  <td>" + escapeHtml(a.getEndDate().toString()) + "</td>");
+                        out.println("                  <td>"
+                                + escapeHtml(a.getStatus() != null ? a.getStatus().name() : "") + "</td>");
+                        out.println("                  <td>" + responseCount + "</td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + editUrl
+                                + "\">Edit</a>"
+                                + " | <a class=\"aira-inline-link\" href=\"" + resultsUrl + "\">Results</a></td>");
+                        out.println("                </tr>");
+                    }
+                    if (assignments.isEmpty()) {
+                        out.println(
+                                "                <tr><td colspan=\"8\">No survey assignments found.</td></tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderDetail(HttpServletResponse response, String contextPath, EsTopicMeeting meeting,
+    private void renderDetail(HttpServletRequest request, HttpServletResponse response, EsTopicMeeting meeting,
             String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
 
         List<EsTopicMeetingMember> requested = memberDao.findByMeetingIdAndStatus(
                 meeting.getEsTopicMeetingId(), MembershipStatus.REQUESTED);
@@ -390,65 +401,74 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     .ifPresent(c -> nextScheduledByMeetingId.put(agenda.getEsMeetingId(), c));
         }
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Meeting - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>" + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
+        AdminShellRenderer.render(request, response, "Meeting - InteropHub", AdminSection.TOPIC_SPACES, ACTIVE_HREF,
+                out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">"
+                            + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
 
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
 
-                if (attendanceAbsoluteUrl != null) {
-                    panelOut.println("        <p><strong>Attendance URL:</strong> <a href=\""
-                            + escapeHtml(attendanceAbsoluteUrl) + "\">" + escapeHtml(attendanceAbsoluteUrl)
-                            + "</a> (<a href=\"" + escapeHtml(attendanceQrUrl) + "\">qr code</a>)</p>");
-                }
+                    if (attendanceAbsoluteUrl != null) {
+                        out.println("            <p><strong>Attendance URL:</strong> <a class=\"aira-inline-link\" href=\""
+                                + escapeHtml(attendanceAbsoluteUrl) + "\">" + escapeHtml(attendanceAbsoluteUrl)
+                                + "</a> (<a class=\"aira-inline-link\" href=\"" + escapeHtml(attendanceQrUrl)
+                                + "\">qr code</a>)</p>");
+                    }
 
-                renderAgendasSection(panelOut, contextPath, meetingId, agendas, nextScheduledByMeetingId);
+                    renderAgendasSection(out, contextPath, meetingId, agendas, nextScheduledByMeetingId);
 
-                if (!requested.isEmpty()) {
-                    panelOut.println("        <h3>Requested (" + requested.size() + ")</h3>");
-                    renderMemberTable(panelOut, contextPath, meetingId, requested, usersById,
-                            List.of("approve", "decline"));
-                }
+                    if (!requested.isEmpty()) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Requested (" + requested.size()
+                                + ")</h3>");
+                        renderMemberTable(out, contextPath, meetingId, requested, usersById,
+                                List.of("approve", "decline"));
+                    }
 
-                if (!approved.isEmpty()) {
-                    panelOut.println("        <h3>Approved (" + approved.size() + ")</h3>");
-                    renderMemberTable(panelOut, contextPath, meetingId, approved, usersById,
-                            List.of("remove"));
-                }
+                    if (!approved.isEmpty()) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Approved (" + approved.size()
+                                + ")</h3>");
+                        renderMemberTable(out, contextPath, meetingId, approved, usersById,
+                                List.of("remove"));
+                    }
 
-                if (!declined.isEmpty()) {
-                    panelOut.println("        <h3>Declined (" + declined.size() + ")</h3>");
-                    renderMemberTable(panelOut, contextPath, meetingId, declined, usersById,
-                            List.of("approve"));
-                }
+                    if (!declined.isEmpty()) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Declined (" + declined.size()
+                                + ")</h3>");
+                        renderMemberTable(out, contextPath, meetingId, declined, usersById,
+                                List.of("approve"));
+                    }
 
-                if (!removed.isEmpty()) {
-                    panelOut.println("        <h3>Removed (" + removed.size() + ")</h3>");
-                    renderMemberTable(panelOut, contextPath, meetingId, removed, usersById,
-                            List.of("approve"));
-                    panelOut.println("        </section>");
-                }
+                    if (!removed.isEmpty()) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Removed (" + removed.size()
+                                + ")</h3>");
+                        renderMemberTable(out, contextPath, meetingId, removed, usersById,
+                                List.of("approve"));
+                    }
 
-                if (requested.isEmpty() && approved.isEmpty() && declined.isEmpty() && removed.isEmpty()) {
-                    panelOut.println("        <p>No members found for this meeting.</p>");
-                }
+                    if (requested.isEmpty() && approved.isEmpty() && declined.isEmpty() && removed.isEmpty()) {
+                        out.println("            <p class=\"aira-meta\">No members found for this meeting.</p>");
+                    }
 
-                if (topic != null) {
-                    panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics?esTopicId="
-                            + topic.getEsTopicId() + "\">View Topic Admin</a></p>");
-                }
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/meeting-polls?esTopicMeetingId="
-                        + meetingId + "\">Manage Meeting Polls</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/es/meetings?seriesId=" + meetingId
-                        + "\">View Public Meetings</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/meetings\">Back to Meetings</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    if (topic != null) {
+                        out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/es/topic/"
+                                + topic.getEsTopicId() + "\">View Topic Page</a></p>");
+                    }
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/meeting-polls?esTopicMeetingId="
+                            + meetingId + "\">Manage Meeting Polls</a></p>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/es/meeting-series?seriesId=" + meetingId
+                            + "\">View Public Meetings</a></p>");
+                    out.println(
+                            "            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                    + "/admin/es/meetings\">Back to Meetings</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private void renderAgendasSection(PrintWriter out, String contextPath, Long meetingId,
@@ -458,53 +478,63 @@ public class AdminEsMeetingServlet extends HttpServlet {
                 .filter(a -> a.getScheduledStart() == null || !a.getScheduledStart().isBefore(cutoff))
                 .collect(Collectors.toList());
 
-        out.println("        <h3>Agendas</h3>");
-        out.println("        <table class=\"data-table\">");
-        out.println("          <thead>");
-        out.println("            <tr>");
-        out.println("              <th>Meeting Name</th>");
-        out.println("              <th>Date</th>");
-        out.println("              <th>Communication</th>");
-        out.println("              <th>Status</th>");
-        out.println("              <th>Actions</th>");
-        out.println("            </tr>");
-        out.println("          </thead>");
-        out.println("          <tbody>");
+        out.println("            <h3 class=\"aira-subsection-title\">Agendas</h3>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead>");
+        out.println("                <tr>");
+        out.println("                  <th>Meeting Name</th>");
+        out.println("                  <th>Date</th>");
+        out.println("                  <th>Communication</th>");
+        out.println("                  <th>Status</th>");
+        out.println("                  <th>Actions</th>");
+        out.println("                </tr>");
+        out.println("              </thead>");
+        out.println("              <tbody>");
         for (EsMeeting agenda : visibleAgendas) {
             String dateStr = agenda.getScheduledStart() != null
                     ? DATE_ONLY_FORMAT.format(agenda.getScheduledStart())
                     : "";
-            out.println("            <tr>");
-            out.println("              <td><a href=\"" + contextPath + "/es/agenda?meetingId=" + agenda.getEsMeetingId()
+            out.println("                <tr>");
+            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                    + "/es/agenda?meetingId=" + agenda.getEsMeetingId()
                     + "\">"
                     + escapeHtml(orEmpty(agenda.getMeetingName())) + "</a></td>");
-            out.println("              <td>" + escapeHtml(dateStr) + "</td>");
+            out.println("                  <td>" + escapeHtml(dateStr) + "</td>");
             renderCommunicationCell(out, contextPath, agenda,
                     nextScheduledByMeetingId.get(agenda.getEsMeetingId()));
-            out.println("              <td>" + escapeHtml(agenda.getStatus() != null ? agenda.getStatus().name() : "")
+            out.println("                  <td>" + escapeHtml(agenda.getStatus() != null ? agenda.getStatus().name() : "")
                     + "</td>");
-            out.println("              <td>&mdash;</td>");
-            out.println("            </tr>");
+            out.println("                  <td>&mdash;</td>");
+            out.println("                </tr>");
         }
         if (visibleAgendas.isEmpty()) {
-            out.println("            <tr>");
-            out.println("              <td colspan=\"5\">No agendas yet.</td>");
-            out.println("            </tr>");
+            out.println("                <tr>");
+            out.println("                  <td colspan=\"5\">No agendas yet.</td>");
+            out.println("                </tr>");
         }
-        out.println("          </tbody>");
-        out.println("        </table>");
-        out.println("        <form method=\"post\" action=\"" + contextPath + "/admin/es/meetings\">");
-        out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"createAgenda\">");
-        out.println("          <label>Date: <input type=\"date\" name=\"agendaDate\" required></label>");
-        out.println("          <button type=\"submit\">Create Agenda</button>");
-        out.println("        </form>");
+        out.println("              </tbody>");
+        out.println("            </table>");
+        out.println("            </div>");
+        out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                + "/admin/es/meetings\">");
+        out.println("              <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\">");
+        out.println("              <input type=\"hidden\" name=\"action\" value=\"createAgenda\">");
+        out.println("              <div class=\"aira-field\">");
+        out.println("                <label for=\"agendaDate\">Date</label>");
+        out.println(
+                "                <input class=\"aira-input\" id=\"agendaDate\" type=\"date\" name=\"agendaDate\" required>");
+        out.println("              </div>");
+        out.println("              <div class=\"aira-action-group\">");
+        out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Agenda</button>");
+        out.println("              </div>");
+        out.println("            </form>");
     }
 
     private void renderCommunicationCell(PrintWriter out, String contextPath, EsMeeting agenda,
             EsMeetingCommunication nextScheduledCommunication) {
         if (agenda.getEsMeetingId() == null) {
-            out.println("              <td>&mdash;</td>");
+            out.println("                  <td>&mdash;</td>");
             return;
         }
 
@@ -513,7 +543,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     ? nextScheduledCommunication.getCommunicationType().name()
                     : "SCHEDULED";
             String scheduledSend = formatScheduledSendInCommunicationTimezone(nextScheduledCommunication);
-            out.println("              <td><a href=\"" + contextPath
+            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
                     + "/es/meeting-communication-preview?id="
                     + nextScheduledCommunication.getEsMeetingCommunicationId() + "\">Next: "
                     + escapeHtml(type) + " at " + escapeHtml(scheduledSend) + "</a></td>");
@@ -525,7 +555,8 @@ public class AdminEsMeetingServlet extends HttpServlet {
         if (suggestType != null) {
             scheduleUrl += "&suggestType=" + encodeQueryComponent(suggestType);
         }
-        out.println("              <td><a href=\"" + scheduleUrl + "\">Schedule communication</a></td>");
+        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + scheduleUrl
+                + "\">Schedule communication</a></td>");
     }
 
     private String suggestTypeForMeetingStatus(EsMeeting.MeetingStatus status) {
@@ -564,74 +595,49 @@ public class AdminEsMeetingServlet extends HttpServlet {
 
     private void renderMemberTable(PrintWriter out, String contextPath, Long meetingId,
             List<EsTopicMeetingMember> members, Map<Long, User> usersById, List<String> actions) {
-        out.println("          <table class=\"data-table\">");
-        out.println("            <thead>");
-        out.println("              <tr>");
-        out.println("                <th>Email</th>");
-        out.println("                <th>Display Name</th>");
-        out.println("                <th>Organization</th>");
-        out.println("                <th>Joined</th>");
-        out.println("                <th>Actions</th>");
-        out.println("              </tr>");
-        out.println("            </thead>");
-        out.println("            <tbody>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead>");
+        out.println("                <tr>");
+        out.println("                  <th>Email</th>");
+        out.println("                  <th>Display Name</th>");
+        out.println("                  <th>Organization</th>");
+        out.println("                  <th>Joined</th>");
+        out.println("                  <th>Actions</th>");
+        out.println("                </tr>");
+        out.println("              </thead>");
+        out.println("              <tbody>");
         for (EsTopicMeetingMember member : members) {
             User user = member.getUserId() != null ? usersById.get(member.getUserId()) : null;
-            out.println("              <tr>");
-            out.println("                <td>" + escapeHtml(orEmpty(member.getEmail())) + "</td>");
-            out.println("                <td>"
+            out.println("                <tr>");
+            out.println("                  <td>" + escapeHtml(orEmpty(member.getEmail())) + "</td>");
+            out.println("                  <td>"
                     + escapeHtml(user != null ? orEmpty(user.getFullName()) : "") + "</td>");
-            out.println("                <td>"
+            out.println("                  <td>"
                     + escapeHtml(user != null ? orEmpty(user.getOrganization()) : "") + "</td>");
-            out.println("                <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
-            out.println("                <td>");
+            out.println("                  <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
+            out.println("                  <td>");
+            out.println("                    <div class=\"aira-action-group\">");
             for (String action : actions) {
-                out.println("                  <form method=\"post\" action=\"" + contextPath
-                        + "/admin/es/meetings\" style=\"display:inline\">");
+                out.println("                    <form method=\"post\" action=\"" + contextPath
+                        + "/admin/es/meetings\">");
                 out.println(
-                        "                    <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\">");
-                out.println("                    <input type=\"hidden\" name=\"memberId\" value=\""
+                        "                      <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\">");
+                out.println("                      <input type=\"hidden\" name=\"memberId\" value=\""
                         + member.getEsTopicMeetingMemberId() + "\">");
-                out.println("                    <input type=\"hidden\" name=\"action\" value=\""
+                out.println("                      <input type=\"hidden\" name=\"action\" value=\""
                         + escapeHtml(action) + "\">");
-                out.println("                    <button type=\"submit\">"
+                out.println("                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">"
                         + escapeHtml(capitalize(action)) + "</button>");
-                out.println("                  </form>");
+                out.println("                    </form>");
             }
-            out.println("                </td>");
-            out.println("              </tr>");
+            out.println("                    </div>");
+            out.println("                  </td>");
+            out.println("                </tr>");
         }
-        out.println("            </tbody>");
-        out.println("          </table>");
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access meeting management.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        out.println("              </tbody>");
+        out.println("            </table>");
+        out.println("            </div>");
     }
 
     @SafeVarargs

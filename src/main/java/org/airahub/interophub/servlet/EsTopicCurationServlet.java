@@ -209,7 +209,7 @@ public class EsTopicCurationServlet extends HttpServlet {
 
     private String topicReturnUrl(String contextPath, Long topicId, boolean returnToManage) {
         if (returnToManage) {
-            return contextPath + "/es/topic-manage/" + topicId;
+            return contextPath + "/es/topic-manage/" + topicId + "/curated";
         }
         return contextPath + "/es/topic/" + topicId;
     }

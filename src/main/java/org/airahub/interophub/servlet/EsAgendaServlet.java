@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.immregistries.aira.web.AiraPage;
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
@@ -54,6 +55,7 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.service.EsMeetingViewHistoryService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 
@@ -66,6 +68,7 @@ public class EsAgendaServlet extends HttpServlet {
     private static final DateTimeFormatter DISPLAY_TIME_FMT = DateTimeFormatter.ofPattern("h:mm a");
     private static final DateTimeFormatter INPUT_DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter INPUT_TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
+    private static final int RECENTLY_VIEWED_LIMIT = 8;
 
     private static final Set<String> ALLOWED_TIMEZONES = Set.of(
             "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
@@ -93,6 +96,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsInterestService esInterestService;
     private final EsMeetingAttendanceDao attendanceDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
+    private final EsMeetingViewHistoryService meetingViewHistoryService;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -111,6 +115,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.esInterestService = new EsInterestService();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
+        this.meetingViewHistoryService = new EsMeetingViewHistoryService();
     }
 
     // =========================================================================
@@ -141,18 +146,22 @@ public class EsAgendaServlet extends HttpServlet {
 
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
         if (meetingId == null) {
-            renderError(response, contextPath, "Missing or invalid meetingId parameter.");
+            renderError(request, response, contextPath, "Missing or invalid meetingId parameter.");
             return;
         }
 
         EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
         if (meeting == null) {
-            renderError(response, contextPath, "Meeting not found.");
+            renderError(request, response, contextPath, "Meeting not found.");
             return;
         }
         if (!topicSpaceAccessService.canViewMeeting(user, meeting)) {
-            renderError(response, contextPath, "Meeting not found.");
+            renderError(request, response, contextPath, "Meeting not found.");
             return;
+        }
+
+        if (user != null) {
+            meetingViewHistoryService.recordAuthenticatedMeetingView(user.getUserId(), meetingId);
         }
 
         List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
@@ -182,36 +191,31 @@ public class EsAgendaServlet extends HttpServlet {
             }
         }
 
-        // Next meeting for footer
+        // Previous/next meeting for header navigation
+        EsMeeting previousMeeting = findPreviousMeeting(meeting);
         EsMeeting nextMeeting = findNextMeeting(meeting);
 
         String savedMsg = request.getParameter("saved") != null ? "Changes saved." : null;
-        if (savedMsg == null && "1".equals(request.getParameter("topicsSaved"))) {
-            savedMsg = "Topic interests saved.";
-        }
         String errorMsg = trimToNull(request.getParameter("err"));
         String suggestBanner = buildSuggestBanner(contextPath, meeting.getEsMeetingId(),
                 trimToNull(request.getParameter("suggest")));
 
-        // Topic interest section — determine attendee email and existing subscriptions.
-        // Read the session attribute (set by EsMeetingAttendanceServlet after check-in)
-        // and remove it immediately to prevent stale state on back-navigation.
-        String lastAttendedEmail = null;
-        {
+        // Viewer's email for the Attendance section's "already registered" check.
+        // For anonymous visitors this is set by EsMeetingAttendanceServlet
+        // immediately after check-in, and is cleared here so it only applies to
+        // the page load right after check-in, not stale on back-navigation.
+        String attendanceViewerEmail;
+        if (user != null) {
+            attendanceViewerEmail = user.getEmailNormalized();
+        } else {
             jakarta.servlet.http.HttpSession sess = request.getSession(false);
+            attendanceViewerEmail = sess != null
+                    ? (String) sess.getAttribute("interophub.lastAttendedEmail")
+                    : null;
             if (sess != null) {
-                lastAttendedEmail = (String) sess.getAttribute("interophub.lastAttendedEmail");
                 sess.removeAttribute("interophub.lastAttendedEmail");
             }
         }
-        String attendeeEmailForInterest = user != null ? user.getEmailNormalized() : lastAttendedEmail;
-
-        // Topics rendered in the "Topics of Interest" form (linked, non-cancelled).
-        List<Long> topicInterestTopicIds = items.stream()
-                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
-                .map(EsMeetingAgendaItem::getEsTopicId)
-                .distinct()
-                .collect(Collectors.toList());
 
         // Agenda topics used for in-agenda engagement metrics (exclude postponed).
         List<Long> agendaTopicIds = items.stream()
@@ -221,21 +225,13 @@ public class EsAgendaServlet extends HttpServlet {
                 .distinct()
                 .collect(Collectors.toList());
 
+        // Subscriptions for the signed-in viewer, used only to flag "Following" in
+        // the in-agenda engagement line.
         Map<Long, EsSubscription> subsByTopicId = new java.util.LinkedHashMap<>();
-        if (attendeeEmailForInterest != null && !topicInterestTopicIds.isEmpty()) {
-            List<EsSubscription> emailSubs = subscriptionDao.findByEmailNormalizedAndType(
-                    attendeeEmailForInterest, EsSubscription.SubscriptionType.TOPIC);
-            for (EsSubscription sub : emailSubs) {
-                if (sub.getEsTopicId() != null && topicInterestTopicIds.contains(sub.getEsTopicId())) {
+        if (user != null && user.getUserId() != null && !agendaTopicIds.isEmpty()) {
+            for (EsSubscription sub : subscriptionDao.findByUserId(user.getUserId())) {
+                if (sub.getEsTopicId() != null && agendaTopicIds.contains(sub.getEsTopicId())) {
                     subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
-                }
-            }
-            if (user != null && user.getUserId() != null) {
-                List<EsSubscription> userSubs = subscriptionDao.findByUserId(user.getUserId());
-                for (EsSubscription sub : userSubs) {
-                    if (sub.getEsTopicId() != null && topicInterestTopicIds.contains(sub.getEsTopicId())) {
-                        subsByTopicId.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
-                    }
                 }
             }
         }
@@ -283,10 +279,9 @@ public class EsAgendaServlet extends HttpServlet {
             engagementByTopicId = eng;
         }
 
-        renderPage(response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
-                isEditor, isAdmin, canEdit, editOverride, nextMeeting, savedMsg, errorMsg, loginHintMismatch,
-                suggestBanner,
-                attendeeEmailForInterest, subsByTopicId, topicInterestTopicIds,
+        renderPage(request, response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
+                isEditor, isAdmin, canEdit, editOverride, previousMeeting, nextMeeting, savedMsg, errorMsg,
+                loginHintMismatch, suggestBanner, attendanceViewerEmail,
                 isWithinAttendanceWindow, meetingAttendees, engagementByTopicId);
     }
 
@@ -297,14 +292,6 @@ public class EsAgendaServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
-
-        // updateTopicInterest is allowed for anonymous attendees (identified via
-        // hidden attendeeEmail form field set during check-in redirect).
-        String actionEarly = trimToNull(request.getParameter("action"));
-        if ("updateTopicInterest".equals(actionEarly)) {
-            handleUpdateTopicInterest(request, response);
-            return;
-        }
 
         Optional<User> userOpt = requireLogin(request, response);
         if (userOpt.isEmpty()) {
@@ -1405,6 +1392,20 @@ public class EsAgendaServlet extends HttpServlet {
                 .orElse(null);
     }
 
+    private EsMeeting findPreviousMeeting(EsMeeting current) {
+        if (current.getScheduledStart() == null) {
+            return null;
+        }
+        List<EsMeeting> siblings = meetingDao.findByEsTopicMeetingId(current.getEsTopicMeetingId());
+        return siblings.stream()
+                .filter(m -> !m.getEsMeetingId().equals(current.getEsMeetingId()))
+                .filter(m -> m.getStatus() != MeetingStatus.CANCELLED)
+                .filter(m -> m.getScheduledStart() != null
+                        && m.getScheduledStart().isBefore(current.getScheduledStart()))
+                .max((a, b) -> a.getScheduledStart().compareTo(b.getScheduledStart()))
+                .orElse(null);
+    }
+
     // =========================================================================
     // Redirect helpers
     // =========================================================================
@@ -1486,25 +1487,22 @@ public class EsAgendaServlet extends HttpServlet {
         if (!canEdit || out == null || meetingId == null) {
             return;
         }
-        out.println("    <p class=\"agenda-workspace-link\">");
-        out.println("      <a href=\"" + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
+        out.println("          <a class=\"aira-button aira-button--secondary\" href=\""
+                + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
                 + "\">Open Meeting Workspace</a>");
-        out.println("    </p>");
     }
 
     // =========================================================================
     // Page rendering
     // =========================================================================
 
-    private void renderPage(HttpServletResponse response, String contextPath, User user,
+    private void renderPage(HttpServletRequest request, HttpServletResponse response, String contextPath, User user,
             EsMeeting meeting, List<EsMeetingAgendaItem> items,
             Map<Long, List<EsAgendaItemPresenter>> presentersByItem,
             Map<Long, User> presenterUsers,
             boolean isEditor, boolean isAdmin, boolean canEdit, boolean editOverride,
-            EsMeeting nextMeeting, String savedMsg, String errorMsg,
-            String loginHintMismatch, String suggestBanner,
-            String attendeeEmailForInterest, Map<Long, EsSubscription> subsByTopicId,
-            List<Long> topicInterestTopicIds,
+            EsMeeting previousMeeting, EsMeeting nextMeeting, String savedMsg, String errorMsg,
+            String loginHintMismatch, String suggestBanner, String attendanceViewerEmail,
             boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees,
             Map<Long, TopicEngagementSummary> engagementByTopicId) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
@@ -1839,59 +1837,100 @@ public class EsAgendaServlet extends HttpServlet {
             }
         }
 
+        response.setContentType("text/html;charset=UTF-8");
+
+        AiraPage page = InteropAiraPageFactory.base(request, orEmpty(meeting.getMeetingName()) + " - Agenda")
+                .applicationSubtitle("Agenda")
+                .mainClass("aira-main")
+                .addLocalStylesheet("/css/agenda.css")
+                .context(InteropAiraPageFactory.topicsMeetingsContext(
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceName() : "InteropHub",
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceCode() : null,
+                        false,
+                        true))
+                .build();
+
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>" + escapeHtml(orEmpty(meeting.getMeetingName())) + " — Agenda</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("  <style>");
-            renderAgendaStyles(out);
-            out.println("  </style>");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("<main class=\"agenda-page\">");
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container--wide aira-stack\">");
+
+            // --- PAGE HEADER: title, previous/next nav, admin/editor actions ---
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <div class=\"aira-cluster\">");
+            if (previousMeeting != null) {
+                out.println("            <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
+                        + contextPath + "/es/agenda?meetingId=" + previousMeeting.getEsMeetingId()
+                        + "\">&laquo; Previous</a>");
+            }
+            out.println("            <h1 class=\"aira-page-title\">" + escapeHtml(orEmpty(meeting.getMeetingName()))
+                    + "</h1>");
+            if (nextMeeting != null) {
+                out.println("            <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
+                        + contextPath + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId()
+                        + "\">Next &raquo;</a>");
+            }
+            out.println("          </div>");
+            out.println("        </div>");
+            out.println("        <div class=\"aira-action-group\">");
+            if (isEditor && meeting.getStatus() == MeetingStatus.FINALIZED && !canEdit) {
+                out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + escapeHtml(editUrl)
+                        + "\">Enable editing</a>");
+            }
+            if (meeting.getEsTopicMeetingId() != null) {
+                String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
+                out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                        + "/es/meeting-series?seriesId=" + meeting.getEsTopicMeetingId() + "\">"
+                        + escapeHtml(allLabel) + "</a>");
+            }
+            renderWorkspaceLink(out, contextPath, meeting.getEsMeetingId(), canEdit);
+            if (isAdmin) {
+                out.println("          <a class=\"aira-button aira-button--tertiary\" href=\"" + contextPath
+                        + "/es/agenda/confluence?meetingId=" + meeting.getEsMeetingId() + "\">Confluence export</a>");
+            }
+            out.println("        </div>");
+            out.println("      </div>");
 
             // Cancellation banner
             if (isCancelled) {
-                out.println("  <div class=\"agenda-cancelled-banner\">");
-                out.println("    <strong>CANCELLED</strong>");
+                out.println("      <div class=\"aira-alert aira-alert--danger\">");
+                out.println("        <p class=\"aira-alert__title\">Cancelled</p>");
                 if (meeting.getCancellationReason() != null && !meeting.getCancellationReason().isBlank()) {
-                    out.println("    &mdash; " + escapeHtml(meeting.getCancellationReason()));
+                    out.println("        <p>" + escapeHtml(meeting.getCancellationReason()) + "</p>");
                 }
-                out.println("  </div>");
+                out.println("      </div>");
             }
 
             // Messages
             if (savedMsg != null) {
-                out.println("  <div class=\"agenda-msg-success no-print\">" + escapeHtml(savedMsg) + "</div>");
+                out.println("      <div class=\"aira-alert aira-alert--success aira-no-print\"><p>"
+                        + escapeHtml(savedMsg) + "</p></div>");
             }
             if (suggestBanner != null) {
-                out.println(
-                        "  <div class=\"agenda-msg-success no-print\" style=\"background:#cfe2ff;border-color:#9ec5fe\">"
-                                + suggestBanner + "</div>");
+                out.println("      <div class=\"aira-alert aira-alert--info aira-no-print\"><p>" + suggestBanner
+                        + "</p></div>");
             }
             if (errorMsg != null) {
-                out.println("  <div class=\"agenda-msg-error no-print\">" + escapeHtml(errorMsg) + "</div>");
+                out.println("      <div class=\"aira-alert aira-alert--error aira-no-print\"><p>"
+                        + escapeHtml(errorMsg) + "</p></div>");
             }
             if (loginHintMismatch != null) {
-                out.println("  <div class=\"agenda-msg-login-hint no-print\">");
-                out.println("    <strong>Wrong account?</strong> This invitation was sent to"
+                out.println("      <div class=\"aira-alert aira-alert--warning aira-no-print\">");
+                out.println("        <p><strong>Wrong account?</strong> This invitation was sent to"
                         + " <strong>" + escapeHtml(loginHintMismatch) + "</strong>."
                         + " You are currently signed in as <strong>"
                         + escapeHtml(user.getEmailNormalized()) + "</strong>."
-                        + " Sign in with the correct account to respond to this invitation.");
-                out.println("  </div>");
+                        + " Sign in with the correct account to respond to this invitation.</p>");
+                out.println("      </div>");
             }
 
             // --- YOUR AGENDA ITEMS BANNER ---
             if (!myInvitations.isEmpty()) {
-                out.println("  <div class=\"my-invitations-banner no-print\">");
-                out.println("    <div class=\"my-inv-heading\">&#128203; Your Agenda Items</div>");
+                out.println("      <section class=\"aira-panel aira-no-print\">");
+                out.println("        <h2 class=\"aira-section-title\">Your Agenda Items</h2>");
                 out.println(
-                        "    <div class=\"my-inv-subtext\">You have been added as a presenter. Please confirm or decline each item below.</div>");
+                        "        <p class=\"aira-meta\">You have been added as a presenter. Please confirm or decline each item below.</p>");
+                out.println("        <div class=\"aira-stack aira-stack--compact\">");
                 for (EsAgendaItemPresenter inv : myInvitations) {
                     EsMeetingAgendaItem invItem = itemById.get(inv.getEsMeetingAgendaItemId());
                     if (invItem == null)
@@ -1900,106 +1939,96 @@ public class EsAgendaServlet extends HttpServlet {
                     String invTitle = invItem.getTitle() != null ? invItem.getTitle() : "Agenda Item";
                     String invRoleLabel = titleCase(
                             inv.getPresenterRole() != null ? inv.getPresenterRole().name() : "LEAD");
-                    out.println("    <div class=\"my-inv-card\">");
-                    out.println("      <div class=\"my-inv-title\">");
+                    out.println("          <article class=\"aira-card\">");
+                    out.println("            <div class=\"aira-card__body\">");
+                    out.println("              <p class=\"aira-card__title\">");
                     if (invTopic != null) {
-                        out.println("        <span class=\"my-inv-topic\">" + escapeHtml(invTopic.getTopicName())
-                                + "</span>");
-                        out.println("        <span class=\"my-inv-sep\">&rsaquo;</span>");
+                        out.println("                " + escapeHtml(invTopic.getTopicName()) + " &rsaquo; ");
                     }
-                    out.println("        " + escapeHtml(invTitle));
-                    out.println("      </div>");
-                    out.println("      <div class=\"my-inv-meta\">Invited as: <strong>" + escapeHtml(invRoleLabel)
-                            + "</strong></div>");
-                    out.println("      <div class=\"my-inv-actions\">");
+                    out.println("                " + escapeHtml(invTitle));
+                    out.println("              </p>");
+                    out.println("              <p class=\"aira-card__description\">Invited as: <strong>"
+                            + escapeHtml(invRoleLabel) + "</strong></p>");
+                    out.println("              <div class=\"aira-cluster\">");
                     // Accept form
-                    out.println("        <form method=\"post\" action=\"" + contextPath
-                            + "/es/agenda\" class=\"my-inv-form\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"aira-inline-form\">");
+                    out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterAccept\">");
-                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\""
+                    out.println("                  <input type=\"hidden\" name=\"action\" value=\"presenterAccept\">");
+                    out.println("                  <input type=\"hidden\" name=\"presenterId\" value=\""
                             + inv.getEsAgendaItemPresenterId() + "\">");
                     if (editOverride)
-                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("          <label class=\"my-inv-role-label\">Role:");
-                    out.println("          <select name=\"presenterRole\" class=\"my-inv-role-select\">");
+                        out.println("                  <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                  <label>Role:");
+                    out.println("                  <select class=\"aira-select\" name=\"presenterRole\">");
                     for (EsAgendaItemPresenter.PresenterRole r : EsAgendaItemPresenter.PresenterRole.values()) {
                         boolean sel = r == inv.getPresenterRole();
-                        out.println("            <option value=\"" + r.name() + "\"" + (sel ? " selected" : "") + ">"
-                                + escapeHtml(titleCase(r.name())) + "</option>");
+                        out.println("                    <option value=\"" + r.name() + "\"" + (sel ? " selected" : "")
+                                + ">" + escapeHtml(titleCase(r.name())) + "</option>");
                     }
-                    out.println("          </select></label>");
-                    out.println("          <button type=\"submit\" class=\"inv-btn-accept\">&#10003; Accept</button>");
-                    out.println("        </form>");
+                    out.println("                  </select></label>");
+                    out.println(
+                            "                  <button type=\"submit\" class=\"aira-button aira-button--success aira-button--small\">Accept</button>");
+                    out.println("                </form>");
                     // Decline form
-                    out.println("        <form method=\"post\" action=\"" + contextPath
-                            + "/es/agenda\" class=\"my-inv-form\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"aira-inline-form\">");
+                    out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("          <input type=\"hidden\" name=\"action\" value=\"presenterDecline\">");
-                    out.println("          <input type=\"hidden\" name=\"presenterId\" value=\""
+                    out.println(
+                            "                  <input type=\"hidden\" name=\"action\" value=\"presenterDecline\">");
+                    out.println("                  <input type=\"hidden\" name=\"presenterId\" value=\""
                             + inv.getEsAgendaItemPresenterId() + "\">");
                     if (editOverride)
-                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("                  <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println(
-                            "          <input type=\"text\" name=\"responseNote\" placeholder=\"Reason (optional)\" class=\"my-inv-note\">");
+                            "                  <input class=\"aira-input\" type=\"text\" name=\"responseNote\" placeholder=\"Reason (optional)\">");
                     out.println(
-                            "          <button type=\"submit\" class=\"inv-btn-decline\">&#10007; Decline</button>");
-                    out.println("        </form>");
-                    out.println("      </div>");
-                    out.println("    </div>");
+                            "                  <button type=\"submit\" class=\"aira-button aira-button--danger aira-button--small\">Decline</button>");
+                    out.println("                </form>");
+                    out.println("              </div>");
+                    out.println("            </div>");
+                    out.println("          </article>");
                 }
-                out.println("  </div>");
+                out.println("        </div>");
+                out.println("      </section>");
             }
 
-            // --- HEADER ---
-            out.println("  <div class=\"agenda-header\">");
-            out.println("    <div class=\"agenda-logo-cell\">");
-            out.println("      <img src=\"" + contextPath
-                    + "/image/aira_logo.webp\" alt=\"AIRA\" class=\"agenda-logo\" />");
-            out.println("    </div>");
-            out.println("    <div class=\"agenda-title-cell\">");
-            if (meeting.getStatus() == MeetingStatus.DRAFT || meeting.getStatus() == MeetingStatus.PROPOSED) {
-                out.println("      <h1 class=\"agenda-title\"><span class=\"agenda-draft-label\">"
-                        + meeting.getStatus().name() + "</span> AGENDA</h1>");
-            } else {
-                out.println("      <h1 class=\"agenda-title\">AGENDA</h1>");
-            }
-            out.println("    </div>");
-            out.println("  </div>");
+            out.println("      <div class=\"aira-right-rail-layout\">");
+            out.println("        <div class=\"aira-stack\">");
 
             // --- METADATA BLOCK ---
-            out.println("  <div class=\"agenda-meta panel\">");
+            out.println("          <section class=\"aira-panel\">");
 
             // Meeting name (editable)
             if (canEdit) {
-                out.println("    <div class=\"agenda-meta-row\">");
-                out.println("      <span class=\"agenda-meta-label\">Meeting:</span>");
+                out.println("            <div class=\"aira-field\">");
+                out.println("              <span class=\"aira-label\">Meeting</span>");
                 out.println(
-                        "      <span id=\"meeting-name-display\" class=\"agenda-meta-value click-to-edit\" onclick=\"esShowEdit('meeting-name')\" title=\"Click to edit\">"
-                                + escapeHtml(orEmpty(meeting.getMeetingName())) + "</span>");
+                        "              <div id=\"meeting-name-display\" class=\"click-to-edit\" onclick=\"esShowEdit('meeting-name')\" title=\"Click to edit\">"
+                                + escapeHtml(orEmpty(meeting.getMeetingName())) + "</div>");
                 out.println(
-                        "      <form id=\"meeting-name-form\" class=\"agenda-inline-form no-print\" method=\"post\" action=\""
-                                + contextPath
-                                + "/es/agenda\" style=\"display:none\">");
-                out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
-                        + "\">");
-                out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingName\">");
+                        "              <form id=\"meeting-name-form\" class=\"aira-inline-form aira-no-print\" method=\"post\" action=\""
+                                + contextPath + "/es/agenda\" style=\"display:none\">");
+                out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                        + meeting.getEsMeetingId() + "\">");
+                out.println("                <input type=\"hidden\" name=\"action\" value=\"updateMeetingName\">");
                 if (editOverride)
-                    out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                out.println("        <input type=\"text\" name=\"name\" value=\""
+                    out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("                <input class=\"aira-input\" type=\"text\" name=\"name\" value=\""
                         + escapeHtml(orEmpty(meeting.getMeetingName())) + "\" required size=\"40\">");
-                out.println("        <button type=\"submit\">Save</button>");
-                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-name')\">Cancel</button>");
-                out.println("      </form>");
-                out.println("    </div>");
+                out.println(
+                        "                <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                out.println(
+                        "                <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-name')\">Cancel</button>");
+                out.println("              </form>");
+                out.println("            </div>");
             } else {
-                out.println("    <div class=\"agenda-meta-row\">");
-                out.println("      <span class=\"agenda-meta-label\">Meeting:</span>");
-                out.println("      <span class=\"agenda-meta-value\">" + escapeHtml(orEmpty(meeting.getMeetingName()))
-                        + "</span>");
-                out.println("    </div>");
+                out.println("            <div class=\"aira-field\">");
+                out.println("              <span class=\"aira-label\">Meeting</span>");
+                out.println("              <div>" + escapeHtml(orEmpty(meeting.getMeetingName())) + "</div>");
+                out.println("            </div>");
             }
 
             // Date (editable)
@@ -2007,33 +2036,34 @@ public class EsAgendaServlet extends HttpServlet {
                 String dateInputVal = meeting.getScheduledStart() != null
                         ? INPUT_DATE_FMT.format(meeting.getScheduledStart().toLocalDate())
                         : "";
-                out.println("    <div class=\"agenda-meta-row\">");
-                out.println("      <span class=\"agenda-meta-label\">Date:</span>");
+                out.println("            <div class=\"aira-field\">");
+                out.println("              <span class=\"aira-label\">Date</span>");
                 out.println(
-                        "      <span id=\"meeting-date-display\" class=\"agenda-meta-value click-to-edit\" onclick=\"esShowEdit('meeting-date')\" title=\"Click to edit\">"
-                                + escapeHtml(dateDisplay) + "</span>");
+                        "              <div id=\"meeting-date-display\" class=\"click-to-edit\" onclick=\"esShowEdit('meeting-date')\" title=\"Click to edit\">"
+                                + escapeHtml(dateDisplay) + "</div>");
                 out.println(
-                        "      <form id=\"meeting-date-form\" class=\"agenda-inline-form no-print\" method=\"post\" action=\""
-                                + contextPath
-                                + "/es/agenda\" style=\"display:none\">");
-                out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
-                        + "\">");
-                out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingDate\">");
+                        "              <form id=\"meeting-date-form\" class=\"aira-inline-form aira-no-print\" method=\"post\" action=\""
+                                + contextPath + "/es/agenda\" style=\"display:none\">");
+                out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                        + meeting.getEsMeetingId() + "\">");
+                out.println("                <input type=\"hidden\" name=\"action\" value=\"updateMeetingDate\">");
                 if (editOverride)
-                    out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                out.println("        <span class=\"agenda-tz-note\">Date in meeting timezone: "
+                    out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("                <span class=\"aira-field-help\">Date in meeting timezone: "
                         + escapeHtml(meetingTzDisplay) + "</span>");
-                out.println("        <input type=\"date\" name=\"date\" value=\"" + escapeHtml(dateInputVal)
-                        + "\" required>");
-                out.println("        <button type=\"submit\">Save</button>");
-                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-date')\">Cancel</button>");
-                out.println("      </form>");
-                out.println("    </div>");
+                out.println("                <input class=\"aira-input\" type=\"date\" name=\"date\" value=\""
+                        + escapeHtml(dateInputVal) + "\" required>");
+                out.println(
+                        "                <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                out.println(
+                        "                <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-date')\">Cancel</button>");
+                out.println("              </form>");
+                out.println("            </div>");
             } else {
-                out.println("    <div class=\"agenda-meta-row\">");
-                out.println("      <span class=\"agenda-meta-label\">Date:</span>");
-                out.println("      <span class=\"agenda-meta-value\">" + escapeHtml(dateDisplay) + "</span>");
-                out.println("    </div>");
+                out.println("            <div class=\"aira-field\">");
+                out.println("              <span class=\"aira-label\">Date</span>");
+                out.println("              <div>" + escapeHtml(dateDisplay) + "</div>");
+                out.println("            </div>");
             }
 
             // Time + Timezone (combined click-to-edit)
@@ -2042,11 +2072,11 @@ public class EsAgendaServlet extends HttpServlet {
                             : startTimeDisplay + " – " + endTimeDisplay + " " + tzAbbr);
             {
                 String timeClickTitle = canEdit ? "Click to edit time or timezones" : "Click to set My Timezone";
-                out.println("    <div class=\"agenda-meta-row\">");
-                out.println("      <span class=\"agenda-meta-label\">Time:</span>");
-                out.println("      <span id=\"meeting-time-display\" class=\"agenda-meta-value click-to-edit\""
+                out.println("            <div class=\"aira-field\">");
+                out.println("              <span class=\"aira-label\">Time</span>");
+                out.println("              <div id=\"meeting-time-display\" class=\"click-to-edit\""
                         + " onclick=\"esShowEdit('meeting-time')\" title=\"" + escapeHtml(timeClickTitle) + "\">"
-                        + escapeHtml(timeDisplay.isEmpty() ? "Not set" : timeDisplay) + "</span>");
+                        + escapeHtml(timeDisplay.isEmpty() ? "Not set" : timeDisplay) + "</div>");
                 if (canEdit) {
                     String startInput = meeting.getScheduledStart() != null
                             ? INPUT_TIME_FMT.format(meeting.getScheduledStart().toLocalTime())
@@ -2054,44 +2084,55 @@ public class EsAgendaServlet extends HttpServlet {
                     String endInput = meeting.getScheduledEnd() != null
                             ? INPUT_TIME_FMT.format(meeting.getScheduledEnd().toLocalTime())
                             : "";
-                    out.println("      <form id=\"meeting-time-form\" class=\"agenda-inline-form no-print\""
+                    out.println("              <form id=\"meeting-time-form\" class=\"aira-form aira-no-print\""
                             + " method=\"post\" action=\"" + contextPath + "/es/agenda\" style=\"display:none\">");
-                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
                     out.println(
-                            "        <input type=\"hidden\" name=\"action\" value=\"updateMeetingTimeAndTimezone\">");
+                            "                <input type=\"hidden\" name=\"action\" value=\"updateMeetingTimeAndTimezone\">");
                     if (editOverride)
-                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("        <span class=\"agenda-tz-note\">Times are in meeting timezone: "
+                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <span class=\"aira-field-help\">Times are in meeting timezone: "
                             + escapeHtml(meetingTzDisplay) + "</span>");
-                    out.println("        <label>Start <input type=\"time\" name=\"startTime\" value=\""
-                            + escapeHtml(startInput) + "\" required></label>");
-                    out.println("        <label>End <input type=\"time\" name=\"endTime\" value=\""
-                            + escapeHtml(endInput) + "\"></label>");
-                    out.println("        <label>Meeting Timezone "
+                    out.println("                <div class=\"aira-field-row\">");
+                    out.println(
+                            "                  <label>Start <input class=\"aira-input\" type=\"time\" name=\"startTime\" value=\""
+                                    + escapeHtml(startInput) + "\" required></label>");
+                    out.println(
+                            "                  <label>End <input class=\"aira-input\" type=\"time\" name=\"endTime\" value=\""
+                                    + escapeHtml(endInput) + "\"></label>");
+                    out.println("                  <label>Meeting Timezone "
                             + renderTimezoneSelect("meetingTimezone", meetingTzDisplay) + "</label>");
-                    out.println("        <label>My Timezone "
+                    out.println("                  <label>My Timezone "
                             + renderTimezoneSelect("viewerTimezone", effectiveTz) + "</label>");
-                    out.println("        <button type=\"submit\">Save</button>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
                     out.println(
-                            "        <button type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
-                    out.println("      </form>");
+                            "                  <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
                 } else {
-                    out.println("      <form id=\"meeting-time-form\" class=\"agenda-inline-form no-print\""
-                            + " method=\"post\" action=\"" + contextPath + "/es/agenda\" style=\"display:none\">");
-                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\""
-                            + meeting.getEsMeetingId() + "\">");
-                    out.println("        <input type=\"hidden\" name=\"action\" value=\"updateViewerTimezone\">");
-                    if (editOverride)
-                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                    out.println("        <label>My Timezone "
-                            + renderTimezoneSelect("timezoneId", effectiveTz) + "</label>");
-                    out.println("        <button type=\"submit\">Save</button>");
                     out.println(
-                            "        <button type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
-                    out.println("      </form>");
+                            "              <form id=\"meeting-time-form\" class=\"aira-inline-form aira-no-print\""
+                                    + " method=\"post\" action=\"" + contextPath
+                                    + "/es/agenda\" style=\"display:none\">");
+                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "                <input type=\"hidden\" name=\"action\" value=\"updateViewerTimezone\">");
+                    if (editOverride)
+                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <label>My Timezone "
+                            + renderTimezoneSelect("timezoneId", effectiveTz) + "</label>");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-time')\">Cancel</button>");
+                    out.println("              </form>");
                 }
-                out.println("    </div>");
+                out.println("            </div>");
             }
 
             // Meeting status (click-to-edit for editors with available transitions)
@@ -2104,85 +2145,70 @@ public class EsAgendaServlet extends HttpServlet {
                                     || it.getStatus() == AgendaItemStatus.PROPOSED);
             boolean completionAllowed = !statusTransitions.contains(MeetingStatus.COMPLETED)
                     || isMeetingStarted(meeting);
-            out.println("    <div class=\"agenda-meta-row no-print\">");
-            out.println("      <span class=\"agenda-meta-label\">Status:</span>");
+            out.println("            <div class=\"aira-field aira-no-print\">");
+            out.println("              <span class=\"aira-label\">Status</span>");
+            String statusBadgeVariant = meetingStatusBadgeVariant(meeting.getStatus());
+            String statusLabelText = titleCase(meeting.getStatus().name());
             if (!statusTransitions.isEmpty()) {
-                out.println("      <span id=\"meeting-status-display\" class=\"agenda-status-badge agenda-status-"
-                        + meeting.getStatus().name().toLowerCase()
+                out.println("              <span id=\"meeting-status-display\" class=\"aira-badge "
+                        + statusBadgeVariant
                         + " click-to-edit\" onclick=\"esShowEdit('meeting-status')\" title=\"Click to change status\">"
-                        + escapeHtml(meeting.getStatus().name().substring(0, 1)
-                                + meeting.getStatus().name().substring(1).toLowerCase())
-                        + "</span>");
+                        + escapeHtml(statusLabelText) + "</span>");
                 out.println(
-                        "      <div id=\"meeting-status-form\" class=\"agenda-inline-form no-print\" style=\"display:none\">");
+                        "              <div id=\"meeting-status-form\" class=\"aira-action-group aira-no-print\" style=\"display:none\">");
                 for (MeetingStatus ts : statusTransitions) {
-                    out.println("        <form method=\"post\" action=\"" + contextPath
+                    out.println("                <form method=\"post\" action=\"" + contextPath
                             + "/es/agenda\" style=\"display:contents\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("          <input type=\"hidden\" name=\"action\" value=\"updateMeetingStatus\">");
-                    out.println("          <input type=\"hidden\" name=\"targetStatus\" value=\"" + ts.name() + "\">");
+                    out.println(
+                            "                  <input type=\"hidden\" name=\"action\" value=\"updateMeetingStatus\">");
+                    out.println("                  <input type=\"hidden\" name=\"targetStatus\" value=\"" + ts.name()
+                            + "\">");
                     if (editOverride)
-                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("                  <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     if (ts == MeetingStatus.FINALIZED) {
                         if (finalizeBlocked) {
                             out.println(
-                                    "          <button type=\"submit\" disabled title=\"All active items must be ACCEPTED first\">Finalize</button>");
+                                    "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\" disabled title=\"All active items must be ACCEPTED first\">Finalize</button>");
                         } else {
                             out.println(
-                                    "          <button type=\"submit\" onclick=\"return confirm('Finalize this meeting?')\">Finalize</button>");
+                                    "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\" onclick=\"return confirm('Finalize this meeting?')\">Finalize</button>");
                         }
                     } else if (ts == MeetingStatus.COMPLETED) {
                         if (!completionAllowed) {
                             out.println(
-                                    "          <button type=\"submit\" disabled title=\"Meeting has not started yet\">Complete</button>");
+                                    "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\" disabled title=\"Meeting has not started yet\">Complete</button>");
                         } else {
                             out.println(
-                                    "          <button type=\"submit\" onclick=\"return confirm('Mark this meeting as complete?')\">Complete</button>");
+                                    "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\" onclick=\"return confirm('Mark this meeting as complete?')\">Complete</button>");
                         }
                     } else if (ts == MeetingStatus.CANCELLED) {
                         out.println(
-                                "          <input type=\"text\" name=\"cancellationReason\" placeholder=\"Cancellation reason (optional)\" size=\"20\">");
+                                "                  <input class=\"aira-input\" type=\"text\" name=\"cancellationReason\" placeholder=\"Cancellation reason (optional)\" size=\"20\">");
                         out.println(
-                                "          <button type=\"submit\" onclick=\"return confirm('Cancel this meeting?')\">Cancel Meeting</button>");
+                                "                  <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\" onclick=\"return confirm('Cancel this meeting?')\">Cancel Meeting</button>");
                     } else {
-                        out.println("          <button type=\"submit\">"
-                                + escapeHtml(ts.name().substring(0, 1) + ts.name().substring(1).toLowerCase())
-                                + "</button>");
+                        out.println(
+                                "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">"
+                                        + escapeHtml(titleCase(ts.name())) + "</button>");
                     }
-                    out.println("        </form>");
+                    out.println("                </form>");
                 }
                 if (finalizeBlocked) {
                     out.println(
-                            "        <span class=\"agenda-tz-note\">All active items must be accepted before finalizing.</span>");
+                            "                <span class=\"aira-field-help\">All active items must be accepted before finalizing.</span>");
                 }
-                out.println("        <button type=\"button\" onclick=\"esHideEdit('meeting-status')\">Close</button>");
-                out.println("      </div>");
+                out.println(
+                        "                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-status')\">Close</button>");
+                out.println("              </div>");
             } else {
-                out.println("      <span class=\"agenda-status-badge agenda-status-"
-                        + meeting.getStatus().name().toLowerCase() + "\">"
-                        + escapeHtml(meeting.getStatus().name().substring(0, 1)
-                                + meeting.getStatus().name().substring(1).toLowerCase())
-                        + "</span>");
+                out.println("              <span class=\"aira-badge " + statusBadgeVariant + "\">"
+                        + escapeHtml(statusLabelText) + "</span>");
             }
-            out.println("    </div>");
+            out.println("            </div>");
 
-            // Enable editing link for FINALIZED
-            if (isEditor && meeting.getStatus() == MeetingStatus.FINALIZED && !canEdit) {
-                out.println("    <div class=\"agenda-meta-row no-print\">");
-                out.println("      <a href=\"" + escapeHtml(editUrl)
-                        + "\" class=\"agenda-edit-enable-link\">Enable editing</a>");
-                out.println("    </div>");
-            }
-
-            if (isAdmin) {
-                out.println("    <div class=\"agenda-meta-row no-print\">");
-                out.println("      <a href=\"" + contextPath + "/es/agenda/confluence?meetingId="
-                        + meeting.getEsMeetingId() + "\">Confluence export</a>");
-                out.println("    </div>");
-            }
-
-            out.println("  </div>"); // end agenda-meta
+            out.println("          </section>"); // end meta panel
 
             // --- DESCRIPTION / MEETING INFORMATION ---
             boolean hasDescription = meeting.getMeetingDescription() != null
@@ -2192,105 +2218,101 @@ public class EsAgendaServlet extends HttpServlet {
             boolean hasOnlineMeetingDetails = meeting.getOnlineMeetingDetails() != null
                     && !meeting.getOnlineMeetingDetails().isBlank();
             if (hasDescription || canEdit || hasOnlineMeetingUrl) {
-                out.println("  <div class=\"agenda-description panel\">");
-                out.println("    <h3 class=\"agenda-section-heading\">Meeting Information</h3>");
+                out.println("          <section class=\"aira-panel\">");
+                out.println("            <h2 class=\"aira-section-title\">Meeting Information</h2>");
                 if (hasDescription) {
                     if (canEdit) {
                         out.println(
-                                "    <div id=\"description-display\" class=\"agenda-description-text click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to edit\">"
+                                "            <div id=\"description-display\" class=\"click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to edit\">"
                                         + renderPlainText(meeting.getMeetingDescription()) + "</div>");
                     } else {
-                        out.println("    <div class=\"agenda-description-text\">"
-                                + renderPlainText(meeting.getMeetingDescription()) + "</div>");
+                        out.println("            <div>" + renderPlainText(meeting.getMeetingDescription())
+                                + "</div>");
                     }
                 } else {
                     out.println(
-                            "    <span id=\"description-display\" class=\"agenda-muted click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to add\">No meeting information provided. Click to add.</span>");
+                            "            <span id=\"description-display\" class=\"aira-meta click-to-edit\" onclick=\"esShowEdit('description')\" title=\"Click to add\">No meeting information provided. Click to add.</span>");
                 }
                 if (canEdit) {
                     out.println(
-                            "    <div id=\"description-form\" class=\"no-print\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.6rem\">");
-                    out.println("      <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                    out.println("        <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
-                            + "\">");
-                    out.println("        <input type=\"hidden\" name=\"action\" value=\"updateMeetingDescription\">");
+                            "            <form id=\"description-form\" class=\"aira-form aira-no-print\" method=\"post\" action=\""
+                                    + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "              <input type=\"hidden\" name=\"action\" value=\"updateMeetingDescription\">");
                     if (editOverride)
-                        out.println("        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println(
-                            "        <textarea name=\"description\" rows=\"4\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\" placeholder=\"Join information, conference link, etc.\">"
+                            "              <textarea class=\"aira-textarea\" name=\"description\" rows=\"4\" placeholder=\"Join information, conference link, etc.\">"
                                     + escapeHtml(orEmpty(meeting.getMeetingDescription())) + "</textarea>");
-                    out.println("        <div class=\"agenda-inline-form\" style=\"margin-top:0.4rem\">");
-                    out.println("          <button type=\"submit\">Save</button>");
+                    out.println("              <div class=\"aira-action-group\">");
                     out.println(
-                            "          <button type=\"button\" onclick=\"esHideEdit('description')\">Cancel</button>");
-                    out.println("        </div>");
-                    out.println("      </form>");
-                    out.println("    </div>");
+                            "                <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('description')\">Cancel</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
                 }
                 // --- ONLINE MEETING LINK ---
                 if (canEdit) {
                     String displayUrl = hasOnlineMeetingUrl ? meeting.getOnlineMeetingUrl() : "Add Meeting Link";
-                    String linkDisplayClass = hasOnlineMeetingUrl
-                            ? "agenda-join-link-edit click-to-edit"
-                            : "agenda-muted click-to-edit";
-                    out.println("    <div class=\"agenda-online-meeting no-print\" style=\"margin-top:0.5rem\">");
-                    out.println("      <span id=\"meeting-link-display\" class=\"" + linkDisplayClass
-                            + "\" onclick=\"esShowEdit('meeting-link')\" title=\"Click to edit\">"
-                            + escapeHtml(displayUrl) + "</span>");
+                    out.println("            <div class=\"aira-field\">");
+                    out.println("              <span class=\"aira-label\">Online Meeting</span>");
+                    out.println("              <div id=\"meeting-link-display\" class=\"click-to-edit\""
+                            + " onclick=\"esShowEdit('meeting-link')\" title=\"Click to edit\">"
+                            + escapeHtml(displayUrl) + "</div>");
                     out.println(
-                            "      <div id=\"meeting-link-form\" style=\"display:none;flex-direction:column;gap:0.4rem;margin-top:0.4rem\">");
-                    out.println("        <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                    out.println("          <input type=\"hidden\" name=\"meetingId\" value=\""
+                            "              <form id=\"meeting-link-form\" class=\"aira-form aira-no-print\" method=\"post\" action=\""
+                                    + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
                     out.println(
-                            "          <input type=\"hidden\" name=\"action\" value=\"updateMeetingOnlineInfo\">");
+                            "                <input type=\"hidden\" name=\"action\" value=\"updateMeetingOnlineInfo\">");
                     if (editOverride)
-                        out.println("          <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label>Meeting URL</label>");
+                    out.println("                  <input class=\"aira-input\" type=\"text\" name=\"onlineMeetingUrl\" value=\""
+                            + escapeHtml(orEmpty(meeting.getOnlineMeetingUrl()))
+                            + "\" placeholder=\"https://zoom.us/j/...\">");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label>Connection Details</label>");
                     out.println(
-                            "          <label style=\"font-size:0.85rem;font-weight:600;color:#475569\">Meeting URL</label>");
-                    out.println(
-                            "          <input type=\"text\" name=\"onlineMeetingUrl\" value=\""
-                                    + escapeHtml(orEmpty(meeting.getOnlineMeetingUrl()))
-                                    + "\" placeholder=\"https://zoom.us/j/...\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\">");
-                    out.println(
-                            "          <label style=\"font-size:0.85rem;font-weight:600;color:#475569;margin-top:0.3rem\">Connection Details</label>");
-                    out.println(
-                            "          <textarea name=\"onlineMeetingDetails\" rows=\"5\" style=\"width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9rem;padding:0.3rem 0.5rem\" placeholder=\"Dial-in numbers, passcode, etc.\">"
+                            "                  <textarea class=\"aira-textarea\" name=\"onlineMeetingDetails\" rows=\"5\" placeholder=\"Dial-in numbers, passcode, etc.\">"
                                     + escapeHtml(orEmpty(meeting.getOnlineMeetingDetails())) + "</textarea>");
-                    out.println("          <div class=\"agenda-inline-form\" style=\"margin-top:0.4rem\">");
-                    out.println("            <button type=\"submit\">Save</button>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
                     out.println(
-                            "            <button type=\"button\" onclick=\"esHideEdit('meeting-link')\">Cancel</button>");
-                    out.println("          </div>");
-                    out.println("        </form>");
-                    out.println("      </div>");
-                    out.println("    </div>");
+                            "                  <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-link')\">Cancel</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
+                    out.println("            </div>");
                 } else if (hasOnlineMeetingUrl) {
-                    out.println("    <div class=\"agenda-online-meeting\" style=\"margin-top:0.5rem\">");
-                    out.println("      <a href=\"" + escapeHtml(meeting.getOnlineMeetingUrl())
-                            + "\" target=\"_blank\" rel=\"noopener noreferrer\" class=\"agenda-join-link\">Join Online &#8599;</a>"
-                            + (hasOnlineMeetingDetails
-                                    ? "&nbsp;&nbsp;&nbsp;<span id=\"join-details-toggle\" class=\"agenda-join-more\" onclick=\"esShowJoinDetails()\">More information&hellip;</span>"
-                                    : ""));
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\""
+                            + escapeHtml(meeting.getOnlineMeetingUrl())
+                            + "\" target=\"_blank\" rel=\"noopener noreferrer\">Join Online &#8599;</a>");
+                    out.println("            </div>");
                     if (hasOnlineMeetingDetails) {
-                        out.println(
-                                "      <div id=\"join-details-content\" class=\"agenda-join-details\" style=\"display:none\">");
-                        out.println("        <div class=\"agenda-join-details-text\">"
-                                + renderPlainText(meeting.getOnlineMeetingDetails()) + "</div>");
-                        out.println(
-                                "        <div style=\"margin-top:0.3rem\"><button type=\"button\" class=\"agenda-join-details-close\" onclick=\"esHideJoinDetails()\">Close</button></div>");
-                        out.println("      </div>");
+                        out.println("            <details>");
+                        out.println("              <summary>More information</summary>");
+                        out.println("              <div>" + renderPlainText(meeting.getOnlineMeetingDetails())
+                                + "</div>");
+                        out.println("            </details>");
                     }
-                    out.println("    </div>");
                 }
-                out.println("  </div>");
+                out.println("          </section>");
             }
 
             // --- ATTENDANCE SECTION ---
             if (isWithinAttendanceWindow) {
-                boolean viewerIsRegistered = attendeeEmailForInterest != null
+                boolean viewerIsRegistered = attendanceViewerEmail != null
                         && meetingAttendees.stream()
-                                .anyMatch(a -> attendeeEmailForInterest.equalsIgnoreCase(a.getEmailNormalized()));
+                                .anyMatch(a -> attendanceViewerEmail.equalsIgnoreCase(a.getEmailNormalized()));
 
                 // Build the /attend/ URL using the topic code from the meeting series topic
                 EsTopic meetingSeriesTopic = (topicMeeting != null && topicMeeting.getEsTopicId() != null)
@@ -2305,18 +2327,17 @@ public class EsAgendaServlet extends HttpServlet {
                     }
                 }
 
-                out.println("  <div class=\"agenda-attendance panel\">");
-                out.println("    <h3 class=\"agenda-section-heading\">Attendance</h3>");
+                out.println("          <section class=\"aira-panel\">");
+                out.println("            <h2 class=\"aira-section-title\">Attendance</h2>");
                 if (!viewerIsRegistered) {
-                    out.println(
-                            "    <p class=\"agenda-attendance-prompt\">Haven't signed in for this meeting yet?</p>");
+                    out.println("            <p>Haven't signed in for this meeting yet?</p>");
                     if (attendUrl != null) {
-                        out.println("    <p><a href=\"" + escapeHtml(attendUrl)
-                                + "\" class=\"agenda-attend-link\">Sign in for this meeting &rarr;</a></p>");
+                        out.println("            <a class=\"aira-button aira-button--primary\" href=\""
+                                + escapeHtml(attendUrl) + "\">Sign in for this meeting &rarr;</a>");
                     }
                 } else {
                     if (!meetingAttendees.isEmpty()) {
-                        out.println("    <ul class=\"agenda-attendance-list\">");
+                        out.println("            <ul>");
                         for (EsMeetingAttendance a : meetingAttendees) {
                             String name = escapeHtml(a.getFirstName()
                                     + (a.getLastName() != null && !a.getLastName().isBlank()
@@ -2325,58 +2346,57 @@ public class EsAgendaServlet extends HttpServlet {
                             String org = (a.getOrganization() != null && !a.getOrganization().isBlank())
                                     ? escapeHtml(a.getOrganization())
                                     : null;
-                            out.println("      <li class=\"agenda-attendee-row\">"
+                            out.println("              <li>"
                                     + name
-                                    + (org != null
-                                            ? " &mdash; <span class=\"agenda-attendee-org\">" + org + "</span>"
-                                            : "")
+                                    + (org != null ? " &mdash; <span class=\"aira-meta\">" + org + "</span>" : "")
                                     + "</li>");
                         }
-                        out.println("    </ul>");
+                        out.println("            </ul>");
                     }
-                    out.println("    <p class=\"agenda-attendance-count\">"
+                    out.println("            <p class=\"aira-meta\">"
                             + meetingAttendees.size() + " registered attendee"
                             + (meetingAttendees.size() == 1 ? "" : "s") + "</p>");
                 }
-                out.println("  </div>");
+                out.println("          </section>");
             }
 
             // --- DURATION WARNING ---
             if (meetingDurationMinutes != null) {
                 long diff = agendaMinutes - meetingDurationMinutes;
                 if (diff > 0) {
-                    out.println("  <div class=\"agenda-duration-warning\">");
-                    out.println("    &#9888; Agenda uses <strong>" + agendaMinutes + " minutes</strong>, "
+                    out.println("          <div class=\"aira-alert aira-alert--warning\">");
+                    out.println("            <p>Agenda uses <strong>" + agendaMinutes + " minutes</strong>, "
                             + "but meeting is scheduled for <strong>" + meetingDurationMinutes + " minutes</strong>. "
-                            + "Reduce agenda by <strong>" + diff + " minute" + (diff == 1 ? "" : "s") + "</strong>.");
-                    out.println("  </div>");
+                            + "Reduce agenda by <strong>" + diff + " minute" + (diff == 1 ? "" : "s")
+                            + "</strong>.</p>");
+                    out.println("          </div>");
                 } else if (diff < 0) {
-                    out.println("  <div class=\"agenda-duration-info\">");
-                    out.println("    Agenda has <strong>" + (-diff) + " unallocated minute"
-                            + ((-diff) == 1 ? "" : "s") + "</strong>.");
-                    out.println("  </div>");
+                    out.println("          <div class=\"aira-alert aira-alert--info\">");
+                    out.println("            <p>Agenda has <strong>" + (-diff) + " unallocated minute"
+                            + ((-diff) == 1 ? "" : "s") + "</strong>.</p>");
+                    out.println("          </div>");
                 } else {
-                    out.println("  <div class=\"agenda-duration-ok\">");
-                    out.println("    Agenda time matches scheduled meeting length.");
-                    out.println("  </div>");
+                    out.println("          <div class=\"aira-alert aira-alert--success\">");
+                    out.println("            <p>Agenda time matches scheduled meeting length.</p>");
+                    out.println("          </div>");
                 }
             }
 
             // --- AGENDA TABLE ---
-            out.println("  <div class=\"agenda-table-container\">");
-            out.println("  <table class=\"agenda-table\">");
-            out.println("    <thead>");
-            out.println("      <tr>");
+            out.println("          <div class=\"aira-table-wrap\">");
+            out.println("          <table class=\"aira-table\">");
+            out.println("            <thead>");
+            out.println("              <tr>");
             if (canEdit)
-                out.println("        <th class=\"no-print\">Controls</th>");
-            out.println("        <th class=\"col-topic\">Topic / Time</th>");
-            out.println("        <th class=\"col-agenda\">Agenda</th>");
-            out.println("        <th class=\"col-presenter\">Presenter(s)</th>");
+                out.println("                <th class=\"aira-no-print\">Controls</th>");
+            out.println("                <th>Topic / Time</th>");
+            out.println("                <th>Agenda</th>");
+            out.println("                <th>Presenter(s)</th>");
             if (isEditor)
-                out.println("        <th class=\"col-status no-print\">Status</th>");
-            out.println("      </tr>");
-            out.println("    </thead>");
-            out.println("    <tbody>");
+                out.println("                <th class=\"aira-no-print\">Status</th>");
+            out.println("              </tr>");
+            out.println("            </thead>");
+            out.println("            <tbody>");
 
             // Calculate item time ranges
             LocalDateTime cursor = meeting.getScheduledStart();
@@ -2388,44 +2408,46 @@ public class EsAgendaServlet extends HttpServlet {
                 boolean isPostponedItem = item.getStatus() == AgendaItemStatus.POSTPONED;
                 if (isPostponedItem && !isEditor)
                     continue;
-                String rowClass = "";
-
-                out.println("      <tr class=\"" + rowClass + "\">");
+                out.println("              <tr>");
 
                 // Controls column
                 if (canEdit) {
-                    out.println("        <td class=\"col-controls no-print\">");
-                    if (true) {
-                        // Move up
-                        if (i > 0) {
-                            out.println("          <form method=\"post\" action=\"" + contextPath
-                                    + "/es/agenda\" style=\"display:inline\">");
-                            out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
-                                    + meeting.getEsMeetingId() + "\">");
-                            out.println("            <input type=\"hidden\" name=\"action\" value=\"moveItemUp\">");
-                            out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
-                                    + item.getEsMeetingAgendaItemId() + "\">");
-                            if (editOverride)
-                                out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                            out.println("            <button type=\"submit\" title=\"Move up\">&#8593;</button>");
-                            out.println("          </form>");
-                        }
-                        // Move down
-                        if (i < items.size() - 1) {
-                            out.println("          <form method=\"post\" action=\"" + contextPath
-                                    + "/es/agenda\" style=\"display:inline\">");
-                            out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
-                                    + meeting.getEsMeetingId() + "\">");
-                            out.println("            <input type=\"hidden\" name=\"action\" value=\"moveItemDown\">");
-                            out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
-                                    + item.getEsMeetingAgendaItemId() + "\">");
-                            if (editOverride)
-                                out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                            out.println("            <button type=\"submit\" title=\"Move down\">&#8595;</button>");
-                            out.println("          </form>");
-                        }
+                    out.println("                <td class=\"aira-no-print\">");
+                    out.println("                  <div class=\"aira-action-group\">");
+                    // Move up
+                    if (i > 0) {
+                        out.println("                  <form method=\"post\" action=\"" + contextPath
+                                + "/es/agenda\" style=\"display:inline\">");
+                        out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
+                                + meeting.getEsMeetingId() + "\">");
+                        out.println(
+                                "                    <input type=\"hidden\" name=\"action\" value=\"moveItemUp\">");
+                        out.println("                    <input type=\"hidden\" name=\"itemId\" value=\""
+                                + item.getEsMeetingAgendaItemId() + "\">");
+                        if (editOverride)
+                            out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println(
+                                "                    <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\" title=\"Move up\">&#8593;</button>");
+                        out.println("                  </form>");
                     }
-                    out.println("        </td>");
+                    // Move down
+                    if (i < items.size() - 1) {
+                        out.println("                  <form method=\"post\" action=\"" + contextPath
+                                + "/es/agenda\" style=\"display:inline\">");
+                        out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
+                                + meeting.getEsMeetingId() + "\">");
+                        out.println(
+                                "                    <input type=\"hidden\" name=\"action\" value=\"moveItemDown\">");
+                        out.println("                    <input type=\"hidden\" name=\"itemId\" value=\""
+                                + item.getEsMeetingAgendaItemId() + "\">");
+                        if (editOverride)
+                            out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println(
+                                "                    <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\" title=\"Move down\">&#8595;</button>");
+                        out.println("                  </form>");
+                    }
+                    out.println("                  </div>");
+                    out.println("                </td>");
                 }
 
                 // Topic / Time column
@@ -2438,10 +2460,10 @@ public class EsAgendaServlet extends HttpServlet {
                 }
 
                 if (canEdit) {
-                    out.println("        <td class=\"col-topic click-to-edit\" onclick=\"esShowEdit('item-"
+                    out.println("                <td class=\"click-to-edit\" onclick=\"esShowEdit('item-"
                             + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
                 } else {
-                    out.println("        <td class=\"col-topic\">");
+                    out.println("                <td>");
                 }
                 EsTopic linkedTopic = item.getEsTopicId() != null ? topicById.get(item.getEsTopicId()) : null;
                 if (linkedTopic != null && !canEdit) {
@@ -2469,67 +2491,69 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("          <div class=\"agenda-item-time\">" + escapeHtml(itemTimeRange) + "</div>");
                 }
                 if (item.getTimeMinutes() != null && !isPostponedItem) {
-                    out.println("          <div class=\"agenda-item-duration no-print\">" + item.getTimeMinutes()
-                            + " min</div>");
+                    out.println("                  <div class=\"agenda-item-duration aira-no-print\">"
+                            + item.getTimeMinutes() + " min</div>");
                 }
-                out.println("        </td>");
+                out.println("                </td>");
 
                 // Agenda text column
-                out.println("        <td class=\"col-agenda\">");
+                out.println("                <td>");
                 if (canEdit) {
-                    out.println("          <div id=\"item-" + item.getEsMeetingAgendaItemId()
+                    out.println("                  <div id=\"item-" + item.getEsMeetingAgendaItemId()
                             + "-display\" class=\"click-to-edit\" onclick=\"esShowEdit('item-"
                             + item.getEsMeetingAgendaItemId() + "')\" title=\"Click to edit\">");
                     if (item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()) {
-                        out.println("            <div class=\"agenda-item-text\">"
+                        out.println("                    <div class=\"agenda-item-text\">"
                                 + renderPlainText(item.getAgendaMarkdown()) + "</div>");
                     } else {
-                        out.println("            <span class=\"agenda-muted\">Click to edit...</span>");
+                        out.println("                    <span class=\"aira-meta\">Click to edit...</span>");
                     }
-                    out.println("          </div>");
-                    out.println("          <form id=\"item-" + item.getEsMeetingAgendaItemId()
-                            + "-form\" class=\"agenda-edit-form no-print\" method=\"post\" action=\""
+                    out.println("                  </div>");
+                    out.println("                  <form id=\"item-" + item.getEsMeetingAgendaItemId()
+                            + "-form\" class=\"aira-form aira-no-print\" method=\"post\" action=\""
                             + contextPath + "/es/agenda\" style=\"display:none\">");
-                    out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("            <input type=\"hidden\" name=\"action\" value=\"updateAgendaItem\">");
-                    out.println("            <input type=\"hidden\" name=\"itemId\" value=\""
+                    out.println(
+                            "                    <input type=\"hidden\" name=\"action\" value=\"updateAgendaItem\">");
+                    out.println("                    <input type=\"hidden\" name=\"itemId\" value=\""
                             + item.getEsMeetingAgendaItemId() + "\">");
                     if (editOverride)
-                        out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     EsTopic editLinkedTopic = item.getEsTopicId() != null ? topicById.get(item.getEsTopicId()) : null;
                     if (editLinkedTopic != null) {
-                        out.println("            <div class=\"agenda-item-linked-topic\">Linked to: <a href=\""
+                        out.println("                    <div class=\"aira-meta\">Linked to: <a href=\""
                                 + contextPath + "/es/topic/" + item.getEsTopicId() + "\" target=\"_blank\">"
                                 + escapeHtml(orEmpty(editLinkedTopic.getTopicName())) + "</a></div>");
                     }
-                    out.println("            <input type=\"text\" name=\"title\" value=\""
+                    out.println("                    <input class=\"aira-input\" type=\"text\" name=\"title\" value=\""
                             + escapeHtml(orEmpty(item.getTitle())) + "\" placeholder=\"Title\" size=\"30\">");
                     out.println(
-                            "            <textarea name=\"agendaMarkdown\" rows=\"2\" style=\"width:100%\" placeholder=\"Agenda text\">"
+                            "                    <textarea class=\"aira-textarea\" name=\"agendaMarkdown\" rows=\"2\" placeholder=\"Agenda text\">"
                                     + escapeHtml(orEmpty(item.getAgendaMarkdown())) + "</textarea>");
-                    out.println("            <div style=\"display:flex;align-items:center;gap:0.3rem\">");
-                    out.println("              <input type=\"number\" name=\"timeMinutes\" value=\""
+                    out.println("                    <div class=\"aira-cluster\">");
+                    out.println("                      <input class=\"aira-input\" type=\"number\" name=\"timeMinutes\" value=\""
                             + (item.getTimeMinutes() != null ? item.getTimeMinutes() : "")
-                            + "\" min=\"0\" max=\"480\" style=\"width:3.5rem\">");
-                    out.println("              <span>min</span>");
-                    out.println("            </div>");
-                    out.println("            <div style=\"display:flex;gap:0.3rem\">");
-                    out.println("              <button type=\"submit\">Save</button>");
-                    out.println("              <button type=\"button\" onclick=\"esHideEdit('item-"
+                            + "\" min=\"0\" max=\"480\" style=\"width:4.5rem\">");
+                    out.println("                      <span>min</span>");
+                    out.println("                    </div>");
+                    out.println("                    <div class=\"aira-action-group\">");
+                    out.println(
+                            "                      <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println("                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('item-"
                             + item.getEsMeetingAgendaItemId() + "')\">Cancel</button>");
-                    out.println("            </div>");
-                    out.println("          </form>");
+                    out.println("                    </div>");
+                    out.println("                  </form>");
                 } else {
                     if (item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()) {
-                        out.println("          <div class=\"agenda-item-text\">"
+                        out.println("                  <div class=\"agenda-item-text\">"
                                 + renderPlainText(item.getAgendaMarkdown()) + "</div>");
                     }
                 }
-                out.println("        </td>");
+                out.println("                </td>");
 
                 // Presenter(s) column
-                out.println("        <td class=\"col-presenter\">");
+                out.println("                <td>");
                 List<EsAgendaItemPresenter> pList = presentersByItem.getOrDefault(
                         item.getEsMeetingAgendaItemId(), List.of());
                 // Build set of active presenter emails on this item (for deduplication in
@@ -2551,17 +2575,17 @@ public class EsAgendaServlet extends HttpServlet {
                     String pStatusLabel = titleCase(p.getStatus().name());
                     String pId = "pres-" + p.getEsAgendaItemPresenterId();
                     if (canEdit) {
-                        out.println("          <div class=\"agenda-presenter\">");
+                        out.println("                  <div class=\"agenda-presenter\">");
                         out.println(
-                                "            <span class=\"presenter-name click-to-edit\" onclick=\"esShowPresEdit('"
+                                "                    <span class=\"click-to-edit\" onclick=\"esShowPresEdit('"
                                         + pId + "')\">"
-                                        + escapeHtml(pName) + " <span class=\"presenter-status\">("
+                                        + escapeHtml(pName) + " <span class=\"aira-meta\">("
                                         + escapeHtml(pStatusLabel) + ")</span></span>");
-                        out.println("            <div id=\"" + pId
-                                + "-panel\" class=\"presenter-edit-panel no-print\" style=\"display:none\">");
+                        out.println("                    <dialog id=\"" + pId
+                                + "-panel\" class=\"aira-dialog aira-no-print\">");
                         // Role form
-                        out.println("              <form method=\"post\" action=\"" + contextPath
-                                + "/es/agenda\" class=\"pres-action-form\">");
+                        out.println("                      <form method=\"post\" action=\"" + contextPath
+                                + "/es/agenda\" class=\"aira-inline-form\">");
                         out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
                         out.println(
@@ -2571,82 +2595,88 @@ public class EsAgendaServlet extends HttpServlet {
                         if (editOverride)
                             out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         out.println(
-                                "                <label class=\"pres-role-label\">Role: <select name=\"presenterRole\">");
+                                "                        <label>Role: <select class=\"aira-select\" name=\"presenterRole\">");
                         for (EsAgendaItemPresenter.PresenterRole r : EsAgendaItemPresenter.PresenterRole.values()) {
                             String sel = r == p.getPresenterRole() ? " selected" : "";
-                            out.println("                  <option value=\"" + r.name() + "\"" + sel + ">"
+                            out.println("                          <option value=\"" + r.name() + "\"" + sel + ">"
                                     + escapeHtml(titleCase(r.name())) + "</option>");
                         }
-                        out.println("                </select></label>");
-                        out.println("                <button type=\"submit\" class=\"pres-btn\">Save Role</button>");
-                        out.println("              </form>");
+                        out.println("                        </select></label>");
+                        out.println(
+                                "                        <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">Save Role</button>");
+                        out.println("                      </form>");
                         // Accept form (if not already accepted)
                         if (p.getStatus() != EsAgendaItemPresenter.PresenterStatus.ACCEPTED) {
-                            out.println("              <form method=\"post\" action=\"" + contextPath
+                            out.println("                      <form method=\"post\" action=\"" + contextPath
                                     + "/es/agenda\" style=\"display:inline\">");
-                            out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                            out.println("                        <input type=\"hidden\" name=\"meetingId\" value=\""
                                     + meeting.getEsMeetingId() + "\">");
                             out.println(
-                                    "                <input type=\"hidden\" name=\"action\" value=\"acceptPresenter\">");
-                            out.println("                <input type=\"hidden\" name=\"presenterId\" value=\""
+                                    "                        <input type=\"hidden\" name=\"action\" value=\"acceptPresenter\">");
+                            out.println("                        <input type=\"hidden\" name=\"presenterId\" value=\""
                                     + p.getEsAgendaItemPresenterId() + "\">");
                             if (editOverride)
-                                out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                                out.println(
+                                        "                        <input type=\"hidden\" name=\"edit\" value=\"true\">");
                             out.println(
-                                    "                <button type=\"submit\" class=\"pres-btn pres-btn-accept\">Accept</button>");
-                            out.println("              </form>");
+                                    "                        <button class=\"aira-button aira-button--success aira-button--small\" type=\"submit\">Accept</button>");
+                            out.println("                      </form>");
                         }
                         // Remove form
-                        out.println("              <form method=\"post\" action=\"" + contextPath
+                        out.println("                      <form method=\"post\" action=\"" + contextPath
                                 + "/es/agenda\" style=\"display:inline\">");
-                        out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                        out.println("                        <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
                         out.println(
-                                "                <input type=\"hidden\" name=\"action\" value=\"removePresenter\">");
-                        out.println("                <input type=\"hidden\" name=\"presenterId\" value=\""
+                                "                        <input type=\"hidden\" name=\"action\" value=\"removePresenter\">");
+                        out.println("                        <input type=\"hidden\" name=\"presenterId\" value=\""
                                 + p.getEsAgendaItemPresenterId() + "\">");
                         if (editOverride)
-                            out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("                        <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         out.println(
-                                "                <button type=\"submit\" class=\"pres-btn pres-btn-remove\" onclick=\"return confirm('Remove this presenter?')\">Remove</button>");
-                        out.println("              </form>");
+                                "                        <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\" onclick=\"return confirm('Remove this presenter?')\">Remove</button>");
+                        out.println("                      </form>");
+                        out.println("                      <div class=\"aira-action-group\">");
                         out.println(
-                                "              <button type=\"button\" class=\"pres-btn pres-btn-close\" onclick=\"esHidePresEdit('"
+                                "                        <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHidePresEdit('"
                                         + pId + "')\">Close</button>");
-                        out.println("            </div>"); // end panel
-                        out.println("          </div>"); // end agenda-presenter
+                        out.println("                      </div>");
+                        out.println("                    </dialog>"); // end panel
+                        out.println("                  </div>"); // end agenda-presenter
                     } else {
                         // View mode: just show name and status for editors
                         String statusSuffix = isEditor ? " (" + pStatusLabel + ")" : "";
-                        out.println("          <div class=\"agenda-presenter\">" + escapeHtml(pName)
+                        out.println("                  <div class=\"agenda-presenter\">" + escapeHtml(pName)
                                 + escapeHtml(statusSuffix) + "</div>");
                     }
                 }
                 // Add Presenter UI (canEdit only)
                 if (canEdit) {
                     String addPanelId = "add-pres-" + item.getEsMeetingAgendaItemId();
-                    out.println("          <div class=\"no-print\" style=\"margin-top:0.3rem\">");
-                    out.println("            <button type=\"button\" class=\"add-pres-btn\" onclick=\"esShowAddPres('"
-                            + addPanelId + "')\">+ Add Presenter</button>");
-                    out.println("          </div>");
-                    out.println("          <div id=\"" + addPanelId
-                            + "\" class=\"add-pres-panel no-print\" style=\"display:none\">");
+                    out.println("                  <div class=\"aira-no-print\">");
+                    out.println(
+                            "                    <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esShowAddPres('"
+                                    + addPanelId + "')\">+ Add Presenter</button>");
+                    out.println("                  </div>");
+                    out.println("                  <dialog id=\"" + addPanelId
+                            + "\" class=\"aira-dialog aira-no-print\">");
 
                     // --- Role Picker ---
-                    out.println("            <div class=\"role-picker-row\">");
-                    out.println("              <span class=\"role-picker-label\">Role:</span>");
-                    out.println("              <div class=\"role-picker-toggle\">");
+                    out.println("                    <div class=\"role-picker-row\">");
+                    out.println("                      <span class=\"aira-label\">Role:</span>");
+                    out.println("                      <div class=\"aira-cluster\">");
                     boolean firstRole = true;
                     for (EsAgendaItemPresenter.PresenterRole presRole : EsAgendaItemPresenter.PresenterRole.values()) {
                         String roleOptLabel = titleCase(presRole.name());
                         String activeClass = firstRole ? " role-option-active" : "";
-                        out.println("                <button type=\"button\" class=\"role-option" + activeClass + "\""
+                        out.println("                        <button type=\"button\" class=\"aira-button aira-button--tertiary aira-button--small role-option"
+                                + activeClass + "\""
                                 + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name()
                                 + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
                         firstRole = false;
                     }
-                    out.println("              </div>");
-                    out.println("            </div>");
+                    out.println("                      </div>");
+                    out.println("                    </div>");
 
                     // --- Quick Pick: Myself ---
                     if (user.getEmail() != null) {
@@ -2655,8 +2685,8 @@ public class EsAgendaServlet extends HttpServlet {
                             String myName = user.getFullName();
                             if (myName == null || myName.isBlank())
                                 myName = user.getEmail();
-                            out.println("            <div class=\"quick-pick-section\">");
-                            out.println("              <div class=\"quick-pick-label\">Quick Add:</div>");
+                            out.println("                    <div class=\"aira-stack\">");
+                            out.println("                      <div class=\"aira-label\">Quick Add:</div>");
                             out.println("              <form method=\"post\" action=\"" + contextPath
                                     + "/es/agenda\" style=\"display:inline\">");
                             out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
@@ -2679,7 +2709,7 @@ public class EsAgendaServlet extends HttpServlet {
                             out.println(
                                     "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                             out.println(
-                                    "                <button type=\"submit\" class=\"quick-pick-chip quick-pick-self\">"
+                                    "                <button class=\"aira-button aira-button--success aira-button--small\" type=\"submit\">"
                                             + escapeHtml(myName) + " (me)</button>");
                             out.println("              </form>");
                             out.println("            </div>");
@@ -2706,8 +2736,8 @@ public class EsAgendaServlet extends HttpServlet {
                         }
                     }
                     if (!meetingQuickPicks.isEmpty()) {
-                        out.println("            <div class=\"quick-pick-section\">");
-                        out.println("              <div class=\"quick-pick-label\">From this meeting:</div>");
+                        out.println("                    <div class=\"aira-stack\">");
+                        out.println("                      <div class=\"aira-label\">From this meeting:</div>");
                         for (EsAgendaItemPresenter qp : meetingQuickPicks) {
                             String qpName = presenterDisplayName(qp, presenterUsers);
                             out.println("              <form method=\"post\" action=\"" + contextPath
@@ -2730,7 +2760,7 @@ public class EsAgendaServlet extends HttpServlet {
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                             out.println(
                                     "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
-                            out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
+                            out.println("                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
                                     + escapeHtml(qpName) + "</button>");
                             out.println("              </form>");
                         }
@@ -2752,8 +2782,8 @@ public class EsAgendaServlet extends HttpServlet {
                             champPicks.add(ch);
                         }
                         if (!champPicks.isEmpty()) {
-                            out.println("            <div class=\"quick-pick-section\">");
-                            out.println("              <div class=\"quick-pick-label\">Topic Champions:</div>");
+                            out.println("                    <div class=\"aira-stack\">");
+                            out.println("                      <div class=\"aira-label\">Topic Champions:</div>");
                             for (EsSubscription ch : champPicks) {
                                 String champName = ch.getEmail();
                                 if (ch.getUserId() != null) {
@@ -2779,7 +2809,7 @@ public class EsAgendaServlet extends HttpServlet {
                                     out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                                 out.println(
                                         "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
-                                out.println("                <button type=\"submit\" class=\"quick-pick-chip\">"
+                                out.println("                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
                                         + escapeHtml(champName) + "</button>");
                                 out.println("              </form>");
                             }
@@ -2790,112 +2820,112 @@ public class EsAgendaServlet extends HttpServlet {
                     // --- Find registered user ---
                     String userSearchId = "pres-user-search-" + item.getEsMeetingAgendaItemId();
                     String userHiddenId = "pres-user-id-" + item.getEsMeetingAgendaItemId();
-                    out.println("            <div class=\"quick-pick-section\">");
-                    out.println("              <div class=\"quick-pick-label\">Find registered user:</div>");
-                    out.println("              <form method=\"post\" action=\"" + contextPath
-                            + "/es/agenda\" class=\"pres-action-form\">");
-                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                    <div class=\"aira-stack\">");
+                    out.println("                      <div class=\"aira-label\">Find registered user:</div>");
+                    out.println("                      <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"aira-inline-form\">");
+                    out.println("                        <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("                <input type=\"hidden\" name=\"action\" value=\"addPresenter\">");
-                    out.println("                <input type=\"hidden\" name=\"itemId\" value=\""
-                            + item.getEsMeetingAgendaItemId() + "\">");
-                    out.println("                <input type=\"hidden\" name=\"userId\" id=\"" + userHiddenId + "\">");
-                    if (editOverride)
-                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println(
-                            "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
-                    out.println("                <input type=\"text\" id=\"" + userSearchId
-                            + "\" list=\"pres-user-list\" placeholder=\"Search name or email...\" autocomplete=\"off\" class=\"pres-text-input\" oninput=\"esOnPresUserInput(this.value,'"
+                            "                        <input type=\"hidden\" name=\"action\" value=\"addPresenter\">");
+                    out.println("                        <input type=\"hidden\" name=\"itemId\" value=\""
+                            + item.getEsMeetingAgendaItemId() + "\">");
+                    out.println("                        <input type=\"hidden\" name=\"userId\" id=\"" + userHiddenId
+                            + "\">");
+                    if (editOverride)
+                        out.println("                        <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println(
+                            "                        <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                    out.println("                        <input class=\"aira-input\" type=\"text\" id=\"" + userSearchId
+                            + "\" list=\"pres-user-list\" placeholder=\"Search name or email...\" autocomplete=\"off\" oninput=\"esOnPresUserInput(this.value,'"
                             + userHiddenId + "')\">");
-                    out.println("                <button type=\"submit\" class=\"pres-btn\">Add User</button>");
-                    out.println("              </form>");
-                    out.println("            </div>");
+                    out.println(
+                            "                        <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">Add User</button>");
+                    out.println("                      </form>");
+                    out.println("                    </div>");
 
                     // --- Add by name & email ---
-                    out.println("            <div class=\"quick-pick-section\">");
-                    out.println("              <div class=\"quick-pick-label\">Add by name &amp; email:</div>");
-                    out.println("              <form method=\"post\" action=\"" + contextPath
-                            + "/es/agenda\" class=\"pres-action-form\">");
-                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                    out.println("                    <div class=\"aira-stack\">");
+                    out.println("                      <div class=\"aira-label\">Add by name &amp; email:</div>");
+                    out.println("                      <form method=\"post\" action=\"" + contextPath
+                            + "/es/agenda\" class=\"aira-inline-form\">");
+                    out.println("                        <input type=\"hidden\" name=\"meetingId\" value=\""
                             + meeting.getEsMeetingId() + "\">");
-                    out.println("                <input type=\"hidden\" name=\"action\" value=\"addPresenter\">");
-                    out.println("                <input type=\"hidden\" name=\"itemId\" value=\""
+                    out.println(
+                            "                        <input type=\"hidden\" name=\"action\" value=\"addPresenter\">");
+                    out.println("                        <input type=\"hidden\" name=\"itemId\" value=\""
                             + item.getEsMeetingAgendaItemId() + "\">");
                     if (editOverride)
-                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                        out.println("                        <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println(
-                            "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
+                            "                        <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
                     out.println(
-                            "                <input type=\"text\" name=\"displayName\" placeholder=\"Name\" class=\"pres-text-input\">");
+                            "                        <input class=\"aira-input\" type=\"text\" name=\"displayName\" placeholder=\"Name\">");
                     out.println(
-                            "                <input type=\"email\" name=\"email\" placeholder=\"Email (required)\" required class=\"pres-text-input\">");
-                    out.println("                <button type=\"submit\" class=\"pres-btn\">Add</button>");
-                    out.println("              </form>");
-                    out.println("            </div>");
+                            "                        <input class=\"aira-input\" type=\"email\" name=\"email\" placeholder=\"Email (required)\" required>");
+                    out.println(
+                            "                        <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">Add</button>");
+                    out.println("                      </form>");
+                    out.println("                    </div>");
 
+                    out.println("                    <div class=\"aira-action-group\">");
                     out.println(
-                            "            <button type=\"button\" class=\"pres-btn pres-btn-close\" style=\"margin-top:0.3rem\" onclick=\"esHideAddPres('"
+                            "                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideAddPres('"
                                     + addPanelId + "')\">Close</button>");
-                    out.println("          </div>"); // end add-pres-panel
+                    out.println("                    </div>");
+                    out.println("                  </dialog>"); // end add-pres-panel
                 }
-                out.println("        </td>");
+                out.println("                </td>");
 
                 // Status column (editor only)
                 if (isEditor) {
-                    String statusLabel = Arrays.stream(item.getStatus().name().split("_"))
-                            .map(w -> w.substring(0, 1) + w.substring(1).toLowerCase())
-                            .collect(Collectors.joining(" "));
-                    AgendaItemStatus s = item.getStatus();
-                    String statusColorClass = (s == AgendaItemStatus.ACCEPTED || s == AgendaItemStatus.COVERED)
-                            ? "status-green"
-                            : (s == AgendaItemStatus.NEEDS_REVISION || s == AgendaItemStatus.NOT_COVERED)
-                                    ? "status-red"
-                                    : "";
-                    out.println("        <td class=\"col-status no-print\">");
+                    String statusLabel = titleCase(item.getStatus().name());
+                    String badgeVariant = agendaItemStatusBadgeVariant(item.getStatus());
+                    out.println("                <td class=\"aira-no-print\">");
                     if (canEdit) {
                         List<AgendaItemStatus> transitions = validItemTransitions(item.getStatus());
                         if (!transitions.isEmpty()) {
-                            out.println("          <span class=\"agenda-item-status-badge " + statusColorClass
+                            out.println("                  <span class=\"aira-badge " + badgeVariant
                                     + " click-to-edit\" onclick=\"document.getElementById('status-"
                                     + item.getEsMeetingAgendaItemId()
-                                    + "-form').style.display='flex'\" title=\"Click to change status\">"
+                                    + "-form').style.display=''\" title=\"Click to change status\">"
                                     + escapeHtml(statusLabel) + "</span>");
-                            out.println("          <div id=\"status-" + item.getEsMeetingAgendaItemId()
-                                    + "-form\" style=\"display:none;flex-direction:column;margin-top:0.3rem\">");
+                            out.println("                  <div id=\"status-" + item.getEsMeetingAgendaItemId()
+                                    + "-form\" class=\"aira-stack aira-stack--compact\" style=\"display:none;margin-top:0.3rem\">");
                             for (AgendaItemStatus ts : transitions) {
-                                String tsLabel = Arrays.stream(ts.name().split("_"))
-                                        .map(w -> w.substring(0, 1) + w.substring(1).toLowerCase())
-                                        .collect(Collectors.joining(" "));
-                                out.println("            <form method=\"post\" action=\"" + contextPath
-                                        + "/es/agenda\" style=\"display:block;margin-top:2px\">");
-                                out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                                String tsLabel = titleCase(ts.name());
+                                out.println("                    <form method=\"post\" action=\"" + contextPath
+                                        + "/es/agenda\">");
+                                out.println("                      <input type=\"hidden\" name=\"meetingId\" value=\""
                                         + meeting.getEsMeetingId() + "\">");
                                 out.println(
-                                        "              <input type=\"hidden\" name=\"action\" value=\"updateItemStatus\">");
-                                out.println("              <input type=\"hidden\" name=\"itemId\" value=\""
+                                        "                      <input type=\"hidden\" name=\"action\" value=\"updateItemStatus\">");
+                                out.println("                      <input type=\"hidden\" name=\"itemId\" value=\""
                                         + item.getEsMeetingAgendaItemId() + "\">");
-                                out.println("              <input type=\"hidden\" name=\"targetStatus\" value=\""
+                                out.println("                      <input type=\"hidden\" name=\"targetStatus\" value=\""
                                         + ts.name()
                                         + "\">");
                                 if (editOverride)
-                                    out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                                out.println("              <button type=\"submit\" class=\"agenda-status-btn\">"
-                                        + escapeHtml(tsLabel) + "</button>");
-                                out.println("            </form>");
+                                    out.println(
+                                            "                      <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                                out.println(
+                                        "                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\">"
+                                                + escapeHtml(tsLabel) + "</button>");
+                                out.println("                    </form>");
                             }
-                            out.println("          </div>");
+                            out.println("                  </div>");
                         } else {
-                            out.println("          <span class=\"agenda-item-status-badge " + statusColorClass + "\">"
+                            out.println("                  <span class=\"aira-badge " + badgeVariant + "\">"
                                     + escapeHtml(statusLabel) + "</span>");
                         }
                     } else {
-                        out.println("          <span class=\"agenda-item-status-badge " + statusColorClass + "\">"
+                        out.println("                  <span class=\"aira-badge " + badgeVariant + "\">"
                                 + escapeHtml(statusLabel) + "</span>");
                     }
-                    out.println("        </td>");
+                    out.println("                </td>");
                 }
 
-                out.println("      </tr>");
+                out.println("              </tr>");
 
                 // Advance cursor (skip postponed — their slot is no longer part of this
                 // meeting)
@@ -2906,73 +2936,79 @@ public class EsAgendaServlet extends HttpServlet {
 
             if (items.isEmpty()) {
                 int colspan = 3 + (canEdit ? 1 : 0) + (isEditor ? 1 : 0);
-                out.println("      <tr><td colspan=\"" + colspan + "\">No agenda items.</td></tr>");
+                out.println("              <tr><td colspan=\"" + colspan + "\">No agenda items.</td></tr>");
             }
 
-            out.println("    </tbody>");
-            out.println("  </table>");
-            out.println("  </div>"); // end agenda-table-container
+            out.println("            </tbody>");
+            out.println("          </table>");
+            out.println("          </div>"); // end aira-table-wrap
 
             // --- ADD AGENDA ITEM ---
             if (canEdit) {
-                out.println("  <div class=\"agenda-add-item no-print\">");
-                out.println("    <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                out.println(
-                        "      <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
-                out.println("      <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
+                out.println("          <section class=\"aira-panel aira-no-print\">");
+                out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                        + "/es/agenda\">");
+                out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                        + meeting.getEsMeetingId() + "\">");
+                out.println("              <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
                 if (editOverride)
-                    out.println("      <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                out.println("      <input type=\"hidden\" name=\"topicId\" id=\"add-topic-id\">");
-                out.println("      <div class=\"add-item-row\">");
-                out.println("        <input type=\"text\" id=\"add-topic-search\" list=\"add-topic-list\"");
+                    out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                out.println("              <input type=\"hidden\" name=\"topicId\" id=\"add-topic-id\">");
+                out.println("              <div class=\"aira-field\">");
+                out.println("                <input class=\"aira-input\" type=\"text\" id=\"add-topic-search\" list=\"add-topic-list\"");
                 out.println(
-                        "               placeholder=\"Search topics...\" autocomplete=\"off\" class=\"add-item-input\"");
-                out.println("               oninput=\"esOnTopicInput(this.value)\">");
-                out.println("        <datalist id=\"add-topic-list\"></datalist>");
-                out.println("      </div>");
-                out.println("      <div class=\"add-item-row\">");
+                        "                       placeholder=\"Search topics...\" autocomplete=\"off\"");
+                out.println("                       oninput=\"esOnTopicInput(this.value)\">");
+                out.println("                <datalist id=\"add-topic-list\"></datalist>");
+                out.println("              </div>");
+                out.println("              <div class=\"aira-inline-form\">");
                 out.println(
-                        "        <input type=\"text\" name=\"title\" id=\"add-item-title\" placeholder=\"Title (optional)\" class=\"add-item-input\">");
-                out.println("        <button type=\"submit\">+ Add Agenda Item</button>");
-                out.println("      </div>");
-                out.println("    </form>");
-                out.println("  </div>");
+                        "                <input class=\"aira-input\" type=\"text\" name=\"title\" id=\"add-item-title\" placeholder=\"Title (optional)\">");
+                out.println(
+                        "                <button class=\"aira-button aira-button--primary\" type=\"submit\">+ Add Agenda Item</button>");
+                out.println("              </div>");
+                out.println("            </form>");
+                out.println("          </section>");
             }
 
             // --- OPEN ITEMS (carry-forward: POSTPONED / NOT_COVERED / NEEDS_REVISION) ---
             if (canEdit && !openItems.isEmpty()) {
-                out.println("  <div class=\"open-items-section no-print\">");
-                out.println("    <div class=\"open-items-heading\">Open Items"
-                        + "<span class=\"open-items-subtext\"> — not addressed in a previous meeting and needs to be rescheduled</span></div>");
-                out.println("    <div class=\"agenda-table-container\">");
-                out.println("    <table class=\"prev-items-table\">");
-                out.println("      <thead><tr>");
-                out.println("        <th>Topic / Title</th>");
-                out.println("        <th>Min</th>");
-                out.println("        <th>Status</th>");
-                out.println("        <th>From</th>");
-                out.println("        <th></th>");
-                out.println("      </tr></thead>");
-                out.println("      <tbody>");
+                out.println("          <div class=\"aira-table-panel aira-table-panel--warning aira-no-print\">");
+                out.println("            <div class=\"aira-table-panel__header\">");
+                out.println("              <h3 class=\"aira-table-panel__title\">Open Items</h3>");
+                out.println(
+                        "              <p class=\"aira-table-panel__description\">Not addressed in a previous meeting and needs to be rescheduled.</p>");
+                out.println("            </div>");
+                out.println("            <div class=\"aira-table-panel__body\">");
+                out.println("            <div class=\"aira-table-wrap\">");
+                out.println("            <table class=\"aira-table\">");
+                out.println("              <thead><tr>");
+                out.println("                <th>Topic / Title</th>");
+                out.println("                <th>Min</th>");
+                out.println("                <th>Status</th>");
+                out.println("                <th>From</th>");
+                out.println("                <th></th>");
+                out.println("              </tr></thead>");
+                out.println("              <tbody>");
                 for (EsMeetingAgendaItem oi : openItems) {
                     EsMeeting srcMtg = openMeetingById.get(oi.getEsMeetingId());
                     String srcLabel = srcMtg != null && srcMtg.getScheduledStart() != null
                             ? DISPLAY_DATE_FMT.format(srcMtg.getScheduledStart().toLocalDate())
                             : "Previous";
                     String oiStatusLabel = titleCase(oi.getStatus().name());
-                    String statusCls = oi.getStatus() == AgendaItemStatus.POSTPONED ? "prev-status-postponed"
-                            : "prev-status-warn";
-                    out.println("      <tr>");
-                    out.println("        <td class=\"prev-item-title\">");
+                    String statusCls = oi.getStatus() == AgendaItemStatus.POSTPONED ? "aira-badge--warning"
+                            : "aira-badge--danger";
+                    out.println("              <tr>");
+                    out.println("                <td>");
                     EsTopic oiTopic = oi.getEsTopicId() != null ? topicById.get(oi.getEsTopicId()) : null;
                     if (oiTopic != null) {
-                        out.println("          <a href=\"" + contextPath + "/es/topic/" + oi.getEsTopicId()
+                        out.println("                  <a href=\"" + contextPath + "/es/topic/" + oi.getEsTopicId()
                                 + "\" class=\"agenda-topic-link\" target=\"_blank\">"
                                 + escapeHtml(oiTopic.getTopicName()) + "</a>");
                         if (oi.getTitle() != null && !oi.getTitle().isBlank())
-                            out.println("          <div>" + escapeHtml(oi.getTitle()) + "</div>");
+                            out.println("                  <div>" + escapeHtml(oi.getTitle()) + "</div>");
                     } else {
-                        out.println("          " + escapeHtml(oi.getTitle()));
+                        out.println("                  " + escapeHtml(oi.getTitle()));
                     }
                     List<EsAgendaItemPresenter> oiPs = prevPresentersByItem
                             .getOrDefault(oi.getEsMeetingAgendaItemId(), List.of()).stream()
@@ -2980,50 +3016,52 @@ public class EsAgendaServlet extends HttpServlet {
                                     && p.getStatus() != EsAgendaItemPresenter.PresenterStatus.DECLINED)
                             .collect(Collectors.toList());
                     if (!oiPs.isEmpty()) {
-                        out.println("          <div class=\"prev-item-presenters\">");
+                        out.println("                  <div class=\"aira-cluster\">");
                         for (EsAgendaItemPresenter pp : oiPs) {
-                            out.println("            <span class=\"prev-presenter-chip\">"
+                            out.println("                    <span class=\"aira-badge aira-badge--subtle\">"
                                     + escapeHtml(presenterDisplayName(pp, presenterUsers)) + "</span>");
                         }
-                        out.println("          </div>");
+                        out.println("                  </div>");
                     }
-                    out.println("        </td>");
-                    out.println("        <td class=\"prev-item-min\">"
+                    out.println("                </td>");
+                    out.println("                <td>"
                             + (oi.getTimeMinutes() != null ? oi.getTimeMinutes() : "") + "</td>");
-                    out.println("        <td><span class=\"prev-item-status " + statusCls + "\">"
+                    out.println("                <td><span class=\"aira-badge " + statusCls + "\">"
                             + escapeHtml(oiStatusLabel) + "</span></td>");
-                    out.println("        <td class=\"prev-item-from\">" + escapeHtml(srcLabel) + "</td>");
-                    out.println("        <td class=\"prev-item-controls\">");
+                    out.println("                <td>" + escapeHtml(srcLabel) + "</td>");
+                    out.println("                <td>");
                     boolean canCopyOpenItem = oi.getEsTopicId() == null
                             || isTopicAllowedForMeetingHost(topicById.get(oi.getEsTopicId()), hostTopicSpace);
                     if (canCopyOpenItem) {
-                        out.println("          <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                        out.println("            <input type=\"hidden\" name=\"meetingId\" value=\""
+                        out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
-                        out.println("            <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
-                        out.println("            <input type=\"hidden\" name=\"sourceItemId\" value=\""
+                        out.println("                    <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                        out.println("                    <input type=\"hidden\" name=\"sourceItemId\" value=\""
                                 + oi.getEsMeetingAgendaItemId() + "\">");
                         if (editOverride)
-                            out.println("            <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         out.println(
-                                "            <button type=\"submit\" class=\"prev-copy-btn\">Add to Agenda</button>");
-                        out.println("          </form>");
+                                "                    <button class=\"aira-button aira-button--success aira-button--small\" type=\"submit\">Add to Agenda</button>");
+                        out.println("                  </form>");
                     } else {
-                        out.println("          <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
+                        out.println(
+                                "                  <span class=\"aira-badge aira-badge--success\">Not allowed in this meeting</span>");
                     }
-                    out.println("        </td>");
-                    out.println("      </tr>");
+                    out.println("                </td>");
+                    out.println("              </tr>");
                 }
-                out.println("      </tbody>");
-                out.println("    </table>");
-                out.println("    </div>"); // agenda-table-container
-                out.println("  </div>"); // open-items-section
+                out.println("              </tbody>");
+                out.println("            </table>");
+                out.println("            </div>"); // aira-table-wrap
+                out.println("            </div>"); // aira-table-panel__body
+                out.println("          </div>"); // aira-table-panel
             }
 
             // --- COPY FROM PREVIOUS MEETINGS (last 2) ---
             if (canEdit && !copyMeetings.isEmpty()) {
-                out.println("  <div class=\"prev-items-section no-print\">");
-                out.println("    <div class=\"prev-items-heading\">Copy from Previous Meetings</div>");
+                out.println("          <section class=\"aira-panel aira-no-print\">");
+                out.println("            <h2 class=\"aira-section-title\">Copy from Previous Meetings</h2>");
                 for (EsMeeting cm : copyMeetings) {
                     List<EsMeetingAgendaItem> cmItems = copyItemsByMeeting.getOrDefault(cm.getEsMeetingId(), List.of());
                     if (cmItems.isEmpty())
@@ -3032,35 +3070,34 @@ public class EsAgendaServlet extends HttpServlet {
                             + (cm.getScheduledStart() != null
                                     ? DISPLAY_DATE_FMT.format(cm.getScheduledStart().toLocalDate())
                                     : "Previous");
-                    out.println("    <div class=\"copy-prev-meeting\">");
-                    out.println("      <div class=\"copy-prev-meeting-heading\">" + escapeHtml(cmLabel) + "</div>");
-                    out.println("      <div class=\"agenda-table-container\">");
-                    out.println("      <table class=\"prev-items-table\">");
-                    out.println("        <thead><tr>");
-                    out.println("          <th>Topic / Title</th>");
-                    out.println("          <th>Min</th>");
-                    out.println("          <th>Status</th>");
-                    out.println("          <th></th>");
-                    out.println("        </tr></thead>");
-                    out.println("        <tbody>");
+                    out.println("            <h3 class=\"aira-section-title\">" + escapeHtml(cmLabel) + "</h3>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead><tr>");
+                    out.println("                <th>Topic / Title</th>");
+                    out.println("                <th>Min</th>");
+                    out.println("                <th>Status</th>");
+                    out.println("                <th></th>");
+                    out.println("              </tr></thead>");
+                    out.println("              <tbody>");
                     for (EsMeetingAgendaItem ci : cmItems) {
                         String ciStatusLabel = titleCase(ci.getStatus().name());
-                        String statusCls = ci.getStatus() == AgendaItemStatus.POSTPONED ? "prev-status-postponed"
+                        String statusCls = ci.getStatus() == AgendaItemStatus.POSTPONED ? "aira-badge--warning"
                                 : (ci.getStatus() == AgendaItemStatus.NOT_COVERED
                                         || ci.getStatus() == AgendaItemStatus.NEEDS_REVISION)
-                                                ? "prev-status-warn"
-                                                : "prev-status-neutral";
-                        out.println("        <tr>");
-                        out.println("          <td class=\"prev-item-title\">");
+                                                ? "aira-badge--danger"
+                                                : "aira-badge--subtle";
+                        out.println("              <tr>");
+                        out.println("                <td>");
                         EsTopic ciTopic = ci.getEsTopicId() != null ? topicById.get(ci.getEsTopicId()) : null;
                         if (ciTopic != null) {
-                            out.println("            <a href=\"" + contextPath + "/es/topic/" + ci.getEsTopicId()
+                            out.println("                  <a href=\"" + contextPath + "/es/topic/" + ci.getEsTopicId()
                                     + "\" class=\"agenda-topic-link\" target=\"_blank\">"
                                     + escapeHtml(ciTopic.getTopicName()) + "</a>");
                             if (ci.getTitle() != null && !ci.getTitle().isBlank())
-                                out.println("            <div>" + escapeHtml(ci.getTitle()) + "</div>");
+                                out.println("                  <div>" + escapeHtml(ci.getTitle()) + "</div>");
                         } else {
-                            out.println("            " + escapeHtml(ci.getTitle()));
+                            out.println("                  " + escapeHtml(ci.getTitle()));
                         }
                         List<EsAgendaItemPresenter> ciPs = prevPresentersByItem
                                 .getOrDefault(ci.getEsMeetingAgendaItemId(), List.of()).stream()
@@ -3068,74 +3105,73 @@ public class EsAgendaServlet extends HttpServlet {
                                         && p.getStatus() != EsAgendaItemPresenter.PresenterStatus.DECLINED)
                                 .collect(Collectors.toList());
                         if (!ciPs.isEmpty()) {
-                            out.println("            <div class=\"prev-item-presenters\">");
+                            out.println("                  <div class=\"aira-cluster\">");
                             for (EsAgendaItemPresenter pp : ciPs) {
-                                out.println("              <span class=\"prev-presenter-chip\">"
+                                out.println("                    <span class=\"aira-badge aira-badge--subtle\">"
                                         + escapeHtml(presenterDisplayName(pp, presenterUsers)) + "</span>");
                             }
-                            out.println("            </div>");
+                            out.println("                  </div>");
                         }
-                        out.println("          </td>");
-                        out.println("          <td class=\"prev-item-min\">"
+                        out.println("                </td>");
+                        out.println("                <td>"
                                 + (ci.getTimeMinutes() != null ? ci.getTimeMinutes() : "") + "</td>");
-                        out.println("          <td><span class=\"prev-item-status " + statusCls + "\">"
+                        out.println("                <td><span class=\"aira-badge " + statusCls + "\">"
                                 + escapeHtml(ciStatusLabel) + "</span></td>");
-                        out.println("          <td class=\"prev-item-controls\">");
+                        out.println("                <td>");
                         boolean canCopyItem = ci.getEsTopicId() == null
                                 || isTopicAllowedForMeetingHost(topicById.get(ci.getEsTopicId()), hostTopicSpace);
                         if (canCopyItem) {
-                            out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                            out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                            out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                            out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                     + meeting.getEsMeetingId() + "\">");
                             out.println(
-                                    "              <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
-                            out.println("              <input type=\"hidden\" name=\"sourceItemId\" value=\""
+                                    "                    <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                            out.println("                    <input type=\"hidden\" name=\"sourceItemId\" value=\""
                                     + ci.getEsMeetingAgendaItemId() + "\">");
                             if (editOverride)
-                                out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
-                            out.println("              <button type=\"submit\" class=\"prev-copy-btn\">Copy</button>");
-                            out.println("            </form>");
+                                out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println(
+                                    "                    <button class=\"aira-button aira-button--success aira-button--small\" type=\"submit\">Copy</button>");
+                            out.println("                  </form>");
                         } else {
                             out.println(
-                                    "            <span class=\"curated-on-agenda\">Not allowed in this meeting</span>");
+                                    "                  <span class=\"aira-badge aira-badge--success\">Not allowed in this meeting</span>");
                         }
-                        out.println("          </td>");
-                        out.println("        </tr>");
+                        out.println("                </td>");
+                        out.println("              </tr>");
                     }
-                    out.println("        </tbody>");
-                    out.println("      </table>");
-                    out.println("      </div>"); // agenda-table-container
-                    out.println("    </div>"); // copy-prev-meeting
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>"); // aira-table-wrap
                 }
-                out.println("  </div>"); // prev-items-section
+                out.println("          </section>"); // Copy from Previous Meetings
             }
 
             if (canEdit && !curatedTopicRows.isEmpty()) {
-                out.println("  <div class=\"curated-cadence-section no-print\">");
-                out.println("    <div class=\"curated-cadence-heading\">Curated Topic Cadence</div>");
+                out.println("          <div class=\"aira-table-panel aira-table-panel--danger aira-no-print\">");
+                out.println("            <div class=\"aira-table-panel__header\">");
+                out.println("              <h3 class=\"aira-table-panel__title\">Curated Topic Cadence</h3>");
                 out.println(
-                        "    <div class=\"curated-cadence-subtext\">Lower cadence means higher priority. Topics in red are overdue or have never appeared.</div>");
-                out.println("    <div class=\"agenda-table-container\">");
-                out.println("      <table class=\"curated-cadence-table\">");
-                out.println("        <thead><tr>");
-                out.println("          <th>Topic</th>");
-                out.println("          <th>Agenda Cadence</th>");
-                out.println("          <th>Last Appeared</th>");
-                out.println("          <th>Status</th>");
-                out.println("          <th></th>");
-                out.println("        </tr></thead>");
-                out.println("        <tbody>");
+                        "              <p class=\"aira-table-panel__description\">Lower cadence means higher priority. Topics in red are overdue or have never appeared.</p>");
+                out.println("            </div>");
+                out.println("            <div class=\"aira-table-panel__body\">");
+                out.println("            <div class=\"aira-table-wrap\">");
+                out.println("            <table class=\"aira-table\">");
+                out.println("              <thead><tr>");
+                out.println("                <th>Topic</th>");
+                out.println("                <th>Agenda Cadence</th>");
+                out.println("                <th>Last Appeared</th>");
+                out.println("                <th>Status</th>");
+                out.println("                <th></th>");
+                out.println("              </tr></thead>");
+                out.println("              <tbody>");
                 for (CuratedAgendaTopicRow row : curatedTopicRows) {
-                    String rowClass = row.isOverdue
-                            ? "curated-row-overdue"
-                            : (row.isDueSoon ? "curated-row-due-soon" : "curated-row-ok");
-
                     String lastAppearedText;
                     if (row.lastAppearedOn == null) {
-                        lastAppearedText = "<span class=\"curated-never\">Never</span>";
+                        lastAppearedText = "<span class=\"aira-meta\">Never</span>";
                     } else {
                         lastAppearedText = escapeHtml(DISPLAY_DATE_FMT.format(row.lastAppearedOn))
-                                + " <span class=\"curated-days-ago\">("
+                                + " <span class=\"aira-meta\">("
                                 + row.daysSinceLastAppeared
                                 + " days ago)</span>";
                     }
@@ -3144,90 +3180,70 @@ public class EsAgendaServlet extends HttpServlet {
                     String statusClass;
                     if (row.lastAppearedOn == null) {
                         statusText = "Never covered";
-                        statusClass = "curated-status-critical";
+                        statusClass = "aira-badge--danger";
                     } else if (row.isOverdue) {
                         long overdueBy = row.daysSinceLastAppeared - row.cadenceDays;
                         statusText = "Overdue by " + overdueBy + " day" + (overdueBy == 1 ? "" : "s");
-                        statusClass = "curated-status-critical";
+                        statusClass = "aira-badge--danger";
                     } else if (row.isDueSoon) {
                         statusText = "Due soon";
-                        statusClass = "curated-status-warning";
+                        statusClass = "aira-badge--warning";
                     } else {
                         statusText = "Recently covered";
-                        statusClass = "curated-status-ok";
+                        statusClass = "aira-badge--success";
                     }
 
-                    out.println("        <tr class=\"" + rowClass + "\">");
-                    out.println("          <td class=\"curated-topic-name\">"
+                    out.println("              <tr>");
+                    out.println("                <td>"
                             + "<a href=\"" + contextPath + "/es/topic/" + row.topicId
                             + "\" class=\"agenda-topic-link\" target=\"_blank\">"
                             + escapeHtml(row.topicName) + "</a>"
                             + "</td>");
-                    out.println("          <td>" + escapeHtml(cadenceLabel(row.cadenceDays)) + "</td>");
-                    out.println("          <td>" + lastAppearedText + "</td>");
-                    out.println("          <td><span class=\"curated-status " + statusClass + "\">"
+                    out.println("                <td>" + escapeHtml(cadenceLabel(row.cadenceDays)) + "</td>");
+                    out.println("                <td>" + lastAppearedText + "</td>");
+                    out.println("                <td><span class=\"aira-badge " + statusClass + "\">"
                             + escapeHtml(statusText) + "</span></td>");
-                    out.println("          <td class=\"curated-action-cell\">");
+                    out.println("                <td>");
                     if (row.onCurrentAgenda) {
-                        out.println("            <span class=\"curated-on-agenda\">Already on agenda</span>");
+                        out.println("                  <span class=\"aira-badge aira-badge--success\">Already on agenda</span>");
                     } else {
-                        out.println("            <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-                        out.println("              <input type=\"hidden\" name=\"meetingId\" value=\""
+                        out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
-                        out.println("              <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
+                        out.println("                    <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
                         out.println(
-                                "              <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
-                        out.println("              <input type=\"hidden\" name=\"title\" value=\""
+                                "                    <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
+                        out.println("                    <input type=\"hidden\" name=\"title\" value=\""
                                 + escapeHtml(row.topicName) + "\">");
                         if (editOverride) {
-                            out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                            out.println("                    <input type=\"hidden\" name=\"edit\" value=\"true\">");
                         }
                         out.println(
-                                "              <button type=\"submit\" class=\"curated-quick-add-btn\">Add to Agenda</button>");
-                        out.println("            </form>");
+                                "                    <button class=\"aira-button aira-button--success aira-button--small\" type=\"submit\">Add to Agenda</button>");
+                        out.println("                  </form>");
                     }
-                    out.println("          </td>");
-                    out.println("        </tr>");
+                    out.println("                </td>");
+                    out.println("              </tr>");
                 }
-                out.println("        </tbody>");
-                out.println("      </table>");
-                out.println("    </div>");
-                out.println("  </div>");
+                out.println("              </tbody>");
+                out.println("            </table>");
+                out.println("            </div>"); // aira-table-wrap
+                out.println("            </div>"); // aira-table-panel__body
+                out.println("          </div>"); // aira-table-panel
             }
 
-            // --- TOPIC INTEREST SECTION ---
-            if (attendeeEmailForInterest != null && !topicInterestTopicIds.isEmpty()) {
-                renderTopicInterestSection(out, contextPath, meeting, items, topicById,
-                        subsByTopicId, attendeeEmailForInterest, user);
+            out.println("        </div>"); // end main content aira-stack
+
+            renderRecentlyViewedMeetingsRail(out, contextPath, user, meeting.getEsMeetingId());
+
+            out.println("      </div>"); // end aira-right-rail-layout
+            out.println("    </div>"); // end aira-container--wide aira-stack
+
+            // Global datalist for presenter user search
+            if (canEdit) {
+                out.println("    <datalist id=\"pres-user-list\"></datalist>");
             }
 
-            out.println("  <div class=\"agenda-footer\">");
-            if (nextMeeting != null && nextMeeting.getScheduledStart() != null) {
-                String nextSeriesLabel = seriesName != null ? "Next " + seriesName + " Meeting" : "Next Meeting";
-                ZoneId nextMeetingZone = safeZoneId(nextMeeting.getTimezoneId(), effectiveTz);
-                ZonedDateTime nextDisplay = ZonedDateTime.of(nextMeeting.getScheduledStart(), nextMeetingZone)
-                        .withZoneSameInstant(viewerZone);
-                String nextDateStr = DISPLAY_DATE_FMT.format(nextDisplay);
-                String nextTimeStr = DISPLAY_TIME_FMT.format(nextDisplay) + " " + nextDisplay.getZone().getId();
-                out.println("    <p class=\"agenda-next-meeting\">");
-                out.println("      " + escapeHtml(nextSeriesLabel) + ": <a href=\"" + contextPath
-                        + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId()
-                        + "\" class=\"agenda-next-meeting-link\">"
-                        + escapeHtml(nextDateStr) + ", at " + escapeHtml(nextTimeStr) + "</a>");
-                out.println("    </p>");
-            }
-            if (meeting.getEsTopicMeetingId() != null) {
-                String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
-                out.println("    <p class=\"agenda-all-meetings\">");
-                out.println("      <a href=\"" + contextPath + "/es/meetings?seriesId="
-                        + meeting.getEsTopicMeetingId() + "\">" + escapeHtml(allLabel) + "</a>");
-                out.println("    </p>");
-            }
-            renderWorkspaceLink(out, contextPath, meeting.getEsMeetingId(), canEdit);
-            out.println("  </div>");
-
-            out.println("</main>");
-            PageFooterRenderer.render(out);
             out.println("<script>");
             // Topic autocomplete data
             if (canEdit && !selectableTopics.isEmpty()) {
@@ -3256,7 +3272,7 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("function esShowEdit(id) {");
             out.println("  document.getElementById(id+'-display').style.display='none';");
             out.println("  var form=document.getElementById(id+'-form');");
-            out.println("  form.style.display='flex';");
+            out.println("  form.style.display='';");
             out.println(
                     "  var inp=form.querySelector('input[type=text],input[type=date],input[type=time],select,textarea');");
             out.println("  if(inp) inp.focus();");
@@ -3265,26 +3281,18 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("  document.getElementById(id+'-display').style.display='';");
             out.println("  document.getElementById(id+'-form').style.display='none';");
             out.println("}");
-            out.println("function esShowJoinDetails() {");
-            out.println("  document.getElementById('join-details-toggle').style.display='none';");
-            out.println("  document.getElementById('join-details-content').style.display='block';");
-            out.println("}");
-            out.println("function esHideJoinDetails() {");
-            out.println("  document.getElementById('join-details-toggle').style.display='';");
-            out.println("  document.getElementById('join-details-content').style.display='none';");
-            out.println("}");
-            // Presenter panel functions
+            // Presenter dialog functions
             out.println("function esShowPresEdit(id) {");
-            out.println("  document.getElementById(id+'-panel').style.display='flex';");
+            out.println("  document.getElementById(id+'-panel').showModal();");
             out.println("}");
             out.println("function esHidePresEdit(id) {");
-            out.println("  document.getElementById(id+'-panel').style.display='none';");
+            out.println("  document.getElementById(id+'-panel').close();");
             out.println("}");
             out.println("function esShowAddPres(id) {");
-            out.println("  document.getElementById(id).style.display='flex';");
+            out.println("  document.getElementById(id).showModal();");
             out.println("}");
             out.println("function esHideAddPres(id) {");
-            out.println("  document.getElementById(id).style.display='none';");
+            out.println("  document.getElementById(id).close();");
             out.println("}");
             out.println("function esOnPresRoleChange(panelId,role,btn){");
             out.println("  var panel=document.getElementById(panelId);");
@@ -3327,13 +3335,40 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("}");
             }
             out.println("</script>");
-            // Global datalist for presenter user search
-            if (canEdit) {
-                out.println("<datalist id=\"pres-user-list\"></datalist>");
-            }
-            out.println("</body>");
-            out.println("</html>");
+
+            page.writeEnd(out);
         }
+    }
+
+    private void renderRecentlyViewedMeetingsRail(PrintWriter out, String contextPath, User viewer,
+            Long currentMeetingId) {
+        out.println("        <aside class=\"aira-right-rail\" aria-label=\"Recently viewed meetings\">");
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Recently Viewed Meetings</h2></div>");
+        out.println("            <div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
+        List<EsMeetingViewHistoryService.RecentlyViewedMeeting> recent = meetingViewHistoryService
+                .findRecentAuthenticatedMeetingViews(viewer.getUserId(), RECENTLY_VIEWED_LIMIT + 1).stream()
+                .filter(item -> !item.esMeetingId().equals(currentMeetingId))
+                .limit(RECENTLY_VIEWED_LIMIT)
+                .collect(Collectors.toList());
+        if (recent.isEmpty()) {
+            out.println("              <p class=\"aira-meta\">No other meetings viewed yet.</p>");
+        } else {
+            for (EsMeetingViewHistoryService.RecentlyViewedMeeting item : recent) {
+                out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
+                        + "/es/agenda?meetingId=" + item.esMeetingId() + "\">");
+                out.println("                <span><span class=\"aira-recent-topic__title\">"
+                        + escapeHtml(orEmpty(item.meetingName())) + "</span>");
+                out.println("                <span class=\"aira-recent-topic__meta\">"
+                        + (item.scheduledStart() == null ? "" : item.scheduledStart().toLocalDate().toString())
+                        + "</span></span>");
+                out.println("              </a>");
+            }
+        }
+        out.println("            </div>");
+        out.println("          </section>");
+        out.println("        </aside>");
     }
 
     private static String jsString(String s) {
@@ -3350,352 +3385,53 @@ public class EsAgendaServlet extends HttpServlet {
                 .collect(Collectors.joining(" "));
     }
 
-    private void renderAgendaStyles(PrintWriter out) {
-        out.println("    body { background: #f7f9fc; }");
-        out.println(
-                "    .agenda-page { max-width: 900px; margin: 1.5rem auto; padding: 0 1rem; font-family: sans-serif; }");
-        out.println(
-                "    .agenda-cancelled-banner { background: #fee2e2; border: 1px solid #fca5a5; color: #7f1d1d; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1rem; font-weight: bold; }");
-        out.println(
-                "    .agenda-msg-success { background: #dcfce7; border: 1px solid #86efac; color: #14532d; padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; }");
-        out.println(
-                "    .agenda-msg-error { background: #fee2e2; border: 1px solid #fca5a5; color: #7f1d1d; padding: 0.5rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; }");
-        out.println(
-                "    .agenda-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1.2rem; border-bottom: 2px solid #0f766e; padding-bottom: 0.75rem; }");
-        out.println("    .agenda-logo { max-height: 60px; max-width: 140px; object-fit: contain; }");
-        out.println(
-                "    .agenda-title { font-size: 2.4rem; font-weight: 800; letter-spacing: 0.15em; color: #0f766e; margin: 0; }");
-        out.println(
-                "    .agenda-draft-label { color: #dc2626; font-size: 1.6rem; font-weight: 800; letter-spacing: 0.1em; margin-right: 0.4rem; }");
-        out.println("    .agenda-meta { margin-bottom: 1rem; padding: 1rem; }");
-        out.println(
-                "    .agenda-meta-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; padding: 0.3rem 0; border-bottom: 1px solid #e2e8f0; }");
-        out.println("    .agenda-meta-row:last-child { border-bottom: none; }");
-        out.println(
-                "    .agenda-meta-label { font-weight: 600; min-width: 130px; color: #475569; font-size: 0.9rem; }");
-        out.println("    .agenda-meta-value { font-weight: 500; flex: 1; }");
-        out.println("    .agenda-inline-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
-        out.println("    .click-to-edit { cursor: pointer; }");
-        out.println("    .click-to-edit:hover { color: #1a56db; }");
-        out.println(
-                "    .agenda-inline-form input[type=text], .agenda-inline-form input[type=date], .agenda-inline-form input[type=time], .agenda-inline-form select { padding: 0.2rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.88rem; }");
-        out.println("    .agenda-tz-note { font-size: 0.8rem; color: #64748b; font-style: italic; width: 100%; }");
-        out.println(
-                "    .agenda-inline-form button { padding: 0.2rem 0.6rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }");
-        out.println(
-                "    .agenda-inline-form button:disabled { opacity: 0.4; cursor: not-allowed; }");
-        out.println(
-                "    .agenda-section-heading { font-size: 0.95rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; margin: 0 0 0.5rem 0; }");
-        out.println("    .agenda-description { margin-bottom: 1rem; padding: 1rem; }");
-        out.println(
-                "    .agenda-description-text { white-space: pre-wrap; font-size: 0.95rem; line-height: 1.6; color: #334155; }");
-        out.println("    .agenda-attendance { margin-bottom: 1rem; padding: 1rem; }");
-        out.println("    .agenda-attendance-prompt { font-size: 0.95rem; color: #475569; margin: 0 0 0.5rem 0; }");
-        out.println("    .agenda-attend-link { font-weight: 600; color: #1d4ed8; text-decoration: none; }");
-        out.println("    .agenda-attend-link:hover { text-decoration: underline; }");
-        out.println("    .agenda-attendance-list { list-style: none; padding: 0; margin: 0.4rem 0 0.6rem 0; }");
-        out.println(
-                "    .agenda-attendee-row { padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }");
-        out.println("    .agenda-attendee-org { color: #64748b; }");
-        out.println(
-                "    .agenda-attendance-count { font-size: 0.85rem; color: #64748b; margin: 0; font-style: italic; }");
-        out.println("    .agenda-muted { color: #94a3b8; font-size: 0.9rem; }");
-        ;
-        out.println("    .agenda-online-meeting { margin-top: 0.6rem; }");
-        out.println(
-                "    .agenda-join-link { font-weight: 600; color: #0f766e; text-decoration: none; font-size: 0.95rem; }");
-        out.println("    .agenda-join-link:hover { text-decoration: underline; }");
-        out.println("    .agenda-join-link-edit { font-size: 0.9rem; color: #334155; word-break: break-all; }");
-        out.println(
-                "    .agenda-join-more { cursor: pointer; color: #0369a1; font-size: 0.88rem; text-decoration: underline; }");
-        out.println(
-                "    .agenda-join-details { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.35rem 0.6rem; margin-top: 0.4rem; }");
-        out.println(
-                "    .agenda-join-details-text { white-space: pre-wrap; font-size: 0.82rem; color: #374151; line-height: 1; }");
-        out.println(
-                "    .agenda-join-details-close { font-size: 0.8rem; padding: 0.15rem 0.5rem; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; cursor: pointer; }");
-        out.println(
-                "    .agenda-duration-warning { background: #fef9c3; border: 1px solid #fde68a; color: #713f12; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
-        out.println(
-                "    .agenda-duration-info { background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
-        out.println(
-                "    .agenda-duration-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 0.6rem 1rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.92rem; }");
-        out.println("    .agenda-table-container { overflow-x: auto; }");
-        out.println(
-                "    .agenda-table { width: 100%; border-collapse: collapse; border: 1px solid #d7deea; font-size: 0.92rem; }");
-        out.println(
-                "    .agenda-table th { background: #0f766e; color: white; padding: 0.55rem 0.8rem; text-align: left; font-weight: 600; font-size: 0.85rem; }");
-        out.println(
-                "    .agenda-table td { padding: 0.6rem 0.8rem; vertical-align: top; border-bottom: 1px solid #e2e8f0; }");
-        out.println("    .agenda-table tr:last-child td { border-bottom: none; }");
-        out.println("    .agenda-table tr:nth-child(even) td { background: #f8fafd; }");
-        out.println(
-                "    .agenda-row-cancelled td { color: #94a3b8; text-decoration: line-through; background: #f8fafd !important; }");
-        out.println("    .col-topic { width: 18%; }");
-        out.println("    .col-agenda { width: 42%; }");
-        out.println("    .col-presenter { width: 18%; }");
-        out.println("    .col-status { width: 14%; }");
-        out.println("    .col-controls { width: 8%; white-space: nowrap; }");
-        out.println("    .agenda-item-title { font-weight: 600; color: #0f172a; }");
-        out.println("    .agenda-topic-link { color: #0f766e; text-decoration: none; font-weight: 600; }");
-        out.println("    .agenda-topic-link:hover { text-decoration: underline; }");
-        out.println("    .agenda-item-linked-topic { font-size: 0.78rem; color: #0f766e; margin-bottom: 0.2rem; }");
-        out.println("    .agenda-item-linked-topic a { color: #0f766e; }");
-        out.println(
-                "    .agenda-topic-engagement { font-size: 0.78rem; color: #64748b; margin-top: 2px; line-height: 1.4; }");
-        out.println("    .agenda-topic-following-indicator { color: #0f766e; font-weight: 600; }");
-        out.println("    .agenda-item-time { font-size: 0.82rem; color: #475569; margin-top: 2px; }");
-        out.println("    .agenda-item-duration { font-size: 0.78rem; color: #94a3b8; }");
-        out.println(
-                "    .agenda-item-text { white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; color: #334155; }");
-        out.println(
-                "    .agenda-edit-form { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.25rem; }");
-        out.println(
-                "    .agenda-edit-form input, .agenda-edit-form textarea { font-size: 0.85rem; padding: 0.25rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
-        out.println(
-                "    .agenda-edit-form button { align-self: flex-start; padding: 0.2rem 0.6rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; }");
-        out.println("    .agenda-presenter { font-size: 0.88rem; color: #334155; line-height: 1.5; }");
-        out.println("    .presenter-name { cursor: pointer; }");
-        out.println("    .presenter-name:hover { color: #0f766e; }");
-        out.println("    .presenter-status { font-size: 0.78rem; color: #64748b; font-style: italic; }");
-        out.println(
-                "    .presenter-edit-panel { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 300; width: 92%; max-width: 440px; max-height: 80vh; overflow-y: auto; padding: 0.75rem; background: #fff; border: 1px solid #94a3b8; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.22); font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.3rem; }");
-        out.println("    .pres-role-label { display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap; }");
-        out.println(
-                "    .pres-role-label select { font-size: 0.82rem; padding: 0.15rem 0.3rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
-        out.println("    .pres-action-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
-        out.println(
-                "    .pres-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; background: #f1f5f9; color: #334155; }");
-        out.println("    .pres-btn:hover { background: #e2e8f0; }");
-        out.println("    .pres-btn-accept { background: #dcfce7; border-color: #86efac; color: #166534; }");
-        out.println("    .pres-btn-accept:hover { background: #bbf7d0; }");
-        out.println("    .pres-btn-remove { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }");
-        out.println("    .pres-btn-remove:hover { background: #fecaca; }");
-        out.println("    .pres-btn-close { background: #f1f5f9; color: #64748b; }");
-        out.println(
-                "    .add-pres-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; }");
-        out.println("    .add-pres-btn:hover { background: #dcfce7; }");
-        out.println(
-                "    .add-pres-panel { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); z-index: 300; width: 92%; max-width: 440px; max-height: 80vh; overflow-y: auto; padding: 0.75rem; background: #fff; border: 1px solid #94a3b8; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,0.22); font-size: 0.82rem; display: flex; flex-direction: column; gap: 0.4rem; }");
-        out.println(
-                "    .quick-pick-self { background: #f0fdf4; border-color: #86efac; color: #166534; font-weight: 600; }");
-        out.println("    .quick-pick-section { display: flex; flex-direction: column; gap: 0.25rem; }");
-        out.println(
-                "    .quick-pick-label { font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }");
-        out.println(
-                "    .quick-pick-chip { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; color: #1e40af; cursor: pointer; white-space: nowrap; }");
-        out.println("    .quick-pick-chip:hover { background: #dbeafe; }");
-        out.println(
-                "    .pres-text-input { font-size: 0.82rem; padding: 0.2rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; min-width: 0; flex: 1; }");
-        out.println(
-                "    .agenda-item-status-badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: #e2e8f0; color: #334155; font-weight: 600; }");
-        out.println(
-                "    .agenda-item-status-badge.status-green { background: #dcfce7; color: #166534; }");
-        out.println(
-                "    .agenda-item-status-badge.status-red { background: #fee2e2; color: #991b1b; }");
-        out.println(
-                "    .agenda-status-btn { display: block; font-size: 0.78rem; padding: 0.15rem 0.4rem; margin-top: 2px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; width: 100%; text-align: left; }");
-        out.println("    .agenda-status-btn:hover { background: #e2e8f0; }");
-        out.println(
-                "    .col-controls button { padding: 0.1rem 0.35rem; font-size: 0.85rem; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 3px; cursor: pointer; }");
-        out.println("    .col-controls button:hover { background: #e2e8f0; }");
-        out.println(
-                "    .agenda-add-item { margin: 0.8rem 0; padding: 0.6rem; background: #f8fafd; border: 1px dashed #cbd5e1; border-radius: 6px; }");
-        out.println(
-                "    .add-item-row { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.4rem; }");
-        out.println(
-                "    .add-item-row:first-child { margin-top: 0; }");
-        out.println(
-                "    .add-item-input { flex: 1; padding: 0.25rem 0.5rem; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.9rem; min-width: 0; }");
-        out.println(
-                "    .agenda-add-item button { padding: 0.25rem 0.8rem; background: #0f766e; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; }");
-        out.println(
-                "    .agenda-status-controls { margin: 1rem 0; padding: 1rem; background: #f8fafd; border: 1px solid #d7deea; border-radius: 6px; }");
-        out.println("    .agenda-status-controls h3 { margin: 0 0 0.6rem 0; font-size: 0.95rem; }");
-        out.println(
-                "    .agenda-meeting-transitions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: flex-end; }");
-        out.println(
-                "    .agenda-meeting-transitions button { padding: 0.3rem 0.8rem; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; background: #f1f5f9; font-size: 0.88rem; }");
-        out.println("    .agenda-meeting-transitions button:hover { background: #e2e8f0; }");
-        out.println("    .agenda-meeting-transitions button:disabled { opacity: 0.4; cursor: not-allowed; }");
-        out.println("    .agenda-finalize-blocked { color: #b42318; font-size: 0.88rem; margin-top: 0.4rem; }");
-        out.println("    .agenda-edit-enable-link { font-size: 0.88rem; color: #0f766e; text-decoration: underline; }");
-        out.println(
-                "    .agenda-status-badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.82rem; font-weight: 700; }");
-        out.println("    .agenda-status-draft { background: #e2e8f0; color: #334155; }");
-        out.println("    .agenda-status-proposed { background: #dbeafe; color: #1e40af; }");
-        out.println("    .agenda-status-finalized { background: #dcfce7; color: #166534; }");
-        out.println("    .agenda-status-completed { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }");
-        out.println("    .agenda-status-cancelled { background: #fee2e2; color: #7f1d1d; }");
-        out.println(
-                "    .agenda-footer { margin-top: 2rem; padding: 0.75rem 0; border-top: 1px solid #d7deea; font-size: 0.9rem; color: #475569; }");
-        out.println("    .agenda-next-meeting { margin: 0; font-style: italic; }");
-        out.println("    .agenda-next-meeting-link { color: #2563eb; text-decoration: none; }");
-        out.println("    .agenda-next-meeting-link:hover { text-decoration: underline; }");
-        out.println("    .agenda-all-meetings { margin: 0.35rem 0 0; }");
-        out.println("    .agenda-all-meetings a { color: #475569; font-size: 0.85rem; text-decoration: none; }");
-        out.println("    .agenda-all-meetings a:hover { text-decoration: underline; color: #1e40af; }");
-        out.println("    .agenda-workspace-link { margin: 0.35rem 0 0; }");
-        out.println(
-                "    .agenda-workspace-link a { color: #0f766e; font-size: 0.85rem; font-weight: 700; text-decoration: none; }");
-        out.println("    .agenda-workspace-link a:hover { text-decoration: underline; color: #115e59; }");
-        out.println("    @media print {");
-        out.println("      .no-print { display: none !important; }");
-        out.println("      body { background: white; }");
-        out.println("      .agenda-page { max-width: 100%; margin: 0; padding: 0; }");
-        out.println("      .agenda-header { border-bottom: 2pt solid #000; }");
-        out.println("      .agenda-title { color: #000; font-size: 2rem; }");
-        out.println("      .agenda-meta, .agenda-description { border: none; box-shadow: none; padding: 0.5rem 0; }");
-        out.println("      .agenda-table { border: 1pt solid #000; font-size: 10pt; }");
-        out.println(
-                "      .agenda-table th { background: #ccc !important; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }");
-        out.println("      .agenda-table td { padding: 4pt 6pt; }");
-        out.println("      .agenda-table tr { page-break-inside: avoid; }");
-        out.println("      .agenda-duration-warning, .agenda-duration-info, .agenda-duration-ok { display: none; }");
-        out.println("      .agenda-attendance { display: none; }");
-        out.println("      .panel { border: none; box-shadow: none; background: transparent; }");
-        out.println("    }");
-        // Previous / open meeting items sections
-        out.println("    .prev-items-section { margin-top: 1.5rem; }");
-        out.println(
-                "    .prev-items-heading { font-size: 0.78rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; padding-left: 0.25rem; }");
-        out.println(
-                "    .open-items-section { margin-top: 1.5rem; border-left: 3px solid #f59e0b; padding-left: 0.6rem; }");
-        out.println(
-                "    .open-items-heading { font-size: 0.78rem; font-weight: 700; color: #b45309; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }");
-        out.println(
-                "    .open-items-subtext { font-size: 0.75rem; font-weight: 400; color: #78716c; text-transform: none; letter-spacing: 0; }");
-        out.println("    .copy-prev-meeting { margin-bottom: 1rem; }");
-        out.println(
-                "    .copy-prev-meeting-heading { font-size: 0.8rem; font-weight: 600; color: #475569; margin-bottom: 0.3rem; padding-left: 0.25rem; }");
-        out.println(
-                "    .prev-items-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #f8fafd; }");
-        out.println(
-                "    .prev-items-table th { background: #f1f5f9; color: #475569; font-weight: 600; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #e2e8f0; text-align: left; white-space: nowrap; }");
-        out.println(
-                "    .prev-items-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid #e2e8f0; vertical-align: top; }");
-        out.println("    .prev-items-table tr:last-child td { border-bottom: none; }");
-        out.println("    .prev-items-table tr:hover td { background: #f1f5f9; }");
-        out.println("    .prev-item-title { max-width: 260px; }");
-        out.println("    .prev-item-min { text-align: center; color: #64748b; white-space: nowrap; }");
-        out.println("    .prev-item-from { font-size: 0.78rem; color: #64748b; white-space: nowrap; }");
-        out.println("    .prev-item-presenters { margin-top: 0.2rem; display: flex; flex-wrap: wrap; gap: 0.2rem; }");
-        out.println(
-                "    .prev-presenter-chip { font-size: 0.72rem; padding: 0.1rem 0.35rem; background: #e0e7ff; border: 1px solid #c7d2fe; border-radius: 10px; color: #3730a3; }");
-        out.println(
-                "    .prev-item-status { font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.35rem; border-radius: 4px; white-space: nowrap; display: inline-block; }");
-        out.println("    .prev-status-postponed { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }");
-        out.println("    .prev-status-warn { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }");
-        out.println("    .prev-status-neutral { background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; }");
-        out.println(
-                "    .prev-copy-btn { padding: 0.15rem 0.5rem; font-size: 0.78rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; white-space: nowrap; }");
-        out.println("    .prev-copy-btn:hover { background: #dcfce7; }");
-        out.println(
-                "    .curated-cadence-section { margin-top: 1.4rem; border-left: 3px solid #dc2626; padding-left: 0.6rem; }");
-        out.println(
-                "    .curated-cadence-heading { font-size: 0.8rem; font-weight: 700; color: #991b1b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }");
-        out.println("    .curated-cadence-subtext { font-size: 0.8rem; color: #7f1d1d; margin-bottom: 0.45rem; }");
-        out.println(
-                "    .curated-cadence-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; background: #fff5f5; border: 1px solid #fecaca; }");
-        out.println(
-                "    .curated-cadence-table th { background: #fee2e2; color: #7f1d1d; font-weight: 700; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.35rem 0.5rem; border-bottom: 1px solid #fecaca; text-align: left; white-space: nowrap; }");
-        out.println(
-                "    .curated-cadence-table td { padding: 0.42rem 0.5rem; border-bottom: 1px solid #fecaca; vertical-align: top; }");
-        out.println("    .curated-cadence-table tr:last-child td { border-bottom: none; }");
-        out.println("    .curated-row-ok td { background: #ffffff; }");
-        out.println("    .curated-row-due-soon td { background: #fffbeb; }");
-        out.println("    .curated-row-overdue td { background: #fef2f2; }");
-        out.println("    .curated-topic-name { font-weight: 600; }");
-        out.println("    .curated-days-ago { color: #64748b; font-size: 0.78rem; }");
-        out.println("    .curated-never { color: #b91c1c; font-weight: 700; }");
-        out.println(
-                "    .curated-status { font-size: 0.76rem; font-weight: 700; padding: 0.1rem 0.35rem; border-radius: 4px; display: inline-block; white-space: nowrap; }");
-        out.println("    .curated-status-critical { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }");
-        out.println("    .curated-status-warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }");
-        out.println("    .curated-status-ok { background: #dcfce7; border: 1px solid #86efac; color: #166534; }");
-        out.println("    .curated-action-cell { white-space: nowrap; }");
-        out.println(
-                "    .curated-quick-add-btn { padding: 0.15rem 0.55rem; font-size: 0.78rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; font-weight: 700; }");
-        out.println("    .curated-quick-add-btn:hover { background: #fecaca; }");
-        out.println("    .curated-on-agenda { color: #166534; font-size: 0.78rem; font-weight: 600; }");
-        // Role picker in add-presenter panel
-        out.println(
-                "    .role-picker-row { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; padding-bottom: 0.4rem; border-bottom: 1px solid #e2e8f0; }");
-        out.println(
-                "    .role-picker-label { font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }");
-        out.println("    .role-picker-toggle { display: flex; flex-wrap: wrap; gap: 0.2rem; }");
-        out.println(
-                "    .role-option { padding: 0.15rem 0.5rem; font-size: 0.78rem; border: 1px solid #cbd5e1; border-radius: 10px; cursor: pointer; background: #f1f5f9; color: #475569; white-space: nowrap; }");
-        out.println("    .role-option:hover { background: #e2e8f0; }");
-        out.println(
-                "    .role-option-active { background: #0f766e; color: #fff; border-color: #0f766e; font-weight: 600; }");
-        out.println("    .role-option-active:hover { background: #0d6460; }");
-        // Your Agenda Items response banner
-        out.println(
-                "    .my-invitations-banner { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0.9rem 1rem; margin-bottom: 1rem; }");
-        out.println(
-                "    .my-inv-heading { font-size: 1rem; font-weight: 700; color: #1e40af; margin-bottom: 0.2rem; }");
-        out.println("    .my-inv-subtext { font-size: 0.82rem; color: #3730a3; margin-bottom: 0.7rem; }");
-        out.println(
-                "    .my-inv-card { background: #fff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.6rem 0.75rem; margin-bottom: 0.5rem; }");
-        out.println("    .my-inv-card:last-child { margin-bottom: 0; }");
-        out.println(
-                "    .my-inv-title { font-weight: 600; font-size: 0.95rem; color: #0f172a; margin-bottom: 0.2rem; }");
-        out.println("    .my-inv-topic { font-size: 0.82rem; color: #0f766e; font-weight: 600; }");
-        out.println("    .my-inv-sep { color: #94a3b8; margin: 0 0.25rem; }");
-        out.println("    .my-inv-meta { font-size: 0.82rem; color: #475569; margin-bottom: 0.5rem; }");
-        out.println("    .my-inv-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }");
-        out.println("    .my-inv-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }");
-        out.println(
-                "    .my-inv-role-label { font-size: 0.82rem; color: #334155; display: flex; align-items: center; gap: 0.3rem; }");
-        out.println(
-                "    .my-inv-role-select { font-size: 0.82rem; padding: 0.15rem 0.3rem; border: 1px solid #cbd5e1; border-radius: 4px; }");
-        out.println(
-                "    .my-inv-note { font-size: 0.82rem; padding: 0.15rem 0.4rem; border: 1px solid #cbd5e1; border-radius: 4px; min-width: 120px; }");
-        out.println(
-                "    .inv-btn-accept { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #dcfce7; border: 1px solid #86efac; border-radius: 4px; color: #166534; cursor: pointer; font-weight: 600; }");
-        out.println("    .inv-btn-accept:hover { background: #bbf7d0; }");
-        out.println(
-                "    .inv-btn-decline { padding: 0.2rem 0.7rem; font-size: 0.82rem; background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; color: #991b1b; cursor: pointer; }");
-        out.println("    .inv-btn-decline:hover { background: #fecaca; }");
-        out.println(
-                "    .agenda-msg-login-hint { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.6rem 0.85rem; margin-bottom: 0.75rem; font-size: 0.88rem; color: #92400e; }");
-        // Topic interest section
-        out.println(
-                "    .es-topic-interest { margin-top: 1.5rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 1rem 1.25rem; }");
-        out.println(
-                "    .es-topic-interest-heading { font-size: 1rem; font-weight: 700; color: #166534; margin: 0 0 0.3rem; }");
-        out.println("    .es-topic-interest-notice { font-size: 0.85rem; color: #166534; margin: 0 0 0.3rem; }");
-        out.println("    .es-topic-interest-desc { font-size: 0.85rem; color: #475569; margin: 0 0 0.6rem; }");
-        out.println("    .es-topic-interest-list { list-style: none; padding: 0; margin: 0 0 0.75rem; }");
-        out.println("    .es-topic-interest-item { padding: 0.2rem 0; }");
-        out.println(
-                "    .es-topic-interest-label { font-size: 0.9rem; color: #1e293b; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; }");
-        out.println("    .es-champion-badge { font-size: 0.75rem; color: #7c3aed; font-weight: 600; }");
-        out.println(
-                "    .es-topic-interest-save { padding: 0.35rem 1rem; font-size: 0.88rem; background: #16a34a; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-weight: 600; }");
-        out.println("    .es-topic-interest-save:hover { background: #15803d; }");
+    private static String meetingStatusBadgeVariant(MeetingStatus status) {
+        return switch (status) {
+            case DRAFT -> "aira-badge--outline";
+            case PROPOSED -> "aira-badge--info";
+            case FINALIZED -> "aira-badge--success";
+            case IN_SESSION -> "aira-badge--warning";
+            case COMPLETED -> "aira-badge--success";
+            case CLOSED -> "aira-badge--subtle";
+            case CANCELLED -> "aira-badge--danger";
+        };
+    }
+
+    private static String agendaItemStatusBadgeVariant(AgendaItemStatus status) {
+        return switch (status) {
+            case DRAFT -> "aira-badge--outline";
+            case PROPOSED -> "aira-badge--info";
+            case ACCEPTED -> "aira-badge--success";
+            case NEEDS_REVISION -> "aira-badge--warning";
+            case POSTPONED -> "aira-badge--subtle";
+            case COVERED -> "aira-badge--success";
+            case NOT_COVERED -> "aira-badge--danger";
+            case CANCELLED -> "aira-badge--subtle";
+        };
     }
 
     // =========================================================================
     // Error pages
     // =========================================================================
 
-    private void renderError(HttpServletResponse response, String contextPath, String message) throws IOException {
+    private void renderError(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            String message) throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentType("text/html;charset=UTF-8");
+        AiraPage page = InteropAiraPageFactory.base(request, "Agenda Not Found - InteropHub").build();
         try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-            out.println("<title>Not Found - InteropHub</title>");
-            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
-            out.println("<body><main class=\"container\">");
-            out.println("<h1>Agenda Not Found</h1>");
-            out.println("<p>" + escapeHtml(message) + "</p>");
-            out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main>");
-            PageFooterRenderer.render(out);
-            out.println("</body></html>");
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container--wide aira-stack\">");
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">Agenda Not Found</h1>");
+            out.println("        </div>");
+            out.println("      </div>");
+            out.println("      <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(message) + "</p></div>");
+            out.println("      <p><a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                    + "/welcome\">Return to Welcome</a></p>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
     }
 
@@ -3848,169 +3584,6 @@ public class EsAgendaServlet extends HttpServlet {
     // =========================================================================
 
     /**
-     * Handles POST action=updateTopicInterest.
-     * Allowed for both authenticated users and anonymous attendees (identified
-     * by a hidden attendeeEmail form field echoed from the topic interest form).
-     */
-    private void handleUpdateTopicInterest(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
-        String contextPath = request.getContextPath();
-        Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
-        if (meetingId == null) {
-            response.sendRedirect(contextPath + "/es/agenda");
-            return;
-        }
-
-        // Determine the attendee's normalized email.
-        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
-        String emailNormalized;
-        if (userOpt.isPresent()) {
-            emailNormalized = userOpt.get().getEmailNormalized();
-        } else {
-            emailNormalized = trimToNull(request.getParameter("attendeeEmail"));
-            if (emailNormalized == null) {
-                response.sendRedirect(contextPath + "/es/agenda?meetingId=" + meetingId);
-                return;
-            }
-        }
-
-        // Collect topic IDs that were shown to the user (hidden topicInterestAll
-        // fields).
-        String[] allIds = request.getParameterValues("topicInterestAll");
-        Set<Long> allShownTopicIds = new HashSet<>();
-        if (allIds != null) {
-            for (String id : allIds) {
-                Long tid = parseId(id);
-                if (tid != null) {
-                    allShownTopicIds.add(tid);
-                }
-            }
-        }
-
-        // Collect the topic IDs the user checked.
-        String[] checkedIds = request.getParameterValues("topicInterest");
-        Set<Long> checkedTopicIds = new HashSet<>();
-        if (checkedIds != null) {
-            for (String id : checkedIds) {
-                Long tid = parseId(id);
-                if (tid != null) {
-                    checkedTopicIds.add(tid);
-                }
-            }
-        }
-
-        if (!allShownTopicIds.isEmpty()) {
-            // Load existing TOPIC subscriptions for this email.
-            List<EsSubscription> existingSubs = subscriptionDao.findByEmailNormalizedAndType(
-                    emailNormalized, EsSubscription.SubscriptionType.TOPIC);
-            Map<Long, EsSubscription> existingByTopic = new java.util.LinkedHashMap<>();
-            for (EsSubscription sub : existingSubs) {
-                if (sub.getEsTopicId() != null && allShownTopicIds.contains(sub.getEsTopicId())) {
-                    existingByTopic.merge(sub.getEsTopicId(), sub, EsAgendaServlet::preferHigherRankSub);
-                }
-            }
-
-            for (Long topicId : allShownTopicIds) {
-                EsSubscription existing = existingByTopic.get(topicId);
-                // Never touch CHAMPION subscriptions.
-                if (existing != null && existing.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION) {
-                    continue;
-                }
-                boolean checked = checkedTopicIds.contains(topicId);
-                if (checked) {
-                    EsSubscription newSub = new EsSubscription();
-                    newSub.setEmail(emailNormalized);
-                    newSub.setEmailNormalized(emailNormalized);
-                    newSub.setSubscriptionType(EsSubscription.SubscriptionType.TOPIC);
-                    newSub.setEsTopicId(topicId);
-                    newSub.setStatus(EsSubscription.SubscriptionStatus.SUBSCRIBED);
-                    if (userOpt.isPresent()) {
-                        newSub.setUserId(userOpt.get().getUserId());
-                    }
-                    esInterestService.subscribeOrUpdate(newSub);
-                } else if (existing != null && isActiveFollowStatus(existing.getStatus())) {
-                    subscriptionDao.setTopicSubscriptionStatus(
-                            existing.getEsSubscriptionId(),
-                            EsSubscription.SubscriptionStatus.UNSUBSCRIBED,
-                            LocalDateTime.now());
-                }
-            }
-        }
-
-        // Clear the attended-email session attribute now that the form has been
-        // processed.
-        jakarta.servlet.http.HttpSession sess = request.getSession(false);
-        if (sess != null) {
-            sess.removeAttribute("interophub.lastAttendedEmail");
-        }
-
-        response.sendRedirect(contextPath + "/es/agenda?meetingId=" + meetingId + "&topicsSaved=1");
-    }
-
-    /**
-     * Renders the "Topics of Interest" section onto the agenda page.
-     * Shown to any visitor who either has a session-linked email (anonymous
-     * attendee)
-     * or is authenticated.
-     */
-    private void renderTopicInterestSection(PrintWriter out, String contextPath, EsMeeting meeting,
-            List<EsMeetingAgendaItem> items, Map<Long, EsTopic> topicById,
-            Map<Long, EsSubscription> subsByTopicId,
-            String attendeeEmail, User user) {
-        // Collect items that are topic-linked and not cancelled, preserving agenda
-        // order.
-        List<EsMeetingAgendaItem> topicItems = items.stream()
-                .filter(i -> i.getEsTopicId() != null && i.getStatus() != AgendaItemStatus.CANCELLED)
-                .collect(Collectors.toList());
-        if (topicItems.isEmpty()) {
-            return;
-        }
-
-        out.println("  <div class=\"es-topic-interest no-print\">");
-        out.println("    <h2 class=\"es-topic-interest-heading\">Topics of Interest</h2>");
-        if (user == null) {
-            out.println("    <p class=\"es-topic-interest-notice\">You're registered as <strong>"
-                    + escapeHtml(attendeeEmail) + "</strong>.</p>");
-        }
-        out.println("    <p class=\"es-topic-interest-desc\">Check the topics you'd like to follow:</p>");
-        out.println("    <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
-        out.println("      <input type=\"hidden\" name=\"action\" value=\"updateTopicInterest\">");
-        out.println("      <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId() + "\">");
-        if (user == null) {
-            out.println("      <input type=\"hidden\" name=\"attendeeEmail\" value=\""
-                    + escapeHtml(attendeeEmail) + "\">");
-        }
-        out.println("      <ul class=\"es-topic-interest-list\">");
-        for (EsMeetingAgendaItem item : topicItems) {
-            Long topicId = item.getEsTopicId();
-            EsTopic topic = topicById.get(topicId);
-            if (topic == null) {
-                continue;
-            }
-            EsSubscription sub = subsByTopicId.get(topicId);
-            boolean isChampion = sub != null && sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION;
-            boolean isChecked = sub != null && isActiveFollowStatus(sub.getStatus());
-            out.println("        <li class=\"es-topic-interest-item\">");
-            // Hidden field to track which topics were shown (needed for unsubscribe logic).
-            out.println("          <input type=\"hidden\" name=\"topicInterestAll\" value=\"" + topicId + "\">");
-            out.println("          <label class=\"es-topic-interest-label\">");
-            out.print("            <input type=\"checkbox\" name=\"topicInterest\" value=\"" + topicId + "\""
-                    + (isChecked ? " checked" : "") + "> ");
-            out.print(escapeHtml(topic.getTopicName()));
-            if (isChampion) {
-                out.print(" <span class=\"es-champion-badge\">(champion)</span>");
-            }
-            out.println();
-            out.println("          </label>");
-            out.println("        </li>");
-        }
-        out.println("      </ul>");
-        out.println("      <button type=\"submit\" class=\"es-topic-interest-save\">Save Topic Interests</button>");
-        out.println("    </form>");
-        out.println("  </div>");
-    }
-
-    /**
      * Merge helper: returns the subscription with higher status rank.
      * Priority: CHAMPION > SUBSCRIBED > others.
      */
@@ -4025,12 +3598,6 @@ public class EsAgendaServlet extends HttpServlet {
             return a;
         }
         return b;
-    }
-
-    private static boolean isActiveFollowStatus(EsSubscription.SubscriptionStatus status) {
-        return status == EsSubscription.SubscriptionStatus.SUBSCRIBED
-                || status == EsSubscription.SubscriptionStatus.CHAMPION
-                || status == EsSubscription.SubscriptionStatus.SUPPORT;
     }
 
     private String cadenceLabel(int cadenceDays) {

@@ -1,18 +1,4 @@
 /*
- * Read-only reference snapshot of aira.css as shipped in aira-web-theme 0.1.6.
- * This is NOT the served file (that comes from the aira-web-theme dependency at
- * build/runtime) -- it exists so a session can grep/read the shared CSS contract
- * without unzipping the jar, and so upstream changes show up as a normal git diff
- * on this file across version bumps.
- *
- * Regenerate on every aira-web version bump:
- *   unzip -p ~/.m2/repository/org/immregistries/aira-web-theme/<version>/aira-web-theme-<version>.jar \
- *     META-INF/resources/aira/css/aira.css > docs/aira-web/reference/aira.css
- * then update the version note above and commit.
- * See docs/aira-web/README.md.
- */
-
-/*
  * AIRA Web Theme
  * Shared servlet resources packaged under META-INF/resources.
  */
@@ -1643,6 +1629,29 @@ button, input, select, textarea {
   background: var(--aira-surface);
 }
 
+.aira-table-panel--info,
+.aira-table-panel--success,
+.aira-table-panel--warning,
+.aira-table-panel--danger {
+  border-left-width: 4px;
+}
+
+.aira-table-panel--info {
+  border-left-color: var(--aira-focus);
+}
+
+.aira-table-panel--success {
+  border-left-color: var(--aira-success);
+}
+
+.aira-table-panel--warning {
+  border-left-color: var(--aira-yellow);
+}
+
+.aira-table-panel--danger {
+  border-left-color: var(--aira-danger);
+}
+
 .aira-table-panel__header {
   display: flex;
   align-items: flex-start;
@@ -1965,6 +1974,45 @@ button, input, select, textarea {
 .aira-entity-card__action:hover {
   text-decoration: underline;
   text-underline-offset: 0.15em;
+}
+
+/* 15. Dialogs */
+.aira-dialog {
+  width: min(90vw, 40rem);
+  max-width: 40rem;
+  padding: var(--aira-panel-padding);
+  border: 1px solid var(--aira-border);
+  border-radius: var(--aira-radius-panel);
+  background: var(--aira-surface);
+  color: var(--aira-text);
+  box-shadow: var(--aira-shadow-dialog);
+}
+
+.aira-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.aira-dialog__title {
+  margin: 0 0 var(--aira-space-2);
+  font-size: 1.125rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.aira-dialog__body {
+  white-space: pre-wrap;
+}
+
+.aira-dialog__body > :first-child {
+  margin-top: 0;
+}
+
+.aira-dialog__body > :last-child {
+  margin-bottom: 0;
+}
+
+.aira-dialog__actions {
+  margin-top: var(--aira-space-4);
 }
 
 /* 15. Alerts */

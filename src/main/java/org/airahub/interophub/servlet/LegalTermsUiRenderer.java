@@ -15,8 +15,9 @@ final class LegalTermsUiRenderer {
             return;
         }
 
-        out.println("      <div style=\"margin-top:1rem;\">");
-        out.println("        <h3 style=\"margin:0 0 0.75rem 0;\">" + escapeHtml(orEmpty(heading)) + "</h3>");
+        out.println("      <fieldset class=\"aira-fieldset\">");
+        out.println("        <legend class=\"aira-legend\">" + escapeHtml(orEmpty(heading)) + "</legend>");
+        out.println("        <div class=\"aira-stack aira-stack--compact\">");
         for (LegalTerm term : terms) {
             String termIdText = term.getTermId() == null ? "0" : String.valueOf(term.getTermId());
             String titleText = escapeHtml(orEmpty(term.getTitle()));
@@ -26,48 +27,49 @@ final class LegalTermsUiRenderer {
             String checkedAttr = selectedTermIds != null && selectedTermIds.contains(term.getTermId()) ? " checked"
                     : "";
 
-            out.println("        <div style=\"margin-bottom:1rem; padding-bottom:0.25rem;\">");
-            out.println("          <div style=\"font-weight:600; margin-bottom:0.25rem;\">" + titleText + "</div>");
-            out.println("          <label style=\"display:block; margin-left:0.2rem;\">");
-            out.println("            <input type=\"checkbox\" name=\"" + escapeHtml(orEmpty(inputPrefix)) + termIdText
-                    + "\" value=\"1\"" + checkedAttr + " /> ");
-            out.println("            " + shortText + " ");
-            out.println("            <a href=\"#\" onclick=\"showLegalTerm('" + termIdText
-                    + "'); return false;\">More details</a>");
-            if (!fullTextUrl.isBlank()) {
-                out.println("            &nbsp;|&nbsp;<a href=\"" + fullTextUrl
-                        + "\" target=\"_blank\" rel=\"noopener noreferrer\">Full policy link</a>");
-            }
-            out.println("          </label>");
-            out.println("        </div>");
+            out.println("          <div>");
+            out.println("            <label class=\"aira-check\">");
+            out.println("              <input type=\"checkbox\" name=\"" + escapeHtml(orEmpty(inputPrefix))
+                    + termIdText + "\" value=\"1\"" + checkedAttr + " />");
+            out.println("              <span><strong>" + titleText + ".</strong> " + shortText
+                    + " <button type=\"button\" class=\"aira-button aira-button--link\" onclick=\"showLegalTerm('"
+                    + termIdText + "')\">More details</button>"
+                    + (fullTextUrl.isBlank() ? ""
+                            : " <a class=\"aira-inline-link\" href=\"" + fullTextUrl
+                                    + "\" target=\"_blank\" rel=\"noopener noreferrer\">Full policy link</a>")
+                    + "</span>");
+            out.println("            </label>");
+            out.println("          </div>");
 
-            out.println("        <div id=\"legal-term-modal-" + termIdText
-                    + "\" style=\"display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:1000;\">");
-            out.println(
-                    "          <div style=\"background:#fff; max-width:760px; margin:6vh auto; padding:1rem 1.2rem; border-radius:6px; max-height:85vh; overflow:auto;\">");
-            out.println("            <h3 style=\"margin-top:0;\">" + titleText + "</h3>");
-            out.println("            <p style=\"white-space:pre-wrap;\">" + fullText + "</p>");
+            out.println("          <dialog id=\"legal-term-modal-" + termIdText + "\" class=\"aira-dialog\">");
+            out.println("            <h3 class=\"aira-dialog__title\">" + titleText + "</h3>");
+            out.println("            <div class=\"aira-dialog__body\">");
+            out.println("              <p>" + fullText + "</p>");
             if (!fullTextUrl.isBlank()) {
-                out.println("            <p><a href=\"" + fullTextUrl
+                out.println("              <p><a class=\"aira-inline-link\" href=\"" + fullTextUrl
                         + "\" target=\"_blank\" rel=\"noopener noreferrer\">Open full policy in new tab</a></p>");
             }
-            out.println("            <p><button type=\"button\" onclick=\"hideLegalTerm('" + termIdText
-                    + "')\">Close</button></p>");
-            out.println("          </div>");
-            out.println("        </div>");
+            out.println("            </div>");
+            out.println("            <div class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\">");
+            out.println(
+                    "              <button type=\"button\" class=\"aira-button aira-button--secondary\" onclick=\"hideLegalTerm('"
+                            + termIdText + "')\">Close</button>");
+            out.println("            </div>");
+            out.println("          </dialog>");
         }
-        out.println("      </div>");
+        out.println("        </div>");
+        out.println("      </fieldset>");
     }
 
     static void renderTermsScript(PrintWriter out) {
         out.println("    <script>");
         out.println("      function showLegalTerm(termId) {");
         out.println("        var el = document.getElementById('legal-term-modal-' + termId);");
-        out.println("        if (el) { el.style.display = 'block'; }");
+        out.println("        if (el && el.showModal) { el.showModal(); }");
         out.println("      }");
         out.println("      function hideLegalTerm(termId) {");
         out.println("        var el = document.getElementById('legal-term-modal-' + termId);");
-        out.println("        if (el) { el.style.display = 'none'; }");
+        out.println("        if (el) { el.close(); }");
         out.println("      }");
         out.println("    </script>");
     }

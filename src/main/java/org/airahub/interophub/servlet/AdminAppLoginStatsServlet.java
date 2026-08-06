@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.time.Month;
 import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
@@ -24,20 +23,17 @@ import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.AppLoginEvent;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.IpGeoLookupService;
 
 public class AdminAppLoginStatsServlet extends HttpServlet {
     private static final DateTimeFormatter DETAIL_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
-    private final AuthFlowService authFlowService;
     private final AppRegistryDao appRegistryDao;
     private final AppLoginEventDao appLoginEventDao;
     private final UserDao userDao;
     private final IpGeoLookupService ipGeoLookupService;
 
     public AdminAppLoginStatsServlet() {
-        this.authFlowService = new AuthFlowService();
         this.appRegistryDao = new AppRegistryDao();
         this.appLoginEventDao = new AppLoginEventDao();
         this.userDao = new UserDao();
@@ -46,12 +42,10 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
-
-        String contextPath = request.getContextPath();
 
         YearMonth m0 = YearMonth.now();
         YearMonth m1 = m0.minusMonths(1);
@@ -115,97 +109,100 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
             }
         }
 
-        renderPage(response, contextPath, apps, monthColumns, countMap,
+        renderPage(request, response, apps, monthColumns, countMap,
                 showDetail, selectedApp, selectedYear, selectedMonth,
                 detailEvents, userMap, geoMap);
     }
 
-    private void renderPage(HttpServletResponse response, String contextPath,
+    private void renderPage(HttpServletRequest request, HttpServletResponse response,
             List<AppRegistry> apps, YearMonth[] monthColumns, Map<String, Long> countMap,
             boolean showDetail, AppRegistry selectedApp, Integer selectedYear, Integer selectedMonth,
             List<AppLoginEvent> detailEvents, Map<Long, User> userMap,
             Map<String, String> geoMap) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "App Login Statistics - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>App Login Statistics</h2>");
+        AdminShellRenderer.render(request, response, "App Login Statistics - InteropHub", AdminSection.PLATFORM,
+                "/admin/app-login-stats", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">App Login Statistics</h2>");
 
-                int totalCols = monthColumns.length + 1;
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>App</th>");
-                for (YearMonth ym : monthColumns) {
-                    panelOut.println("              <th>" + monthLabel(ym) + "</th>");
-                }
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                if (apps.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"" + totalCols
-                            + "\">No registered apps found.</td></tr>");
-                }
-                for (AppRegistry app : apps) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(app.getAppName())) + "</td>");
+                    int totalCols = monthColumns.length + 1;
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>App</th>");
                     for (YearMonth ym : monthColumns) {
-                        long count = countMap.getOrDefault(countKey(app.getAppId(), ym), 0L);
-                        String link = contextPath + "/admin/app-login-stats?appId=" + app.getAppId()
-                                + "&amp;year=" + ym.getYear() + "&amp;month=" + ym.getMonthValue();
-                        boolean isSelected = showDetail
-                                && app.getAppId().equals(selectedApp.getAppId())
-                                && ym.getYear() == selectedYear
-                                && ym.getMonthValue() == selectedMonth;
-                        String cellStyle = isSelected ? " style=\"font-weight:bold;\"" : "";
-                        panelOut.println("              <td" + cellStyle + "><a href=\"" + link + "\">"
-                                + count + "</a></td>");
+                        out.println("                  <th>" + monthLabel(ym) + "</th>");
                     }
-                    panelOut.println("            </tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-
-                if (showDetail) {
-                    String monthName = Month.of(selectedMonth)
-                            .getDisplayName(TextStyle.FULL, Locale.ENGLISH);
-                    panelOut.println("        <h2>" + escapeHtml(orEmpty(selectedApp.getAppName()))
-                            + " &mdash; " + monthName + " " + selectedYear + "</h2>");
-
-                    if (detailEvents.isEmpty()) {
-                        panelOut.println("        <p>No login events recorded for this app and month.</p>");
-                    } else {
-                        panelOut.println("        <table class=\"data-table\">");
-                        panelOut.println("          <thead>");
-                        panelOut.println("            <tr>");
-                        panelOut.println("              <th>Display Name</th>");
-                        panelOut.println("              <th>Date</th>");
-                        panelOut.println("              <th>Location (User IP)</th>");
-                        panelOut.println("            </tr>");
-                        panelOut.println("          </thead>");
-                        panelOut.println("          <tbody>");
-                        for (AppLoginEvent evt : detailEvents) {
-                            User user = userMap.get(evt.getUserId());
-                            String displayName = resolveDisplayName(user);
-                            String dateStr = evt.getLoggedInAt() != null
-                                    ? DETAIL_FORMATTER.format(evt.getLoggedInAt())
-                                    : "";
-                            String location = buildLocationDisplay(evt.getUserIp(), geoMap);
-
-                            panelOut.println("            <tr>");
-                            panelOut.println("              <td>" + escapeHtml(displayName) + "</td>");
-                            panelOut.println("              <td>" + escapeHtml(dateStr) + "</td>");
-                            panelOut.println("              <td>" + escapeHtml(location) + "</td>");
-                            panelOut.println("            </tr>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    if (apps.isEmpty()) {
+                        out.println("                <tr><td colspan=\"" + totalCols
+                                + "\">No registered apps found.</td></tr>");
+                    }
+                    for (AppRegistry app : apps) {
+                        out.println("                <tr>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(app.getAppName())) + "</td>");
+                        for (YearMonth ym : monthColumns) {
+                            long count = countMap.getOrDefault(countKey(app.getAppId(), ym), 0L);
+                            String link = contextPath + "/admin/app-login-stats?appId=" + app.getAppId()
+                                    + "&amp;year=" + ym.getYear() + "&amp;month=" + ym.getMonthValue();
+                            boolean isSelected = showDetail
+                                    && app.getAppId().equals(selectedApp.getAppId())
+                                    && ym.getYear() == selectedYear
+                                    && ym.getMonthValue() == selectedMonth;
+                            String cellStyle = isSelected ? " style=\"font-weight:bold;\"" : "";
+                            out.println("                  <td" + cellStyle + "><a class=\"aira-inline-link\" href=\""
+                                    + link + "\">" + count + "</a></td>");
                         }
-                        panelOut.println("          </tbody>");
-                        panelOut.println("        </table>");
+                        out.println("                </tr>");
                     }
-                }
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+
+                    if (showDetail) {
+                        String monthName = Month.of(selectedMonth)
+                                .getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+                        out.println("            <h2 class=\"aira-section-title\">" + escapeHtml(orEmpty(selectedApp.getAppName()))
+                                + " &mdash; " + monthName + " " + selectedYear + "</h2>");
+
+                        if (detailEvents.isEmpty()) {
+                            out.println("            <p class=\"aira-meta\">No login events recorded for this app and month.</p>");
+                        } else {
+                            out.println("            <div class=\"aira-table-wrap\">");
+                            out.println("            <table class=\"aira-table\">");
+                            out.println("              <thead>");
+                            out.println("                <tr>");
+                            out.println("                  <th>Display Name</th>");
+                            out.println("                  <th>Date</th>");
+                            out.println("                  <th>Location (User IP)</th>");
+                            out.println("                </tr>");
+                            out.println("              </thead>");
+                            out.println("              <tbody>");
+                            for (AppLoginEvent evt : detailEvents) {
+                                User user = userMap.get(evt.getUserId());
+                                String displayName = resolveDisplayName(user);
+                                String dateStr = evt.getLoggedInAt() != null
+                                        ? DETAIL_FORMATTER.format(evt.getLoggedInAt())
+                                        : "";
+                                String location = buildLocationDisplay(evt.getUserIp(), geoMap);
+
+                                out.println("                <tr>");
+                                out.println("                  <td>" + escapeHtml(displayName) + "</td>");
+                                out.println("                  <td>" + escapeHtml(dateStr) + "</td>");
+                                out.println("                  <td>" + escapeHtml(location) + "</td>");
+                                out.println("                </tr>");
+                            }
+                            out.println("              </tbody>");
+                            out.println("            </table>");
+                            out.println("            </div>");
+                        }
+                    }
+                    out.println("          </section>");
+                });
     }
 
     private String resolveDisplayName(User user) {
@@ -221,7 +218,7 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
 
     private String buildLocationDisplay(String userIp, Map<String, String> geoMap) {
         if (userIp == null || userIp.isBlank()) {
-            return "\u2014"; // em dash
+            return "—"; // em dash
         }
         String geo = geoMap.get(userIp);
         // If geo is different from the raw IP, that means we got a city/country back
@@ -237,34 +234,6 @@ public class AdminAppLoginStatsServlet extends HttpServlet {
 
     private String countKey(Long appId, YearMonth ym) {
         return appId + "-" + ym.getYear() + "-" + ym.getMonthValue();
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request,
-            HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to view app login statistics.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
     }
 
     private Long parseId(String value) {

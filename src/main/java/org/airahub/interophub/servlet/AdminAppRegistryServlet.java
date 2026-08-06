@@ -16,16 +16,13 @@ import org.airahub.interophub.model.AppApi;
 import org.airahub.interophub.model.AppRedirectAllowlist;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminAppRegistryServlet extends HttpServlet {
-    private final AuthFlowService authFlowService;
     private final AppApiDao appApiDao;
     private final AppRedirectAllowlistDao appRedirectAllowlistDao;
     private final AppRegistryDao appRegistryDao;
 
     public AdminAppRegistryServlet() {
-        this.authFlowService = new AuthFlowService();
         this.appApiDao = new AppApiDao();
         this.appRedirectAllowlistDao = new AppRedirectAllowlistDao();
         this.appRegistryDao = new AppRegistryDao();
@@ -33,7 +30,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -42,7 +39,7 @@ public class AdminAppRegistryServlet extends HttpServlet {
         boolean createNew = "new".equalsIgnoreCase(request.getParameter("mode"));
 
         if (createNew) {
-            renderForm(response, request.getContextPath(), new AppRegistry(), new ArrayList<>(), new ArrayList<>(),
+            renderForm(request, response, new AppRegistry(), new ArrayList<>(), new ArrayList<>(),
                     null,
                     true, null, null, true);
             return;
@@ -51,19 +48,19 @@ public class AdminAppRegistryServlet extends HttpServlet {
         if (appIdRaw != null) {
             Long appId = parseId(appIdRaw);
             if (appId == null) {
-                renderList(response, request.getContextPath(), "Invalid app identifier.");
+                renderList(request, response, "Invalid app identifier.");
                 return;
             }
 
             AppRegistry appRegistry = appRegistryDao.findById(appId).orElse(null);
             if (appRegistry == null) {
-                renderList(response, request.getContextPath(), "App entry was not found.");
+                renderList(request, response, "App entry was not found.");
                 return;
             }
 
             renderForm(
+                    request,
                     response,
-                    request.getContextPath(),
                     appRegistry,
                     appRedirectAllowlistDao.findByAppId(appRegistry.getAppId()),
                     appApiDao.findByAppId(appRegistry.getAppId()),
@@ -76,13 +73,13 @@ public class AdminAppRegistryServlet extends HttpServlet {
         }
 
         String message = request.getParameter("saved") != null ? "App settings saved." : null;
-        renderList(response, request.getContextPath(), message);
+        renderList(request, response, message);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -98,12 +95,12 @@ public class AdminAppRegistryServlet extends HttpServlet {
         } else {
             Long appId = parseId(appIdRaw);
             if (appId == null) {
-                renderList(response, contextPath, "Invalid app identifier.");
+                renderList(request, response, "Invalid app identifier.");
                 return;
             }
             appRegistry = appRegistryDao.findById(appId).orElse(null);
             if (appRegistry == null) {
-                renderList(response, contextPath, "App entry was not found.");
+                renderList(request, response, "App entry was not found.");
                 return;
             }
         }
@@ -152,8 +149,8 @@ public class AdminAppRegistryServlet extends HttpServlet {
             response.sendRedirect(contextPath + "/admin/apps?saved=1");
         } catch (Exception ex) {
             renderForm(
+                    request,
                     response,
-                    contextPath,
                     appRegistry,
                     appRegistry.getAppId() == null ? new ArrayList<>()
                             : appRedirectAllowlistDao.findByAppId(appRegistry.getAppId()),
@@ -220,237 +217,218 @@ public class AdminAppRegistryServlet extends HttpServlet {
         }
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderList(HttpServletResponse response, String contextPath, String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        String contextPath = request.getContextPath();
         List<AppRegistry> apps = appRegistryDao.findAllOrdered();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "App Registry Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>App Registry</h2>");
-                panelOut.println("        <p>Manage central app definitions and enable or disable access.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                out.println("    <table class=\"data-table\">");
-                out.println("      <thead>");
-                out.println("        <tr>");
-                out.println("          <th>App Code</th>");
-                out.println("          <th>App Name</th>");
-                out.println("          <th>Managed By</th>");
-                out.println("          <th>Enabled</th>");
-                out.println("          <th>Visible</th>");
-                out.println("          <th>Action</th>");
-                out.println("        </tr>");
-                out.println("      </thead>");
-                out.println("      <tbody>");
-                for (AppRegistry app : apps) {
-                    out.println("        <tr>");
-                    out.println("          <td>" + escapeHtml(orEmpty(app.getAppCode())) + "</td>");
-                    out.println("          <td>" + escapeHtml(orEmpty(app.getAppName())) + "</td>");
+        AdminShellRenderer.render(request, response, "App Registry Admin - InteropHub", AdminSection.PLATFORM,
+                "/admin/apps", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">App Registry</h2>");
                     out.println(
-                            "          <td>" + escapeHtml(app.getManagedBy() == null ? "" : app.getManagedBy().name())
-                                    + "</td>");
-                    out.println("          <td>" + enabledIcon(Boolean.TRUE.equals(app.getEnabled())) + "</td>");
-                    out.println("          <td>" + visibleIcon(Boolean.TRUE.equals(app.getVisible())) + "</td>");
-                    out.println("          <td><a href=\"" + contextPath + "/admin/apps?appId=" + app.getAppId()
-                            + "\">Edit</a></td>");
-                    out.println("        </tr>");
-                }
-                if (apps.isEmpty()) {
-                    out.println("        <tr>");
-                    out.println("          <td colspan=\"6\">No app entries yet.</td>");
-                    out.println("        </tr>");
-                }
-                out.println("      </tbody>");
-                out.println("    </table>");
-
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h2>Create New App</h2>");
-                panelOut.println(
-                        "          <p><a href=\"" + contextPath
-                                + "/admin/apps?mode=new\">Add New App Registry Entry</a></p>");
-                panelOut.println("        </section>");
-                panelOut.println("      </section>");
-            });
-        }
+                            "            <p class=\"aira-meta\">Manage central app definitions and enable or disable access.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>App Code</th>");
+                    out.println("                  <th>App Name</th>");
+                    out.println("                  <th>Managed By</th>");
+                    out.println("                  <th>Enabled</th>");
+                    out.println("                  <th>Visible</th>");
+                    out.println("                  <th>Action</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (AppRegistry app : apps) {
+                        out.println("                <tr>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(app.getAppCode())) + "</td>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(app.getAppName())) + "</td>");
+                        out.println("                  <td>"
+                                + escapeHtml(app.getManagedBy() == null ? "" : app.getManagedBy().name()) + "</td>");
+                        out.println("                  <td>" + enabledBadge(Boolean.TRUE.equals(app.getEnabled()),
+                                "Enabled", "Disabled") + "</td>");
+                        out.println("                  <td>" + enabledBadge(Boolean.TRUE.equals(app.getVisible()),
+                                "Visible", "Hidden") + "</td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/apps?appId=" + app.getAppId() + "\">Edit</a></td>");
+                        out.println("                </tr>");
+                    }
+                    if (apps.isEmpty()) {
+                        out.println("                <tr>");
+                        out.println("                  <td colspan=\"6\">No app entries yet.</td>");
+                        out.println("                </tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/apps?mode=new\">Add New App Registry Entry</a>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderForm(HttpServletResponse response, String contextPath, AppRegistry appRegistry,
+    private void renderForm(HttpServletRequest request, HttpServletResponse response, AppRegistry appRegistry,
             List<AppRedirectAllowlist> allowlistEntries, List<AppApi> apiEntries, String errorMessage,
             boolean createNew, String newAllowBaseUrl, String newPurposeLabel, boolean newPurposeEnabled)
             throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, (createNew ? "Create App" : "Edit App") + " - InteropHub",
+                AdminSection.PLATFORM, "/admin/apps", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">"
+                            + (createNew ? "Create App Registry Entry" : "Edit App Registry Entry") + "</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Fields marked required must be provided before saving.</p>");
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (createNew ? "Create App" : "Edit App") + " - InteropHub", contextPath,
-                    panelOut -> {
-                        panelOut.println("      <section class=\"panel\">");
-                        panelOut.println("        <h2>"
-                                + (createNew ? "Create App Registry Entry" : "Edit App Registry Entry") + "</h2>");
-                        panelOut.println("        <p>Fields marked required must be provided before saving.</p>");
+                    if (errorMessage != null && !errorMessage.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p><strong>Could not save:</strong> "
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
 
-                        if (errorMessage != null && !errorMessage.isBlank()) {
-                            panelOut.println(
-                                    "        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage) + "</p>");
+                    out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/apps\" method=\"post\">");
+                    if (!createNew && appRegistry.getAppId() != null) {
+                        out.println("              <input type=\"hidden\" name=\"appId\" value=\""
+                                + appRegistry.getAppId() + "\" />");
+                    }
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"appCode\">App Code (required)</label>");
+                    out.println("                <input class=\"aira-input\" id=\"appCode\" name=\"appCode\" type=\"text\" required value=\""
+                            + escapeHtml(orEmpty(appRegistry.getAppCode())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"appName\">App Name (required)</label>");
+                    out.println("                <input class=\"aira-input\" id=\"appName\" name=\"appName\" type=\"text\" required value=\""
+                            + escapeHtml(orEmpty(appRegistry.getAppName())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"managedBy\">Managed By (required)</label>");
+                    out.println("                <select class=\"aira-select\" id=\"managedBy\" name=\"managedBy\" required>");
+                    out.println("                  <option value=\"\">Choose one...</option>");
+                    out.println("                  <option value=\"AIRA\""
+                            + selectedManagedBy(appRegistry, AppRegistry.ManagedBy.AIRA)
+                            + ">AIRA</option>");
+                    out.println("                  <option value=\"THIRD_PARTY\""
+                            + selectedManagedBy(appRegistry, AppRegistry.ManagedBy.THIRD_PARTY)
+                            + ">THIRD_PARTY</option>");
+                    out.println("                </select>");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"defaultRedirectUrl\">Default Redirect URL (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"defaultRedirectUrl\" name=\"defaultRedirectUrl\" type=\"url\" required value=\""
+                                    + escapeHtml(orEmpty(appRegistry.getDefaultRedirectUrl())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"appDescription\">App Description</label>");
+                    out.println("                <textarea class=\"aira-textarea\" id=\"appDescription\" name=\"appDescription\" rows=\"5\">"
+                            + escapeHtml(orEmpty(appRegistry.getAppDescription())) + "</textarea>");
+                    out.println("              </div>");
+
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"enabled\""
+                            + (Boolean.TRUE.equals(appRegistry.getEnabled()) || createNew ? " checked" : "")
+                            + " /> Enabled</label>");
+
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"visible\""
+                            + (Boolean.TRUE.equals(appRegistry.getVisible()) || createNew ? " checked" : "")
+                            + " /> Visible on Welcome page</label>");
+
+                    out.println("              <h3 class=\"aira-subsection-title\">Allowed Redirect Base URLs</h3>");
+                    out.println(
+                            "              <p class=\"aira-meta\">Edit existing entries or disable them. Deletion is not supported.</p>");
+
+                    if (allowlistEntries.isEmpty()) {
+                        out.println("              <p class=\"aira-meta\">No allowlist URLs yet.</p>");
+                    } else {
+                        for (AppRedirectAllowlist entry : allowlistEntries) {
+                            out.println(
+                                    "              <input type=\"hidden\" name=\"allowId\" value=\"" + entry.getAllowId()
+                                            + "\" />");
+                            out.println("              <div class=\"aira-field\">");
+                            out.println("                <label for=\"allowBaseUrl_" + entry.getAllowId()
+                                    + "\">Base URL</label>");
+                            out.println("                <input class=\"aira-input\" id=\"allowBaseUrl_" + entry.getAllowId()
+                                    + "\" name=\"allowBaseUrl_"
+                                    + entry.getAllowId() + "\" type=\"url\" required value=\""
+                                    + escapeHtml(orEmpty(entry.getBaseUrl())) + "\" />");
+                            out.println("              </div>");
+                            out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"allowEnabled_"
+                                    + entry.getAllowId() + "\""
+                                    + (Boolean.TRUE.equals(entry.getEnabled()) ? " checked" : "")
+                                    + " /> Enabled</label>");
                         }
+                    }
 
-                        panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/apps\" method=\"post\">");
-                        if (!createNew && appRegistry.getAppId() != null) {
-                            out.println("      <input type=\"hidden\" name=\"appId\" value=\"" + appRegistry.getAppId()
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"newAllowBaseUrl\">Add New Base URL (optional)</label>");
+                    out.println("                <input class=\"aira-input\" id=\"newAllowBaseUrl\" name=\"newAllowBaseUrl\" type=\"url\" value=\""
+                            + escapeHtml(orEmpty(newAllowBaseUrl)) + "\" />");
+                    out.println("                <p class=\"aira-field-help\">Any new URL is added as enabled by default.</p>");
+                    out.println("              </div>");
+
+                    out.println("              <h3 class=\"aira-subsection-title\">API Access</h3>");
+                    out.println(
+                            "              <p class=\"aira-meta\">Edit existing purposes or disable them. Deletion is not supported.</p>");
+
+                    if (apiEntries.isEmpty()) {
+                        out.println("              <p class=\"aira-meta\">No API purposes yet.</p>");
+                    } else {
+                        for (AppApi entry : apiEntries) {
+                            out.println("              <input type=\"hidden\" name=\"apiId\" value=\"" + entry.getApiId()
                                     + "\" />");
+                            out.println("              <div class=\"aira-field\">");
+                            out.println(
+                                    "                <label for=\"purposeLabel_" + entry.getApiId() + "\">Purpose</label>");
+                            out.println(
+                                    "                <input class=\"aira-input\" id=\"purposeLabel_" + entry.getApiId() + "\" name=\"purposeLabel_"
+                                            + entry.getApiId() + "\" type=\"text\" required value=\""
+                                            + escapeHtml(orEmpty(entry.getPurposeLabel())) + "\" />");
+                            out.println("              </div>");
+                            out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"purposeEnabled_"
+                                    + entry.getApiId()
+                                    + "\"" + (Boolean.TRUE.equals(entry.getEnabled()) ? " checked" : "")
+                                    + " /> Enabled</label>");
                         }
+                    }
 
-                        out.println("      <label for=\"appCode\">App Code (required)</label>");
-                        out.println("      <input id=\"appCode\" name=\"appCode\" type=\"text\" required value=\""
-                                + escapeHtml(orEmpty(appRegistry.getAppCode())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"newPurposeLabel\">Purpose</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"newPurposeLabel\" name=\"newPurposeLabel\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(newPurposeLabel)) + "\" />");
+                    out.println("              </div>");
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"newPurposeEnabled\""
+                            + (newPurposeEnabled ? " checked" : "") + " /> Enabled</label>");
+                    out.println("              <p class=\"aira-field-help\">If Purpose is blank, no new API purpose is added.</p>");
 
-                        out.println("      <label for=\"appName\">App Name (required)</label>");
-                        out.println("      <input id=\"appName\" name=\"appName\" type=\"text\" required value=\""
-                                + escapeHtml(orEmpty(appRegistry.getAppName())) + "\" />");
-
-                        out.println("      <label for=\"managedBy\">Managed By (required)</label>");
-                        out.println("      <select id=\"managedBy\" name=\"managedBy\" required>");
-                        out.println("        <option value=\"\">Choose one...</option>");
-                        out.println("        <option value=\"AIRA\""
-                                + selectedManagedBy(appRegistry, AppRegistry.ManagedBy.AIRA)
-                                + ">AIRA</option>");
-                        out.println("        <option value=\"THIRD_PARTY\""
-                                + selectedManagedBy(appRegistry, AppRegistry.ManagedBy.THIRD_PARTY)
-                                + ">THIRD_PARTY</option>");
-                        out.println("      </select>");
-
-                        out.println("      <label for=\"defaultRedirectUrl\">Default Redirect URL (required)</label>");
-                        out.println(
-                                "      <input id=\"defaultRedirectUrl\" name=\"defaultRedirectUrl\" type=\"url\" required value=\""
-                                        + escapeHtml(orEmpty(appRegistry.getDefaultRedirectUrl())) + "\" />");
-
-                        out.println("      <label for=\"appDescription\">App Description</label>");
-                        out.println("      <textarea id=\"appDescription\" name=\"appDescription\" rows=\"5\">"
-                                + escapeHtml(orEmpty(appRegistry.getAppDescription())) + "</textarea>");
-
-                        out.println("      <label><input type=\"checkbox\" name=\"enabled\""
-                                + (Boolean.TRUE.equals(appRegistry.getEnabled()) || createNew ? " checked" : "")
-                                + " /> Enabled</label>");
-
-                        out.println("      <label><input type=\"checkbox\" name=\"visible\""
-                                + (Boolean.TRUE.equals(appRegistry.getVisible()) || createNew ? " checked" : "")
-                                + " /> Visible on Welcome page</label>");
-
-                        out.println("      <h2>Allowed Redirect Base URLs</h2>");
-                        out.println("      <p>Edit existing entries or disable them. Deletion is not supported.</p>");
-
-                        if (allowlistEntries.isEmpty()) {
-                            out.println("      <p>No allowlist URLs yet.</p>");
-                        } else {
-                            for (AppRedirectAllowlist entry : allowlistEntries) {
-                                out.println(
-                                        "      <input type=\"hidden\" name=\"allowId\" value=\"" + entry.getAllowId()
-                                                + "\" />");
-
-                                out.println("      <label for=\"allowBaseUrl_" + entry.getAllowId()
-                                        + "\">Base URL</label>");
-                                out.println("      <input id=\"allowBaseUrl_" + entry.getAllowId()
-                                        + "\" name=\"allowBaseUrl_"
-                                        + entry.getAllowId() + "\" type=\"url\" required value=\""
-                                        + escapeHtml(orEmpty(entry.getBaseUrl())) + "\" />");
-
-                                out.println("      <label><input type=\"checkbox\" name=\"allowEnabled_"
-                                        + entry.getAllowId() + "\""
-                                        + (Boolean.TRUE.equals(entry.getEnabled()) ? " checked" : "")
-                                        + " /> Enabled</label>");
-                            }
-                        }
-
-                        out.println("      <label for=\"newAllowBaseUrl\">Add New Base URL (optional)</label>");
-                        out.println("      <input id=\"newAllowBaseUrl\" name=\"newAllowBaseUrl\" type=\"url\" value=\""
-                                + escapeHtml(orEmpty(newAllowBaseUrl)) + "\" />");
-                        out.println("      <p>Any new URL is added as enabled by default.</p>");
-
-                        out.println("      <h2>API Access</h2>");
-                        out.println("      <p>Edit existing purposes or disable them. Deletion is not supported.</p>");
-
-                        if (apiEntries.isEmpty()) {
-                            out.println("      <p>No API purposes yet.</p>");
-                        } else {
-                            for (AppApi entry : apiEntries) {
-                                out.println("      <input type=\"hidden\" name=\"apiId\" value=\"" + entry.getApiId()
-                                        + "\" />");
-
-                                out.println(
-                                        "      <label for=\"purposeLabel_" + entry.getApiId() + "\">Purpose</label>");
-                                out.println(
-                                        "      <input id=\"purposeLabel_" + entry.getApiId() + "\" name=\"purposeLabel_"
-                                                + entry.getApiId() + "\" type=\"text\" required value=\""
-                                                + escapeHtml(orEmpty(entry.getPurposeLabel())) + "\" />");
-
-                                out.println("      <label><input type=\"checkbox\" name=\"purposeEnabled_"
-                                        + entry.getApiId()
-                                        + "\"" + (Boolean.TRUE.equals(entry.getEnabled()) ? " checked" : "")
-                                        + " /> Enabled</label>");
-                            }
-                        }
-
-                        out.println("      <label for=\"newPurposeLabel\">Purpose</label>");
-                        out.println(
-                                "      <input id=\"newPurposeLabel\" name=\"newPurposeLabel\" type=\"text\" value=\""
-                                        + escapeHtml(orEmpty(newPurposeLabel)) + "\" />");
-                        out.println("      <label><input type=\"checkbox\" name=\"newPurposeEnabled\""
-                                + (newPurposeEnabled ? " checked" : "") + " /> Enabled</label>");
-                        out.println("      <p>If Purpose is blank, no new API purpose is added.</p>");
-
-                        panelOut.println("      <button type=\"submit\">Save</button>");
-                        panelOut.println("    </form>");
-                        panelOut.println(
-                                "    <p><a href=\"" + contextPath + "/admin/apps\">Back to App Registry</a></p>");
-                        panelOut.println("      </section>");
-                    });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println(
+                            "            <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/admin/apps\">Back to App Registry</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access app registry settings.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
+    private String enabledBadge(boolean state, String trueLabel, String falseLabel) {
+        if (state) {
+            return "<span class=\"aira-badge aira-badge--success\">" + trueLabel + "</span>";
         }
-    }
-
-    private String enabledIcon(boolean enabled) {
-        if (enabled) {
-            return "<span class=\"status-icon status-enabled\" title=\"Enabled\">&#10004; Enabled</span>";
-        }
-        return "<span class=\"status-icon status-disabled\" title=\"Disabled\">&#10008; Disabled</span>";
-    }
-
-    private String visibleIcon(boolean visible) {
-        if (visible) {
-            return "<span class=\"status-icon status-enabled\" title=\"Visible\">&#10004; Visible</span>";
-        }
-        return "<span class=\"status-icon status-disabled\" title=\"Hidden\">&#10008; Hidden</span>";
+        return "<span class=\"aira-badge aira-badge--subtle\">" + falseLabel + "</span>";
     }
 
     private String generateUniqueApiCode(Long appId, String purposeLabel) {

@@ -17,52 +17,50 @@ import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.TopicBoardRules;
 import org.airahub.interophub.service.TopicBoardService;
 
 public class AdminEsTopicBoardServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/topic-boards";
+
     private final TopicBoardService topicBoardService;
 
     public AdminEsTopicBoardServlet() {
-        this.authFlowService = new AuthFlowService();
         this.topicBoardService = new TopicBoardService();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
         Long boardDefinitionId = parseLong(request.getParameter("esTopicBoardDefinitionId"));
 
         if ("new".equalsIgnoreCase(mode)) {
-            renderEdit(response, contextPath, topicBoardService.loadBoardEditData(null), true, null);
+            renderEdit(request, response, topicBoardService.loadBoardEditData(null), true, null);
             return;
         }
 
         if ("edit".equalsIgnoreCase(mode) && boardDefinitionId != null) {
             try {
-                renderEdit(response, contextPath, topicBoardService.loadBoardEditData(boardDefinitionId), false, null);
+                renderEdit(request, response, topicBoardService.loadBoardEditData(boardDefinitionId), false, null);
             } catch (TopicBoardService.ValidationException ex) {
-                renderList(response, contextPath, ex.getMessage());
+                renderList(request, response, ex.getMessage());
             }
             return;
         }
 
         String message = request.getParameter("saved") != null ? "Topic Board saved." : null;
-        renderList(response, contextPath, message);
+        renderList(request, response, message);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -73,7 +71,7 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
         boolean creating = boardDefinitionId == null;
 
         if ("changeSpace".equalsIgnoreCase(action)) {
-            renderEditForSpaceChange(response, contextPath, request, creating);
+            renderEditForSpaceChange(request, response, creating);
             return;
         }
 
@@ -83,233 +81,255 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
             response.sendRedirect(contextPath + "/admin/es/topic-boards?saved=1&esTopicBoardDefinitionId="
                     + saved.getEsTopicBoardDefinitionId());
         } catch (TopicBoardService.ValidationException ex) {
-            renderEditWithPostedValues(response, contextPath, request, creating, ex.getMessage());
+            renderEditWithPostedValues(request, response, creating, ex.getMessage());
         }
     }
 
-    private void renderList(HttpServletResponse response, String contextPath, String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        String contextPath = request.getContextPath();
         List<TopicBoardService.AdminBoardRow> rows = topicBoardService.listBoardDefinitions();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Topic Boards Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Topic Boards</h2>");
-                panelOut.println("        <p>Manage reusable topic board configurations by Topic Space.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/topic-boards?mode=new\">Add Topic Board</a></p>");
+        AdminShellRenderer.render(request, response, "Topic Boards Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Topic Boards</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Manage reusable topic board configurations by Topic Space.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/topic-boards?mode=new\">Add Topic Board</a>");
+                    out.println("            </div>");
 
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Board Name</th>");
-                panelOut.println("              <th>Board Code</th>");
-                panelOut.println("              <th>Topic Space</th>");
-                panelOut.println("              <th>Curator Topic</th>");
-                panelOut.println("              <th>Active</th>");
-                panelOut.println("              <th>View</th>");
-                panelOut.println("              <th>Edit</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (TopicBoardService.AdminBoardRow row : rows) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + escapeHtml(row.boardName()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(row.boardCode()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(row.topicSpaceName()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(row.curatorTopicName()) + "</td>");
-                    panelOut.println("              <td>" + (row.active() ? "Yes" : "No") + "</td>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/es/board/" + urlEncodePathSegment(row.boardCode())
-                            + "\" target=\"_blank\" rel=\"noopener\">Open</a></td>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/admin/es/topic-boards?mode=edit&esTopicBoardDefinitionId="
-                            + row.boardDefinitionId() + "\">Edit</a></td>");
-                    panelOut.println("            </tr>");
-                }
-                if (rows.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"7\">No board definitions found.</td></tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Board Name</th>");
+                    out.println("                  <th>Board Code</th>");
+                    out.println("                  <th>Topic Space</th>");
+                    out.println("                  <th>Curator Topic</th>");
+                    out.println("                  <th>Active</th>");
+                    out.println("                  <th>View</th>");
+                    out.println("                  <th>Edit</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (TopicBoardService.AdminBoardRow row : rows) {
+                        out.println("                <tr>");
+                        out.println("                  <td>" + escapeHtml(row.boardName()) + "</td>");
+                        out.println("                  <td>" + escapeHtml(row.boardCode()) + "</td>");
+                        out.println("                  <td>" + escapeHtml(row.topicSpaceName()) + "</td>");
+                        out.println("                  <td>" + escapeHtml(row.curatorTopicName()) + "</td>");
+                        out.println("                  <td>" + activeBadge(row.active()) + "</td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/es/board/" + urlEncodePathSegment(row.boardCode())
+                                + "\" target=\"_blank\" rel=\"noopener\">Open</a></td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/topic-boards?mode=edit&esTopicBoardDefinitionId="
+                                + row.boardDefinitionId() + "\">Edit</a></td>");
+                        out.println("                </tr>");
+                    }
+                    if (rows.isEmpty()) {
+                        out.println("                <tr><td colspan=\"7\">No board definitions found.</td></tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es\">Back to Emerging Standards</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderEdit(HttpServletResponse response, String contextPath, TopicBoardService.BoardEditData data,
-            boolean creating, String errorMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-
+    private void renderEdit(HttpServletRequest request, HttpServletResponse response,
+            TopicBoardService.BoardEditData data, boolean creating, String errorMessage) throws IOException {
+        String contextPath = request.getContextPath();
         EsTopicBoardDefinition board = data.board();
         Long selectedSpaceId = board.getEsTopicSpaceId();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Topic Board - InteropHub", contextPath,
-                    panelOut -> {
-                        panelOut.println("      <section class=\"panel\">");
-                        panelOut.println(
-                                "        <h2>" + (creating ? "Create Topic Board" : "Edit Topic Board") + "</h2>");
-                        panelOut.println(
-                                "        <p>Configure displayed stages and paths for a reusable board URL.</p>");
-                        if (errorMessage != null && !errorMessage.isBlank()) {
-                            panelOut.println("        <p><strong>" + escapeHtml(errorMessage) + "</strong></p>");
+        AdminShellRenderer.render(request, response, (creating ? "Create" : "Edit") + " Topic Board - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println(
+                            "            <h2 class=\"aira-section-title\">"
+                                    + (creating ? "Create Topic Board" : "Edit Topic Board") + "</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Configure displayed stages and paths for a reusable board URL.</p>");
+                    if (errorMessage != null && !errorMessage.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p>"
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
+
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                            + "/admin/es/topic-boards\">");
+                    if (!creating) {
+                        out.println("              <input type=\"hidden\" name=\"esTopicBoardDefinitionId\" value=\""
+                                + board.getEsTopicBoardDefinitionId() + "\" />");
+                    }
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"boardName\">Board name</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"boardName\" name=\"boardName\" required value=\""
+                                    + escapeHtml(orEmpty(board.getBoardName())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"boardCode\">Board code</label>");
+                    if (creating) {
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"boardCode\" name=\"boardCode\" required value=\""
+                                        + escapeHtml(orEmpty(board.getBoardCode())) + "\" />");
+                    } else {
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"boardCode\" name=\"boardCode\" value=\""
+                                        + escapeHtml(orEmpty(board.getBoardCode()))
+                                        + "\" readonly aria-readonly=\"true\" />");
+                        out.println(
+                                "                <p class=\"aira-field-help\">Board code is stable and used in saved links.</p>");
+                    }
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"boardDescription\">Description</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"boardDescription\" name=\"boardDescription\" rows=\"3\">"
+                                    + escapeHtml(orEmpty(board.getBoardDescription())) + "</textarea>");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esTopicSpaceId\">Topic Space</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
+                    out.println("                  <option value=\"\">- Select -</option>");
+                    for (EsTopicSpace space : data.topicSpaces()) {
+                        boolean selected = selectedSpaceId != null
+                                && selectedSpaceId.equals(space.getEsTopicSpaceId());
+                        out.println("                  <option value=\"" + space.getEsTopicSpaceId() + "\""
+                                + (selected ? " selected" : "") + ">" + escapeHtml(orEmpty(space.getSpaceName()))
+                                + (Boolean.TRUE.equals(space.getIsActive()) ? "" : " (inactive)") + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--secondary\" type=\"submit\" name=\"action\" value=\"changeSpace\">Reload stage/path options</button>");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"curatorTopicId\">Curator topic (optional)</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"curatorTopicId\" name=\"curatorTopicId\">");
+                    out.println("                  <option value=\"\">- None -</option>");
+                    for (EsTopic topic : data.curatorCandidates()) {
+                        if (topic.getEsTopicId() == null) {
+                            continue;
                         }
+                        boolean selected = board.getCuratorTopicId() != null
+                                && board.getCuratorTopicId().equals(topic.getEsTopicId());
+                        out.println("                  <option value=\"" + topic.getEsTopicId() + "\""
+                                + (selected ? " selected" : "") + ">" + escapeHtml(orEmpty(topic.getTopicName()))
+                                + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                        panelOut.println("        <form class=\"login-form\" method=\"post\" action=\"" + contextPath
-                                + "/admin/es/topic-boards\">");
-                        if (!creating) {
-                            panelOut.println(
-                                    "          <input type=\"hidden\" name=\"esTopicBoardDefinitionId\" value=\""
-                                            + board.getEsTopicBoardDefinitionId() + "\" />");
-                        }
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"showUnassignedStage\""
+                            + (Boolean.TRUE.equals(board.getShowUnassignedStage()) ? " checked" : "")
+                            + " /> Show Not assigned stage</label>");
 
-                        panelOut.println("          <label for=\"boardName\">Board name</label>");
-                        panelOut.println("          <input id=\"boardName\" name=\"boardName\" required value=\""
-                                + escapeHtml(orEmpty(board.getBoardName())) + "\" />");
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"showUnassignedPath\""
+                            + (Boolean.TRUE.equals(board.getShowUnassignedPath()) ? " checked" : "")
+                            + " /> Show Not assigned path</label>");
 
-                        panelOut.println("          <label for=\"boardCode\">Board code</label>");
-                        if (creating) {
-                            panelOut.println("          <input id=\"boardCode\" name=\"boardCode\" required value=\""
-                                    + escapeHtml(orEmpty(board.getBoardCode())) + "\" />");
-                        } else {
-                            panelOut.println("          <input id=\"boardCode\" name=\"boardCode\" value=\""
-                                    + escapeHtml(orEmpty(board.getBoardCode()))
-                                    + "\" readonly aria-readonly=\"true\" />");
-                            panelOut.println(
-                                    "          <span class=\"field-hint\">Board code is stable and used in saved links.</span>");
-                        }
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"isActive\""
+                            + (Boolean.TRUE.equals(board.getIsActive()) ? " checked" : "")
+                            + " /> Active</label>");
 
-                        panelOut.println("          <label for=\"boardDescription\">Description</label>");
-                        panelOut.println(
-                                "          <textarea id=\"boardDescription\" name=\"boardDescription\" rows=\"3\">"
-                                        + escapeHtml(orEmpty(board.getBoardDescription())) + "</textarea>");
+                    out.println("              <section class=\"aira-panel\">");
+                    out.println("                <h3 class=\"aira-subsection-title\">Included stages</h3>");
+                    renderStageOptions(out, data.options().activeStages(), data.selectedStageOrder());
+                    out.println("              </section>");
 
-                        panelOut.println("          <label for=\"esTopicSpaceId\">Topic Space</label>");
-                        panelOut.println("          <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
-                        panelOut.println("            <option value=\"\">- Select -</option>");
-                        for (EsTopicSpace space : data.topicSpaces()) {
-                            boolean selected = selectedSpaceId != null
-                                    && selectedSpaceId.equals(space.getEsTopicSpaceId());
-                            panelOut.println("            <option value=\"" + space.getEsTopicSpaceId() + "\""
-                                    + (selected ? " selected" : "") + ">" + escapeHtml(orEmpty(space.getSpaceName()))
-                                    + (Boolean.TRUE.equals(space.getIsActive()) ? "" : " (inactive)") + "</option>");
-                        }
-                        panelOut.println("          </select>");
+                    out.println("              <section class=\"aira-panel\">");
+                    out.println("                <h3 class=\"aira-subsection-title\">Included paths</h3>");
+                    renderPathOptions(out, data.options().activePaths(), data.selectedPathOrder());
+                    out.println("              </section>");
 
-                        panelOut.println("          <div class=\"form-actions\">");
-                        panelOut.println(
-                                "            <button type=\"submit\" name=\"action\" value=\"changeSpace\">Reload stage/path options</button>");
-                        panelOut.println("          </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save Board</button>");
+                    out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/topic-boards\">Cancel</a>");
+                    out.println("              </div>");
 
-                        panelOut.println("          <label for=\"curatorTopicId\">Curator topic (optional)</label>");
-                        panelOut.println("          <select id=\"curatorTopicId\" name=\"curatorTopicId\">");
-                        panelOut.println("            <option value=\"\">- None -</option>");
-                        for (EsTopic topic : data.curatorCandidates()) {
-                            if (topic.getEsTopicId() == null) {
-                                continue;
-                            }
-                            boolean selected = board.getCuratorTopicId() != null
-                                    && board.getCuratorTopicId().equals(topic.getEsTopicId());
-                            panelOut.println("            <option value=\"" + topic.getEsTopicId() + "\""
-                                    + (selected ? " selected" : "") + ">" + escapeHtml(orEmpty(topic.getTopicName()))
-                                    + "</option>");
-                        }
-                        panelOut.println("          </select>");
-
-                        panelOut.println("          <label><input type=\"checkbox\" name=\"showUnassignedStage\""
-                                + (Boolean.TRUE.equals(board.getShowUnassignedStage()) ? " checked" : "")
-                                + " /> Show Not assigned stage</label>");
-
-                        panelOut.println("          <label><input type=\"checkbox\" name=\"showUnassignedPath\""
-                                + (Boolean.TRUE.equals(board.getShowUnassignedPath()) ? " checked" : "")
-                                + " /> Show Not assigned path</label>");
-
-                        panelOut.println("          <label><input type=\"checkbox\" name=\"isActive\""
-                                + (Boolean.TRUE.equals(board.getIsActive()) ? " checked" : "")
-                                + " /> Active</label>");
-
-                        panelOut.println("          <section class=\"panel\">");
-                        panelOut.println("            <h3>Included stages</h3>");
-                        renderStageOptions(panelOut, data.options().activeStages(), data.selectedStageOrder());
-                        panelOut.println("          </section>");
-
-                        panelOut.println("          <section class=\"panel\">");
-                        panelOut.println("            <h3>Included paths</h3>");
-                        renderPathOptions(panelOut, data.options().activePaths(), data.selectedPathOrder());
-                        panelOut.println("          </section>");
-
-                        panelOut.println("          <div class=\"form-actions\">");
-                        panelOut.println("            <button type=\"submit\">Save Board</button>");
-                        panelOut.println("            <a class=\"button-link\" href=\"" + contextPath
-                                + "/admin/es/topic-boards\">Cancel</a>");
-                        panelOut.println("          </div>");
-
-                        panelOut.println("        </form>");
-                        panelOut.println("      </section>");
-                    });
-        }
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
     private void renderStageOptions(PrintWriter out, List<EsTopicStageDefinition> stageOptions,
             Map<Long, Integer> selectedOrder) {
         if (stageOptions.isEmpty()) {
-            out.println("            <p>No active stages are available for the selected Topic Space.</p>");
+            out.println("                <p class=\"aira-meta\">No active stages are available for the selected Topic Space.</p>");
             return;
         }
-        out.println("            <table class=\"data-table\">");
-        out.println("              <thead><tr><th>Include</th><th>Stage</th><th>Order</th></tr></thead>");
-        out.println("              <tbody>");
+        out.println("                <div class=\"aira-table-wrap\">");
+        out.println("                <table class=\"aira-table\">");
+        out.println("                  <thead><tr><th>Include</th><th>Stage</th><th>Order</th></tr></thead>");
+        out.println("                  <tbody>");
         for (EsTopicStageDefinition stage : stageOptions) {
             Long stageId = stage.getEsTopicStageDefinitionId();
             boolean selected = selectedOrder.containsKey(stageId);
             int order = selectedOrder.getOrDefault(stageId,
                     stage.getDisplayOrder() == null ? 0 : stage.getDisplayOrder());
-            out.println("                <tr>");
-            out.println("                  <td><input type=\"checkbox\" name=\"stageId\" value=\"" + stageId + "\""
-                    + (selected ? " checked" : "") + " /></td>");
-            out.println("                  <td>" + escapeHtml(orEmpty(stage.getStageName())) + "</td>");
-            out.println(
-                    "                  <td><input type=\"number\" name=\"stageOrder_" + stageId + "\" value=\"" + order
-                            + "\" /></td>");
-            out.println("                </tr>");
+            out.println("                    <tr>");
+            out.println("                      <td><input type=\"checkbox\" name=\"stageId\" value=\"" + stageId
+                    + "\"" + (selected ? " checked" : "") + " /></td>");
+            out.println("                      <td>" + escapeHtml(orEmpty(stage.getStageName())) + "</td>");
+            out.println("                      <td><input class=\"aira-input\" type=\"number\" name=\"stageOrder_"
+                    + stageId + "\" value=\"" + order + "\" /></td>");
+            out.println("                    </tr>");
         }
-        out.println("              </tbody>");
-        out.println("            </table>");
+        out.println("                  </tbody>");
+        out.println("                </table>");
+        out.println("                </div>");
     }
 
     private void renderPathOptions(PrintWriter out, List<EsTopicPathDefinition> pathOptions,
             Map<Long, Integer> selectedOrder) {
         if (pathOptions.isEmpty()) {
-            out.println("            <p>No active paths are available for the selected Topic Space.</p>");
+            out.println("                <p class=\"aira-meta\">No active paths are available for the selected Topic Space.</p>");
             return;
         }
-        out.println("            <table class=\"data-table\">");
-        out.println("              <thead><tr><th>Include</th><th>Path</th><th>Order</th></tr></thead>");
-        out.println("              <tbody>");
+        out.println("                <div class=\"aira-table-wrap\">");
+        out.println("                <table class=\"aira-table\">");
+        out.println("                  <thead><tr><th>Include</th><th>Path</th><th>Order</th></tr></thead>");
+        out.println("                  <tbody>");
         for (EsTopicPathDefinition path : pathOptions) {
             Long pathId = path.getEsTopicPathDefinitionId();
             boolean selected = selectedOrder.containsKey(pathId);
             int order = selectedOrder.getOrDefault(pathId, path.getDisplayOrder() == null ? 0 : path.getDisplayOrder());
-            out.println("                <tr>");
-            out.println("                  <td><input type=\"checkbox\" name=\"pathId\" value=\"" + pathId + "\""
-                    + (selected ? " checked" : "") + " /></td>");
-            out.println("                  <td>" + escapeHtml(orEmpty(path.getPathName())) + "</td>");
-            out.println(
-                    "                  <td><input type=\"number\" name=\"pathOrder_" + pathId + "\" value=\"" + order
-                            + "\" /></td>");
-            out.println("                </tr>");
+            out.println("                    <tr>");
+            out.println("                      <td><input type=\"checkbox\" name=\"pathId\" value=\"" + pathId
+                    + "\"" + (selected ? " checked" : "") + " /></td>");
+            out.println("                      <td>" + escapeHtml(orEmpty(path.getPathName())) + "</td>");
+            out.println("                      <td><input class=\"aira-input\" type=\"number\" name=\"pathOrder_"
+                    + pathId + "\" value=\"" + order + "\" /></td>");
+            out.println("                    </tr>");
         }
-        out.println("              </tbody>");
-        out.println("            </table>");
+        out.println("                  </tbody>");
+        out.println("                </table>");
+        out.println("                </div>");
     }
 
-    private void renderEditForSpaceChange(HttpServletResponse response, String contextPath, HttpServletRequest request,
+    private void renderEditForSpaceChange(HttpServletRequest request, HttpServletResponse response,
             boolean creating) throws IOException {
         Long boardDefinitionId = parseLong(request.getParameter("esTopicBoardDefinitionId"));
         Long topicSpaceId = parseLong(request.getParameter("esTopicSpaceId"));
@@ -352,12 +372,11 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
                 stageOrder,
                 pathOrder);
 
-        renderEdit(response, contextPath, changed, creating,
+        renderEdit(request, response, changed, creating,
                 "Topic Space changed. Incompatible stage/path selections were cleared.");
     }
 
-    private void renderEditWithPostedValues(HttpServletResponse response, String contextPath,
-            HttpServletRequest request,
+    private void renderEditWithPostedValues(HttpServletRequest request, HttpServletResponse response,
             boolean creating, String errorMessage) throws IOException {
         Long boardDefinitionId = parseLong(request.getParameter("esTopicBoardDefinitionId"));
         Long topicSpaceId = parseLong(request.getParameter("esTopicSpaceId"));
@@ -396,7 +415,7 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
                 stageOrder,
                 pathOrder);
 
-        renderEdit(response, contextPath, changed, creating, errorMessage);
+        renderEdit(request, response, changed, creating, errorMessage);
     }
 
     private TopicBoardService.BoardSaveRequest buildSaveRequest(HttpServletRequest request, Long boardDefinitionId) {
@@ -446,35 +465,6 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
                 .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access this page.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Return to Admin Home</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
     private String trimToNull(String value) {
         if (value == null) {
             return null;
@@ -512,6 +502,13 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
         } catch (NumberFormatException ex) {
             return defaultValue;
         }
+    }
+
+    private String activeBadge(boolean active) {
+        if (active) {
+            return "<span class=\"aira-badge aira-badge--success\">Yes</span>";
+        }
+        return "<span class=\"aira-badge aira-badge--subtle\">No</span>";
     }
 
     private String escapeHtml(String value) {

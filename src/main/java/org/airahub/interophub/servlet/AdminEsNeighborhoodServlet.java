@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -17,17 +16,16 @@ import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsNeighborhoodServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/neighborhoods";
+
     private final EsNeighborhoodDao esNeighborhoodDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicSpaceDao topicSpaceDao;
 
     public AdminEsNeighborhoodServlet() {
-        this.authFlowService = new AuthFlowService();
         this.esNeighborhoodDao = new EsNeighborhoodDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
@@ -35,12 +33,11 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
         String neighborhoodIdRaw = trimToNull(request.getParameter("esNeighborhoodId"));
         Long selectedTopicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
@@ -48,29 +45,29 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         if ("new".equalsIgnoreCase(mode)) {
             EsNeighborhood neighborhood = new EsNeighborhood();
             neighborhood.setEsTopicSpaceId(selectedTopicSpaceId);
-            renderEditForm(response, contextPath, neighborhood, null, true);
+            renderEditForm(request, response, neighborhood, null, true);
             return;
         }
 
         if (neighborhoodIdRaw != null) {
             Long neighborhoodId = parseId(neighborhoodIdRaw);
             if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null, selectedTopicSpaceId);
+                renderList(request, response, "Invalid neighborhood identifier.", null, selectedTopicSpaceId);
                 return;
             }
 
             EsNeighborhood neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
             if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null, selectedTopicSpaceId);
+                renderList(request, response, "Neighborhood was not found.", null, selectedTopicSpaceId);
                 return;
             }
 
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, neighborhood, null, false);
+                renderEditForm(request, response, neighborhood, null, false);
                 return;
             }
 
-            renderDetails(response, contextPath, neighborhood);
+            renderDetails(request, response, neighborhood);
             return;
         }
 
@@ -78,12 +75,12 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         if (request.getParameter("bulkSaved") != null) {
             message = "Neighborhood block imported.";
         }
-        renderList(response, contextPath, message, null, selectedTopicSpaceId);
+        renderList(request, response, message, null, selectedTopicSpaceId);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -105,12 +102,12 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         } else {
             Long neighborhoodId = parseId(neighborhoodIdRaw);
             if (neighborhoodId == null) {
-                renderList(response, contextPath, "Invalid neighborhood identifier.", null, null);
+                renderList(request, response, "Invalid neighborhood identifier.", null, null);
                 return;
             }
             neighborhood = esNeighborhoodDao.findById(neighborhoodId).orElse(null);
             if (neighborhood == null) {
-                renderList(response, contextPath, "Neighborhood was not found.", null, null);
+                renderList(request, response, "Neighborhood was not found.", null, null);
                 return;
             }
         }
@@ -150,7 +147,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             neighborhood.setEsTopicSpaceId(topicSpaceId);
             neighborhood.setDisplayOrder(parseIntOrNull(displayOrderRaw));
             neighborhood.setIsActive(isActive);
-            renderEditForm(response, contextPath, neighborhood, ex.getMessage(), creating);
+            renderEditForm(request, response, neighborhood, ex.getMessage(), creating);
         }
     }
 
@@ -161,18 +158,18 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
         Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         String normalizedBlock = trimToNull(bulkNeighborhoods);
         if (normalizedBlock == null) {
-            renderList(response, contextPath, "Paste at least one neighborhood line to import.", bulkNeighborhoods,
+            renderList(request, response, "Paste at least one neighborhood line to import.", bulkNeighborhoods,
                     topicSpaceId);
             return;
         }
         if (topicSpaceId == null) {
-            renderList(response, contextPath, "Topic Space is required for bulk import.", bulkNeighborhoods, null);
+            renderList(request, response, "Topic Space is required for bulk import.", bulkNeighborhoods, null);
             return;
         }
         try {
             requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new neighborhoods.");
         } catch (IllegalArgumentException ex) {
-            renderList(response, contextPath, ex.getMessage(), bulkNeighborhoods, topicSpaceId);
+            renderList(request, response, ex.getMessage(), bulkNeighborhoods, topicSpaceId);
             return;
         }
 
@@ -200,7 +197,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
 
             int colonIndex = normalizedLine.indexOf(':');
             if (colonIndex <= 0) {
-                renderList(response, contextPath,
+                renderList(request, response,
                         "Each line must use 'Neighborhood: Description' format. Problem line: " + normalizedLine,
                         bulkNeighborhoods, topicSpaceId);
                 return;
@@ -209,7 +206,7 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
             String neighborhoodName = trimToNull(normalizedLine.substring(0, colonIndex));
             String description = trimToNull(normalizedLine.substring(colonIndex + 1));
             if (neighborhoodName == null) {
-                renderList(response, contextPath, "Neighborhood name is required on every line.", bulkNeighborhoods,
+                renderList(request, response, "Neighborhood name is required on every line.", bulkNeighborhoods,
                         topicSpaceId);
                 return;
             }
@@ -247,25 +244,10 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 + "&esTopicSpaceId=" + topicSpaceId);
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderList(HttpServletResponse response, String contextPath, String message, String bulkNeighborhoods,
-            Long selectedTopicSpaceId)
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message,
+            String bulkNeighborhoods, Long selectedTopicSpaceId)
             throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
         Map<Long, EsTopicSpace> spacesById = allSpaces.stream()
                 .collect(java.util.stream.Collectors.toMap(
@@ -282,264 +264,276 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
                 : spacesById.get(selectedTopicSpaceId);
         boolean topicSpaceSelected = selectedTopicSpace != null;
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Neighborhoods Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Neighborhoods</h2>");
-                panelOut.println("        <p>Manage Neighborhood options used by the public ES Topics page.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Topic Space</h3>");
-                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/neighborhoods\" method=\"get\">");
-                panelOut.println("            <label for=\"spaceFilterId\">Topic Space (required)</label>");
-                panelOut.println(
-                        "            <select id=\"spaceFilterId\" name=\"esTopicSpaceId\" required onchange=\"this.form.submit()\">");
-                panelOut.println("              <option value=\"\">\u2014 Select \u2014</option>");
-                for (EsTopicSpace space : allSpaces) {
-                    if (space.getEsTopicSpaceId() == null || trimToNull(space.getSpaceCode()) == null) {
-                        continue;
+        AdminShellRenderer.render(request, response, "Neighborhoods Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Neighborhoods</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Manage Neighborhood options used by the public ES Topics page.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
                     }
-                    boolean isCurrent = space.getEsTopicSpaceId().equals(selectedTopicSpaceId);
-                    boolean isActive = Boolean.TRUE.equals(space.getIsActive());
-                    String flags = isCurrent ? " selected" : "";
-                    if (!isActive && !isCurrent) {
-                        flags += " disabled";
+
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <h3 class=\"aira-subsection-title\">Topic Space</h3>");
+                    out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/neighborhoods\" method=\"get\">");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"spaceFilterId\">Topic Space (required)</label>");
+                    out.println(
+                            "                  <select class=\"aira-select\" id=\"spaceFilterId\" name=\"esTopicSpaceId\" required onchange=\"this.form.submit()\">");
+                    out.println("                    <option value=\"\">— Select —</option>");
+                    for (EsTopicSpace space : allSpaces) {
+                        if (space.getEsTopicSpaceId() == null || trimToNull(space.getSpaceCode()) == null) {
+                            continue;
+                        }
+                        boolean isCurrent = space.getEsTopicSpaceId().equals(selectedTopicSpaceId);
+                        boolean isActive = Boolean.TRUE.equals(space.getIsActive());
+                        String flags = isCurrent ? " selected" : "";
+                        if (!isActive && !isCurrent) {
+                            flags += " disabled";
+                        }
+                        out.println("                    <option value=\"" + space.getEsTopicSpaceId() + "\"" + flags
+                                + ">" + escapeHtml(orEmpty(space.getSpaceName())) + (isActive ? "" : " (inactive)")
+                                + "</option>");
                     }
-                    panelOut.println("              <option value=\"" + space.getEsTopicSpaceId() + "\"" + flags
-                            + ">" + escapeHtml(orEmpty(space.getSpaceName())) + (isActive ? "" : " (inactive)")
-                            + "</option>");
-                }
-                panelOut.println("            </select>");
-                panelOut.println(
-                        "            <noscript><button type=\"submit\">Load Neighborhoods</button></noscript>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
+                    out.println("                  </select>");
+                    out.println("                </div>");
+                    out.println(
+                            "                <noscript><button class=\"aira-button aira-button--secondary\" type=\"submit\">Load Neighborhoods</button></noscript>");
+                    out.println("              </form>");
+                    out.println("            </section>");
 
-                if (!topicSpaceSelected) {
-                    panelOut.println("        <p>Select a Topic Space to view, add, or bulk import neighborhoods.</p>");
-                    panelOut.println(
-                            "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                    panelOut.println("      </section>");
-                    return;
-                }
+                    if (!topicSpaceSelected) {
+                        out.println(
+                                "            <p class=\"aira-meta\">Select a Topic Space to view, add, or bulk import neighborhoods.</p>");
+                        out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es\">Back to Emerging Standards</a></p>");
+                        out.println("          </section>");
+                        return;
+                    }
 
-                panelOut.println("        <h3>Current Neighborhoods for "
-                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
+                    out.println("            <h3 class=\"aira-subsection-title\">Current Neighborhoods for "
+                            + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
 
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Name</th>");
-                panelOut.println("              <th>Code</th>");
-                panelOut.println("              <th>Topic Space</th>");
-                panelOut.println("              <th>Display Order</th>");
-                panelOut.println("              <th>Active</th>");
-                panelOut.println("              <th>Active Topics</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (EsNeighborhood neighborhood : neighborhoods) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/admin/es/neighborhoods?esNeighborhoodId=" + neighborhood.getEsNeighborhoodId()
-                            + "&esTopicSpaceId=" + selectedTopicSpaceId
-                            + "\">" + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode()))
-                            + "</td>");
-                    EsTopicSpace topicSpace = spacesById.get(neighborhood.getEsTopicSpaceId());
-                    panelOut.println("              <td>"
-                            + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
-                            + "</td>");
-                    panelOut.println("              <td>"
-                            + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
-                                    ? 0
-                                    : neighborhood.getDisplayOrder()))
-                            + "</td>");
-                    panelOut.println(
-                            "              <td>" + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No")
-                                    + "</td>");
-                    Long usageCount = usageCounts.getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
-                    panelOut.println("              <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
-                    panelOut.println("            </tr>");
-                }
-                if (neighborhoods.isEmpty()) {
-                    panelOut.println("            <tr>");
-                    panelOut.println(
-                            "              <td colspan=\"6\">No neighborhoods found for this Topic Space.</td>");
-                    panelOut.println("            </tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Name</th>");
+                    out.println("                  <th>Code</th>");
+                    out.println("                  <th>Topic Space</th>");
+                    out.println("                  <th>Display Order</th>");
+                    out.println("                  <th>Active</th>");
+                    out.println("                  <th>Active Topics</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (EsNeighborhood neighborhood : neighborhoods) {
+                        out.println("                <tr>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/neighborhoods?esNeighborhoodId=" + neighborhood.getEsNeighborhoodId()
+                                + "&esTopicSpaceId=" + selectedTopicSpaceId
+                                + "\">" + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</a></td>");
+                        out.println("                  <td>" + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode()))
+                                + "</td>");
+                        EsTopicSpace topicSpace = spacesById.get(neighborhood.getEsTopicSpaceId());
+                        out.println("                  <td>"
+                                + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
+                                + "</td>");
+                        out.println("                  <td>"
+                                + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
+                                        ? 0
+                                        : neighborhood.getDisplayOrder()))
+                                + "</td>");
+                        out.println("                  <td>" + activeBadge(Boolean.TRUE.equals(neighborhood.getIsActive()))
+                                + "</td>");
+                        Long usageCount = usageCounts.getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
+                        out.println("                  <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
+                        out.println("                </tr>");
+                    }
+                    if (neighborhoods.isEmpty()) {
+                        out.println("                <tr>");
+                        out.println("                  <td colspan=\"6\">No neighborhoods found for this Topic Space.</td>");
+                        out.println("                </tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
 
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/neighborhoods?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
-                        + "\">Add Neighborhood</a></p>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/neighborhoods?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
+                            + "\">Add Neighborhood</a>");
+                    out.println("            </div>");
 
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Bulk Load Descriptions</h3>");
-                panelOut.println(
-                        "          <p>Paste one neighborhood per line using <strong>Name: Description</strong>.</p>");
-                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/neighborhoods\" method=\"post\">");
-                panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
-                panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
-                        + selectedTopicSpaceId + "\" />");
-                panelOut.println("            <p><strong>Topic Space:</strong> "
-                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</p>");
-                panelOut.println("            <label for=\"bulkNeighborhoods\">Neighborhood block</label>");
-                panelOut.println("            <textarea id=\"bulkNeighborhoods\" name=\"bulkNeighborhoods\" rows=\"8\""
-                        + " placeholder=\"Advanced Access: New technologies...\">"
-                        + escapeHtml(orEmpty(bulkNeighborhoods)) + "</textarea>");
-                panelOut.println("            <button type=\"submit\">Import Neighborhood Block</button>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <h3 class=\"aira-subsection-title\">Bulk Load Descriptions</h3>");
+                    out.println(
+                            "              <p class=\"aira-meta\">Paste one neighborhood per line using <strong>Name: Description</strong>.</p>");
+                    out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/neighborhoods\" method=\"post\">");
+                    out.println("                <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
+                    out.println("                <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                            + selectedTopicSpaceId + "\" />");
+                    out.println("                <p><strong>Topic Space:</strong> "
+                            + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</p>");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"bulkNeighborhoods\">Neighborhood block</label>");
+                    out.println(
+                            "                  <textarea class=\"aira-textarea\" id=\"bulkNeighborhoods\" name=\"bulkNeighborhoods\" rows=\"8\""
+                                    + " placeholder=\"Advanced Access: New technologies...\">"
+                                    + escapeHtml(orEmpty(bulkNeighborhoods)) + "</textarea>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Import Neighborhood Block</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
+                    out.println("            </section>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es\">Back to Emerging Standards</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderDetails(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood)
+    private void renderDetails(HttpServletRequest request, HttpServletResponse response, EsNeighborhood neighborhood)
             throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         long activeTopicCount = topicNeighborhoodDao.findActiveTopicCountsByNeighborhoodId()
                 .getOrDefault(neighborhood.getEsNeighborhoodId(), 0L);
         EsTopicSpace topicSpace = neighborhood.getEsTopicSpaceId() == null
                 ? null
                 : topicSpaceDao.findById(neighborhood.getEsTopicSpaceId()).orElse(null);
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Neighborhood Details - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Neighborhood Details</h2>");
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <p><strong>Name:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</p>");
-                panelOut.println("          <p><strong>Code:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "</p>");
-                panelOut.println("          <p><strong>Topic Space:</strong> "
-                        + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
-                panelOut.println("          <p><strong>Description:</strong> "
-                        + escapeHtml(orEmpty(neighborhood.getDescription())) + "</p>");
-                panelOut.println("          <p><strong>Display Order:</strong> "
-                        + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
-                                ? 0
-                                : neighborhood.getDisplayOrder()))
-                        + "</p>");
-                panelOut.println("          <p><strong>Active:</strong> "
-                        + (Boolean.TRUE.equals(neighborhood.getIsActive()) ? "Yes" : "No") + "</p>");
-                panelOut.println("          <p><strong>Active Topic Usage:</strong> "
-                        + escapeHtml(String.valueOf(activeTopicCount)) + "</p>");
-                panelOut.println("        </section>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/neighborhoods?esNeighborhoodId="
-                        + neighborhood.getEsNeighborhoodId() + "&mode=edit&esTopicSpaceId="
-                        + neighborhood.getEsTopicSpaceId() + "\">Edit Neighborhood</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/neighborhoods?esTopicSpaceId=" + neighborhood.getEsTopicSpaceId()
-                        + "\">Back to Neighborhoods</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "Neighborhood Details - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Neighborhood Details</h2>");
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <p><strong>Name:</strong> "
+                            + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "</p>");
+                    out.println("              <p><strong>Code:</strong> "
+                            + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "</p>");
+                    out.println("              <p><strong>Topic Space:</strong> "
+                            + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
+                    out.println("              <p><strong>Description:</strong> "
+                            + escapeHtml(orEmpty(neighborhood.getDescription())) + "</p>");
+                    out.println("              <p><strong>Display Order:</strong> "
+                            + escapeHtml(String.valueOf(neighborhood.getDisplayOrder() == null
+                                    ? 0
+                                    : neighborhood.getDisplayOrder()))
+                            + "</p>");
+                    out.println("              <p><strong>Active:</strong> "
+                            + activeBadge(Boolean.TRUE.equals(neighborhood.getIsActive())) + "</p>");
+                    out.println("              <p><strong>Active Topic Usage:</strong> "
+                            + escapeHtml(String.valueOf(activeTopicCount)) + "</p>");
+                    out.println("            </section>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/neighborhoods?esNeighborhoodId=" + neighborhood.getEsNeighborhoodId()
+                            + "&mode=edit&esTopicSpaceId=" + neighborhood.getEsTopicSpaceId()
+                            + "\">Edit Neighborhood</a>");
+                    out.println("            </div>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/neighborhoods?esTopicSpaceId=" + neighborhood.getEsTopicSpaceId()
+                            + "\">Back to Neighborhoods</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderEditForm(HttpServletResponse response, String contextPath, EsNeighborhood neighborhood,
+    private void renderEditForm(HttpServletRequest request, HttpServletResponse response, EsNeighborhood neighborhood,
             String errorMessage, boolean creating) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
         Long selectedSpaceId = neighborhood.getEsTopicSpaceId();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Neighborhood - InteropHub", contextPath,
-                    panelOut -> {
-                        panelOut.println("      <section class=\"panel\">");
-                        panelOut.println("        <h2>" + (creating ? "Create" : "Edit") + " Neighborhood</h2>");
+        AdminShellRenderer.render(request, response, (creating ? "Create" : "Edit") + " Neighborhood - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">" + (creating ? "Create" : "Edit")
+                            + " Neighborhood</h2>");
 
-                        if (errorMessage != null && !errorMessage.isBlank()) {
-                            panelOut.println("        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage)
-                                    + "</p>");
+                    if (errorMessage != null && !errorMessage.isBlank()) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--danger\"><p><strong>Could not save:</strong> "
+                                        + escapeHtml(errorMessage) + "</p></div>");
+                    }
+
+                    out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/neighborhoods\" method=\"post\">");
+                    if (!creating && neighborhood.getEsNeighborhoodId() != null) {
+                        out.println("              <input type=\"hidden\" name=\"esNeighborhoodId\" value=\""
+                                + neighborhood.getEsNeighborhoodId() + "\" />");
+                    }
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"neighborhoodCode\">Neighborhood Code (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"neighborhoodCode\" name=\"neighborhoodCode\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"neighborhoodName\">Neighborhood Name (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"neighborhoodName\" name=\"neighborhoodName\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
+                    out.println("                  <option value=\"\">— Select —</option>");
+                    for (EsTopicSpace topicSpace : allSpaces) {
+                        if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                            continue;
                         }
-
-                        panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/es/neighborhoods\" method=\"post\">");
-                        if (!creating && neighborhood.getEsNeighborhoodId() != null) {
-                            panelOut.println("      <input type=\"hidden\" name=\"esNeighborhoodId\" value=\""
-                                    + neighborhood.getEsNeighborhoodId() + "\" />");
+                        boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedSpaceId);
+                        boolean isActive = Boolean.TRUE.equals(topicSpace.getIsActive());
+                        String flags = isCurrent ? " selected" : "";
+                        if (!isActive && !isCurrent) {
+                            flags += " disabled";
                         }
+                        out.println("                  <option value=\"" + topicSpace.getEsTopicSpaceId() + "\""
+                                + flags + ">" + escapeHtml(orEmpty(topicSpace.getSpaceName()))
+                                + (isActive ? "" : " (inactive)") + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"neighborhoodCode\">Neighborhood Code (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"neighborhoodCode\" name=\"neighborhoodCode\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodCode())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"description\">Description</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"description\" name=\"description\" rows=\"5\">"
+                                    + escapeHtml(orEmpty(neighborhood.getDescription())) + "</textarea>");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"neighborhoodName\">Neighborhood Name (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"neighborhoodName\" name=\"neighborhoodName\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(neighborhood.getNeighborhoodName())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"displayOrder\">Display Order (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required value=\""
+                                    + escapeHtml(String.valueOf(
+                                            neighborhood.getDisplayOrder() == null ? 0
+                                                    : neighborhood.getDisplayOrder()))
+                                    + "\" />");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
-                        panelOut.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
-                        panelOut.println("        <option value=\"\">\u2014 Select \u2014</option>");
-                        for (EsTopicSpace topicSpace : allSpaces) {
-                            if (topicSpace.getEsTopicSpaceId() == null
-                                    || trimToNull(topicSpace.getSpaceCode()) == null) {
-                                continue;
-                            }
-                            boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedSpaceId);
-                            boolean isActive = Boolean.TRUE.equals(topicSpace.getIsActive());
-                            String flags = isCurrent ? " selected" : "";
-                            if (!isActive && !isCurrent) {
-                                flags += " disabled";
-                            }
-                            panelOut.println(
-                                    "        <option value=\"" + topicSpace.getEsTopicSpaceId() + "\"" + flags + ">"
-                                            + escapeHtml(orEmpty(topicSpace.getSpaceName()))
-                                            + (isActive ? "" : " (inactive)")
-                                            + "</option>");
-                        }
-                        panelOut.println("      </select>");
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"isActive\""
+                            + (Boolean.TRUE.equals(neighborhood.getIsActive()) || creating ? " checked" : "")
+                            + " /> Active</label>");
 
-                        panelOut.println("      <label for=\"description\">Description</label>");
-                        panelOut.println("      <textarea id=\"description\" name=\"description\" rows=\"5\">"
-                                + escapeHtml(orEmpty(neighborhood.getDescription())) + "</textarea>");
-
-                        panelOut.println("      <label for=\"displayOrder\">Display Order (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required value=\""
-                                        + escapeHtml(String.valueOf(
-                                                neighborhood.getDisplayOrder() == null ? 0
-                                                        : neighborhood.getDisplayOrder()))
-                                        + "\" />");
-
-                        panelOut.println("      <label><input type=\"checkbox\" name=\"isActive\""
-                                + (Boolean.TRUE.equals(neighborhood.getIsActive()) || creating ? " checked" : "")
-                                + " /> Active</label>");
-
-                        panelOut.println("      <button type=\"submit\">Save</button>");
-                        panelOut.println("    </form>");
-                        panelOut.println("    <p><a href=\"" + contextPath
-                                + "/admin/es/neighborhoods\">Back to Neighborhoods</a></p>");
-                        panelOut.println("      </section>");
-                    });
-        }
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access ES neighborhood settings.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/neighborhoods\">Back to Neighborhoods</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private Long parseId(String value) {
@@ -636,6 +630,13 @@ public class AdminEsNeighborhoodServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String activeBadge(boolean active) {
+        if (active) {
+            return "<span class=\"aira-badge aira-badge--success\">Yes</span>";
+        }
+        return "<span class=\"aira-badge aira-badge--subtle\">No</span>";
     }
 
     private String escapeHtml(String value) {

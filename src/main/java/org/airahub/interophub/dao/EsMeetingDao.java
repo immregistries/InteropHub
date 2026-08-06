@@ -96,6 +96,25 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Returns all meetings hosted in a given Topic Space, ordered by
+     * scheduledStart ascending. Includes all statuses; callers filter by
+     * visibility and status as needed.
+     */
+    public List<EsMeeting> findByTopicSpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.esTopicSpaceId = :spaceId"
+                            + " order by m.scheduledStart asc",
+                    EsMeeting.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Cancels a meeting, recording the reason and timestamp.
      *
      * @return number of rows updated (0 or 1)

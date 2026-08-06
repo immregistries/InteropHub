@@ -1,0 +1,125 @@
+/*
+ * Local styles for the Meetings calendar page (EsMeetingsServlet).
+ *
+ * aira.css does not yet ship a month-calendar grid component. This is a
+ * page-scoped implementation using AIRA tokens throughout. See the
+ * "Month calendar grid (aira-calendar)" proposal in
+ * docs/aira-web/aira-css-proposed-changes.md -- if/when that ships, this
+ * file's rules should be replaced with the shared component.
+ */
+.es-meetings-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--aira-border-subtle);
+  border: 1px solid var(--aira-border);
+  border-radius: var(--aira-radius-panel);
+  overflow: hidden;
+}
+
+.es-meetings-calendar__weekday {
+  background: var(--aira-surface-muted);
+  color: var(--aira-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-align: center;
+  padding: var(--aira-space-2);
+}
+
+.es-meetings-calendar__day {
+  background: var(--aira-surface);
+  min-height: 7rem;
+  padding: var(--aira-space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--aira-space-1);
+}
+
+.es-meetings-calendar__day--outside {
+  background: var(--aira-surface-muted);
+}
+
+.es-meetings-calendar__day--today {
+  box-shadow: inset 0 0 0 2px var(--aira-green-accessible);
+}
+
+.es-meetings-calendar__date {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--aira-text-secondary);
+}
+
+.es-meetings-calendar__day--today .es-meetings-calendar__date {
+  color: var(--aira-green-accessible);
+}
+
+.es-meetings-calendar__card {
+  display: block;
+  border-radius: var(--aira-radius-control);
+  border: 1px solid var(--aira-border);
+  background: var(--aira-surface);
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-decoration: none;
+  color: var(--aira-text);
+}
+
+.es-meetings-calendar__card:hover {
+  border-color: var(--aira-border-strong);
+}
+
+.es-meetings-calendar__card-time {
+  display: block;
+  font-weight: 600;
+  color: var(--aira-text-secondary);
+}
+
+.es-meetings-calendar__card-title {
+  display: block;
+  font-weight: 600;
+}
+
+.es-meetings-calendar__card--following {
+  border-color: var(--aira-green-accessible);
+  background: var(--aira-surface-selected);
+}
+
+.es-meetings-calendar__card--following .es-meetings-calendar__card-title {
+  color: var(--aira-green-accessible);
+}
+
+.es-meetings-calendar__card--past {
+  opacity: 0.7;
+}
+
+.es-meetings-calendar__card--cancelled {
+  border-style: dashed;
+  color: var(--aira-text-secondary);
+}
+
+.es-meetings-calendar__card-cancelled-label {
+  display: block;
+  font-weight: 700;
+  color: var(--aira-danger);
+}
+
+.es-meetings-calendar__more {
+  font-size: 0.75rem;
+}
+
+.es-meetings-calendar__more > summary {
+  cursor: pointer;
+  color: var(--aira-link);
+  font-weight: 600;
+}
+
+@media (max-width: 48rem) {
+  .es-meetings-calendar {
+    grid-template-columns: repeat(7, minmax(2.5rem, 1fr));
+  }
+
+  .es-meetings-calendar__day {
+    min-height: 4.5rem;
+  }
+}

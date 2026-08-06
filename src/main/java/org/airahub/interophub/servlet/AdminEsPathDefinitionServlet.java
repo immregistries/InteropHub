@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -16,28 +15,26 @@ import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsPathDefinitionServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/paths";
+
     private final EsTopicPathDefinitionDao pathDefinitionDao;
     private final EsTopicSpaceDao topicSpaceDao;
 
     public AdminEsPathDefinitionServlet() {
-        this.authFlowService = new AuthFlowService();
         this.pathDefinitionDao = new EsTopicPathDefinitionDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String mode = trimToNull(request.getParameter("mode"));
         String definitionIdRaw = trimToNull(request.getParameter("esTopicPathDefinitionId"));
         Long selectedTopicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
@@ -45,29 +42,29 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         if ("new".equalsIgnoreCase(mode)) {
             EsTopicPathDefinition definition = new EsTopicPathDefinition();
             definition.setEsTopicSpaceId(selectedTopicSpaceId);
-            renderEditForm(response, contextPath, definition, null, true);
+            renderEditForm(request, response, definition, null, true);
             return;
         }
 
         if (definitionIdRaw != null) {
             Long definitionId = parseId(definitionIdRaw);
             if (definitionId == null) {
-                renderList(response, contextPath, "Invalid advancement path identifier.", null, selectedTopicSpaceId);
+                renderList(request, response, "Invalid advancement path identifier.", null, selectedTopicSpaceId);
                 return;
             }
 
             EsTopicPathDefinition definition = pathDefinitionDao.findById(definitionId).orElse(null);
             if (definition == null) {
-                renderList(response, contextPath, "Advancement Path was not found.", null, selectedTopicSpaceId);
+                renderList(request, response, "Advancement Path was not found.", null, selectedTopicSpaceId);
                 return;
             }
 
             if ("edit".equalsIgnoreCase(mode)) {
-                renderEditForm(response, contextPath, definition, null, false);
+                renderEditForm(request, response, definition, null, false);
                 return;
             }
 
-            renderDetails(response, contextPath, definition);
+            renderDetails(request, response, definition);
             return;
         }
 
@@ -78,12 +75,12 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         if (request.getParameter("conceptSaved") != null) {
             message = "Advancement Path meaning saved.";
         }
-        renderList(response, contextPath, message, null, selectedTopicSpaceId);
+        renderList(request, response, message, null, selectedTopicSpaceId);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -108,12 +105,12 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         } else {
             Long definitionId = parseId(definitionIdRaw);
             if (definitionId == null) {
-                renderList(response, contextPath, "Invalid advancement path identifier.", null, null);
+                renderList(request, response, "Invalid advancement path identifier.", null, null);
                 return;
             }
             definition = pathDefinitionDao.findById(definitionId).orElse(null);
             if (definition == null) {
-                renderList(response, contextPath, "Advancement Path was not found.", null, null);
+                renderList(request, response, "Advancement Path was not found.", null, null);
                 return;
             }
         }
@@ -150,7 +147,7 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
             definition.setEsTopicSpaceId(topicSpaceId);
             definition.setDisplayOrder(parseIntOrNull(displayOrderRaw));
             definition.setIsActive(isActive);
-            renderEditForm(response, contextPath, definition, ex.getMessage(), creating);
+            renderEditForm(request, response, definition, ex.getMessage(), creating);
         }
     }
 
@@ -160,18 +157,18 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
         Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         String normalizedBlock = trimToNull(bulkPaths);
         if (normalizedBlock == null) {
-            renderList(response, contextPath, "Paste at least one Advancement Path line to import.", bulkPaths,
+            renderList(request, response, "Paste at least one Advancement Path line to import.", bulkPaths,
                     topicSpaceId);
             return;
         }
         if (topicSpaceId == null) {
-            renderList(response, contextPath, "Topic Space is required for bulk import.", bulkPaths, null);
+            renderList(request, response, "Topic Space is required for bulk import.", bulkPaths, null);
             return;
         }
         try {
             requireActiveTopicSpace(topicSpaceId, "Only active Topic Spaces may receive new Advancement Paths.");
         } catch (IllegalArgumentException ex) {
-            renderList(response, contextPath, ex.getMessage(), bulkPaths, topicSpaceId);
+            renderList(request, response, ex.getMessage(), bulkPaths, topicSpaceId);
             return;
         }
 
@@ -199,7 +196,7 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
 
             int colonIndex = normalizedLine.indexOf(':');
             if (colonIndex <= 0) {
-                renderList(response, contextPath,
+                renderList(request, response,
                         "Each line must use 'Advancement Path: Description' format. Problem line: " + normalizedLine,
                         bulkPaths, topicSpaceId);
                 return;
@@ -208,7 +205,7 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
             String pathName = trimToNull(normalizedLine.substring(0, colonIndex));
             String pathDescription = trimToNull(normalizedLine.substring(colonIndex + 1));
             if (pathName == null) {
-                renderList(response, contextPath, "Advancement Path name is required on every line.", bulkPaths,
+                renderList(request, response, "Advancement Path name is required on every line.", bulkPaths,
                         topicSpaceId);
                 return;
             }
@@ -246,12 +243,12 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
             String contextPath) throws IOException {
         Long topicSpaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         if (topicSpaceId == null) {
-            renderList(response, contextPath, "Topic Space is required.", null, null);
+            renderList(request, response, "Topic Space is required.", null, null);
             return;
         }
         EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId).orElse(null);
         if (topicSpace == null) {
-            renderList(response, contextPath, "Topic Space was not found.", null, null);
+            renderList(request, response, "Topic Space was not found.", null, null);
             return;
         }
 
@@ -261,25 +258,10 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
                 contextPath + "/admin/es/paths?conceptSaved=1&esTopicSpaceId=" + topicSpaceId);
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderList(HttpServletResponse response, String contextPath, String message, String bulkPaths,
-            Long selectedTopicSpaceId)
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message,
+            String bulkPaths, Long selectedTopicSpaceId)
             throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
         Map<Long, EsTopicSpace> spacesById = allSpaces.stream()
                 .collect(java.util.stream.Collectors.toMap(
@@ -296,289 +278,304 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
                 : spacesById.get(selectedTopicSpaceId);
         boolean topicSpaceSelected = selectedTopicSpace != null;
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Advancement Paths Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Advancement Paths</h2>");
-                panelOut.println("        <p>Manage Advancement Path options scoped to each Topic Space.</p>");
-                if (message != null && !message.isBlank()) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Topic Space</h3>");
-                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/paths\" method=\"get\">");
-                panelOut.println("            <label for=\"spaceFilterId\">Topic Space (required)</label>");
-                panelOut.println(
-                        "            <select id=\"spaceFilterId\" name=\"esTopicSpaceId\" required onchange=\"this.form.submit()\">");
-                panelOut.println("              <option value=\"\">— Select —</option>");
-                for (EsTopicSpace space : allSpaces) {
-                    if (space.getEsTopicSpaceId() == null || trimToNull(space.getSpaceCode()) == null) {
-                        continue;
+        AdminShellRenderer.render(request, response, "Advancement Paths Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Advancement Paths</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Manage Advancement Path options scoped to each Topic Space.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(message) + "</p></div>");
                     }
-                    boolean isCurrent = space.getEsTopicSpaceId().equals(selectedTopicSpaceId);
-                    boolean isActive = Boolean.TRUE.equals(space.getIsActive());
-                    String flags = isCurrent ? " selected" : "";
-                    if (!isActive && !isCurrent) {
-                        flags += " disabled";
+
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <h3 class=\"aira-subsection-title\">Topic Space</h3>");
+                    out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/paths\" method=\"get\">");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"spaceFilterId\">Topic Space (required)</label>");
+                    out.println(
+                            "                  <select class=\"aira-select\" id=\"spaceFilterId\" name=\"esTopicSpaceId\" required onchange=\"this.form.submit()\">");
+                    out.println("                    <option value=\"\">— Select —</option>");
+                    for (EsTopicSpace space : allSpaces) {
+                        if (space.getEsTopicSpaceId() == null || trimToNull(space.getSpaceCode()) == null) {
+                            continue;
+                        }
+                        boolean isCurrent = space.getEsTopicSpaceId().equals(selectedTopicSpaceId);
+                        boolean isActive = Boolean.TRUE.equals(space.getIsActive());
+                        String flags = isCurrent ? " selected" : "";
+                        if (!isActive && !isCurrent) {
+                            flags += " disabled";
+                        }
+                        out.println("                    <option value=\"" + space.getEsTopicSpaceId() + "\"" + flags
+                                + ">" + escapeHtml(orEmpty(space.getSpaceName())) + (isActive ? "" : " (inactive)")
+                                + "</option>");
                     }
-                    panelOut.println("              <option value=\"" + space.getEsTopicSpaceId() + "\"" + flags
-                            + ">" + escapeHtml(orEmpty(space.getSpaceName())) + (isActive ? "" : " (inactive)")
-                            + "</option>");
-                }
-                panelOut.println("            </select>");
-                panelOut.println(
-                        "            <noscript><button type=\"submit\">Load Advancement Paths</button></noscript>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
+                    out.println("                  </select>");
+                    out.println("                </div>");
+                    out.println(
+                            "                <noscript><button class=\"aira-button aira-button--secondary\" type=\"submit\">Load Advancement Paths</button></noscript>");
+                    out.println("              </form>");
+                    out.println("            </section>");
 
-                if (!topicSpaceSelected) {
-                    panelOut.println(
-                            "        <p>Select a Topic Space to view, add, or bulk import Advancement Paths.</p>");
-                    panelOut.println(
-                            "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                    panelOut.println("      </section>");
-                    return;
-                }
+                    if (!topicSpaceSelected) {
+                        out.println(
+                                "            <p class=\"aira-meta\">Select a Topic Space to view, add, or bulk import Advancement Paths.</p>");
+                        out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es\">Back to Emerging Standards</a></p>");
+                        out.println("          </section>");
+                        return;
+                    }
 
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>What \"Advancement Path\" Means for "
-                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
-                String pathConceptDescription = trimToNull(selectedTopicSpace.getPathConceptDescription());
-                panelOut.println("          <p>" + (pathConceptDescription == null
-                        ? "No custom meaning set. The standard description below is shown instead."
-                        : "Custom meaning set for this Topic Space.") + "</p>");
-                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/paths\" method=\"post\">");
-                panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"saveConceptDescription\" />");
-                panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
-                        + selectedTopicSpaceId + "\" />");
-                panelOut.println(
-                        "            <label for=\"pathConceptDescription\">Advancement Path Meaning (leave blank to use the standard description)</label>");
-                panelOut.println(
-                        "            <textarea id=\"pathConceptDescription\" name=\"pathConceptDescription\" rows=\"3\""
-                                + " placeholder=\"" + escapeHtml(EsTopicSpace.DEFAULT_PATH_CONCEPT_DESCRIPTION)
-                                + "\">" + escapeHtml(orEmpty(pathConceptDescription)) + "</textarea>");
-                panelOut.println("            <button type=\"submit\">Save Advancement Path Meaning</button>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <h3 class=\"aira-subsection-title\">What \"Advancement Path\" Means for "
+                            + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
+                    String pathConceptDescription = trimToNull(selectedTopicSpace.getPathConceptDescription());
+                    out.println("              <p class=\"aira-meta\">" + (pathConceptDescription == null
+                            ? "No custom meaning set. The standard description below is shown instead."
+                            : "Custom meaning set for this Topic Space.") + "</p>");
+                    out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/paths\" method=\"post\">");
+                    out.println("                <input type=\"hidden\" name=\"action\" value=\"saveConceptDescription\" />");
+                    out.println("                <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                            + selectedTopicSpaceId + "\" />");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println(
+                            "                  <label for=\"pathConceptDescription\">Advancement Path Meaning (leave blank to use the standard description)</label>");
+                    out.println(
+                            "                  <textarea class=\"aira-textarea\" id=\"pathConceptDescription\" name=\"pathConceptDescription\" rows=\"3\""
+                                    + " placeholder=\"" + escapeHtml(EsTopicSpace.DEFAULT_PATH_CONCEPT_DESCRIPTION)
+                                    + "\">" + escapeHtml(orEmpty(pathConceptDescription)) + "</textarea>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Save Advancement Path Meaning</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
+                    out.println("            </section>");
 
-                panelOut.println("        <h3>Current Advancement Paths for "
-                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
+                    out.println("            <h3 class=\"aira-subsection-title\">Current Advancement Paths for "
+                            + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</h3>");
 
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Name</th>");
-                panelOut.println("              <th>Code</th>");
-                panelOut.println("              <th>Topic Space</th>");
-                panelOut.println("              <th>Display Order</th>");
-                panelOut.println("              <th>Active</th>");
-                panelOut.println("              <th>Topics</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopicPathDefinition definition : definitions) {
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td><a href=\"" + contextPath
-                            + "/admin/es/paths?esTopicPathDefinitionId="
-                            + definition.getEsTopicPathDefinitionId()
-                            + "&esTopicSpaceId=" + selectedTopicSpaceId
-                            + "\">" + escapeHtml(orEmpty(definition.getPathName())) + "</a></td>");
-                    panelOut.println("              <td>" + escapeHtml(orEmpty(definition.getPathCode())) + "</td>");
-                    EsTopicSpace topicSpace = spacesById.get(definition.getEsTopicSpaceId());
-                    panelOut.println("              <td>"
-                            + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
-                            + "</td>");
-                    panelOut.println("              <td>"
-                            + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
-                                    ? 0
-                                    : definition.getDisplayOrder()))
-                            + "</td>");
-                    panelOut.println("              <td>"
-                            + (Boolean.TRUE.equals(definition.getIsActive()) ? "Yes" : "No")
-                            + "</td>");
-                    Long usageCount = usageCounts.getOrDefault(definition.getEsTopicPathDefinitionId(), 0L);
-                    panelOut.println("              <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
-                    panelOut.println("            </tr>");
-                }
-                if (definitions.isEmpty()) {
-                    panelOut.println("            <tr>");
-                    panelOut.println(
-                            "              <td colspan=\"6\">No Advancement Paths found for this Topic Space.</td>");
-                    panelOut.println("            </tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Name</th>");
+                    out.println("                  <th>Code</th>");
+                    out.println("                  <th>Topic Space</th>");
+                    out.println("                  <th>Display Order</th>");
+                    out.println("                  <th>Active</th>");
+                    out.println("                  <th>Topics</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    for (EsTopicPathDefinition definition : definitions) {
+                        out.println("                <tr>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/admin/es/paths?esTopicPathDefinitionId="
+                                + definition.getEsTopicPathDefinitionId()
+                                + "&esTopicSpaceId=" + selectedTopicSpaceId
+                                + "\">" + escapeHtml(orEmpty(definition.getPathName())) + "</a></td>");
+                        out.println(
+                                "                  <td>" + escapeHtml(orEmpty(definition.getPathCode())) + "</td>");
+                        EsTopicSpace topicSpace = spacesById.get(definition.getEsTopicSpaceId());
+                        out.println("                  <td>"
+                                + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName()))
+                                + "</td>");
+                        out.println("                  <td>"
+                                + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
+                                        ? 0
+                                        : definition.getDisplayOrder()))
+                                + "</td>");
+                        out.println("                  <td>"
+                                + activeBadge(Boolean.TRUE.equals(definition.getIsActive())) + "</td>");
+                        Long usageCount = usageCounts.getOrDefault(definition.getEsTopicPathDefinitionId(), 0L);
+                        out.println("                  <td>" + escapeHtml(String.valueOf(usageCount)) + "</td>");
+                        out.println("                </tr>");
+                    }
+                    if (definitions.isEmpty()) {
+                        out.println("                <tr>");
+                        out.println(
+                                "                  <td colspan=\"6\">No Advancement Paths found for this Topic Space.</td>");
+                        out.println("                </tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
 
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/paths?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
-                        + "\">Add Advancement Path</a></p>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/paths?mode=new&esTopicSpaceId=" + selectedTopicSpaceId
+                            + "\">Add Advancement Path</a>");
+                    out.println("            </div>");
 
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <h3>Bulk Load Advancement Path Descriptions</h3>");
-                panelOut.println(
-                        "          <p>Paste one path per line using <strong>Advancement Path: Description</strong>.</p>");
-                panelOut.println("          <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/es/paths\" method=\"post\">");
-                panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
-                panelOut.println("            <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
-                        + selectedTopicSpaceId + "\" />");
-                panelOut.println("            <p><strong>Topic Space:</strong> "
-                        + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</p>");
-                panelOut.println("            <label for=\"bulkPaths\">Advancement Path block</label>");
-                panelOut.println("            <textarea id=\"bulkPaths\" name=\"bulkPaths\" rows=\"8\""
-                        + " placeholder=\"Draft: Description of draft path\">"
-                        + escapeHtml(orEmpty(bulkPaths)) + "</textarea>");
-                panelOut.println("            <button type=\"submit\">Import Advancement Path Block</button>");
-                panelOut.println("          </form>");
-                panelOut.println("        </section>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es\">Back to Emerging Standards</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <h3 class=\"aira-subsection-title\">Bulk Load Advancement Path Descriptions</h3>");
+                    out.println(
+                            "              <p class=\"aira-meta\">Paste one path per line using <strong>Advancement Path: Description</strong>.</p>");
+                    out.println("              <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/paths\" method=\"post\">");
+                    out.println("                <input type=\"hidden\" name=\"action\" value=\"bulkUpsert\" />");
+                    out.println("                <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                            + selectedTopicSpaceId + "\" />");
+                    out.println("                <p><strong>Topic Space:</strong> "
+                            + escapeHtml(orEmpty(selectedTopicSpace.getSpaceName())) + "</p>");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"bulkPaths\">Advancement Path block</label>");
+                    out.println("                  <textarea class=\"aira-textarea\" id=\"bulkPaths\" name=\"bulkPaths\" rows=\"8\""
+                            + " placeholder=\"Draft: Description of draft path\">"
+                            + escapeHtml(orEmpty(bulkPaths)) + "</textarea>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Import Advancement Path Block</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
+                    out.println("            </section>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es\">Back to Emerging Standards</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderDetails(HttpServletResponse response, String contextPath, EsTopicPathDefinition definition)
-            throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderDetails(HttpServletRequest request, HttpServletResponse response,
+            EsTopicPathDefinition definition) throws IOException {
+        String contextPath = request.getContextPath();
         long usageCount = pathDefinitionDao.findTopicUsageCountsByDefinitionId()
                 .getOrDefault(definition.getEsTopicPathDefinitionId(), 0L);
         EsTopicSpace topicSpace = definition.getEsTopicSpaceId() == null
                 ? null
                 : topicSpaceDao.findById(definition.getEsTopicSpaceId()).orElse(null);
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Advancement Path Details - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Advancement Path Details</h2>");
-                panelOut.println("        <section class=\"panel\">");
-                panelOut.println("          <p><strong>Name:</strong> "
-                        + escapeHtml(orEmpty(definition.getPathName())) + "</p>");
-                panelOut.println("          <p><strong>Code:</strong> "
-                        + escapeHtml(orEmpty(definition.getPathCode())) + "</p>");
-                panelOut.println("          <p><strong>Topic Space:</strong> "
-                        + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
-                panelOut.println("          <p><strong>Description:</strong> "
-                        + escapeHtml(orEmpty(definition.getPathDescription())) + "</p>");
-                panelOut.println("          <p><strong>Display Order:</strong> "
-                        + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
-                                ? 0
-                                : definition.getDisplayOrder()))
-                        + "</p>");
-                panelOut.println("          <p><strong>Active:</strong> "
-                        + (Boolean.TRUE.equals(definition.getIsActive()) ? "Yes" : "No") + "</p>");
-                panelOut.println("          <p><strong>Topic Usage:</strong> "
-                        + escapeHtml(String.valueOf(usageCount)) + "</p>");
-                panelOut.println("        </section>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/paths?esTopicPathDefinitionId="
-                        + definition.getEsTopicPathDefinitionId() + "&mode=edit&esTopicSpaceId="
-                        + definition.getEsTopicSpaceId() + "\">Edit Advancement Path</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/paths?esTopicSpaceId=" + definition.getEsTopicSpaceId()
-                        + "\">Back to Advancement Paths</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "Advancement Path Details - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Advancement Path Details</h2>");
+                    out.println("            <section class=\"aira-panel\">");
+                    out.println("              <p><strong>Name:</strong> "
+                            + escapeHtml(orEmpty(definition.getPathName())) + "</p>");
+                    out.println("              <p><strong>Code:</strong> "
+                            + escapeHtml(orEmpty(definition.getPathCode())) + "</p>");
+                    out.println("              <p><strong>Topic Space:</strong> "
+                            + escapeHtml(topicSpace == null ? "" : orEmpty(topicSpace.getSpaceName())) + "</p>");
+                    out.println("              <p><strong>Description:</strong> "
+                            + escapeHtml(orEmpty(definition.getPathDescription())) + "</p>");
+                    out.println("              <p><strong>Display Order:</strong> "
+                            + escapeHtml(String.valueOf(definition.getDisplayOrder() == null
+                                    ? 0
+                                    : definition.getDisplayOrder()))
+                            + "</p>");
+                    out.println("              <p><strong>Active:</strong> "
+                            + activeBadge(Boolean.TRUE.equals(definition.getIsActive())) + "</p>");
+                    out.println("              <p><strong>Topic Usage:</strong> "
+                            + escapeHtml(String.valueOf(usageCount)) + "</p>");
+                    out.println("            </section>");
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/paths?esTopicPathDefinitionId="
+                            + definition.getEsTopicPathDefinitionId() + "&mode=edit&esTopicSpaceId="
+                            + definition.getEsTopicSpaceId() + "\">Edit Advancement Path</a>");
+                    out.println("            </div>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/paths?esTopicSpaceId=" + definition.getEsTopicSpaceId()
+                            + "\">Back to Advancement Paths</a></p>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderEditForm(HttpServletResponse response, String contextPath, EsTopicPathDefinition definition,
-            String errorMessage, boolean creating) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderEditForm(HttpServletRequest request, HttpServletResponse response,
+            EsTopicPathDefinition definition, String errorMessage, boolean creating) throws IOException {
+        String contextPath = request.getContextPath();
         List<EsTopicSpace> allSpaces = topicSpaceDao.findAllOrdered();
         Long selectedSpaceId = definition.getEsTopicSpaceId();
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, (creating ? "Create" : "Edit") + " Advancement Path - InteropHub",
-                    contextPath,
-                    panelOut -> {
-                        panelOut.println("      <section class=\"panel\">");
-                        panelOut.println("        <h2>" + (creating ? "Create" : "Edit") + " Advancement Path</h2>");
+        AdminShellRenderer.render(request, response, (creating ? "Create" : "Edit") + " Advancement Path - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">" + (creating ? "Create" : "Edit")
+                            + " Advancement Path</h2>");
 
-                        if (errorMessage != null && !errorMessage.isBlank()) {
-                            panelOut.println("        <p><strong>Could not save:</strong> " + escapeHtml(errorMessage)
-                                    + "</p>");
+                    if (errorMessage != null && !errorMessage.isBlank()) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--danger\"><p><strong>Could not save:</strong> "
+                                        + escapeHtml(errorMessage) + "</p></div>");
+                    }
+
+                    out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/es/paths\" method=\"post\">");
+                    if (!creating && definition.getEsTopicPathDefinitionId() != null) {
+                        out.println("              <input type=\"hidden\" name=\"esTopicPathDefinitionId\" value=\""
+                                + definition.getEsTopicPathDefinitionId() + "\" />");
+                    }
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"pathCode\">Advancement Path Code (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"pathCode\" name=\"pathCode\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(definition.getPathCode())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"pathName\">Advancement Path Name (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"pathName\" name=\"pathName\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(definition.getPathName())) + "\" />");
+                    out.println("              </div>");
+
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
+                    out.println("                  <option value=\"\">— Select —</option>");
+                    for (EsTopicSpace topicSpace : allSpaces) {
+                        if (topicSpace.getEsTopicSpaceId() == null || trimToNull(topicSpace.getSpaceCode()) == null) {
+                            continue;
                         }
-
-                        panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                                + "/admin/es/paths\" method=\"post\">");
-                        if (!creating && definition.getEsTopicPathDefinitionId() != null) {
-                            panelOut.println(
-                                    "      <input type=\"hidden\" name=\"esTopicPathDefinitionId\" value=\""
-                                            + definition.getEsTopicPathDefinitionId() + "\" />");
+                        boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedSpaceId);
+                        boolean isActive = Boolean.TRUE.equals(topicSpace.getIsActive());
+                        String flags = isCurrent ? " selected" : "";
+                        if (!isActive && !isCurrent) {
+                            flags += " disabled";
                         }
+                        out.println("                  <option value=\"" + topicSpace.getEsTopicSpaceId() + "\""
+                                + flags + ">" + escapeHtml(orEmpty(topicSpace.getSpaceName()))
+                                + (isActive ? "" : " (inactive)") + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"pathCode\">Advancement Path Code (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"pathCode\" name=\"pathCode\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(definition.getPathCode())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"pathDescription\">Description</label>");
+                    out.println(
+                            "                <textarea class=\"aira-textarea\" id=\"pathDescription\" name=\"pathDescription\" rows=\"5\">"
+                                    + escapeHtml(orEmpty(definition.getPathDescription())) + "</textarea>");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"pathName\">Advancement Path Name (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"pathName\" name=\"pathName\" type=\"text\" required value=\""
-                                        + escapeHtml(orEmpty(definition.getPathName())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"displayOrder\">Display Order (required)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required value=\""
+                                    + escapeHtml(String.valueOf(
+                                            definition.getDisplayOrder() == null ? 0
+                                                    : definition.getDisplayOrder()))
+                                    + "\" />");
+                    out.println("              </div>");
 
-                        panelOut.println("      <label for=\"esTopicSpaceId\">Topic Space (required)</label>");
-                        panelOut.println("      <select id=\"esTopicSpaceId\" name=\"esTopicSpaceId\" required>");
-                        panelOut.println("        <option value=\"\">— Select —</option>");
-                        for (EsTopicSpace topicSpace : allSpaces) {
-                            if (topicSpace.getEsTopicSpaceId() == null
-                                    || trimToNull(topicSpace.getSpaceCode()) == null) {
-                                continue;
-                            }
-                            boolean isCurrent = topicSpace.getEsTopicSpaceId().equals(selectedSpaceId);
-                            boolean isActive = Boolean.TRUE.equals(topicSpace.getIsActive());
-                            String flags = isCurrent ? " selected" : "";
-                            if (!isActive && !isCurrent) {
-                                flags += " disabled";
-                            }
-                            panelOut.println(
-                                    "        <option value=\"" + topicSpace.getEsTopicSpaceId() + "\"" + flags + ">"
-                                            + escapeHtml(orEmpty(topicSpace.getSpaceName()))
-                                            + (isActive ? "" : " (inactive)")
-                                            + "</option>");
-                        }
-                        panelOut.println("      </select>");
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"isActive\""
+                            + (Boolean.TRUE.equals(definition.getIsActive()) || creating ? " checked" : "")
+                            + " /> Active</label>");
 
-                        panelOut.println("      <label for=\"pathDescription\">Description</label>");
-                        panelOut.println("      <textarea id=\"pathDescription\" name=\"pathDescription\" rows=\"5\">"
-                                + escapeHtml(orEmpty(definition.getPathDescription())) + "</textarea>");
-
-                        panelOut.println("      <label for=\"displayOrder\">Display Order (required)</label>");
-                        panelOut.println(
-                                "      <input id=\"displayOrder\" name=\"displayOrder\" type=\"number\" required value=\""
-                                        + escapeHtml(String.valueOf(
-                                                definition.getDisplayOrder() == null ? 0
-                                                        : definition.getDisplayOrder()))
-                                        + "\" />");
-
-                        panelOut.println("      <label><input type=\"checkbox\" name=\"isActive\""
-                                + (Boolean.TRUE.equals(definition.getIsActive()) || creating ? " checked" : "")
-                                + " /> Active</label>");
-
-                        panelOut.println("      <button type=\"submit\">Save</button>");
-                        panelOut.println("    </form>");
-                        panelOut.println("    <p><a href=\"" + contextPath
-                                + "/admin/es/paths\">Back to Advancement Paths</a></p>");
-                        panelOut.println("      </section>");
-                    });
-        }
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access Advancement Path settings.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/paths\">Back to Advancement Paths</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private Long parseId(String value) {
@@ -675,6 +672,13 @@ public class AdminEsPathDefinitionServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String activeBadge(boolean active) {
+        if (active) {
+            return "<span class=\"aira-badge aira-badge--success\">Yes</span>";
+        }
+        return "<span class=\"aira-badge aira-badge--subtle\">No</span>";
     }
 
     private String escapeHtml(String value) {

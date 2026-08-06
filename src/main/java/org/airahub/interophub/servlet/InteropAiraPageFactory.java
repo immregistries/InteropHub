@@ -6,10 +6,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.PublicUrlService;
+import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.immregistries.aira.web.AiraAccountConfig;
 import org.immregistries.aira.web.AiraContextConfig;
 import org.immregistries.aira.web.AiraDefaults;
@@ -23,6 +25,7 @@ final class InteropAiraPageFactory {
     private static final String APPLICATION_NAME = "InteropHub";
     private static final String HOME_HREF = "/home";
     private static final String ACCOUNT_HREF = "/workspace";
+    private static final String ADMIN_HREF = "/admin";
     private static final String SEARCH_ACTION = "/es/topics";
     private static final String SEARCH_PARAMETER = "q";
     private static final String SEARCH_LABEL = "Search InteropHub";
@@ -35,6 +38,8 @@ final class InteropAiraPageFactory {
 
     private static final AuthFlowService AUTH_FLOW_SERVICE = new AuthFlowService();
     private static final PublicUrlService PUBLIC_URL_SERVICE = new PublicUrlService();
+    private static final EsTopicSpaceDao TOPIC_SPACE_DAO = new EsTopicSpaceDao();
+    private static final TopicSpaceAccessService TOPIC_SPACE_ACCESS_SERVICE = new TopicSpaceAccessService();
 
     private InteropAiraPageFactory() {
     }
@@ -69,16 +74,27 @@ final class InteropAiraPageFactory {
         if (label == null) {
             label = "InteropHub";
         }
-        String meetingsHref = "/es/topics?view=meetings";
+        String meetingsHref = "/es/meetings";
         String normalizedSpaceCode = trimToNull(spaceCode);
         if (normalizedSpaceCode != null) {
-            meetingsHref = "/es/topics?space="
-                    + URLEncoder.encode(normalizedSpaceCode, StandardCharsets.UTF_8).replace("+", "%20")
-                    + "&view=meetings";
+            meetingsHref = "/es/meetings?space="
+                    + URLEncoder.encode(normalizedSpaceCode, StandardCharsets.UTF_8).replace("+", "%20");
         }
         return new AiraContextConfig(label, List.of(
                 new AiraNavigationItem("Topics", "/es/topics", topicsActive),
                 new AiraNavigationItem("Meetings", meetingsHref, meetingsActive)));
+    }
+
+    /**
+     * Context navigation listing public topic spaces, for pre-authentication pages
+     * (sign-in, register, magic-link confirmation) so a visitor can browse public
+     * spaces before signing in. Mirrors what {@code WelcomeServlet} shows an
+     * anonymous visitor.
+     */
+    static AiraContextConfig publicTopicSpacePickerContext() {
+        List<EsTopicSpace> publicSpaces = TOPIC_SPACE_ACCESS_SERVICE.filterVisibleSpaces(null,
+                TOPIC_SPACE_DAO.findAllActiveOrdered());
+        return topicSpacePickerContext(publicSpaces);
     }
 
     static AiraContextConfig topicSpacePickerContext(List<EsTopicSpace> orderedTopicSpaces) {
@@ -103,9 +119,28 @@ final class InteropAiraPageFactory {
 
     private static AiraAccountConfig buildAccountConfig(Optional<User> authenticatedUser) {
         if (authenticatedUser.isPresent()) {
-            return new AiraAccountConfig(resolveUserDisplayName(authenticatedUser.get()), "Account", ACCOUNT_HREF);
+            User user = authenticatedUser.get();
+            if (AUTH_FLOW_SERVICE.isAdminUser(user)) {
+                return new AiraAccountConfig(resolveUserDisplayName(user), "Admin", ADMIN_HREF);
+            }
+            return new AiraAccountConfig(resolveUserDisplayName(user), "Account", ACCOUNT_HREF);
         }
         return new AiraAccountConfig("", "Sign in", HOME_HREF);
+    }
+
+    /**
+     * Dark context-nav row for the 4 top-level admin areas, shown on every
+     * admin page (mirrors {@link #topicsMeetingsContext}). Also includes a
+     * plain "Account" link back to the personal workspace, since admins no
+     * longer see that in the global header once it shows "Admin" instead.
+     */
+    static AiraContextConfig adminContext(AdminSection activeSection) {
+        List<AiraNavigationItem> items = new ArrayList<>();
+        for (AdminSection section : AdminSection.values()) {
+            items.add(new AiraNavigationItem(section.label, section.homeHref, section == activeSection));
+        }
+        items.add(new AiraNavigationItem("Account", ACCOUNT_HREF, false));
+        return new AiraContextConfig("Admin", items);
     }
 
     private static String resolveUserDisplayName(User user) {

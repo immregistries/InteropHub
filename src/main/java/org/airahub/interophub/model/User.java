@@ -20,6 +20,11 @@ public class User {
         DELETED
     }
 
+    public enum WeekStartDay {
+        SUNDAY,
+        MONDAY
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "user_id")
@@ -48,6 +53,10 @@ public class User {
 
     @Column(name = "timezone_id", length = 64)
     private String timezoneId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "week_start_day", length = 16)
+    private WeekStartDay weekStartDay;
 
     @Column(name = "email_verified", nullable = false)
     private Boolean emailVerified;
@@ -180,6 +189,14 @@ public class User {
 
     public void setTimezoneId(String timezoneId) {
         this.timezoneId = timezoneId;
+    }
+
+    public WeekStartDay getWeekStartDay() {
+        return weekStartDay;
+    }
+
+    public void setWeekStartDay(WeekStartDay weekStartDay) {
+        this.weekStartDay = weekStartDay;
     }
 
     public Boolean getEmailVerified() {

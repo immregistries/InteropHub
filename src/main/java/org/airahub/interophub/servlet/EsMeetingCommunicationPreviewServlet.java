@@ -15,7 +15,6 @@ import org.airahub.interophub.model.CommunicationRecipientGroupSummary;
 import org.airahub.interophub.model.CommunicationRenderedEmail;
 import org.airahub.interophub.model.EsMeetingCommunication;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingCommunicationPreviewService;
 import org.airahub.interophub.service.MeetingCommunicationSendService;
 import org.airahub.interophub.service.MeetingCommunicationService;
@@ -29,13 +28,11 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String DEFAULT_TIMEZONE = "America/New_York";
 
-    private final AuthFlowService authFlowService;
     private final MeetingCommunicationPreviewService previewService;
     private final MeetingCommunicationService communicationService;
     private final MeetingCommunicationSendService sendService;
 
     public EsMeetingCommunicationPreviewServlet() {
-        this.authFlowService = new AuthFlowService();
         this.previewService = new MeetingCommunicationPreviewService();
         this.communicationService = new MeetingCommunicationService();
         this.sendService = new MeetingCommunicationSendService();
@@ -43,7 +40,7 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty())
             return;
 
@@ -69,119 +66,121 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
         boolean canCancel = isDraft || isScheduled;
         boolean canSchedule = isDraft && comm.getScheduledSendAt() != null;
 
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Communication Preview - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Communication Preview</h2>");
-                panelOut.println("        <p>"
-                        + "<a href=\"" + contextPath + "/es/agenda?meetingId=" + comm.getEsMeetingId()
-                        + "\">&larr; Back to Meeting</a>"
-                        + " &nbsp;|&nbsp; "
-                        + "<a href=\"" + contextPath + "/es/meeting-communication?meetingId=" + comm.getEsMeetingId()
-                        + "\">All Communications for this Meeting</a>"
-                        + "</p>");
+        AdminShellRenderer.render(request, response, "Communication Preview - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/meetings", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Communication Preview</h2>");
+                    out.println("            <p>"
+                            + "<a class=\"aira-inline-link\" href=\"" + contextPath + "/es/agenda?meetingId="
+                            + comm.getEsMeetingId() + "\">&larr; Back to Meeting</a>"
+                            + " &nbsp;|&nbsp; "
+                            + "<a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/es/meeting-communication?meetingId=" + comm.getEsMeetingId()
+                            + "\">All Communications for this Meeting</a>"
+                            + "</p>");
 
-                // Summary
-                panelOut.println("        <table class=\"data-table\" style=\"max-width:600px\">");
-                panelOut.println("          <tbody>");
-                row(panelOut, "Meeting", preview.getMeeting() != null
-                        ? escapeHtml(orEmpty(preview.getMeeting().getMeetingName()))
-                        : "Unknown");
-                row(panelOut, "Type", escapeHtml(comm.getCommunicationType().name()));
-                row(panelOut, "Status", escapeHtml(comm.getStatus().name()));
-                row(panelOut, "Scheduled Send", escapeHtml(formatScheduledSendInCommunicationTimezone(comm)));
-                row(panelOut, "Recipients", String.valueOf(preview.getTotalRecipientCount()));
-                row(panelOut, "Include General Members", comm.isIncludeGeneralMembers() ? "Yes" : "No");
-                row(panelOut, "Include Topic Subscribers", comm.isIncludeTopicSubscribers() ? "Yes" : "No");
-                row(panelOut, "Include Topic Champions/Support", comm.isIncludeTopicChampions() ? "Yes" : "No");
-                row(panelOut, "Include Presenters", comm.isIncludePresenters() ? "Yes" : "No");
-                if (comm.getSubjectOverride() != null) {
-                    row(panelOut, "Subject Override", escapeHtml(comm.getSubjectOverride()));
-                }
-                panelOut.println("          </tbody></table>");
-
-                // Eligibility banner
-                if (!preview.getEligibility().isEligible()) {
-                    panelOut.println(
-                            "        <div style=\"background:#fff3cd;border:1px solid #ffc107;padding:10px 16px;margin:12px 0;border-radius:4px\">");
-                    panelOut.println("          <strong>Not eligible to send:</strong> "
-                            + escapeHtml(preview.getEligibility().getReason()));
-                    panelOut.println("        </div>");
-                }
-
-                // Action buttons
-                if (canSchedule || canSend || canCancel) {
-                    panelOut.println("        <div style=\"display:flex;gap:8px;margin:16px 0;\">");
-                    if (canSchedule) {
-                        panelOut.println("          <form method=\"post\">");
-                        panelOut.println("            <input type=\"hidden\" name=\"id\" value=\""
-                                + comm.getEsMeetingCommunicationId() + "\" />");
-                        panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"schedule\" />");
-                        panelOut.println("            <button type=\"submit\">Schedule</button>");
-                        panelOut.println("          </form>");
+                    // Summary
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <tbody>");
+                    row(out, "Meeting", preview.getMeeting() != null
+                            ? escapeHtml(orEmpty(preview.getMeeting().getMeetingName()))
+                            : "Unknown");
+                    row(out, "Type", escapeHtml(comm.getCommunicationType().name()));
+                    row(out, "Status", escapeHtml(comm.getStatus().name()));
+                    row(out, "Scheduled Send", escapeHtml(formatScheduledSendInCommunicationTimezone(comm)));
+                    row(out, "Recipients", String.valueOf(preview.getTotalRecipientCount()));
+                    row(out, "Include General Members", comm.isIncludeGeneralMembers() ? "Yes" : "No");
+                    row(out, "Include Topic Subscribers", comm.isIncludeTopicSubscribers() ? "Yes" : "No");
+                    row(out, "Include Topic Champions/Support", comm.isIncludeTopicChampions() ? "Yes" : "No");
+                    row(out, "Include Presenters", comm.isIncludePresenters() ? "Yes" : "No");
+                    if (comm.getSubjectOverride() != null) {
+                        row(out, "Subject Override", escapeHtml(comm.getSubjectOverride()));
                     }
-                    if (canSend) {
-                        panelOut.println(
-                                "          <form method=\"post\" onsubmit=\"return confirm('Send this communication now to all "
-                                        + preview.getTotalRecipientCount() + " recipient(s)?')\">");
-                        panelOut.println("            <input type=\"hidden\" name=\"id\" value=\""
-                                + comm.getEsMeetingCommunicationId() + "\" />");
-                        panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"sendNow\" />");
-                        panelOut.println(
-                                "            <button type=\"submit\" style=\"background:#198754;color:#fff\">Send Now</button>");
-                        panelOut.println("          </form>");
-                    }
-                    if (canCancel) {
-                        panelOut.println(
-                                "          <form method=\"post\" onsubmit=\"return confirm('Cancel this communication?')\">");
-                        panelOut.println("            <input type=\"hidden\" name=\"id\" value=\""
-                                + comm.getEsMeetingCommunicationId() + "\" />");
-                        panelOut.println("            <input type=\"hidden\" name=\"action\" value=\"cancel\" />");
-                        panelOut.println(
-                                "            <button type=\"submit\" style=\"background:#dc3545;color:#fff\">Cancel</button>");
-                        panelOut.println("          </form>");
-                    }
-                    panelOut.println("        </div>");
-                }
+                    out.println("              </tbody></table>");
+                    out.println("            </div>");
 
-                // Group summary
-                panelOut.println("        <h3>Recipient Groups</h3>");
-                if (preview.getGroupSummaries().isEmpty()) {
-                    panelOut.println("        <p>No recipients found with current settings.</p>");
-                } else {
-                    panelOut.println("        <table class=\"data-table\" style=\"max-width:400px\">");
-                    panelOut.println("          <thead><tr><th>Group</th><th>Count</th></tr></thead><tbody>");
-                    for (CommunicationRecipientGroupSummary summary : preview.getGroupSummaries()) {
-                        panelOut.println("            <tr><td>" + escapeHtml(summary.getGroup().name())
-                                + "</td><td>" + summary.getCount() + "</td></tr>");
+                    // Eligibility banner
+                    if (!preview.getEligibility().isEligible()) {
+                        out.println("            <div class=\"aira-alert aira-alert--warning\"><p><strong>Not eligible to send:</strong> "
+                                + escapeHtml(preview.getEligibility().getReason()) + "</p></div>");
                     }
-                    panelOut.println("          </tbody></table>");
-                }
 
-                // Sample emails
-                if (!preview.getSampleEmails().isEmpty()) {
-                    panelOut.println("        <h3>Sample Emails</h3>");
-                    for (CommunicationRenderedEmail sample : preview.getSampleEmails()) {
-                        panelOut.println(
-                                "        <details style=\"margin-bottom:12px;border:1px solid #dee2e6;padding:8px;border-radius:4px\">");
-                        panelOut.println("          <summary><strong>" + escapeHtml(sample.getRecipient().getEmail())
-                                + "</strong> (" + escapeHtml(sample.getRecipient().getPrimaryGroup().name())
-                                + ") — " + escapeHtml(sample.getSubject()) + "</summary>");
-                        panelOut.println("          <pre style=\"white-space:pre-wrap;margin-top:8px\">"
-                                + escapeHtml(sample.getBodyText()) + "</pre>");
-                        panelOut.println("        </details>");
+                    // Action buttons
+                    if (canSchedule || canSend || canCancel) {
+                        out.println("            <div class=\"aira-action-group\">");
+                        if (canSchedule) {
+                            out.println("              <form method=\"post\">");
+                            out.println("                <input type=\"hidden\" name=\"id\" value=\""
+                                    + comm.getEsMeetingCommunicationId() + "\" />");
+                            out.println("                <input type=\"hidden\" name=\"action\" value=\"schedule\" />");
+                            out.println(
+                                    "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Schedule</button>");
+                            out.println("              </form>");
+                        }
+                        if (canSend) {
+                            out.println(
+                                    "              <form method=\"post\" onsubmit=\"return confirm('Send this communication now to all "
+                                            + preview.getTotalRecipientCount() + " recipient(s)?')\">");
+                            out.println("                <input type=\"hidden\" name=\"id\" value=\""
+                                    + comm.getEsMeetingCommunicationId() + "\" />");
+                            out.println("                <input type=\"hidden\" name=\"action\" value=\"sendNow\" />");
+                            out.println(
+                                    "                <button class=\"aira-button aira-button--success\" type=\"submit\">Send Now</button>");
+                            out.println("              </form>");
+                        }
+                        if (canCancel) {
+                            out.println(
+                                    "              <form method=\"post\" onsubmit=\"return confirm('Cancel this communication?')\">");
+                            out.println("                <input type=\"hidden\" name=\"id\" value=\""
+                                    + comm.getEsMeetingCommunicationId() + "\" />");
+                            out.println("                <input type=\"hidden\" name=\"action\" value=\"cancel\" />");
+                            out.println(
+                                    "                <button class=\"aira-button aira-button--danger\" type=\"submit\">Cancel</button>");
+                            out.println("              </form>");
+                        }
+                        out.println("            </div>");
                     }
-                }
 
-                panelOut.println("      </section>");
-            });
-        }
+                    // Group summary
+                    out.println("            <h3 class=\"aira-subsection-title\">Recipient Groups</h3>");
+                    if (preview.getGroupSummaries().isEmpty()) {
+                        out.println("            <p class=\"aira-meta\">No recipients found with current settings.</p>");
+                    } else {
+                        out.println("            <div class=\"aira-table-wrap\">");
+                        out.println("            <table class=\"aira-table\">");
+                        out.println("              <thead><tr><th>Group</th><th>Count</th></tr></thead><tbody>");
+                        for (CommunicationRecipientGroupSummary summary : preview.getGroupSummaries()) {
+                            out.println("                <tr><td>" + escapeHtml(summary.getGroup().name())
+                                    + "</td><td>" + summary.getCount() + "</td></tr>");
+                        }
+                        out.println("              </tbody></table>");
+                        out.println("            </div>");
+                    }
+
+                    // Sample emails
+                    if (!preview.getSampleEmails().isEmpty()) {
+                        out.println("            <h3 class=\"aira-subsection-title\">Sample Emails</h3>");
+                        for (CommunicationRenderedEmail sample : preview.getSampleEmails()) {
+                            out.println(
+                                    "            <details style=\"margin-bottom:12px;border:1px solid #dee2e6;padding:8px;border-radius:4px\">");
+                            out.println("              <summary><strong>"
+                                    + escapeHtml(sample.getRecipient().getEmail())
+                                    + "</strong> (" + escapeHtml(sample.getRecipient().getPrimaryGroup().name())
+                                    + ") — " + escapeHtml(sample.getSubject()) + "</summary>");
+                            out.println("              <pre style=\"white-space:pre-wrap;margin-top:8px\">"
+                                    + escapeHtml(sample.getBodyText()) + "</pre>");
+                            out.println("            </details>");
+                        }
+                    }
+
+                    out.println("          </section>");
+                });
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty())
             return;
 
@@ -209,32 +208,7 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
     // ---------------------------------------------------------------------------
 
     private static void row(PrintWriter out, String label, String value) {
-        out.println("            <tr><th style=\"text-align:left;white-space:nowrap\">"
-                + escapeHtml(label) + "</th><td>" + value + "</td></tr>");
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response)
-            throws IOException {
-        Optional<User> user = authFlowService.findAuthenticatedUser(request);
-        if (user.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(user.get())) {
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                AdminShellRenderer.render(out, "Access Denied - InteropHub", request.getContextPath(), panelOut -> {
-                    panelOut.println("      <section class=\"panel\">");
-                    panelOut.println("        <h2>Access Denied</h2>");
-                    panelOut.println("        <p>Admin access required.</p>");
-                    panelOut.println("        <p><a href=\"" + request.getContextPath()
-                            + "/welcome\">Return to Welcome</a></p>");
-                    panelOut.println("      </section>");
-                });
-            }
-            return Optional.empty();
-        }
-        return user;
+        out.println("                <tr><th>" + escapeHtml(label) + "</th><td>" + value + "</td></tr>");
     }
 
     private static Long parseId(String value) {

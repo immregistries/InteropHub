@@ -1,81 +1,53 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsCampaignDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 public class AdminEsServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private final EsTopicSpaceDao topicSpaceDao;
+    private final EsCampaignDao campaignDao;
 
     public AdminEsServlet() {
-        this.authFlowService = new AuthFlowService();
+        this.topicSpaceDao = new EsTopicSpaceDao();
+        this.campaignDao = new EsCampaignDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Emerging Standards Admin - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Emerging Standards</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Campaigns</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin/es/topics\">ES Topics</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/topic-spaces\">Topic Spaces</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/neighborhoods\">Neighborhoods</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/stages\">Stages</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/paths\">Advancement Paths</a></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/topic-boards\">Topic Boards</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/registrations\">Campaign Registration Display</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/review-results\">Review Results</a></p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Back to Admin Home</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
+        int activeTopicSpaceCount = topicSpaceDao.findAllActiveOrdered().size();
+        int activeCampaignCount = campaignDao.findAllActive().size();
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access this page.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/admin\">Return to Admin Home</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "Topic Spaces - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Topic Spaces</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Topic Spaces organize Emerging Standards content into structured workspaces, each with its own Neighborhoods, Stages, Advancement Paths, and Topic Boards. Use the menu on the right to manage structure and taxonomy, topics and campaigns, meetings, and feedback and sync.</p>");
+                    out.println("            <div class=\"aira-cluster\">");
+                    out.println("              <span class=\"aira-meta-chip\">");
+                    out.println("                <span class=\"aira-meta-chip__label\">Active Topic Spaces</span>");
+                    out.println("                <span class=\"aira-meta-chip__value\">" + activeTopicSpaceCount
+                            + "</span>");
+                    out.println("              </span>");
+                    out.println("              <span class=\"aira-meta-chip\">");
+                    out.println("                <span class=\"aira-meta-chip__label\">Active Campaigns</span>");
+                    out.println("                <span class=\"aira-meta-chip__value\">" + activeCampaignCount
+                            + "</span>");
+                    out.println("              </span>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 }

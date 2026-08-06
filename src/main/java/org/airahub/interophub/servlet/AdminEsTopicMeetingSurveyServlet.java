@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -16,55 +15,53 @@ import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicMeetingSurvey;
 import org.airahub.interophub.model.EsTopicMeetingSurvey.AssignmentStatus;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsSurveyService;
 
 public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
+    private static final String ACTIVE_HREF = "/admin/es/meeting-survey";
+
     private final EsSurveyService surveyService;
     private final EsTopicMeetingDao topicMeetingDao;
 
     public AdminEsTopicMeetingSurveyServlet() {
-        this.authFlowService = new AuthFlowService();
         this.surveyService = new EsSurveyService();
         this.topicMeetingDao = new EsTopicMeetingDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String action = trimToNull(request.getParameter("action"));
         Long assignmentId = parseId(trimToNull(request.getParameter("assignmentId")));
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
 
         if ("new".equals(action)) {
-            renderCreateForm(response, contextPath, meetingId, null, null);
+            renderCreateForm(request, response, meetingId, null, null);
             return;
         }
 
         if (assignmentId != null) {
             EsTopicMeetingSurvey assignment = surveyService.getTopicMeetingSurvey(assignmentId).orElse(null);
             if (assignment == null) {
-                renderList(response, contextPath, "Assignment not found.");
+                renderList(request, response, "Assignment not found.");
                 return;
             }
             String savedMsg = request.getParameter("saved") != null ? "Assignment saved." : null;
-            renderEditForm(response, contextPath, assignment, savedMsg, null);
+            renderEditForm(request, response, assignment, savedMsg, null);
             return;
         }
 
-        renderList(response, contextPath, null);
+        renderList(request, response, null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -79,7 +76,7 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
             String endRaw = trimToNull(request.getParameter("endDate"));
 
             if (esTopicMeetingId == null || esSurveyId == null || startRaw == null || endRaw == null) {
-                renderCreateForm(response, contextPath, esTopicMeetingId,
+                renderCreateForm(request, response, esTopicMeetingId,
                         "All fields are required.", null);
                 return;
             }
@@ -91,17 +88,17 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
                 response.sendRedirect(contextPath + "/admin/es/meeting-survey?assignmentId="
                         + created.getEsTopicMeetingSurveyId() + "&saved=1");
             } catch (DateTimeParseException ex) {
-                renderCreateForm(response, contextPath, esTopicMeetingId,
+                renderCreateForm(request, response, esTopicMeetingId,
                         "Invalid date format. Use YYYY-MM-DD.", null);
             } catch (Exception ex) {
-                renderCreateForm(response, contextPath, esTopicMeetingId, ex.getMessage(), null);
+                renderCreateForm(request, response, esTopicMeetingId, ex.getMessage(), null);
             }
             return;
         }
 
         Long assignmentId = parseId(trimToNull(request.getParameter("assignmentId")));
         if (assignmentId == null) {
-            renderList(response, contextPath, "Missing assignment ID.");
+            renderList(request, response, "Missing assignment ID.");
             return;
         }
 
@@ -111,11 +108,11 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
             String statusRaw = trimToNull(request.getParameter("status"));
             EsTopicMeetingSurvey assignment = surveyService.getTopicMeetingSurvey(assignmentId).orElse(null);
             if (assignment == null) {
-                renderList(response, contextPath, "Assignment not found.");
+                renderList(request, response, "Assignment not found.");
                 return;
             }
             if (startRaw == null || endRaw == null || statusRaw == null) {
-                renderEditForm(response, contextPath, assignment, null, "All fields are required.");
+                renderEditForm(request, response, assignment, null, "All fields are required.");
                 return;
             }
             try {
@@ -126,202 +123,201 @@ public class AdminEsTopicMeetingSurveyServlet extends HttpServlet {
                 response.sendRedirect(contextPath + "/admin/es/meeting-survey?assignmentId="
                         + assignmentId + "&saved=1");
             } catch (DateTimeParseException ex) {
-                renderEditForm(response, contextPath, assignment, null,
+                renderEditForm(request, response, assignment, null,
                         "Invalid date format. Use YYYY-MM-DD.");
             } catch (Exception ex) {
-                renderEditForm(response, contextPath, assignment, null, ex.getMessage());
+                renderEditForm(request, response, assignment, null, ex.getMessage());
             }
             return;
         }
 
-        renderList(response, contextPath, "Unknown action.");
+        renderList(request, response, "Unknown action.");
     }
 
     // -------------------------------------------------------------------------
     // Rendering
     // -------------------------------------------------------------------------
 
-    private void renderList(HttpServletResponse response, String contextPath,
+    private void renderList(HttpServletRequest request, HttpServletResponse response,
             String message) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsTopicMeetingSurvey> assignments = surveyService.listTopicMeetingSurveys();
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Meeting Survey Assignments - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Meeting Survey Assignments</h2>");
-                if (message != null) {
-                    panelOut.println("        <p><strong>" + escapeHtml(message) + "</strong></p>");
-                }
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/es/meeting-survey?action=new\" class=\"button\">+ New Assignment</a></p>");
-                panelOut.println("        <table class=\"data-table\">");
-                panelOut.println("          <thead><tr>"
-                        + "<th>Survey</th><th>Meeting</th>"
-                        + "<th>Start</th><th>Status</th><th>Actions</th>"
-                        + "</tr></thead>");
-                panelOut.println("          <tbody>");
-                for (EsTopicMeetingSurvey a : assignments) {
-                    EsSurvey survey = surveyService.getSurvey(a.getEsSurveyId()).orElse(null);
-                    EsTopicMeeting meeting = topicMeetingDao.findById(a.getEsTopicMeetingId()).orElse(null);
-                    String surveyName = survey != null ? survey.getSurveyName() : "?";
-                    String meetingName = meeting != null ? orEmpty(meeting.getMeetingName()) : "?";
-                    String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
-                            + a.getEsTopicMeetingSurveyId();
-                    String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
-                            + a.getEsTopicMeetingSurveyId();
-                    panelOut.println("            <tr>");
-                    panelOut.println("              <td>" + escapeHtml(surveyName) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(meetingName) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
-                    panelOut.println("              <td>" + escapeHtml(a.getStatus() != null
-                            ? a.getStatus().name()
-                            : "") + "</td>");
-                    panelOut.println("              <td><a href=\"" + editUrl + "\">Edit</a>"
-                            + " | <a href=\"" + resultsUrl + "\">Results</a></td>");
-                    panelOut.println("            </tr>");
-                }
-                if (assignments.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"5\">No assignments found.</td></tr>");
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "Meeting Survey Assignments - InteropHub",
+                AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Survey Assignments</h2>");
+                    if (message != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/meeting-survey?action=new\">+ New Assignment</a>");
+                    out.println("            </div>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead><tr>"
+                            + "<th>Survey</th><th>Meeting</th>"
+                            + "<th>Start</th><th>Status</th><th>Actions</th>"
+                            + "</tr></thead>");
+                    out.println("              <tbody>");
+                    for (EsTopicMeetingSurvey a : assignments) {
+                        EsSurvey survey = surveyService.getSurvey(a.getEsSurveyId()).orElse(null);
+                        EsTopicMeeting meeting = topicMeetingDao.findById(a.getEsTopicMeetingId()).orElse(null);
+                        String surveyName = survey != null ? survey.getSurveyName() : "?";
+                        String meetingName = meeting != null ? orEmpty(meeting.getMeetingName()) : "?";
+                        String editUrl = contextPath + "/admin/es/meeting-survey?assignmentId="
+                                + a.getEsTopicMeetingSurveyId();
+                        String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
+                                + a.getEsTopicMeetingSurveyId();
+                        out.println("                <tr>");
+                        out.println("                  <td>" + escapeHtml(surveyName) + "</td>");
+                        out.println("                  <td>" + escapeHtml(meetingName) + "</td>");
+                        out.println("                  <td>" + escapeHtml(a.getStartDate().toString()) + "</td>");
+                        out.println("                  <td>" + escapeHtml(a.getStatus() != null
+                                ? a.getStatus().name()
+                                : "") + "</td>");
+                        out.println("                  <td><a class=\"aira-inline-link\" href=\"" + editUrl
+                                + "\">Edit</a>"
+                                + " | <a class=\"aira-inline-link\" href=\"" + resultsUrl + "\">Results</a></td>");
+                        out.println("                </tr>");
+                    }
+                    if (assignments.isEmpty()) {
+                        out.println("                <tr><td colspan=\"5\">No assignments found.</td></tr>");
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderCreateForm(HttpServletResponse response, String contextPath,
+    private void renderCreateForm(HttpServletRequest request, HttpServletResponse response,
             Long preselectedMeetingId, String errorMessage, String successMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         List<EsSurvey> readySurveys = surveyService.listSurveys().stream()
                 .filter(s -> s.getStatus() == SurveyStatus.READY)
                 .toList();
         List<EsTopicMeeting> allMeetings = topicMeetingDao.findAll();
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "New Assignment - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>New Meeting Survey Assignment</h2>");
-                if (errorMessage != null) {
-                    panelOut.println("        <p class=\"error\"><strong>"
-                            + escapeHtml(errorMessage) + "</strong></p>");
-                }
-                if (successMessage != null) {
-                    panelOut.println("        <p><strong>" + escapeHtml(successMessage) + "</strong></p>");
-                }
-                panelOut.println("        <form method=\"post\" action=\""
-                        + contextPath + "/admin/es/meeting-survey\">");
-                panelOut.println("          <input type=\"hidden\" name=\"action\" value=\"create\">");
-                panelOut.println("          <label>Topic Meeting:<br><select name=\"esTopicMeetingId\">");
-                for (EsTopicMeeting m : allMeetings) {
-                    boolean selected = preselectedMeetingId != null
-                            && preselectedMeetingId.equals(m.getEsTopicMeetingId());
-                    panelOut.println("            <option value=\"" + m.getEsTopicMeetingId() + "\""
-                            + (selected ? " selected" : "") + ">"
-                            + escapeHtml(orEmpty(m.getMeetingName()))
-                            + " (id=" + m.getEsTopicMeetingId() + ")</option>");
-                }
-                panelOut.println("          </select></label><br><br>");
-                panelOut.println("          <label>Survey (READY only):<br>"
-                        + "<select name=\"esSurveyId\">");
-                for (EsSurvey s : readySurveys) {
-                    panelOut.println("            <option value=\"" + s.getEsSurveyId() + "\">"
-                            + escapeHtml(s.getSurveyName()) + "</option>");
-                }
-                panelOut.println("          </select></label><br><br>");
-                panelOut.println("          <label>Start Date (YYYY-MM-DD):<br>"
-                        + "<input type=\"date\" name=\"startDate\" required></label><br><br>");
-                panelOut.println("          <label>End Date (YYYY-MM-DD):<br>"
-                        + "<input type=\"date\" name=\"endDate\" required></label><br><br>");
-                panelOut.println("          <button type=\"submit\">Create Assignment</button>");
-                panelOut.println("          &nbsp; <a href=\"" + contextPath
-                        + "/admin/es/meeting-survey\">Cancel</a>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "New Assignment - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">New Meeting Survey Assignment</h2>");
+                    if (errorMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p>"
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
+                    if (successMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(successMessage) + "</p></div>");
+                    }
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\""
+                            + contextPath + "/admin/es/meeting-survey\">");
+                    out.println("              <input type=\"hidden\" name=\"action\" value=\"create\">");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esTopicMeetingId\">Topic Meeting</label>");
+                    out.println("                <select class=\"aira-select\" id=\"esTopicMeetingId\" name=\"esTopicMeetingId\">");
+                    for (EsTopicMeeting m : allMeetings) {
+                        boolean selected = preselectedMeetingId != null
+                                && preselectedMeetingId.equals(m.getEsTopicMeetingId());
+                        out.println("                  <option value=\"" + m.getEsTopicMeetingId() + "\""
+                                + (selected ? " selected" : "") + ">"
+                                + escapeHtml(orEmpty(m.getMeetingName()))
+                                + " (id=" + m.getEsTopicMeetingId() + ")</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"esSurveyId\">Survey (READY only)</label>");
+                    out.println("                <select class=\"aira-select\" id=\"esSurveyId\" name=\"esSurveyId\">");
+                    for (EsSurvey s : readySurveys) {
+                        out.println("                  <option value=\"" + s.getEsSurveyId() + "\">"
+                                + escapeHtml(s.getSurveyName()) + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"startDate\">Start Date (YYYY-MM-DD)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"startDate\" type=\"date\" name=\"startDate\" required>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"endDate\">End Date (YYYY-MM-DD)</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"endDate\" type=\"date\" name=\"endDate\" required>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Assignment</button>");
+                    out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/meeting-survey\">Cancel</a>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderEditForm(HttpServletResponse response, String contextPath,
+    private void renderEditForm(HttpServletRequest request, HttpServletResponse response,
             EsTopicMeetingSurvey assignment, String successMessage,
             String errorMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         EsSurvey survey = surveyService.getSurvey(assignment.getEsSurveyId()).orElse(null);
         EsTopicMeeting meeting = topicMeetingDao.findById(assignment.getEsTopicMeetingId()).orElse(null);
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Edit Assignment - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Meeting Survey Assignment #"
-                        + assignment.getEsTopicMeetingSurveyId() + "</h2>");
-                panelOut.println("        <p>Survey: <strong>"
-                        + escapeHtml(survey != null ? survey.getSurveyName() : "?") + "</strong></p>");
-                panelOut.println("        <p>Meeting: <strong>"
-                        + escapeHtml(meeting != null ? orEmpty(meeting.getMeetingName()) : "?") + "</strong></p>");
-                if (successMessage != null) {
-                    panelOut.println("        <p><strong>" + escapeHtml(successMessage) + "</strong></p>");
-                }
-                if (errorMessage != null) {
-                    panelOut.println("        <p class=\"error\"><strong>"
-                            + escapeHtml(errorMessage) + "</strong></p>");
-                }
-                panelOut.println("        <form method=\"post\" action=\""
-                        + contextPath + "/admin/es/meeting-survey\">");
-                panelOut.println("          <input type=\"hidden\" name=\"action\" value=\"update\">");
-                panelOut.println("          <input type=\"hidden\" name=\"assignmentId\" value=\""
-                        + assignment.getEsTopicMeetingSurveyId() + "\">");
-                panelOut.println("          <label>Start Date:<br>"
-                        + "<input type=\"date\" name=\"startDate\" value=\""
-                        + assignment.getStartDate().toString() + "\" required></label><br><br>");
-                panelOut.println("          <label>End Date:<br>"
-                        + "<input type=\"date\" name=\"endDate\" value=\""
-                        + assignment.getEndDate().toString() + "\" required></label><br><br>");
-                panelOut.println("          <label>Status:<br><select name=\"status\">");
-                for (AssignmentStatus s : AssignmentStatus.values()) {
-                    boolean selected = s == assignment.getStatus();
-                    panelOut.println("            <option value=\"" + s.name() + "\""
-                            + (selected ? " selected" : "") + ">" + s.name() + "</option>");
-                }
-                panelOut.println("          </select></label><br><br>");
-                panelOut.println("          <button type=\"submit\">Save</button>");
-                panelOut.println("        </form>");
-                String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
-                        + assignment.getEsTopicMeetingSurveyId();
-                panelOut.println("        <br><a href=\"" + resultsUrl + "\">View Results</a>");
-                panelOut.println("        &nbsp;|&nbsp;<a href=\"" + contextPath
-                        + "/admin/es/meeting-survey\">Back to Assignments</a>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Admin auth
-    // -------------------------------------------------------------------------
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        AdminShellRenderer.render(request, response, "Edit Assignment - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Survey Assignment #"
+                            + assignment.getEsTopicMeetingSurveyId() + "</h2>");
+                    out.println("            <p>Survey: <strong>"
+                            + escapeHtml(survey != null ? survey.getSurveyName() : "?") + "</strong></p>");
+                    out.println("            <p>Meeting: <strong>"
+                            + escapeHtml(meeting != null ? orEmpty(meeting.getMeetingName()) : "?") + "</strong></p>");
+                    if (successMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(successMessage) + "</p></div>");
+                    }
+                    if (errorMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p>"
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\""
+                            + contextPath + "/admin/es/meeting-survey\">");
+                    out.println("              <input type=\"hidden\" name=\"action\" value=\"update\">");
+                    out.println("              <input type=\"hidden\" name=\"assignmentId\" value=\""
+                            + assignment.getEsTopicMeetingSurveyId() + "\">");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"startDate\">Start Date</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"startDate\" type=\"date\" name=\"startDate\" value=\""
+                                    + assignment.getStartDate().toString() + "\" required>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"endDate\">End Date</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"endDate\" type=\"date\" name=\"endDate\" value=\""
+                                    + assignment.getEndDate().toString() + "\" required>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"status\">Status</label>");
+                    out.println("                <select class=\"aira-select\" id=\"status\" name=\"status\">");
+                    for (AssignmentStatus s : AssignmentStatus.values()) {
+                        boolean selected = s == assignment.getStatus();
+                        out.println("                  <option value=\"" + s.name() + "\""
+                                + (selected ? " selected" : "") + ">" + s.name() + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    String resultsUrl = contextPath + "/admin/es/survey-results?assignmentId="
+                            + assignment.getEsTopicMeetingSurveyId();
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + resultsUrl
+                            + "\">View Results</a>"
+                            + " &nbsp;|&nbsp; <a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/meeting-survey\">Back to Assignments</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     // -------------------------------------------------------------------------

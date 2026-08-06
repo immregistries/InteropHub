@@ -6,9 +6,9 @@ InteropHub is currently the only application consuming `aira-web`. `aira-web` is
 
 ## Current state
 
-- InteropHub consumes `org.immregistries:aira-web-components` / `aira-web-theme` version **0.1.6** (see `pom.xml`).
+- InteropHub consumes `org.immregistries:aira-web-components` / `aira-web-theme` version **0.1.8** (see `pom.xml`).
 - [`reference/aira.css`](reference/aira.css) is a committed, read-only snapshot of the exact CSS this version ships. Grep or read it directly — don't unzip the theme jar to check what a class does.
-- [`components-guide.md`](components-guide.md) and [`adoption-guide.md`](adoption-guide.md) are mirrors of the same-named docs from the `aira-web` project's own `docs/`, current as of 0.1.6.
+- [`components-guide.md`](components-guide.md) and [`adoption-guide.md`](adoption-guide.md) are mirrors of the same-named docs from the `aira-web` project's own `docs/`, current as of 0.1.8.
 - [`aira-css-proposed-changes.md`](aira-css-proposed-changes.md) is the active queue of gaps proposed upstream but not yet implemented. Its revision-history table at the top links every past round.
 - `aira-css-changes-revision-N.md` files are handoff notes written by the `aira-web` agent describing exactly what shipped in each release.
 - `Migrating Servlets to AIRA CSS.md` is the detailed guide for migrating a legacy servlet page onto the shared shell; section 14 has the full decision process referenced below.

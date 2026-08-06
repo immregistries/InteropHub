@@ -35,6 +35,7 @@ import org.airahub.interophub.service.AuthService;
 import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
+import org.immregistries.aira.web.AiraPage;
 
 public class SendWelcomeEmailServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(SendWelcomeEmailServlet.class.getName());
@@ -105,18 +106,14 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         User auditUser = null;
         Long issuedMagicId = null;
 
+        AiraPage page = InteropAiraPageFactory.base(request, "Register - InteropHub")
+                .applicationSubtitle("Register")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.publicTopicSpacePickerContext())
+                .build();
+
         try (PrintWriter out = response.getWriter()) {
-            String pageTitle = profileSubmission ? "Register - InteropHub" : "Register - InteropHub";
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\">");
-            out.println("<head>");
-            out.println("  <meta charset=\"UTF-8\" />");
-            out.println("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("  <title>" + escapeHtml(pageTitle) + "</title>");
-            out.println("  <link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" />");
-            out.println("</head>");
-            out.println("<body>");
-            out.println("  <main class=\"container\">");
+            page.writeStart(out);
 
             try {
                 if (externalAuthError != null) {
@@ -137,10 +134,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                             Map.of(),
                             null,
                             externalAuthRequest.orElse(null));
-                    out.println("  </main>");
-                    PageFooterRenderer.render(out);
-                    out.println("</body>");
-                    out.println("</html>");
+                    page.writeEnd(out);
                     return;
                 } else {
                     Map<String, String> fieldErrors = validateRegistrationFields(firstName, lastName, organization,
@@ -156,10 +150,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                                 fieldErrors,
                                 null,
                                 externalAuthRequest.orElse(null));
-                        out.println("  </main>");
-                        PageFooterRenderer.render(out);
-                        out.println("</body>");
-                        out.println("</html>");
+                        page.writeEnd(out);
                         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                         return;
                     }
@@ -259,10 +250,8 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                             ex.getMessage(),
                             externalAuthRequest.orElse(null));
                 } else {
-                    out.println("    <h1>Email Send Failed</h1>");
-                    out.println("    <p>Could not continue with this request.</p>");
-                    out.println("    <p>Reason: " + escapeHtml(ex.getMessage()) + "</p>");
-                    out.println("    <p><a href=\"" + contextPath + "/home\">Return to Home</a></p>");
+                    renderRequestFailed(out, contextPath, "Could not continue with this request.",
+                            ex.getMessage());
                 }
             } catch (Exception ex) {
                 if (normalizedEmail != null && issuedMagicId != null) {
@@ -294,37 +283,66 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                             ex.getMessage(),
                             externalAuthRequest.orElse(null));
                 } else {
-                    out.println("    <h1>Email Send Failed</h1>");
-                    out.println("    <p>Could not send email right now.</p>");
-                    out.println("    <p>Reason: " + escapeHtml(ex.getMessage()) + "</p>");
-                    out.println("    <p><a href=\"" + contextPath + "/home\">Return to Home</a></p>");
+                    renderRequestFailed(out, contextPath, "Could not send email right now.", ex.getMessage());
                 }
             }
 
-            out.println("  </main>");
-            PageFooterRenderer.render(out);
-            out.println("</body>");
-            out.println("</html>");
+            page.writeEnd(out);
         }
     }
 
     private void renderEmailSent(PrintWriter out, String contextPath, String email) {
-        out.println("    <h1>Email Sent</h1>");
-        out.println("    <p>We sent a welcome email to <strong>" + escapeHtml(email) + "</strong>.</p>");
-        out.println("    <p>Check your inbox and use the sign-in link in that message to continue.</p>");
-        out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
+        out.println("      <div class=\"aira-container--narrow\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div><h1 class=\"aira-page-title\">Email Sent</h1></div>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-alert aira-alert--success\">");
+        out.println("          <p>We sent a welcome email to <strong>" + escapeHtml(email) + "</strong>.</p>");
+        out.println("          <p>Check your inbox and use the sign-in link in that message to continue.</p>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-action-group\">");
+        out.println(
+                "          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath + "/home\">Back to Home</a>");
+        out.println("        </div>");
+        out.println("      </div>");
     }
 
     private void renderDevModeLink(PrintWriter out, String contextPath, String magicLinkUrl) {
-        out.println("    <h1>Sign-In Link</h1>");
-        out.println("    <div style=\"border:2px solid #e6a817;background:#fffbf0;padding:1rem;border-radius:4px;\">");
+        out.println("      <div class=\"aira-container--narrow\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div><h1 class=\"aira-page-title\">Sign-In Link</h1></div>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-alert aira-alert--warning\">");
+        out.println("          <p class=\"aira-alert__title\">Dev mode: email sending is disabled</p>");
+        out.println("          <p>Your sign-in link is shown here instead.</p>");
+        out.println("          <p><a class=\"aira-inline-link\" href=\"" + escapeHtml(magicLinkUrl) + "\">"
+                + escapeHtml(magicLinkUrl) + "</a></p>");
         out.println(
-                "      <p><strong>Dev mode:</strong> email sending is disabled. Your sign-in link is shown here instead.</p>");
-        out.println("      <p><a href=\"" + escapeHtml(magicLinkUrl) + "\">" + escapeHtml(magicLinkUrl) + "</a></p>");
+                "          <p class=\"aira-meta\">This panel only appears when email is disabled and the base URL is localhost.</p>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-action-group\">");
         out.println(
-                "      <p style=\"font-size:0.85em;color:#666;\">This panel only appears when email is disabled and the base URL is localhost.</p>");
-        out.println("    </div>");
-        out.println("    <p><a href=\"" + contextPath + "/home\">Back to Home</a></p>");
+                "          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath + "/home\">Back to Home</a>");
+        out.println("        </div>");
+        out.println("      </div>");
+    }
+
+    private void renderRequestFailed(PrintWriter out, String contextPath, String intro, String reason) {
+        out.println("      <div class=\"aira-container--narrow\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div>");
+        out.println("            <h1 class=\"aira-page-title\">Email Send Failed</h1>");
+        out.println("            <p class=\"aira-page-intro\">" + escapeHtml(intro) + "</p>");
+        out.println("          </div>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-alert aira-alert--error\">");
+        out.println("          <p>Reason: " + escapeHtml(reason) + "</p>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-action-group\">");
+        out.println(
+                "          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath + "/home\">Return to Home</a>");
+        out.println("        </div>");
+        out.println("      </div>");
     }
 
     private boolean isLocalhostUrl(String url) {
@@ -338,65 +356,83 @@ public class SendWelcomeEmailServlet extends HttpServlet {
             AuthFlowService.ExternalAuthRequest externalAuthRequest) {
         List<LegalTerm> registrationTerms = loadRegistrationTerms();
 
-        out.println("    <h1>Register</h1>");
+        out.println("      <div class=\"aira-container--narrow\">");
+        out.println("        <div class=\"aira-page-header\">");
+        out.println("          <div>");
+        out.println("            <h1 class=\"aira-page-title\">Register</h1>");
         out.println(
-                "    <p>Use of these testing resources is free. We need a little information about you, and you must review and agree to the terms and limitations for using these tools.</p>");
-        out.println("    <p>Email: <strong>" + escapeHtml(email) + "</strong></p>");
+                "            <p class=\"aira-page-intro\">Use of these testing resources is free. We need a little information about you, and you must review and agree to the terms and limitations for using these tools.</p>");
+        out.println("          </div>");
+        out.println("        </div>");
+
+        out.println("        <section class=\"aira-panel\">");
+        out.println("          <p class=\"aira-meta\">Email: <strong>" + escapeHtml(email) + "</strong></p>");
         if (errorMessage != null && !errorMessage.isBlank()) {
-            out.println("    <p><strong>Could not continue:</strong> " + escapeHtml(errorMessage) + "</p>");
+            out.println("          <div class=\"aira-alert aira-alert--error\">");
+            out.println("            <p class=\"aira-alert__title\">Could not continue</p>");
+            out.println("            <p>" + escapeHtml(errorMessage) + "</p>");
+            out.println("          </div>");
         }
         out.println(
-                "    <form class=\"login-form\" action=\"" + contextPath + "/send-welcome-email\" method=\"post\">");
-        out.println("      <input type=\"hidden\" name=\"profileSubmission\" value=\"1\" />");
-        out.println("      <input type=\"hidden\" name=\"email\" value=\"" + escapeHtml(orEmpty(email)) + "\" />");
+                "          <form class=\"aira-form\" action=\"" + contextPath + "/send-welcome-email\" method=\"post\">");
+        out.println("            <input type=\"hidden\" name=\"profileSubmission\" value=\"1\" />");
+        out.println(
+                "            <input type=\"hidden\" name=\"email\" value=\"" + escapeHtml(orEmpty(email)) + "\" />");
         if (externalAuthRequest != null) {
-            out.println("      <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_APP_CODE + "\" value=\""
-                    + escapeHtml(externalAuthRequest.getAppCode()) + "\" />");
-            out.println("      <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_RETURN_TO + "\" value=\""
-                    + escapeHtml(externalAuthRequest.getReturnTo()) + "\" />");
-            out.println("      <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_STATE + "\" value=\""
+            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_APP_CODE
+                    + "\" value=\"" + escapeHtml(externalAuthRequest.getAppCode()) + "\" />");
+            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_RETURN_TO
+                    + "\" value=\"" + escapeHtml(externalAuthRequest.getReturnTo()) + "\" />");
+            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_STATE + "\" value=\""
                     + escapeHtml(externalAuthRequest.getState()) + "\" />");
-            out.println("      <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_REQUESTED_URL + "\" value=\""
-                    + escapeHtml(externalAuthRequest.getRequestedUrl()) + "\" />");
+            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_REQUESTED_URL
+                    + "\" value=\"" + escapeHtml(externalAuthRequest.getRequestedUrl()) + "\" />");
         }
 
-        out.println("      <label for=\"firstName\">First Name" + renderFieldError(fieldErrors, "firstName")
-                + "</label>");
-        out.println("      <input id=\"firstName\" name=\"firstName\" type=\"text\" required maxlength=\""
-                + MAX_FIRST_NAME_LENGTH + "\" value=\""
-                + escapeHtml(orEmpty(firstName)) + "\" />");
-
-        out.println("      <label for=\"lastName\">Last Name" + renderFieldError(fieldErrors, "lastName")
-                + "</label>");
-        out.println("      <input id=\"lastName\" name=\"lastName\" type=\"text\" maxlength=\""
-                + MAX_LAST_NAME_LENGTH + "\" value=\""
-                + escapeHtml(orEmpty(lastName)) + "\" />");
-
-        out.println("      <label for=\"organization\">Organization" + renderFieldError(fieldErrors, "organization")
-                + "</label>");
-        out.println("      <div class=\"field-hint\">Full name of organization you are associated with</div>");
-        out.println("      <input id=\"organization\" name=\"organization\" type=\"text\" required maxlength=\""
-                + MAX_ORGANIZATION_LENGTH + "\" value=\""
-                + escapeHtml(orEmpty(organization)) + "\" />");
-
-        out.println("      <label for=\"roleTitle\">Role Title" + renderFieldError(fieldErrors, "roleTitle")
-                + "</label>");
-        out.println("      <input id=\"roleTitle\" name=\"roleTitle\" type=\"text\" required maxlength=\""
-                + MAX_ROLE_TITLE_LENGTH + "\" value=\""
-                + escapeHtml(orEmpty(roleTitle)) + "\" />");
+        renderTextField(out, fieldErrors, "firstName", "First Name", firstName, MAX_FIRST_NAME_LENGTH, true, null);
+        renderTextField(out, fieldErrors, "lastName", "Last Name", lastName, MAX_LAST_NAME_LENGTH, false, null);
+        renderTextField(out, fieldErrors, "organization", "Organization", organization, MAX_ORGANIZATION_LENGTH,
+                true, "Full name of organization you are associated with");
+        renderTextField(out, fieldErrors, "roleTitle", "Role Title", roleTitle, MAX_ROLE_TITLE_LENGTH, true, null);
 
         if (!registrationTerms.isEmpty()) {
             LegalTermsUiRenderer.renderTermsSection(out, registrationTerms, selectedLegalTermIds, "Legal Terms",
                     "legalTerm_");
         }
 
-        out.println("      <div class=\"form-actions\">");
-        out.println("        <button type=\"submit\">Register</button>");
-        out.println("        <a class=\"button-link\" href=\"" + contextPath + "/home\">Cancel</a>");
+        out.println("            <div class=\"aira-form-actions\">");
+        out.println("              <button class=\"aira-button aira-button--primary\" type=\"submit\">Register</button>");
+        out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                + "/home\">Cancel</a>");
+        out.println("            </div>");
+        out.println("          </form>");
+        out.println("        </section>");
         out.println("      </div>");
-        out.println("    </form>");
 
         LegalTermsUiRenderer.renderTermsScript(out);
+    }
+
+    private void renderTextField(PrintWriter out, Map<String, String> fieldErrors, String fieldName, String label,
+            String value, int maxLength, boolean required, String helpText) {
+        String errorMessage = fieldErrors == null ? null : fieldErrors.get(fieldName);
+        boolean hasError = errorMessage != null && !errorMessage.isBlank();
+        String errorId = fieldName + "-error";
+
+        out.println("            <div class=\"aira-field\">");
+        out.println("              <label for=\"" + fieldName + "\">" + escapeHtml(label) + "</label>");
+        if (helpText != null) {
+            out.println("              <div class=\"aira-field-help\">" + escapeHtml(helpText) + "</div>");
+        }
+        if (hasError) {
+            out.println(
+                    "              <div class=\"aira-field-error\" id=\"" + errorId + "\">" + escapeHtml(errorMessage)
+                            + "</div>");
+        }
+        out.println("              <input class=\"aira-input\" id=\"" + fieldName + "\" name=\"" + fieldName
+                + "\" type=\"text\"" + (required ? " required" : "") + " maxlength=\"" + maxLength + "\" value=\""
+                + escapeHtml(orEmpty(value)) + "\""
+                + (hasError ? " aria-invalid=\"true\" aria-describedby=\"" + errorId + "\"" : "") + " />");
+        out.println("            </div>");
     }
 
     private List<LegalTerm> loadRegistrationTerms() {
@@ -581,17 +617,6 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 .append(URLEncoder.encode(key, StandardCharsets.UTF_8))
                 .append('=')
                 .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
-    }
-
-    private String renderFieldError(Map<String, String> fieldErrors, String fieldName) {
-        if (fieldErrors == null) {
-            return "";
-        }
-        String message = fieldErrors.get(fieldName);
-        if (message == null || message.isBlank()) {
-            return "";
-        }
-        return " <span class=\"field-error\">" + escapeHtml(message) + "</span>";
     }
 
     private void saveTermAcceptancesForRegistration(User user, List<LegalTerm> terms, HttpServletRequest request) {

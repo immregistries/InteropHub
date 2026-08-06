@@ -13,20 +13,17 @@ import org.airahub.interophub.dao.EmailProspectBrowseRow;
 import org.airahub.interophub.dao.EmailProspectDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 
 public class AdminRegisteredUsersServlet extends HttpServlet {
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final int DEFAULT_LIMIT = 20;
 
-    private final AuthFlowService authFlowService;
     private final UserDao userDao;
     private final EmailProspectDao emailProspectDao;
     private final EsInterestService esInterestService;
 
     public AdminRegisteredUsersServlet() {
-        this.authFlowService = new AuthFlowService();
         this.userDao = new UserDao();
         this.emailProspectDao = new EmailProspectDao();
         this.esInterestService = new EsInterestService();
@@ -34,12 +31,11 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String search = trimToNull(request.getParameter("search"));
         String linkedParam = trimToNull(request.getParameter("linked"));
         int linkedCount = 0;
@@ -77,14 +73,14 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             prospects = emailProspectDao.findRecentProspects(DEFAULT_LIMIT);
         }
 
-        renderPage(response, contextPath, search, linkedCount, dedupedCount,
+        renderPage(request, response, search, linkedCount, dedupedCount,
                 countRegistered, countActiveLogins, countProspects,
                 registrations, activeLogins, prospects);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -98,163 +94,174 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
         }
     }
 
-    private void renderPage(HttpServletResponse response, String contextPath, String search,
+    private void renderPage(HttpServletRequest request, HttpServletResponse response, String search,
             int linkedCount, int dedupedCount,
             long countRegistered, long countActiveLogins, long countProspects,
             List<User> registrations, List<User> activeLogins,
             List<EmailProspectBrowseRow> prospects) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         boolean isSearch = search != null;
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Registered Users - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Users &amp; Prospects</h2>");
+        AdminShellRenderer.render(request, response, "Registered Users - InteropHub", AdminSection.PEOPLE,
+                "/admin/users", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Users &amp; Prospects</h2>");
 
-                // --- Search bar ---
-                panelOut.println("        <form method=\"get\" action=\"" + contextPath + "/admin/users\">");
-                panelOut.println("          <label for=\"search\">Search by email, name, or organization:</label>");
-                panelOut.println("          <input type=\"text\" id=\"search\" name=\"search\" value=\""
-                        + escapeHtml(search == null ? "" : search) + "\" />");
-                panelOut.println("          <button type=\"submit\">Search</button>");
-                if (isSearch) {
-                    panelOut.println("          <a href=\"" + contextPath + "/admin/users\">Clear</a>");
-                }
-                panelOut.println("        </form>");
-
-                // --- Stat cards (always totals) ---
-                panelOut.println("        <div class=\"stat-cards\">");
-                renderStatCard(panelOut, String.valueOf(countRegistered), "Registered Users");
-                renderStatCard(panelOut, String.valueOf(countActiveLogins), "Active (last 30 days)");
-                renderStatCard(panelOut, String.valueOf(countProspects), "Prospects (email only)");
-                panelOut.println("        </div>");
-
-                // --- Success banner after link action ---
-                if (linkedCount > 0) {
-                    String bannerMsg = linkedCount + " user" + (linkedCount == 1 ? "" : "s")
-                            + " processed — anonymous records have been linked.";
-                    if (dedupedCount > 0) {
-                        bannerMsg += " " + dedupedCount + " duplicate subscription"
-                                + (dedupedCount == 1 ? "" : "s") + " merged.";
+                    // --- Search bar ---
+                    out.println("            <form class=\"aira-form\" method=\"get\" action=\"" + contextPath + "/admin/users\">");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"search\">Search by email, name, or organization:</label>");
+                    out.println("                <input class=\"aira-input\" type=\"text\" id=\"search\" name=\"search\" value=\""
+                            + escapeHtml(search == null ? "" : search) + "\" />");
+                    out.println("              </div>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Search</button>");
+                    if (isSearch) {
+                        out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath + "/admin/users\">Clear</a>");
                     }
-                    panelOut.println("        <p class=\"success-banner\"><strong>"
-                            + escapeHtml(bannerMsg)
-                            + "</strong></p>");
-                }
+                    out.println("              </div>");
+                    out.println("            </form>");
 
-                // --- Table 1: Registrations ---
-                String regHeading = isSearch
-                        ? "Registrations matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + registrations.size()
-                                + ")"
-                        : "Last " + DEFAULT_LIMIT + " Registrations";
-                renderRegistrationsTable(panelOut, contextPath, regHeading, registrations);
+                    // --- Stat cards (always totals) ---
+                    out.println("            <div class=\"aira-cluster\">");
+                    renderStatCard(out, String.valueOf(countRegistered), "Registered Users");
+                    renderStatCard(out, String.valueOf(countActiveLogins), "Active (last 30 days)");
+                    renderStatCard(out, String.valueOf(countProspects), "Prospects (email only)");
+                    out.println("            </div>");
 
-                // --- Table 2: Active logins (last 30 days) ---
-                String loginHeading = isSearch
-                        ? "Active Users matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + activeLogins.size() + ")"
-                        : "Last " + DEFAULT_LIMIT + " Active Users (30 days)";
-                renderActiveLoginsTable(panelOut, contextPath, loginHeading, activeLogins);
+                    // --- Success banner after link action ---
+                    if (linkedCount > 0) {
+                        String bannerMsg = linkedCount + " user" + (linkedCount == 1 ? "" : "s")
+                                + " processed — anonymous records have been linked.";
+                        if (dedupedCount > 0) {
+                            bannerMsg += " " + dedupedCount + " duplicate subscription"
+                                    + (dedupedCount == 1 ? "" : "s") + " merged.";
+                        }
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p><strong>"
+                                + escapeHtml(bannerMsg)
+                                + "</strong></p></div>");
+                    }
 
-                // --- Table 3: Prospects ---
-                String prospectHeading = isSearch
-                        ? "Prospects matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + prospects.size() + ")"
-                        : "Last " + DEFAULT_LIMIT + " Prospects (not yet registered)";
+                    // --- Table 1: Registrations ---
+                    String regHeading = isSearch
+                            ? "Registrations matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + registrations.size()
+                                    + ")"
+                            : "Last " + DEFAULT_LIMIT + " Registrations";
+                    renderRegistrationsTable(out, contextPath, regHeading, registrations);
 
-                // --- Link All Prospects button ---
-                panelOut.println("        <form method=\"post\" action=\"" + contextPath
-                        + "/admin/users\" style=\"margin: 1rem 0;\">");
-                panelOut.println("          <input type=\"hidden\" name=\"action\" value=\"linkAllProspects\" />");
-                panelOut.println("          <button type=\"submit\">Link All Prospects to Registered Users</button>");
-                panelOut.println("        </form>");
+                    // --- Table 2: Active logins (last 30 days) ---
+                    String loginHeading = isSearch
+                            ? "Active Users matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + activeLogins.size() + ")"
+                            : "Last " + DEFAULT_LIMIT + " Active Users (30 days)";
+                    renderActiveLoginsTable(out, contextPath, loginHeading, activeLogins);
 
-                renderProspectsTable(panelOut, prospectHeading, prospects);
+                    // --- Table 3: Prospects ---
+                    String prospectHeading = isSearch
+                            ? "Prospects matching &ldquo;" + escapeHtml(search) + "&rdquo; (" + prospects.size() + ")"
+                            : "Last " + DEFAULT_LIMIT + " Prospects (not yet registered)";
 
-                panelOut.println("      </section>");
-            });
-        }
+                    // --- Link All Prospects button ---
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                            + "/admin/users\">");
+                    out.println("              <input type=\"hidden\" name=\"action\" value=\"linkAllProspects\" />");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--secondary\" type=\"submit\">Link All Prospects to Registered Users</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+
+                    renderProspectsTable(out, prospectHeading, prospects);
+
+                    out.println("          </section>");
+                });
     }
 
     private void renderStatCard(PrintWriter out, String value, String label) {
-        out.println("          <div class=\"stat-card\">");
-        out.println("            <span class=\"stat-card-value\">" + escapeHtml(value) + "</span>");
-        out.println("            <span class=\"stat-card-label\">" + escapeHtml(label) + "</span>");
-        out.println("          </div>");
+        out.println("              <div class=\"aira-meta-chip\">");
+        out.println("                <span class=\"aira-meta-chip__value\">" + escapeHtml(value) + "</span>");
+        out.println("                <span class=\"aira-meta-chip__label\">" + escapeHtml(label) + "</span>");
+        out.println("              </div>");
     }
 
     private void renderRegistrationsTable(PrintWriter out, String contextPath, String heading, List<User> users) {
-        out.println("        <h3>" + heading + "</h3>");
+        out.println("            <h3 class=\"aira-subsection-title\">" + heading + "</h3>");
         if (users.isEmpty()) {
-            out.println("        <p>No registrations found.</p>");
+            out.println("            <p class=\"aira-meta\">No registrations found.</p>");
             return;
         }
-        out.println("        <table class=\"data-table\">");
-        out.println("          <thead><tr>");
-        out.println("            <th>Name</th><th>Email</th><th>Organization</th><th>Status</th><th>Registered</th>");
-        out.println("          </tr></thead>");
-        out.println("          <tbody>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead><tr>");
+        out.println("                <th>Name</th><th>Email</th><th>Organization</th><th>Status</th><th>Registered</th>");
+        out.println("              </tr></thead>");
+        out.println("              <tbody>");
         for (User user : users) {
             String link = contextPath + "/admin/users/detail?userId=" + user.getUserId();
             String name = trimToNull(user.getFullName());
             if (name == null)
                 name = orEmpty(user.getEmail());
-            out.println("            <tr>");
-            out.println("              <td><a href=\"" + link + "\">" + escapeHtml(name) + "</a></td>");
-            out.println("              <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
-            out.println("              <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
-            out.println("              <td>" + escapeHtml(user.getStatus() == null ? "" : user.getStatus().name())
+            out.println("                <tr>");
+            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + link + "\">" + escapeHtml(name) + "</a></td>");
+            out.println("                  <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
+            out.println("                  <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
+            out.println("                  <td>" + escapeHtml(user.getStatus() == null ? "" : user.getStatus().name())
                     + "</td>");
-            out.println("              <td>" + formatDateTime(user.getCreatedAt()) + "</td>");
-            out.println("            </tr>");
+            out.println("                  <td>" + formatDateTime(user.getCreatedAt()) + "</td>");
+            out.println("                </tr>");
         }
-        out.println("          </tbody></table>");
+        out.println("              </tbody></table>");
+        out.println("            </div>");
     }
 
     private void renderActiveLoginsTable(PrintWriter out, String contextPath, String heading, List<User> users) {
-        out.println("        <h3>" + heading + "</h3>");
+        out.println("            <h3 class=\"aira-subsection-title\">" + heading + "</h3>");
         if (users.isEmpty()) {
-            out.println("        <p>No active users found.</p>");
+            out.println("            <p class=\"aira-meta\">No active users found.</p>");
             return;
         }
-        out.println("        <table class=\"data-table\">");
-        out.println("          <thead><tr>");
-        out.println("            <th>Name</th><th>Email</th><th>Organization</th><th>Last Login</th>");
-        out.println("          </tr></thead>");
-        out.println("          <tbody>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead><tr>");
+        out.println("                <th>Name</th><th>Email</th><th>Organization</th><th>Last Login</th>");
+        out.println("              </tr></thead>");
+        out.println("              <tbody>");
         for (User user : users) {
             String link = contextPath + "/admin/users/detail?userId=" + user.getUserId();
             String name = trimToNull(user.getFullName());
             if (name == null)
                 name = orEmpty(user.getEmail());
-            out.println("            <tr>");
-            out.println("              <td><a href=\"" + link + "\">" + escapeHtml(name) + "</a></td>");
-            out.println("              <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
-            out.println("              <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
-            out.println("              <td>" + formatDateTime(user.getLastLoginAt()) + "</td>");
-            out.println("            </tr>");
+            out.println("                <tr>");
+            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + link + "\">" + escapeHtml(name) + "</a></td>");
+            out.println("                  <td>" + escapeHtml(orEmpty(user.getEmail())) + "</td>");
+            out.println("                  <td>" + escapeHtml(orEmpty(user.getOrganization())) + "</td>");
+            out.println("                  <td>" + formatDateTime(user.getLastLoginAt()) + "</td>");
+            out.println("                </tr>");
         }
-        out.println("          </tbody></table>");
+        out.println("              </tbody></table>");
+        out.println("            </div>");
     }
 
     private void renderProspectsTable(PrintWriter out, String heading, List<EmailProspectBrowseRow> prospects) {
-        out.println("        <h3>" + heading + "</h3>");
+        out.println("            <h3 class=\"aira-subsection-title\">" + heading + "</h3>");
         if (prospects.isEmpty()) {
-            out.println("        <p>No prospects found.</p>");
+            out.println("            <p class=\"aira-meta\">No prospects found.</p>");
             return;
         }
-        out.println("        <table class=\"data-table\">");
-        out.println("          <thead><tr>");
-        out.println("            <th>Email</th><th>First Contact</th><th>Last Contact</th><th>Sources</th>");
-        out.println("          </tr></thead>");
-        out.println("          <tbody>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead><tr>");
+        out.println("                <th>Email</th><th>First Contact</th><th>Last Contact</th><th>Sources</th>");
+        out.println("              </tr></thead>");
+        out.println("              <tbody>");
         for (EmailProspectBrowseRow row : prospects) {
-            out.println("            <tr>");
-            out.println("              <td>" + escapeHtml(row.getEmailNormalized()) + "</td>");
-            out.println("              <td>" + formatDateTime(row.getFirstContactAt()) + "</td>");
-            out.println("              <td>" + formatDateTime(row.getLastContactAt()) + "</td>");
-            out.println("              <td>" + buildSourcesLabel(row) + "</td>");
-            out.println("            </tr>");
+            out.println("                <tr>");
+            out.println("                  <td>" + escapeHtml(row.getEmailNormalized()) + "</td>");
+            out.println("                  <td>" + formatDateTime(row.getFirstContactAt()) + "</td>");
+            out.println("                  <td>" + formatDateTime(row.getLastContactAt()) + "</td>");
+            out.println("                  <td>" + buildSourcesLabel(row) + "</td>");
+            out.println("                </tr>");
         }
-        out.println("          </tbody></table>");
+        out.println("              </tbody></table>");
+        out.println("            </div>");
     }
 
     private String buildSourcesLabel(EmailProspectBrowseRow row) {
@@ -279,37 +286,6 @@ public class AdminRegisteredUsersServlet extends HttpServlet {
             return "";
         }
         return escapeHtml(DATETIME_FORMATTER.format(dt));
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-
-        return authenticatedUser;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println(
-                        "        <p>You must be an InteropHub admin to access registered user information.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
     }
 
     private String trimToNull(String value) {

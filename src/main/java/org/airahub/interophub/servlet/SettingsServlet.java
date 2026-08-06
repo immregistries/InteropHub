@@ -10,38 +10,36 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.HubSettingDao;
 import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 
 public class SettingsServlet extends HttpServlet {
-    private final AuthFlowService authFlowService;
     private final HubSettingDao hubSettingDao;
     private final EmailService emailService;
 
     public SettingsServlet() {
-        this.authFlowService = new AuthFlowService();
         this.hubSettingDao = new HubSettingDao();
         this.emailService = new EmailService();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        if (!ensureAdminAccess(request, response)) {
+        if (AdminAccessGuard.requireAdmin(request, response).isEmpty()) {
             return;
         }
 
         HubSetting settings = loadSettings();
-        renderForm(response, request.getContextPath(), settings, null, false, null);
+        renderForm(request, response, settings, null, false, null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-        if (!ensureAdminAccess(request, response)) {
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
+        if (adminUser.isEmpty()) {
             return;
         }
 
-        User currentUser = authFlowService.findAuthenticatedUser(request).orElseThrow();
+        User currentUser = adminUser.get();
 
         HubSetting settings = loadSettings();
         String errorMessage = null;
@@ -71,37 +69,7 @@ public class SettingsServlet extends HttpServlet {
             }
         }
 
-        renderForm(response, request.getContextPath(), settings, errorMessage, saved, testEmailMessage);
-    }
-
-    private boolean ensureAdminAccess(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return false;
-        }
-
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return false;
-        }
-
-        return true;
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Access Denied - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Access Denied</h2>");
-                panelOut.println("        <p>You must be an InteropHub admin to access settings.</p>");
-                panelOut.println("        <p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+        renderForm(request, response, settings, errorMessage, saved, testEmailMessage);
     }
 
     private HubSetting loadSettings() {
@@ -174,80 +142,109 @@ public class SettingsServlet extends HttpServlet {
         return value;
     }
 
-    private void renderForm(HttpServletResponse response, String contextPath, HubSetting settings, String errorMessage,
-            boolean saved, String testEmailMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+    private void renderForm(HttpServletRequest request, HttpServletResponse response, HubSetting settings,
+            String errorMessage, boolean saved, String testEmailMessage) throws IOException {
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "InteropHub Settings", AdminSection.PLATFORM, "/admin/settings",
+                out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Hub Settings</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Edit SMTP and external URL values for email sending.</p>");
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "InteropHub Settings", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Hub Settings</h2>");
-                panelOut.println("        <p>Edit SMTP and external URL values for email sending.</p>");
+                    if (saved) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--success\"><p>Settings saved.</p></div>");
+                    }
+                    if (errorMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p><strong>Save failed:</strong> "
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
+                    if (testEmailMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(testEmailMessage) + "</p></div>");
+                    }
 
-                if (saved) {
-                    panelOut.println("        <p><strong>Settings saved.</strong></p>");
-                }
-                if (errorMessage != null) {
-                    panelOut.println("        <p><strong>Save failed:</strong> " + escapeHtml(errorMessage) + "</p>");
-                }
-                if (testEmailMessage != null) {
-                    panelOut.println(
-                            "        <p><strong>Test email:</strong> " + escapeHtml(testEmailMessage) + "</p>");
-                }
+                    out.println("            <form class=\"aira-form\" action=\"" + contextPath
+                            + "/admin/settings\" method=\"post\">");
+                    out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"active\""
+                            + checked(settings.getActive()) + " /> Active</label>");
+                    out.println(
+                            "              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"emailEnabled\""
+                                    + checked(settings.getEmailEnabled()) + " /> Email Sending Enabled</label>");
+                    out.println(
+                            "              <p class=\"aira-meta\">When unchecked, all outbound email is suppressed silently. No SMTP connection is attempted.</p>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"externalBaseUrl\">External Base URL</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"externalBaseUrl\" name=\"externalBaseUrl\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(settings.getExternalBaseUrl())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("        <form class=\"login-form\" action=\"" + contextPath
-                        + "/admin/settings\" method=\"post\">");
-                out.println("      <label><input type=\"checkbox\" name=\"active\""
-                        + checked(settings.getActive()) + " /> Active</label>");
-                out.println("      <label><input type=\"checkbox\" name=\"emailEnabled\""
-                        + checked(settings.getEmailEnabled()) + " /> Email Sending Enabled</label>");
-                out.println(
-                        "      <p style=\"font-size:0.85em;color:#666;\">When unchecked, all outbound email is suppressed silently. No SMTP connection is attempted.</p>");
-                out.println("      <label for=\"externalBaseUrl\">External Base URL</label>");
-                out.println("      <input id=\"externalBaseUrl\" name=\"externalBaseUrl\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(settings.getExternalBaseUrl())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpHost\">SMTP Host</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpHost\" name=\"smtpHost\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(settings.getSmtpHost())) + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpHost\">SMTP Host</label>");
-                out.println("      <input id=\"smtpHost\" name=\"smtpHost\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(settings.getSmtpHost())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpPort\">SMTP Port</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpPort\" name=\"smtpPort\" type=\"number\" min=\"1\" max=\"65535\" value=\""
+                                    + escapeHtml(String.valueOf(
+                                            settings.getSmtpPort() == null ? 2525 : settings.getSmtpPort()))
+                                    + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpPort\">SMTP Port</label>");
-                out.println(
-                        "      <input id=\"smtpPort\" name=\"smtpPort\" type=\"number\" min=\"1\" max=\"65535\" value=\""
-                                + escapeHtml(
-                                        String.valueOf(settings.getSmtpPort() == null ? 2525 : settings.getSmtpPort()))
-                                + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpUsername\">SMTP Username</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpUsername\" name=\"smtpUsername\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(settings.getSmtpUsername())) + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpUsername\">SMTP Username</label>");
-                out.println("      <input id=\"smtpUsername\" name=\"smtpUsername\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(settings.getSmtpUsername())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpPassword\">SMTP Password</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpPassword\" name=\"smtpPassword\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(settings.getSmtpPassword())) + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpPassword\">SMTP Password</label>");
-                out.println("      <input id=\"smtpPassword\" name=\"smtpPassword\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(settings.getSmtpPassword())) + "\" />");
+                    out.println(
+                            "              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"smtpAuth\""
+                                    + checked(settings.getSmtpAuth()) + " /> SMTP Auth</label>");
+                    out.println(
+                            "              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"smtpStarttls\""
+                                    + checked(settings.getSmtpStarttls()) + " /> SMTP STARTTLS</label>");
+                    out.println(
+                            "              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"smtpSsl\""
+                                    + checked(settings.getSmtpSsl()) + " /> SMTP SSL</label>");
 
-                out.println("      <label><input type=\"checkbox\" name=\"smtpAuth\""
-                        + checked(settings.getSmtpAuth()) + " /> SMTP Auth</label>");
-                out.println("      <label><input type=\"checkbox\" name=\"smtpStarttls\""
-                        + checked(settings.getSmtpStarttls()) + " /> SMTP STARTTLS</label>");
-                out.println("      <label><input type=\"checkbox\" name=\"smtpSsl\""
-                        + checked(settings.getSmtpSsl()) + " /> SMTP SSL</label>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpFromEmail\">From Email</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpFromEmail\" name=\"smtpFromEmail\" type=\"email\" value=\""
+                                    + escapeHtml(orEmpty(settings.getSmtpFromEmail())) + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpFromEmail\">From Email</label>");
-                out.println("      <input id=\"smtpFromEmail\" name=\"smtpFromEmail\" type=\"email\" value=\""
-                        + escapeHtml(orEmpty(settings.getSmtpFromEmail())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"smtpFromName\">From Name</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"smtpFromName\" name=\"smtpFromName\" type=\"text\" value=\""
+                                    + escapeHtml(orEmpty(settings.getSmtpFromName())) + "\" />");
+                    out.println("              </div>");
 
-                out.println("      <label for=\"smtpFromName\">From Name</label>");
-                out.println("      <input id=\"smtpFromName\" name=\"smtpFromName\" type=\"text\" value=\""
-                        + escapeHtml(orEmpty(settings.getSmtpFromName())) + "\" />");
-
-                out.println("      <label><input type=\"checkbox\" name=\"sendTestEmail\" />"
-                        + " Send test email to my address after saving</label>");
-                panelOut.println("      <button type=\"submit\">Save Settings</button>");
-                panelOut.println("    </form>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println(
+                            "              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"sendTestEmail\" />"
+                                    + " Send test email to my address after saving</label>");
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println(
+                            "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save Settings</button>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
     private String checked(Boolean value) {

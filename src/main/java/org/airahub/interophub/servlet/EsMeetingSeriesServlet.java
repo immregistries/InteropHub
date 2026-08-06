@@ -29,7 +29,7 @@ import org.airahub.interophub.service.TopicSpaceAccessService;
 
 /**
  * Public-facing list of all meetings for a given meeting series
- * (es_topic_meeting). Accessible at /es/meetings?seriesId=X.
+ * (es_topic_meeting). Accessible at /es/meeting-series?seriesId=X.
  * Shows all meetings — past, current, and future — across all statuses.
  */
 public class EsMeetingSeriesServlet extends HttpServlet {
@@ -178,8 +178,8 @@ public class EsMeetingSeriesServlet extends HttpServlet {
                         + "\">Meeting Admin</a>");
                 if (topic != null) {
                     out.println("    &nbsp;&middot;&nbsp;");
-                    out.println("    <a href=\"" + contextPath + "/admin/es/topics?esTopicId=" + topic.getEsTopicId()
-                            + "\">Topic Admin</a>");
+                    out.println("    <a href=\"" + contextPath + "/es/topic/" + topic.getEsTopicId()
+                            + "\">View Topic Page</a>");
                 }
                 out.println("  </div>");
             }

@@ -401,6 +401,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicEditServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicEditServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>TopicSpaceRouteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.TopicSpaceRouteServlet</servlet-class>
   </servlet>
@@ -686,6 +691,11 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>EsTopicEditServlet</servlet-name>
+    <url-pattern>/es/topic-edit/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>TopicSpaceRouteServlet</servlet-name>
     <url-pattern>/spaces/*</url-pattern>
   </servlet-mapping>
@@ -813,6 +823,16 @@
 
   <servlet-mapping>
     <servlet-name>EsMeetingSeriesServlet</servlet-name>
+    <url-pattern>/es/meeting-series</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsMeetingsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingsServlet</servlet-name>
     <url-pattern>/es/meetings</url-pattern>
   </servlet-mapping>
 

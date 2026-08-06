@@ -1,14 +1,12 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 
 /**
  * Admin edit page for a single auth_user account.
@@ -18,17 +16,15 @@ import org.airahub.interophub.service.AuthFlowService;
  */
 public class AdminUserEditServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
     private final UserDao userDao;
 
     public AdminUserEditServlet() {
-        this.authFlowService = new AuthFlowService();
         this.userDao = new UserDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -41,16 +37,16 @@ public class AdminUserEditServlet extends HttpServlet {
 
         Optional<User> targetUser = userDao.findById(userId);
         if (targetUser.isEmpty()) {
-            renderUserNotFound(response, request.getContextPath(), userId);
+            renderUserNotFound(request, response, userId);
             return;
         }
 
-        renderForm(response, request.getContextPath(), targetUser.get(), null);
+        renderForm(request, response, targetUser.get(), null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -65,7 +61,7 @@ public class AdminUserEditServlet extends HttpServlet {
 
         Optional<User> targetUserOpt = userDao.findById(userId);
         if (targetUserOpt.isEmpty()) {
-            renderUserNotFound(response, contextPath, userId);
+            renderUserNotFound(request, response, userId);
             return;
         }
 
@@ -80,11 +76,11 @@ public class AdminUserEditServlet extends HttpServlet {
         boolean isAdmin = "on".equalsIgnoreCase(request.getParameter("isAdmin"));
 
         if (email == null) {
-            renderForm(response, contextPath, user, "Email is required.");
+            renderForm(request, response, user, "Email is required.");
             return;
         }
         if (email.length() > 254) {
-            renderForm(response, contextPath, user, "Email must be 254 characters or fewer.");
+            renderForm(request, response, user, "Email must be 254 characters or fewer.");
             return;
         }
 
@@ -93,28 +89,28 @@ public class AdminUserEditServlet extends HttpServlet {
         // Uniqueness check: reject if another user already owns this normalised email
         Optional<User> existingOwner = userDao.findByEmailNormalized(emailNormalized);
         if (existingOwner.isPresent() && !existingOwner.get().getUserId().equals(userId)) {
-            renderForm(response, contextPath, user, "That email address is already in use by another account.");
+            renderForm(request, response, user, "That email address is already in use by another account.");
             return;
         }
 
         if (firstName != null && firstName.length() > 100) {
-            renderForm(response, contextPath, user, "First name must be 100 characters or fewer.");
+            renderForm(request, response, user, "First name must be 100 characters or fewer.");
             return;
         }
         if (lastName != null && lastName.length() > 100) {
-            renderForm(response, contextPath, user, "Last name must be 100 characters or fewer.");
+            renderForm(request, response, user, "Last name must be 100 characters or fewer.");
             return;
         }
         if (displayName != null && displayName.length() > 160) {
-            renderForm(response, contextPath, user, "Display name must be 160 characters or fewer.");
+            renderForm(request, response, user, "Display name must be 160 characters or fewer.");
             return;
         }
         if (organization != null && organization.length() > 200) {
-            renderForm(response, contextPath, user, "Organization must be 200 characters or fewer.");
+            renderForm(request, response, user, "Organization must be 200 characters or fewer.");
             return;
         }
         if (roleTitle != null && roleTitle.length() > 200) {
-            renderForm(response, contextPath, user, "Role title must be 200 characters or fewer.");
+            renderForm(request, response, user, "Role title must be 200 characters or fewer.");
             return;
         }
 
@@ -131,118 +127,107 @@ public class AdminUserEditServlet extends HttpServlet {
         response.sendRedirect(contextPath + "/admin/users/detail?userId=" + userId + "&saved=1");
     }
 
-    private void renderForm(HttpServletResponse response, String contextPath,
+    private void renderForm(HttpServletRequest request, HttpServletResponse response,
             User user, String errorMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Edit User - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Edit User</h2>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/users/detail?userId=" + user.getUserId()
-                        + "\">&larr; Back to User Detail</a></p>");
+        String contextPath = request.getContextPath();
 
-                if (errorMessage != null) {
-                    panelOut.println("        <p class=\"error\"><strong>Error:</strong> "
-                            + escapeHtml(errorMessage) + "</p>");
-                }
+        AdminShellRenderer.render(request, response, "Edit User - InteropHub", AdminSection.PEOPLE,
+                "/admin/users", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Edit User</h2>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/users/detail?userId=" + user.getUserId()
+                            + "\">&larr; Back to User Detail</a></p>");
 
-                panelOut.println("        <form class=\"login-form\" method=\"post\" action=\""
-                        + contextPath + "/admin/users/edit\">");
-                panelOut.println("          <input type=\"hidden\" name=\"userId\" value=\""
-                        + escapeHtml(String.valueOf(user.getUserId())) + "\" />");
+                    if (errorMessage != null) {
+                        out.println("            <div class=\"aira-alert aira-alert--danger\"><p><strong>Error:</strong> "
+                                + escapeHtml(errorMessage) + "</p></div>");
+                    }
 
-                panelOut.println("          <label for=\"userId\">User ID</label>");
-                panelOut.println("          <input id=\"userId\" type=\"text\" value=\""
-                        + escapeHtml(String.valueOf(user.getUserId())) + "\" disabled />");
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\""
+                            + contextPath + "/admin/users/edit\">");
+                    out.println("              <input type=\"hidden\" name=\"userId\" value=\""
+                            + escapeHtml(String.valueOf(user.getUserId())) + "\" />");
 
-                panelOut.println("          <label for=\"email\">Email</label>");
-                panelOut.println("          <input id=\"email\" name=\"email\" type=\"email\" required"
-                        + " maxlength=\"254\" value=\""
-                        + escapeHtml(orEmpty(user.getEmail())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"userId\">User ID</label>");
+                    out.println("                <input class=\"aira-input\" id=\"userId\" type=\"text\" value=\""
+                            + escapeHtml(String.valueOf(user.getUserId())) + "\" disabled />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"firstName\">First Name</label>");
-                panelOut.println("          <input id=\"firstName\" name=\"firstName\" type=\"text\""
-                        + " maxlength=\"100\" value=\""
-                        + escapeHtml(orEmpty(user.getFirstName())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"email\">Email</label>");
+                    out.println("                <input class=\"aira-input\" id=\"email\" name=\"email\" type=\"email\" required"
+                            + " maxlength=\"254\" value=\""
+                            + escapeHtml(orEmpty(user.getEmail())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"lastName\">Last Name</label>");
-                panelOut.println("          <input id=\"lastName\" name=\"lastName\" type=\"text\""
-                        + " maxlength=\"100\" value=\""
-                        + escapeHtml(orEmpty(user.getLastName())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"firstName\">First Name</label>");
+                    out.println("                <input class=\"aira-input\" id=\"firstName\" name=\"firstName\" type=\"text\""
+                            + " maxlength=\"100\" value=\""
+                            + escapeHtml(orEmpty(user.getFirstName())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"displayName\">Display Name Override</label>");
-                panelOut.println("          <input id=\"displayName\" name=\"displayName\" type=\"text\""
-                        + " maxlength=\"160\" value=\""
-                        + escapeHtml(orEmpty(user.getDisplayName())) + "\" />");
-                panelOut.println("          <small>When set, this overrides first + last name in the UI."
-                        + " Leave blank to use first/last name.</small>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"lastName\">Last Name</label>");
+                    out.println("                <input class=\"aira-input\" id=\"lastName\" name=\"lastName\" type=\"text\""
+                            + " maxlength=\"100\" value=\""
+                            + escapeHtml(orEmpty(user.getLastName())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"organization\">Organization</label>");
-                panelOut.println("          <input id=\"organization\" name=\"organization\" type=\"text\""
-                        + " maxlength=\"200\" value=\""
-                        + escapeHtml(orEmpty(user.getOrganization())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"displayName\">Display Name Override</label>");
+                    out.println("                <input class=\"aira-input\" id=\"displayName\" name=\"displayName\" type=\"text\""
+                            + " maxlength=\"160\" value=\""
+                            + escapeHtml(orEmpty(user.getDisplayName())) + "\" />");
+                    out.println("                <p class=\"aira-field-help\">When set, this overrides first + last name in the UI."
+                            + " Leave blank to use first/last name.</p>");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"roleTitle\">Role Title</label>");
-                panelOut.println("          <input id=\"roleTitle\" name=\"roleTitle\" type=\"text\""
-                        + " maxlength=\"200\" value=\""
-                        + escapeHtml(orEmpty(user.getRoleTitle())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"organization\">Organization</label>");
+                    out.println("                <input class=\"aira-input\" id=\"organization\" name=\"organization\" type=\"text\""
+                            + " maxlength=\"200\" value=\""
+                            + escapeHtml(orEmpty(user.getOrganization())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"isAdmin\">Admin Access</label>");
-                panelOut.println("          <input id=\"isAdmin\" name=\"isAdmin\" type=\"checkbox\""
-                        + (Boolean.TRUE.equals(user.getIsAdmin()) ? " checked" : "") + " />");
-                panelOut.println("          <small>Enable to grant InteropHub admin permissions.</small>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"roleTitle\">Role Title</label>");
+                    out.println("                <input class=\"aira-input\" id=\"roleTitle\" name=\"roleTitle\" type=\"text\""
+                            + " maxlength=\"200\" value=\""
+                            + escapeHtml(orEmpty(user.getRoleTitle())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <div class=\"form-actions\">");
-                panelOut.println("            <button type=\"submit\">Save Changes</button>");
-                panelOut.println("            <a class=\"button-link\" href=\"" + contextPath
-                        + "/admin/users/detail?userId=" + user.getUserId() + "\">Cancel</a>");
-                panelOut.println("          </div>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <label class=\"aira-radio\"><input id=\"isAdmin\" name=\"isAdmin\" type=\"checkbox\""
+                            + (Boolean.TRUE.equals(user.getIsAdmin()) ? " checked" : "") + " /> Admin Access</label>");
+                    out.println("              <p class=\"aira-field-help\">Enable to grant InteropHub admin permissions.</p>");
+
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save Changes</button>");
+                    out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/users/detail?userId=" + user.getUserId() + "\">Cancel</a>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderUserNotFound(HttpServletResponse response, String contextPath, Long userId)
+    private void renderUserNotFound(HttpServletRequest request, HttpServletResponse response, Long userId)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "User Not Found - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>User Not Found</h2>");
-                panelOut.println("        <p>No user found with ID: <strong>"
-                        + escapeHtml(String.valueOf(userId)) + "</strong></p>");
-                panelOut.println("        <p><a href=\"" + contextPath
-                        + "/admin/users\">Back to Registered Users</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
-    }
+        String contextPath = request.getContextPath();
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                AdminShellRenderer.render(out, "Access Denied - InteropHub", request.getContextPath(), panelOut -> {
-                    panelOut.println("      <section class=\"panel\">");
-                    panelOut.println("        <h2>Access Denied</h2>");
-                    panelOut.println("        <p>You must be an InteropHub admin to access this page.</p>");
-                    panelOut.println("        <p><a href=\"" + request.getContextPath()
-                            + "/welcome\">Return to Welcome</a></p>");
-                    panelOut.println("      </section>");
+        AdminShellRenderer.render(request, response, "User Not Found - InteropHub", AdminSection.PEOPLE,
+                "/admin/users", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">User Not Found</h2>");
+                    out.println("            <p>No user found with ID: <strong>"
+                            + escapeHtml(String.valueOf(userId)) + "</strong></p>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/users\">Back to Registered Users</a></p>");
+                    out.println("          </section>");
                 });
-            }
-            return Optional.empty();
-        }
-        return authenticatedUser;
     }
 
     private Long parseUserId(String rawValue) {

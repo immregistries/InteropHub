@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.List;
@@ -16,18 +15,15 @@ import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsTopicReviewDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
 
 public class AdminEsTopicReviewResultsServlet extends HttpServlet {
 
-    private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
     private final EsTopicReviewService reviewService;
     private final EsCommentDao commentDao;
 
     public AdminEsTopicReviewResultsServlet() {
-        this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
         this.reviewService = new EsTopicReviewService();
         this.commentDao = new EsCommentDao();
@@ -35,7 +31,7 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -49,7 +45,7 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
 
         Optional<EsCampaign> campaign = findCampaignExact(campaignCode);
         if (campaign.isEmpty()) {
-            renderCampaignNotFound(response, contextPath, campaignCode);
+            renderCampaignNotFound(request, response, campaignCode);
             return;
         }
 
@@ -64,90 +60,95 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
             }
         }
 
-        renderPage(response, contextPath, campaign.get(), responders, summaryRows, commentCountByTopicId);
+        renderPage(request, response, campaign.get(), responders, summaryRows, commentCountByTopicId);
     }
 
-    private void renderPage(HttpServletResponse response, String contextPath, EsCampaign campaign,
+    private void renderPage(HttpServletRequest request, HttpServletResponse response, EsCampaign campaign,
             List<EsTopicReviewDao.ResponderRow> responders,
             List<EsTopicReviewDao.TopicSummaryRow> summaryRows,
             Map<Long, Long> commentCountByTopicId) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
         DecimalFormat scoreFormat = new DecimalFormat("0.00");
 
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "ES Topic Review Results - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>ES Topic Review Results</h2>");
-                panelOut.println(
-                        "        <p><strong>Campaign:</strong> " + escapeHtml(orEmpty(campaign.getCampaignName()))
-                                + " (" + escapeHtml(orEmpty(campaign.getCampaignCode())) + ")</p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/es/review/"
-                                + escapeHtml(orEmpty(campaign.getCampaignCode()))
-                                + "\">Open Review Instrument</a></p>");
+        AdminShellRenderer.render(request, response, "ES Topic Review Results - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/review-results", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">ES Topic Review Results</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\"><strong>Campaign:</strong> "
+                                    + escapeHtml(orEmpty(campaign.getCampaignName()))
+                                    + " (" + escapeHtml(orEmpty(campaign.getCampaignCode())) + ")</p>");
+                    out.println(
+                            "            <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/es/review/"
+                                    + escapeHtml(orEmpty(campaign.getCampaignCode()))
+                                    + "\">Open Review Instrument</a></p>");
 
-                panelOut.println("        <h2>Summary</h2>");
-                panelOut.println("        <table class=\"admin-table\">");
-                panelOut.println("          <tbody>");
-                panelOut.println("            <tr><th>Responders</th><td>" + responders.size() + "</td></tr>");
-                panelOut.println("            <tr><th>Topics Considered</th><td>" + summaryRows.size() + "</td></tr>");
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
+                    out.println("            <h3 class=\"aira-subsection-title\">Summary</h3>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <tbody>");
+                    out.println("                <tr><th>Responders</th><td>" + responders.size() + "</td></tr>");
+                    out.println(
+                            "                <tr><th>Topics Considered</th><td>" + summaryRows.size() + "</td></tr>");
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
 
-                panelOut.println("        <h3>Who Has Responded</h3>");
-                if (responders.isEmpty()) {
-                    panelOut.println("        <p>No responses yet.</p>");
-                } else {
-                    String responderText = responders.stream()
-                            .map(this::responderLabel)
-                            .collect(Collectors.joining(", "));
-                    panelOut.println("        <p>" + escapeHtml(responderText) + "</p>");
-                }
-
-                panelOut.println("        <h2>Ranked Topics</h2>");
-                panelOut.println("        <table class=\"admin-table\">");
-                panelOut.println("          <thead>");
-                panelOut.println("            <tr>");
-                panelOut.println("              <th>Rank</th>");
-                panelOut.println("              <th>Topic</th>");
-                panelOut.println("              <th>Average Score</th>");
-                panelOut.println("              <th>Reviews</th>");
-                panelOut.println("              <th>3+</th>");
-                panelOut.println("              <th>4+</th>");
-                panelOut.println("              <th>Comments</th>");
-                panelOut.println("            </tr>");
-                panelOut.println("          </thead>");
-                panelOut.println("          <tbody>");
-                if (summaryRows.isEmpty()) {
-                    panelOut.println("            <tr><td colspan=\"7\">No topics available.</td></tr>");
-                } else {
-                    int rank = 1;
-                    for (EsTopicReviewDao.TopicSummaryRow row : summaryRows) {
-                        String avgText = row.getAverageScore() == null ? "--"
-                                : scoreFormat.format(row.getAverageScore());
-                        long commentCount = commentCountByTopicId.getOrDefault(row.getEsTopicId(), 0L);
-                        String topicUrl = contextPath + "/admin/es/topics?esTopicId=" + row.getEsTopicId();
-                        panelOut.println("            <tr>");
-                        panelOut.println("              <td>" + rank + "</td>");
-                        panelOut.println("              <td><a href=\"" + topicUrl + "\">"
-                                + escapeHtml(orEmpty(row.getTopicName())) + "</a></td>");
-                        panelOut.println("              <td>" + avgText + "</td>");
-                        panelOut.println("              <td>" + row.getReviewCount() + "</td>");
-                        panelOut.println("              <td>" + row.getCountScore3Plus() + "</td>");
-                        panelOut.println("              <td>" + row.getCountScore4Plus() + "</td>");
-                        panelOut.println("              <td>" + commentCount + "</td>");
-                        panelOut.println("            </tr>");
-                        rank++;
+                    out.println("            <h3 class=\"aira-subsection-title\">Who Has Responded</h3>");
+                    if (responders.isEmpty()) {
+                        out.println("            <p class=\"aira-meta\">No responses yet.</p>");
+                    } else {
+                        String responderText = responders.stream()
+                                .map(this::responderLabel)
+                                .collect(Collectors.joining(", "));
+                        out.println("            <p>" + escapeHtml(responderText) + "</p>");
                     }
-                }
-                panelOut.println("          </tbody>");
-                panelOut.println("        </table>");
 
-                panelOut.println("        <p style=\"margin-top:1.5rem\"><a href=\"" + contextPath
-                        + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("            <h3 class=\"aira-subsection-title\">Ranked Topics</h3>");
+                    out.println("            <div class=\"aira-table-wrap\">");
+                    out.println("            <table class=\"aira-table\">");
+                    out.println("              <thead>");
+                    out.println("                <tr>");
+                    out.println("                  <th>Rank</th>");
+                    out.println("                  <th>Topic</th>");
+                    out.println("                  <th>Average Score</th>");
+                    out.println("                  <th>Reviews</th>");
+                    out.println("                  <th>3+</th>");
+                    out.println("                  <th>4+</th>");
+                    out.println("                  <th>Comments</th>");
+                    out.println("                </tr>");
+                    out.println("              </thead>");
+                    out.println("              <tbody>");
+                    if (summaryRows.isEmpty()) {
+                        out.println("                <tr><td colspan=\"7\">No topics available.</td></tr>");
+                    } else {
+                        int rank = 1;
+                        for (EsTopicReviewDao.TopicSummaryRow row : summaryRows) {
+                            String avgText = row.getAverageScore() == null ? "--"
+                                    : scoreFormat.format(row.getAverageScore());
+                            long commentCount = commentCountByTopicId.getOrDefault(row.getEsTopicId(), 0L);
+                            String topicUrl = contextPath + "/es/topic/" + row.getEsTopicId();
+                            out.println("                <tr>");
+                            out.println("                  <td>" + rank + "</td>");
+                            out.println("                  <td><a class=\"aira-inline-link\" href=\"" + topicUrl
+                                    + "\">" + escapeHtml(orEmpty(row.getTopicName())) + "</a></td>");
+                            out.println("                  <td>" + avgText + "</td>");
+                            out.println("                  <td>" + row.getReviewCount() + "</td>");
+                            out.println("                  <td>" + row.getCountScore3Plus() + "</td>");
+                            out.println("                  <td>" + row.getCountScore4Plus() + "</td>");
+                            out.println("                  <td>" + commentCount + "</td>");
+                            out.println("                </tr>");
+                            rank++;
+                        }
+                    }
+                    out.println("              </tbody>");
+                    out.println("            </table>");
+                    out.println("            </div>");
+
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private String responderLabel(EsTopicReviewDao.ResponderRow responder) {
@@ -164,56 +165,25 @@ public class AdminEsTopicReviewResultsServlet extends HttpServlet {
         return display + " (" + responder.getReviewCount() + ")";
     }
 
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            renderForbidden(response, request.getContextPath());
-            return Optional.empty();
-        }
-        return authenticatedUser;
-    }
-
     private Optional<EsCampaign> findCampaignExact(String campaignCode) {
         return campaignDao.findByCampaignCode(campaignCode)
                 .filter(campaign -> campaignCode.equals(campaign.getCampaignCode()));
     }
 
-    private void renderCampaignNotFound(HttpServletResponse response, String contextPath, String campaignCode)
+    private void renderCampaignNotFound(HttpServletRequest request, HttpServletResponse response, String campaignCode)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-            out.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("<title>Campaign Not Found - InteropHub</title>");
-            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
-            out.println("<body><main class=\"container\"><h1>Campaign Not Found</h1>");
-            out.println(
-                    "<p>No campaign found for code <strong>" + escapeHtml(orEmpty(campaignCode)) + "</strong>.</p>");
-            out.println("<p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-            out.println("</main></body></html>");
-        }
-    }
-
-    private void renderForbidden(HttpServletResponse response, String contextPath) throws IOException {
-        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            out.println("<!DOCTYPE html>");
-            out.println("<html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-            out.println("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />");
-            out.println("<title>Access Denied - InteropHub</title>");
-            out.println("<link rel=\"stylesheet\" href=\"" + contextPath + "/css/main.css\" /></head>");
-            out.println("<body><main class=\"container\"><h1>Access Denied</h1>");
-            out.println("<p>You must be an InteropHub admin to access this page.</p>");
-            out.println("<p><a href=\"" + contextPath + "/welcome\">Return to Welcome</a></p>");
-            out.println("</main></body></html>");
-        }
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Campaign Not Found - InteropHub", AdminSection.TOPIC_SPACES,
+                "/admin/es/review-results", out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Campaign Not Found</h2>");
+                    out.println("            <p>No campaign found for code <strong>"
+                            + escapeHtml(orEmpty(campaignCode)) + "</strong>.</p>");
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+                    out.println("          </section>");
+                });
     }
 
     private String trimToNull(String value) {

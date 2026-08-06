@@ -110,11 +110,11 @@ public class TopicSpaceRouteServlet extends HttpServlet {
         if ("meetings".equalsIgnoreCase(route)) {
             String seriesId = trimToNull(request.getParameter("seriesId"));
             if (seriesId != null) {
-                response.sendRedirect(contextPath + "/es/meetings?seriesId=" + urlEncode(seriesId)
+                response.sendRedirect(contextPath + "/es/meeting-series?seriesId=" + urlEncode(seriesId)
                         + "&space=" + urlEncode(spaceCode));
                 return;
             }
-            response.sendRedirect(contextPath + "/es/topics?space=" + urlEncode(spaceCode) + "&view=meetings");
+            response.sendRedirect(contextPath + "/es/meetings?space=" + urlEncode(spaceCode));
             return;
         }
 

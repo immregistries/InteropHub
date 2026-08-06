@@ -12,7 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.AuthFlowService;
+import org.immregistries.aira.web.AiraPage;
 
 /**
  * Admin edit page for a single ES campaign.
@@ -21,18 +21,17 @@ import org.airahub.interophub.service.AuthFlowService;
 public class AdminEsCampaignEditServlet extends HttpServlet {
 
     private static final DateTimeFormatter INPUT_DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm");
+    private static final String ACTIVE_HREF = "/admin/es/campaigns";
 
-    private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
 
     public AdminEsCampaignEditServlet() {
-        this.authFlowService = new AuthFlowService();
         this.campaignDao = new EsCampaignDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -45,16 +44,16 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
 
         Optional<EsCampaign> campaignOpt = campaignDao.findByCampaignCode(campaignCode);
         if (campaignOpt.isEmpty()) {
-            renderCampaignNotFound(response, request.getContextPath(), campaignCode);
+            renderCampaignNotFound(request, response, campaignCode);
             return;
         }
 
-        renderForm(response, request.getContextPath(), campaignOpt.get(), null);
+        renderForm(request, response, campaignOpt.get(), null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = requireAdmin(request, response);
+        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
         if (adminUser.isEmpty()) {
             return;
         }
@@ -68,7 +67,7 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
 
         Optional<EsCampaign> campaignOpt = campaignDao.findByCampaignCode(campaignCode);
         if (campaignOpt.isEmpty()) {
-            renderCampaignNotFound(response, contextPath, campaignCode);
+            renderCampaignNotFound(request, response, campaignCode);
             return;
         }
 
@@ -84,11 +83,11 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
         String endAtRaw = trimToNull(request.getParameter("endAt"));
 
         if (campaignName == null) {
-            renderForm(response, contextPath, campaign, "Campaign name is required.");
+            renderForm(request, response, campaign, "Campaign name is required.");
             return;
         }
         if (campaignType == null) {
-            renderForm(response, contextPath, campaign, "Campaign type is required.");
+            renderForm(request, response, campaign, "Campaign type is required.");
             return;
         }
 
@@ -96,19 +95,19 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
         try {
             status = EsCampaign.CampaignStatus.valueOf(statusRaw == null ? "" : statusRaw);
         } catch (IllegalArgumentException ex) {
-            renderForm(response, contextPath, campaign, "Invalid status value.");
+            renderForm(request, response, campaign, "Invalid status value.");
             return;
         }
 
         Boolean allowTopicComments = parseBooleanSelect(allowTopicCommentsRaw);
         if (allowTopicComments == null) {
-            renderForm(response, contextPath, campaign, "Invalid Allow Topic Comments value.");
+            renderForm(request, response, campaign, "Invalid Allow Topic Comments value.");
             return;
         }
 
         Boolean allowGeneralComments = parseBooleanSelect(allowGeneralCommentsRaw);
         if (allowGeneralComments == null) {
-            renderForm(response, contextPath, campaign, "Invalid Allow General Comments value.");
+            renderForm(request, response, campaign, "Invalid Allow General Comments value.");
             return;
         }
 
@@ -116,7 +115,7 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
         try {
             startAt = parseDateTimeInput(startAtRaw);
         } catch (DateTimeParseException ex) {
-            renderForm(response, contextPath, campaign, "Start At must be a valid date/time.");
+            renderForm(request, response, campaign, "Start At must be a valid date/time.");
             return;
         }
 
@@ -124,12 +123,12 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
         try {
             endAt = parseDateTimeInput(endAtRaw);
         } catch (DateTimeParseException ex) {
-            renderForm(response, contextPath, campaign, "End At must be a valid date/time.");
+            renderForm(request, response, campaign, "End At must be a valid date/time.");
             return;
         }
 
         if (startAt != null && endAt != null && endAt.isBefore(startAt)) {
-            renderForm(response, contextPath, campaign, "End At must be after Start At.");
+            renderForm(request, response, campaign, "End At must be after Start At.");
             return;
         }
 
@@ -148,138 +147,137 @@ public class AdminEsCampaignEditServlet extends HttpServlet {
                         + "&saved=1");
     }
 
-    private void renderForm(HttpServletResponse response, String contextPath,
+    private void renderForm(HttpServletRequest request, HttpServletResponse response,
             EsCampaign campaign, String errorMessage) throws IOException {
-        response.setContentType("text/html;charset=UTF-8");
-        try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Edit Campaign - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Edit Campaign</h2>");
+        String contextPath = request.getContextPath();
+        AdminShellRenderer.render(request, response, "Edit Campaign - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Edit Campaign</h2>");
 
-                if (errorMessage != null) {
-                    panelOut.println(
-                            "        <p class=\"error\"><strong>Error:</strong> " + escapeHtml(errorMessage)
-                                    + "</p>");
-                }
+                    if (errorMessage != null) {
+                        out.println(
+                                "            <div class=\"aira-alert aira-alert--danger\"><p><strong>Error:</strong> "
+                                        + escapeHtml(errorMessage) + "</p></div>");
+                    }
 
-                panelOut.println("        <form class=\"login-form\" method=\"post\" action=\"" + contextPath
-                        + "/admin/es/campaigns/edit\">");
-                panelOut.println("          <input type=\"hidden\" name=\"campaignCode\" value=\""
-                        + escapeHtml(campaign.getCampaignCode()) + "\" />");
+                    out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                            + "/admin/es/campaigns/edit\">");
+                    out.println("              <input type=\"hidden\" name=\"campaignCode\" value=\""
+                            + escapeHtml(campaign.getCampaignCode()) + "\" />");
 
-                panelOut.println("          <label for=\"campaignCode\">Campaign Code</label>");
-                panelOut.println("          <input id=\"campaignCode\" type=\"text\" value=\""
-                        + escapeHtml(campaign.getCampaignCode()) + "\" disabled />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"campaignCode\">Campaign Code</label>");
+                    out.println("                <input class=\"aira-input\" id=\"campaignCode\" type=\"text\" value=\""
+                            + escapeHtml(campaign.getCampaignCode()) + "\" disabled />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"campaignName\">Campaign Name</label>");
-                panelOut.println(
-                        "          <input id=\"campaignName\" name=\"campaignName\" type=\"text\" required value=\""
-                                + escapeHtml(orEmpty(campaign.getCampaignName())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"campaignName\">Campaign Name</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"campaignName\" name=\"campaignName\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(campaign.getCampaignName())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"description\">Description</label>");
-                panelOut.println("          <textarea id=\"description\" name=\"description\" rows=\"4\">"
-                        + escapeHtml(orEmpty(campaign.getDescription())) + "</textarea>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"description\">Description</label>");
+                    out.println("                <textarea class=\"aira-textarea\" id=\"description\" name=\"description\" rows=\"4\">"
+                            + escapeHtml(orEmpty(campaign.getDescription())) + "</textarea>");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"campaignType\">Campaign Type</label>");
-                panelOut.println(
-                        "          <input id=\"campaignType\" name=\"campaignType\" type=\"text\" required value=\""
-                                + escapeHtml(orEmpty(campaign.getCampaignType())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"campaignType\">Campaign Type</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"campaignType\" name=\"campaignType\" type=\"text\" required value=\""
+                                    + escapeHtml(orEmpty(campaign.getCampaignType())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"status\">Status</label>");
-                panelOut.println("          <select id=\"status\" name=\"status\" required>");
-                for (EsCampaign.CampaignStatus status : EsCampaign.CampaignStatus.values()) {
-                    boolean selected = status == campaign.getStatus();
-                    panelOut.println("            <option value=\"" + status.name() + "\""
-                            + (selected ? " selected" : "") + ">"
-                            + status.name() + "</option>");
-                }
-                panelOut.println("          </select>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"status\">Status</label>");
+                    out.println("                <select class=\"aira-select\" id=\"status\" name=\"status\" required>");
+                    for (EsCampaign.CampaignStatus status : EsCampaign.CampaignStatus.values()) {
+                        boolean selected = status == campaign.getStatus();
+                        out.println("                  <option value=\"" + status.name() + "\""
+                                + (selected ? " selected" : "") + ">"
+                                + status.name() + "</option>");
+                    }
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"allowTopicComments\">Allow Topic Comments</label>");
-                panelOut.println(
-                        "          <select id=\"allowTopicComments\" name=\"allowTopicComments\" required>");
-                panelOut.println("            <option value=\"true\""
-                        + (Boolean.TRUE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
-                        + ">Yes</option>");
-                panelOut.println("            <option value=\"false\""
-                        + (Boolean.FALSE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
-                        + ">No</option>");
-                panelOut.println("          </select>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"allowTopicComments\">Allow Topic Comments</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"allowTopicComments\" name=\"allowTopicComments\" required>");
+                    out.println("                  <option value=\"true\""
+                            + (Boolean.TRUE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
+                            + ">Yes</option>");
+                    out.println("                  <option value=\"false\""
+                            + (Boolean.FALSE.equals(campaign.getAllowTopicComments()) ? " selected" : "")
+                            + ">No</option>");
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"allowGeneralComments\">Allow General Comments</label>");
-                panelOut.println(
-                        "          <select id=\"allowGeneralComments\" name=\"allowGeneralComments\" required>");
-                panelOut.println("            <option value=\"true\""
-                        + (Boolean.TRUE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
-                        + ">Yes</option>");
-                panelOut.println("            <option value=\"false\""
-                        + (Boolean.FALSE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
-                        + ">No</option>");
-                panelOut.println("          </select>");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"allowGeneralComments\">Allow General Comments</label>");
+                    out.println(
+                            "                <select class=\"aira-select\" id=\"allowGeneralComments\" name=\"allowGeneralComments\" required>");
+                    out.println("                  <option value=\"true\""
+                            + (Boolean.TRUE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
+                            + ">Yes</option>");
+                    out.println("                  <option value=\"false\""
+                            + (Boolean.FALSE.equals(campaign.getAllowGeneralComments()) ? " selected" : "")
+                            + ">No</option>");
+                    out.println("                </select>");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"startAt\">Start At</label>");
-                panelOut.println(
-                        "          <input id=\"startAt\" name=\"startAt\" type=\"datetime-local\" value=\""
-                                + escapeHtml(formatDateTimeForInput(campaign.getStartAt())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"startAt\">Start At</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"startAt\" name=\"startAt\" type=\"datetime-local\" value=\""
+                                    + escapeHtml(formatDateTimeForInput(campaign.getStartAt())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <label for=\"endAt\">End At</label>");
-                panelOut.println(
-                        "          <input id=\"endAt\" name=\"endAt\" type=\"datetime-local\" value=\""
-                                + escapeHtml(formatDateTimeForInput(campaign.getEndAt())) + "\" />");
+                    out.println("              <div class=\"aira-field\">");
+                    out.println("                <label for=\"endAt\">End At</label>");
+                    out.println(
+                            "                <input class=\"aira-input\" id=\"endAt\" name=\"endAt\" type=\"datetime-local\" value=\""
+                                    + escapeHtml(formatDateTimeForInput(campaign.getEndAt())) + "\" />");
+                    out.println("              </div>");
 
-                panelOut.println("          <div class=\"form-actions\">");
-                panelOut.println("            <button type=\"submit\">Save Campaign</button>");
-                panelOut.println("            <a class=\"button-link\" href=\"" + contextPath
-                        + "/admin/es/campaigns/detail?campaignCode="
-                        + escapeUrlComponent(campaign.getCampaignCode())
-                        + "\">Cancel</a>");
-                panelOut.println("          </div>");
-                panelOut.println("        </form>");
-                panelOut.println("      </section>");
-            });
-        }
+                    out.println("              <div class=\"aira-action-group\">");
+                    out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Save Campaign</button>");
+                    out.println("                <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/campaigns/detail?campaignCode="
+                            + escapeUrlComponent(campaign.getCampaignCode())
+                            + "\">Cancel</a>");
+                    out.println("              </div>");
+                    out.println("            </form>");
+                    out.println("          </section>");
+                });
     }
 
-    private void renderCampaignNotFound(HttpServletResponse response, String contextPath, String campaignCode)
+    private void renderCampaignNotFound(HttpServletRequest request, HttpServletResponse response, String campaignCode)
             throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+        AiraPage page = InteropAiraPageFactory.base(request, "Campaign Not Found - InteropHub").build();
         try (PrintWriter out = response.getWriter()) {
-            AdminShellRenderer.render(out, "Campaign Not Found - InteropHub", contextPath, panelOut -> {
-                panelOut.println("      <section class=\"panel\">");
-                panelOut.println("        <h2>Campaign Not Found</h2>");
-                panelOut.println(
-                        "        <p>No campaign found with code: <strong>" + escapeHtml(campaignCode)
-                                + "</strong></p>");
-                panelOut.println(
-                        "        <p><a href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
-                panelOut.println("      </section>");
-            });
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container aira-stack\">");
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">Campaign Not Found</h1>");
+            out.println("        </div>");
+            out.println("      </div>");
+            out.println(
+                    "      <p>No campaign found with code: <strong>" + escapeHtml(campaignCode)
+                            + "</strong></p>");
+            out.println(
+                    "      <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/admin/es/campaigns\">Back to Campaigns</a></p>");
+            out.println("    </div>");
+            page.writeEnd(out);
         }
-    }
-
-    private Optional<User> requireAdmin(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
-        if (authenticatedUser.isEmpty()) {
-            response.sendRedirect(request.getContextPath() + "/home");
-            return Optional.empty();
-        }
-        if (!authFlowService.isAdminUser(authenticatedUser.get())) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("text/html;charset=UTF-8");
-            try (PrintWriter out = response.getWriter()) {
-                out.println("<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"UTF-8\" />");
-                out.println("<title>Access Denied - InteropHub</title>");
-                out.println(
-                        "<link rel=\"stylesheet\" href=\"" + request.getContextPath() + "/css/main.css\" /></head>");
-                out.println("<body><main class=\"container\"><h1>Access Denied</h1>");
-                out.println("<p>You must be an InteropHub admin to access this page.</p>");
-                out.println("<p><a href=\"" + request.getContextPath() + "/welcome\">Return to Welcome</a></p>");
-                out.println("</main></body></html>");
-            }
-            return Optional.empty();
-        }
-        return authenticatedUser;
     }
 
     private LocalDateTime parseDateTimeInput(String value) {

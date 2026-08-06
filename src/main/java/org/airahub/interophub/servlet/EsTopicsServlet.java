@@ -31,6 +31,7 @@ import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EsTopicViewHistoryService;
 import org.airahub.interophub.service.TopicBoardService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.immregistries.aira.web.AiraPage;
@@ -53,6 +54,7 @@ public class EsTopicsServlet extends HttpServlet {
     private final EsTopicBoardDefinitionDao topicBoardDefinitionDao;
     private final TopicBoardService topicBoardService;
     private final TopicSpaceAccessService topicSpaceAccessService;
+    private final EsTopicViewHistoryService topicViewHistoryService;
 
     public EsTopicsServlet() {
         this.authFlowService = new AuthFlowService();
@@ -66,6 +68,7 @@ public class EsTopicsServlet extends HttpServlet {
         this.topicBoardDefinitionDao = new EsTopicBoardDefinitionDao();
         this.topicBoardService = new TopicBoardService();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
+        this.topicViewHistoryService = new EsTopicViewHistoryService();
     }
 
     @Override
@@ -80,6 +83,9 @@ public class EsTopicsServlet extends HttpServlet {
 
         Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
         User viewer = authenticatedUser.orElse(null);
+
+        List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics = RecentlyViewedTopicsRenderer
+                .fetchVisible(topicViewHistoryService, topicSpaceAccessService, viewer);
 
         List<EsTopicSpace> visibleSpaces = topicSpaceAccessService
                 .filterVisibleSpaces(viewer, topicSpaceDao.findAllActiveOrdered());
@@ -216,7 +222,7 @@ public class EsTopicsServlet extends HttpServlet {
             renderFilterRail(out, contextPath, selectedSpaceCode, query, view, stageDefinitions, pathDefinitions,
                     neighborhoods, stageDefinitionIdParam, pathDefinitionIdParam, selectedNeighborhood,
                     activeNeighborhoodLookup, stageCounts, pathCounts, neighborhoodCounts, searchActive,
-                    authenticatedUser.isPresent(), myTopicsView, followedTopicIds.size());
+                    authenticatedUser.isPresent(), myTopicsView, followedTopicIds.size(), recentlyViewedTopics);
 
             out.println("      </div>");
             out.println("    </div>");
@@ -451,8 +457,14 @@ public class EsTopicsServlet extends HttpServlet {
             List<EsNeighborhood> neighborhoods, Long selectedStageId, Long selectedPathId,
             String selectedNeighborhood, Map<String, String> activeNeighborhoodLookup,
             Map<Long, Integer> stageCounts, Map<Long, Integer> pathCounts, Map<String, Integer> neighborhoodCounts,
-            boolean searchActive, boolean authenticated, boolean myTopicsView, int followedTopicCount) {
+            boolean searchActive, boolean authenticated, boolean myTopicsView, int followedTopicCount,
+            List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics) {
         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic filters\">");
+
+        if (authenticated) {
+            RecentlyViewedTopicsRenderer.render(out, null, recentlyViewedTopics, true,
+                    otherTopicId -> contextPath + "/es/topic/" + otherTopicId);
+        }
 
         out.println("          <section class=\"aira-section-card\">");
         out.println(
