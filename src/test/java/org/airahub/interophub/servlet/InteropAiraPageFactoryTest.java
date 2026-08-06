@@ -59,7 +59,7 @@ class InteropAiraPageFactoryTest {
         assertTrue(html.contains("Search InteropHub"));
         assertTrue(html.contains("name=\"q\""));
         assertTrue(html.contains("Search topics or meetings"));
-        assertTrue(html.contains("/es/topics"));
+        assertTrue(html.contains("action=\"/hub/search\""));
     }
 
     @Test

@@ -12,6 +12,7 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.6 | 2026-07-31 | [`aira-css-changes-revision-6.md`](aira-css-changes-revision-6.md) | Stronger `aira-matrix-table` grid lines; reliable left alignment for `aira-matrix-table__header-inner` |
 | 0.1.7 | 2026-08-04 | [`aira-css-changes-revision-7.md`](aira-css-changes-revision-7.md) | Native dialog component (`aira-dialog`) — requested in [`aira-css-request-7.md`](aira-css-request-7.md) |
 | 0.1.8 | 2026-08-06 | [`aira-css-changes-revision-8.md`](aira-css-changes-revision-8.md) | Semantic accent-border modifiers for `aira-table-panel` — requested in [`aira-css-request-8.md`](aira-css-request-8.md) |
+| 0.1.9 | 2026-08-06 | [`aira-css-changes-revision-9.md`](aira-css-changes-revision-9.md) | Search suggestion / combobox popover component — requested in [`aira-css-request-9.md`](aira-css-request-9.md) |
 
 ---
 
@@ -57,6 +58,40 @@ None remaining. The agenda page's `.open-items-section`/`.curated-cadence-sectio
 ### Resolution
 
 Implemented upstream in `aira-web-components`/`aira-web-theme` `0.1.8` (see [`aira-css-changes-revision-8.md`](aira-css-changes-revision-8.md), delivered in response to the standalone request [`aira-css-request-8.md`](aira-css-request-8.md)). InteropHub now consumes `0.1.8` (`pom.xml`).
+
+---
+
+## Proposal: Search suggestion / combobox popover component
+
+**Status:** Available in this project
+**Found during:** Implementing the InteropHub global header search (`docs/InteropHub_Global_Search_Design.md`) — the search-as-you-type suggestion panel anchored beneath the existing header search field.
+**Date:** 2026-08-06
+
+### Problem
+
+The design requires a floating, anchored, grouped, keyboard-navigable combobox/listbox popover beneath `.aira-global-search`: an elevated surface positioned under the input, group headings (Topics / Upcoming meetings / Previous meetings), compact selectable option rows with title + metadata + an optional match-explanation line, a trailing "View all results" action row, an inline no-results/loading status row, and matched-term highlighting. `aira.css` has no anchored popover pattern — only the centered native `aira-dialog` modal — and no consumer of the already-defined `--aira-shadow-elevated` / `--aira-z-overlay` tokens. `.aira-choice-row` is too spacious (page-section padding, leading control column) for a dense scrollable dropdown. Full details, proposed markup, and proposed CSS are in the standalone request [`aira-css-request-9.md`](aira-css-request-9.md).
+
+### Current local workaround
+
+None. InteropHub's global search implementation is paused rather than building a page-specific popover that would fork this pattern locally.
+
+### Proposed shared interface
+
+See [`aira-css-request-9.md`](aira-css-request-9.md) for full markup: `aira-search-popover`, `aira-search-listbox`, `aira-search-group` / `aira-search-group__label`, `aira-search-option` (with `--action` modifier) and its `__title` / `__meta` / `__match` parts, `aira-search-status`, plus `.aira-global-search { position: relative; }` and a `mark` / `.aira-text-highlight` rule.
+
+### Why this belongs in `aira.css`
+
+Type-to-navigate search (an anchored combobox popover) is a general interaction pattern any AIRA application with a non-trivial record count will eventually want, not something specific to InteropHub's topics/meetings model. It generalizes the same way `aira-dialog` (0.1.7) generalized "a small blocking overlay" beyond InteropHub's original legal-terms use case, and it activates two existing-but-unused theme tokens.
+
+### Compatibility and migration impact
+
+- Additive. `.aira-global-search { position: relative; }` has no visible effect on the current plain search form.
+- No existing InteropHub page uses a popover pattern today, so nothing needs migration away from a prior approach.
+- Once available, InteropHub adopts the shared classes directly for the suggestion panel; local code owns only debounce/fetch/ARIA-state/keyboard behavior.
+
+### Resolution
+
+Implemented upstream in `aira-web-components`/`aira-web-theme` `0.1.9` (see [`aira-css-changes-revision-9.md`](aira-css-changes-revision-9.md), delivered in response to the standalone request [`aira-css-request-9.md`](aira-css-request-9.md)). InteropHub now consumes `0.1.9` (`pom.xml`).
 
 ---
 

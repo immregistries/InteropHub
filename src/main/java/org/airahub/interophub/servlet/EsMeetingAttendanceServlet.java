@@ -565,6 +565,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             renderAttendeeSections(out, todayAttendees, today);
 
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
@@ -650,6 +651,7 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             out.println("      <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(orEmpty(message))
                     + "</p></div>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

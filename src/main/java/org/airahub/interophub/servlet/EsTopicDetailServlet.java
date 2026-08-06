@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jakarta.servlet.http.HttpServlet;
@@ -224,7 +223,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         tempMeetings.add(meetingRow);
                                 }
                         }
-                        tempMeetings = topicSpaceAccessService.filterVisibleMeetings(viewer, tempMeetings);
+                        tempMeetings = new ArrayList<>(topicSpaceAccessService.filterVisibleMeetings(viewer, tempMeetings));
                         tempMeetings.sort(Comparator.comparing(EsMeeting::getScheduledStart,
                                         Comparator.nullsLast(Comparator.naturalOrder())));
                         upcomingMeetings = tempMeetings.stream()
@@ -820,6 +819,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("    </script>");
                         }
 
+                        out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                         page.writeEnd(out);
                 }
         }
@@ -846,6 +846,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + "/es/topics\">Back to Topics</a></p>");
                         out.println("      </section>");
                         out.println("    </div>");
+                        out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                         page.writeEnd(out);
                 }
         }

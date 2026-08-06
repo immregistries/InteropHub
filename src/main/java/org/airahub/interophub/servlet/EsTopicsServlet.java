@@ -226,6 +226,7 @@ public class EsTopicsServlet extends HttpServlet {
 
             out.println("      </div>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

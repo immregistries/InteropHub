@@ -134,6 +134,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                             Map.of(),
                             null,
                             externalAuthRequest.orElse(null));
+                    out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                     page.writeEnd(out);
                     return;
                 } else {
@@ -150,6 +151,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                                 fieldErrors,
                                 null,
                                 externalAuthRequest.orElse(null));
+                        out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                         page.writeEnd(out);
                         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                         return;
@@ -287,6 +289,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
                 }
             }
 
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

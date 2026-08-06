@@ -876,6 +876,26 @@
     <url-pattern>/es/unsubscribe</url-pattern>
   </servlet-mapping>
 
+  <servlet>
+    <servlet-name>SearchServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.SearchServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>SearchServlet</servlet-name>
+    <url-pattern>/search</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>SearchSuggestServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.SearchSuggestServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>SearchSuggestServlet</servlet-name>
+    <url-pattern>/search/suggest</url-pattern>
+  </servlet-mapping>
+
   <listener>
     <listener-class>org.airahub.interophub.config.MeetingCommunicationSchedulerListener</listener-class>
   </listener>

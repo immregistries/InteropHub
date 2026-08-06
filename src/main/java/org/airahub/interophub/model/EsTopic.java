@@ -39,6 +39,9 @@ public class EsTopic {
     @Column(name = "topic_summary", length = 300)
     private String topicSummary;
 
+    @Column(name = "search_keywords", columnDefinition = "TEXT")
+    private String searchKeywords;
+
     @Column(name = "topic_emoji", length = 64)
     private String topicEmoji;
 
@@ -155,6 +158,14 @@ public class EsTopic {
 
     public void setTopicSummary(String topicSummary) {
         this.topicSummary = topicSummary;
+    }
+
+    public String getSearchKeywords() {
+        return searchKeywords;
+    }
+
+    public void setSearchKeywords(String searchKeywords) {
+        this.searchKeywords = searchKeywords;
     }
 
     public String getTopicEmoji() {

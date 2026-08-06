@@ -95,6 +95,7 @@ public class MagicLinkServlet extends HttpServlet {
             out.println("          </form>");
             out.println("        </section>");
             out.println("      </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
@@ -127,6 +128,7 @@ public class MagicLinkServlet extends HttpServlet {
                     + "/home\">Return to Home</a>");
             out.println("        </div>");
             out.println("      </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

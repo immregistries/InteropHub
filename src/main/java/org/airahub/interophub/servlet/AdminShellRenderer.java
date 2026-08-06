@@ -38,6 +38,7 @@ final class AdminShellRenderer {
             AdminSectionNavRenderer.render(out, contextPath, section, contextPath + activeHref);
             out.println("      </div>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

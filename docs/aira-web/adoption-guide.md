@@ -1,4 +1,4 @@
-> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.8`.
+> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.9`.
 > Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
 
 # AIRA Web Adoption Guide

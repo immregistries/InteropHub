@@ -74,6 +74,7 @@ public class HomeServlet extends HttpServlet {
                         page.writeStart(out);
                         renderPageContent(out, contextPath, emailValidationError, submittedEmail,
                                         externalAuthRequest, externalAuthError);
+                        out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                         page.writeEnd(out);
                 }
         }

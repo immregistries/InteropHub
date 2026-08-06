@@ -1,7 +1,6 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Optional;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;

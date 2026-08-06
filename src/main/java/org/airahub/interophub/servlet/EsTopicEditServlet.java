@@ -123,6 +123,7 @@ public class EsTopicEditServlet extends HttpServlet {
         String topicName = trimToNull(request.getParameter("topicName"));
         String description = trimToNull(request.getParameter("description"));
         String topicSummary = trimToNull(request.getParameter("topicSummary"));
+        String searchKeywords = trimToNull(request.getParameter("searchKeywords"));
         String topicEmoji = trimToNull(request.getParameter("topicEmoji"));
         Set<Long> selectedNeighborhoodIds = parseNeighborhoodIds(request.getParameterValues("esNeighborhoodId"));
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
@@ -159,6 +160,7 @@ public class EsTopicEditServlet extends HttpServlet {
             topic.setTopicName(required(topicName, "Topic name"));
             topic.setDescription(description);
             topic.setTopicSummary(topicSummary);
+            topic.setSearchKeywords(searchKeywords);
             topic.setTopicEmoji(topicEmoji);
             topic.setNeighborhood(null);
             topic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
@@ -202,6 +204,7 @@ public class EsTopicEditServlet extends HttpServlet {
             topic.setTopicName(topicName);
             topic.setDescription(description);
             topic.setTopicSummary(topicSummary);
+            topic.setSearchKeywords(searchKeywords);
             topic.setTopicEmoji(topicEmoji);
             topic.setNeighborhood(null);
             topic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
@@ -279,6 +282,7 @@ public class EsTopicEditServlet extends HttpServlet {
             out.println("      <p><a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                     + "/es/topics\">Back to Topics</a></p>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
@@ -356,6 +360,15 @@ public class EsTopicEditServlet extends HttpServlet {
             out.println(
                     "            <input class=\"aira-input\" id=\"topicSummary\" name=\"topicSummary\" type=\"text\" maxlength=\"300\" value=\""
                             + escapeHtml(orEmpty(topic.getTopicSummary())) + "\" />");
+            out.println("          </div>");
+
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"searchKeywords\">Alternate Names / Abbreviations / Keywords</label>");
+            out.println(
+                    "            <input class=\"aira-input\" id=\"searchKeywords\" name=\"searchKeywords\" type=\"text\" value=\""
+                            + escapeHtml(orEmpty(topic.getSearchKeywords())) + "\" />");
+            out.println(
+                    "            <p class=\"aira-field-help\">Comma-separated. Helps this topic surface in header search results for names other than its title.</p>");
             out.println("          </div>");
 
             out.println("          <div class=\"aira-field\">");
@@ -564,6 +577,7 @@ public class EsTopicEditServlet extends HttpServlet {
                     + topic.getEsTopicId() + "\">Cancel and return to View Topic Page</a></p>");
             out.println("      </section>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

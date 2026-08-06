@@ -52,6 +52,7 @@ final class AdminAccessGuard {
             out.println("      <p><a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                     + "/welcome\">Return to Welcome</a></p>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

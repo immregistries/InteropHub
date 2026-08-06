@@ -61,6 +61,7 @@ public class WelcomeServlet extends HttpServlet {
             try (PrintWriter out = response.getWriter()) {
                 page.writeStart(out);
                 renderAnonymousContent(out, contextPath, publicSpaces);
+                out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                 page.writeEnd(out);
             }
             return;
@@ -90,6 +91,7 @@ public class WelcomeServlet extends HttpServlet {
             page.writeStart(out);
             renderAuthenticatedContent(out, contextPath, name, availableApps, publicSpaces, privateSpaces,
                     adminUser);
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

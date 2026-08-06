@@ -54,7 +54,6 @@ import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
-import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsMeetingViewHistoryService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
@@ -93,7 +92,6 @@ public class EsAgendaServlet extends HttpServlet {
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
-    private final EsInterestService esInterestService;
     private final EsMeetingAttendanceDao attendanceDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsMeetingViewHistoryService meetingViewHistoryService;
@@ -112,7 +110,6 @@ public class EsAgendaServlet extends HttpServlet {
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
-        this.esInterestService = new EsInterestService();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.meetingViewHistoryService = new EsMeetingViewHistoryService();
@@ -3336,6 +3333,7 @@ public class EsAgendaServlet extends HttpServlet {
             }
             out.println("</script>");
 
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
@@ -3431,6 +3429,7 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("      <p><a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                     + "/welcome\">Return to Welcome</a></p>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

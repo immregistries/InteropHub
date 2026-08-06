@@ -80,7 +80,6 @@ public class AdminEsMeetingServlet extends HttpServlet {
             return;
         }
 
-        String contextPath = request.getContextPath();
         String meetingIdRaw = trimToNull(request.getParameter("meetingId"));
 
         if (meetingIdRaw != null) {

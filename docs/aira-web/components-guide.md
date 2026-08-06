@@ -1,4 +1,4 @@
-> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.8`.
+> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.9`.
 > Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
 
 # AIRA Web Components Guide
@@ -106,6 +106,7 @@ The renderer only emits the shell. Page content should use the shared `aira-` CS
 
 - Layout primitives.
 - Typography and page headers.
+- Header search suggestion popovers.
 - Buttons and actions.
 - Forms and selection controls.
 - Badges, tags, and statuses.
@@ -156,6 +157,55 @@ Use metadata chips for compact label/value facts such as stage, path, champion, 
 ### Links
 
 Application links are visually quiet by default: links inside `aira-main` are not underlined until hover. Use `aira-prose` or `aira-inline-link` when inline prose links need to be visibly underlined without hover. Buttons, navigation links, resource links, recently viewed topics, sidebar links, and other structured controls suppress inappropriate underlines through their component styles.
+
+### Search Suggestions
+
+Use the search suggestion classes for an anchored combobox/listbox popover under the global header search input. AIRA Web provides only the visual surface and row styles. Applications own debouncing, fetching, `aria-expanded`, `aria-activedescendant`, keyboard handling, loading state, and when to show or hide the popover.
+
+```html
+<div class="aira-global-search aira-search--has-suggestions">
+  <form class="aira-search-form" role="search">
+    <input
+      class="aira-search-input"
+      type="text"
+      name="q"
+      role="combobox"
+      aria-expanded="true"
+      aria-controls="global-search-listbox"
+      aria-activedescendant="global-search-option-2"
+      autocomplete="off">
+  </form>
+
+  <div class="aira-search-popover" id="global-search-popover">
+    <div class="aira-search-listbox" id="global-search-listbox" role="listbox">
+      <div class="aira-search-group" role="group" aria-label="Topics">
+        <p class="aira-search-group__label">Topics</p>
+        <a class="aira-search-option" id="global-search-option-1" role="option" href="/topics/certificate-management">
+          <span class="aira-search-option__title"><mark>Certificate</mark> Management</span>
+          <span class="aira-search-option__meta">Emerging Standards &middot; Gathering Information</span>
+        </a>
+      </div>
+
+      <div class="aira-search-group" role="group" aria-label="Upcoming meetings">
+        <p class="aira-search-group__label">Upcoming meetings</p>
+        <a class="aira-search-option" id="global-search-option-2" role="option" aria-selected="true" href="/meetings/focus-group-2026-08-14">
+          <span class="aira-search-option__title">Immunization Focus Group</span>
+          <span class="aira-search-option__meta">Aug 14, 2026 &middot; 9:25 AM MDT &middot; Emerging Standards</span>
+          <span class="aira-search-option__match">Agenda match: <span class="aira-text-highlight">Certificate</span> Management</span>
+        </a>
+      </div>
+    </div>
+
+    <a class="aira-search-option aira-search-option--action" role="option" href="/search?q=certificate">
+      View all results for "certificate"
+    </a>
+
+    <p class="aira-search-status" hidden>No matching topics or meetings</p>
+  </div>
+</div>
+```
+
+Use `hidden` on `aira-search-popover` when suggestions are closed. Use `aira-search-status` inside the popover for loading and empty messages. Use `mark` or `aira-text-highlight` for matched terms.
 
 ### Tables
 

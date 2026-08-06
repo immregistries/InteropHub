@@ -2332,3 +2332,13 @@ CREATE TABLE es_meeting_user_view (
   CONSTRAINT fk_es_meeting_user_view_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
   CONSTRAINT fk_es_meeting_user_view_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Global header search (docs/InteropHub_Global_Search_Design.md): a
+-- comma-separated free-text field for alternate names, abbreviations, and
+-- curated keywords a topic should also be found by, since topic titles alone
+-- don't cover this. Searched with lower priority than the title itself.
+SET NAMES utf8mb4;
+SET time_zone = '+00:00';
+
+ALTER TABLE es_topic
+  ADD COLUMN search_keywords TEXT NULL AFTER topic_summary;

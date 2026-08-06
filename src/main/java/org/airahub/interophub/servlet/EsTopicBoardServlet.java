@@ -181,6 +181,7 @@ public class EsTopicBoardServlet extends HttpServlet {
 
             out.println("    <script src=\"" + contextPath + "/js/topic-board.js\"></script>");
 
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

@@ -69,6 +69,7 @@ public class AiraDemoServlet extends HttpServlet {
 
                         out.println("    </div>");
 
+                        out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
                         page.writeEnd(out);
                 }
         }

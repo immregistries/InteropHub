@@ -1,0 +1,21 @@
+/*
+ * Local styles for the global search results page (SearchServlet) and the
+ * header search-as-you-type combobox (header-search.js). aira.css (0.1.9)
+ * provides the combobox popover surface itself (aira-search-*); this file
+ * only holds the "Show N more" in-place expansion, which mirrors the
+ * existing es-meetings-calendar__more pattern (a page-scoped <details>/
+ * <summary> disclosure, not yet a shared component).
+ */
+.es-search-more {
+  margin-top: var(--aira-space-2);
+}
+
+.es-search-more > summary {
+  cursor: pointer;
+  color: var(--aira-link);
+  font-weight: 600;
+}
+
+.es-search-more > .aira-choice-list {
+  margin-top: var(--aira-space-2);
+}

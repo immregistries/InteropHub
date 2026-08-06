@@ -34,7 +34,6 @@ public class AdminEsMeetingPollsServlet extends HttpServlet {
             return;
         }
 
-        String contextPath = request.getContextPath();
         Long esTopicMeetingId = parseId(trimToNull(request.getParameter("esTopicMeetingId")));
         if (esTopicMeetingId == null) {
             renderMeetingSelector(request, response, "Select a meeting to manage polls.");

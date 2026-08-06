@@ -201,6 +201,7 @@ public class EsTopicManageServlet extends HttpServlet {
 
             out.println("      </div>"); // end aira-right-rail-layout
             out.println("    </div>"); // end aira-container--wide aira-stack
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
@@ -725,6 +726,7 @@ public class EsTopicManageServlet extends HttpServlet {
             out.println("      <p><a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                     + "/es/topics\">Back to Topics</a></p>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }

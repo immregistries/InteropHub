@@ -135,6 +135,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
             page.writeStart(out);
             renderWorkspaceContent(out, request.getContextPath(), view);
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             page.writeEnd(out);
         }
     }

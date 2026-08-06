@@ -26,10 +26,11 @@ final class InteropAiraPageFactory {
     private static final String HOME_HREF = "/home";
     private static final String ACCOUNT_HREF = "/workspace";
     private static final String ADMIN_HREF = "/admin";
-    private static final String SEARCH_ACTION = "/es/topics";
+    private static final String SEARCH_ACTION = "/search";
     private static final String SEARCH_PARAMETER = "q";
     private static final String SEARCH_LABEL = "Search InteropHub";
     private static final String SEARCH_PLACEHOLDER = "Search topics or meetings";
+    private static final String HEADER_SEARCH_SCRIPT_PATH = "/js/header-search.js";
     private static final String LOCAL_ENV_LABEL = "Local";
     private static final String LOCAL_ENV_DESCRIPTION = "Running in localhost mode";
     private static final String SIGNED_IN_USER_FALLBACK = "Signed in user";
@@ -66,6 +67,17 @@ final class InteropAiraPageFactory {
         }
 
         return builder;
+    }
+
+    /**
+     * The {@code <script>} tag that wires up the header search-as-you-type
+     * combobox behavior. {@link AiraPage} has no hook for injecting a script
+     * tag into every page, so each servlet that renders a full page must print
+     * this into its own body content before calling {@code page.writeEnd(out)}.
+     */
+    static String headerSearchScriptTag(String contextPath) {
+        String path = contextPath == null ? "" : contextPath;
+        return "    <script src=\"" + path + HEADER_SEARCH_SCRIPT_PATH + "\" defer></script>";
     }
 
     static AiraContextConfig topicsMeetingsContext(String contextLabel, String spaceCode, boolean topicsActive,

@@ -238,6 +238,7 @@ public class AdminEsCampaignDetailServlet extends HttpServlet {
             out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath
                     + "/admin/es/campaigns\">Back to Campaigns</a></p>");
             out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
