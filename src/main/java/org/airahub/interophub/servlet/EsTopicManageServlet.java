@@ -184,7 +184,7 @@ public class EsTopicManageServlet extends HttpServlet {
                     + "</h1>");
 
             switch (view) {
-                case FOLLOWERS -> renderFollowersView(out, topicSubscriptions);
+                case FOLLOWERS -> renderFollowersView(out, contextPath, topicId, topicSubscriptions, isAdmin);
                 case MEETINGS -> renderMeetingsView(out, contextPath, topicId, viewer, topicMeetingSeries);
                 case COMMENTS -> renderCommentsView(out, topicId);
                 case RELATIONSHIPS -> renderRelationshipsView(out, contextPath, topicId, viewer);
@@ -234,7 +234,8 @@ public class EsTopicManageServlet extends HttpServlet {
     // View: Followers
     // -------------------------------------------------------------------------
 
-    private void renderFollowersView(PrintWriter out, List<EsSubscription> subscriptions) {
+    private void renderFollowersView(PrintWriter out, String contextPath, Long topicId,
+            List<EsSubscription> subscriptions, boolean isAdmin) {
         List<Long> subUserIds = subscriptions.stream()
                 .map(EsSubscription::getUserId)
                 .filter(id -> id != null)
@@ -277,20 +278,13 @@ public class EsTopicManageServlet extends HttpServlet {
             out.println("                <th>Organization</th>");
             out.println("                <th>Email</th>");
             out.println("                <th>Role</th>");
+            if (isAdmin) {
+                out.println("                <th class=\"aira-table__cell--actions\">Actions</th>");
+            }
             out.println("              </tr></thead>");
             out.println("              <tbody>");
             for (EsSubscription s : sortedSubs) {
                 User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
-                String badgeVariant = switch (s.getStatus()) {
-                    case CHAMPION -> "aira-badge--info";
-                    case SUPPORT -> "aira-badge--subtle";
-                    default -> null;
-                };
-                String role = switch (s.getStatus()) {
-                    case CHAMPION -> "Champion";
-                    case SUPPORT -> "Support";
-                    default -> "Follower";
-                };
                 String name = u != null
                         ? (orEmpty(u.getFirstName()) + " " + orEmpty(u.getLastName())).trim()
                         : "";
@@ -300,11 +294,63 @@ public class EsTopicManageServlet extends HttpServlet {
                 out.println("                  <td>" + escapeHtml(name) + "</td>");
                 out.println("                  <td>" + escapeHtml(org) + "</td>");
                 out.println("                  <td>" + escapeHtml(email) + "</td>");
-                if (badgeVariant != null) {
-                    out.println("                  <td><span class=\"aira-badge " + badgeVariant + "\">"
-                            + escapeHtml(role) + "</span></td>");
+                if (isAdmin) {
+                    out.println("                  <td>");
+                    out.println("                    <form class=\"aira-inline-form\" method=\"post\" action=\""
+                            + contextPath + "/es/topics/subscription-role\">");
+                    out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                            + s.getEsSubscriptionId() + "\" />");
+                    out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId
+                            + "\" />");
+                    out.println(
+                            "                      <label class=\"aira-visually-hidden\" for=\"follower-role-"
+                                    + s.getEsSubscriptionId() + "\">Role for " + escapeHtml(name.isBlank() ? email : name)
+                                    + "</label>");
+                    out.println("                      <select class=\"aira-select\" id=\"follower-role-"
+                            + s.getEsSubscriptionId() + "\" name=\"status\" onchange=\"this.form.submit()\">");
+                    out.println("                        <option value=\"SUBSCRIBED\""
+                            + (s.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED ? " selected" : "")
+                            + ">Follower</option>");
+                    out.println("                        <option value=\"CHAMPION\""
+                            + (s.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION ? " selected" : "")
+                            + ">Champion</option>");
+                    out.println("                        <option value=\"SUPPORT\""
+                            + (s.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT ? " selected" : "")
+                            + ">Support</option>");
+                    out.println("                      </select>");
+                    out.println(
+                            "                      <noscript><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Save</button></noscript>");
+                    out.println("                    </form>");
+                    out.println("                  </td>");
+                    out.println("                  <td class=\"aira-table__cell--actions\">");
+                    out.println("                    <form method=\"post\" action=\"" + contextPath
+                            + "/es/topics/subscription-role\" style=\"display:inline\">");
+                    out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                            + s.getEsSubscriptionId() + "\" />");
+                    out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId
+                            + "\" />");
+                    out.println("                      <input type=\"hidden\" name=\"status\" value=\"UNSUBSCRIBED\" />");
+                    out.println(
+                            "                      <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\">Remove</button>");
+                    out.println("                    </form>");
+                    out.println("                  </td>");
                 } else {
-                    out.println("                  <td>" + escapeHtml(role) + "</td>");
+                    String badgeVariant = switch (s.getStatus()) {
+                        case CHAMPION -> "aira-badge--info";
+                        case SUPPORT -> "aira-badge--subtle";
+                        default -> null;
+                    };
+                    String role = switch (s.getStatus()) {
+                        case CHAMPION -> "Champion";
+                        case SUPPORT -> "Support";
+                        default -> "Follower";
+                    };
+                    if (badgeVariant != null) {
+                        out.println("                  <td><span class=\"aira-badge " + badgeVariant + "\">"
+                                + escapeHtml(role) + "</span></td>");
+                    } else {
+                        out.println("                  <td>" + escapeHtml(role) + "</td>");
+                    }
                 }
                 out.println("                </tr>");
             }

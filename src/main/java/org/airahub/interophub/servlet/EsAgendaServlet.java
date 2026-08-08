@@ -1498,15 +1498,6 @@ public class EsAgendaServlet extends HttpServlet {
         response.sendRedirect(url);
     }
 
-    static void renderWorkspaceLink(PrintWriter out, String contextPath, Long meetingId, boolean canEdit) {
-        if (!canEdit || out == null || meetingId == null) {
-            return;
-        }
-        out.println("          <a class=\"aira-button aira-button--secondary\" href=\""
-                + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
-                + "\">Open Meeting Workspace</a>");
-    }
-
     // =========================================================================
     // Live meeting-state polling (notes, outcomes, current agenda item)
     // =========================================================================
@@ -1965,11 +1956,6 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                         + "/es/meeting-series?seriesId=" + meeting.getEsTopicMeetingId() + "\">"
                         + escapeHtml(allLabel) + "</a>");
-            }
-            renderWorkspaceLink(out, contextPath, meeting.getEsMeetingId(), canEdit);
-            if (isAdmin) {
-                out.println("          <a class=\"aira-button aira-button--tertiary\" href=\"" + contextPath
-                        + "/es/agenda/confluence?meetingId=" + meeting.getEsMeetingId() + "\">Confluence export</a>");
             }
             out.println("        </div>");
             out.println("      </div>");
@@ -3334,7 +3320,8 @@ public class EsAgendaServlet extends HttpServlet {
 
             out.println("        </div>"); // end main content aira-stack
 
-            renderRecentlyViewedMeetingsRail(out, contextPath, user, meeting.getEsMeetingId());
+            renderAgendaRightRail(out, contextPath, user, meeting.getEsMeetingId(), meeting.getEsTopicMeetingId(),
+                    canEdit, isAdmin);
 
             out.println("      </div>"); // end aira-right-rail-layout
             out.println("    </div>"); // end aira-container--wide aira-stack
@@ -3445,9 +3432,45 @@ public class EsAgendaServlet extends HttpServlet {
         }
     }
 
-    private void renderRecentlyViewedMeetingsRail(PrintWriter out, String contextPath, User viewer,
+    private void renderAgendaRightRail(PrintWriter out, String contextPath, User viewer, Long currentMeetingId,
+            Long seriesId, boolean canEdit, boolean isAdmin) {
+        out.println("        <aside class=\"aira-right-rail\" aria-label=\"Meeting activity\">");
+        renderRecentlyViewedMeetingsCard(out, contextPath, viewer, currentMeetingId);
+        if (canEdit) {
+            renderMeetingAdminCard(out, contextPath, currentMeetingId, seriesId, isAdmin);
+        }
+        out.println("        </aside>");
+    }
+
+    static void renderMeetingAdminCard(PrintWriter out, String contextPath, Long meetingId, Long seriesId,
+            boolean isAdmin) {
+        out.println("          <section class=\"aira-section-card\">");
+        out.println(
+                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Meeting Admin</h2></div>");
+        out.println("            <div class=\"aira-section-card__body\">");
+        out.println("              <nav class=\"aira-sidebar-nav\" aria-label=\"Meeting admin links\">");
+        out.println("                <a class=\"aira-sidebar-link\" href=\""
+                + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
+                + "\">Open Meeting Workspace</a>");
+        if (isAdmin) {
+            out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
+                    + "/es/agenda/confluence?meetingId=" + meetingId + "\">Confluence export</a>");
+            if (seriesId != null) {
+                out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
+                        + "/admin/es/meetings?meetingId=" + seriesId + "\">Meeting Admin</a>");
+            }
+            out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
+                    + "/admin/es/meeting-polls\">Meeting Polls</a>");
+            out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
+                    + "/admin/es/meeting-survey\">Meeting Surveys</a>");
+        }
+        out.println("              </nav>");
+        out.println("            </div>");
+        out.println("          </section>");
+    }
+
+    private void renderRecentlyViewedMeetingsCard(PrintWriter out, String contextPath, User viewer,
             Long currentMeetingId) {
-        out.println("        <aside class=\"aira-right-rail\" aria-label=\"Recently viewed meetings\">");
         out.println("          <section class=\"aira-section-card\">");
         out.println(
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Recently Viewed Meetings</h2></div>");
@@ -3473,7 +3496,6 @@ public class EsAgendaServlet extends HttpServlet {
         }
         out.println("            </div>");
         out.println("          </section>");
-        out.println("        </aside>");
     }
 
     private String agendaLiveConfigJson(String contextPath, EsMeeting meeting) {

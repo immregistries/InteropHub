@@ -1,9 +1,6 @@
 To do on the InteropHub:
-  + Note appearing on meeting agenda
-  + Work on note taking and outcomes, get that working
-  + Recent Outcomes: Show only if there are outcomes. Need to figure out how to test it. 
-  + Meetings: Show upcoming and recent ones, don't show if there are no meetings to show
   + Do a run to link all related topics together
-  + Related Topics: Only show if there are related topics. 
   + Resources - work on Blob storage, want to show them as icons or chips under Overview
   + Sync with Zoho
+
+

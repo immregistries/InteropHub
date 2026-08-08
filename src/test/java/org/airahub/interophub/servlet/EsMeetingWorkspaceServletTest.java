@@ -339,15 +339,28 @@ class EsMeetingWorkspaceServletTest {
         }
 
         @Test
-        void workspaceFooterLinkRespectsEditAccess() {
-                StringWriter visibleBuffer = new StringWriter();
-                EsAgendaServlet.renderWorkspaceLink(new PrintWriter(visibleBuffer), "/hub", 123L, true);
-                assertTrue(visibleBuffer.toString().contains("Open Meeting Workspace"));
-                assertTrue(visibleBuffer.toString().contains("/es/meeting-workspace?meetingId=123"));
+        void meetingAdminCardShowsWorkspaceLinkAndGatesAdminLinksOnAdmin() {
+                StringWriter editorBuffer = new StringWriter();
+                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(editorBuffer), "/hub", 123L, 55L, false);
+                String editorHtml = editorBuffer.toString();
+                assertTrue(editorHtml.contains("Open Meeting Workspace"));
+                assertTrue(editorHtml.contains("/es/meeting-workspace?meetingId=123"));
+                assertTrue(!editorHtml.contains("Confluence export"));
+                assertTrue(!editorHtml.contains("Meeting Polls"));
+                assertTrue(!editorHtml.contains("Meeting Surveys"));
+                assertTrue(!editorHtml.contains("/admin/es/meetings?meetingId=55"));
 
-                StringWriter hiddenBuffer = new StringWriter();
-                EsAgendaServlet.renderWorkspaceLink(new PrintWriter(hiddenBuffer), "/hub", 123L, false);
-                assertEquals("", hiddenBuffer.toString());
+                StringWriter adminBuffer = new StringWriter();
+                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(adminBuffer), "/hub", 123L, 55L, true);
+                String adminHtml = adminBuffer.toString();
+                assertTrue(adminHtml.contains("Open Meeting Workspace"));
+                assertTrue(adminHtml.contains("Confluence export"));
+                assertTrue(adminHtml.contains("/es/agenda/confluence?meetingId=123"));
+                assertTrue(adminHtml.contains("/admin/es/meetings?meetingId=55"));
+                assertTrue(adminHtml.contains("Meeting Polls"));
+                assertTrue(adminHtml.contains("/admin/es/meeting-polls"));
+                assertTrue(adminHtml.contains("Meeting Surveys"));
+                assertTrue(adminHtml.contains("/admin/es/meeting-survey"));
         }
 
         private static EsMeeting meeting() {

@@ -351,11 +351,6 @@
   </servlet>
 
   <servlet>
-    <servlet-name>AdminEsSubscriptionServlet</servlet-name>
-    <servlet-class>org.airahub.interophub.servlet.AdminEsSubscriptionServlet</servlet-class>
-  </servlet>
-
-  <servlet>
     <servlet-name>AdminEsMeetingServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminEsMeetingServlet</servlet-class>
   </servlet>
@@ -423,6 +418,11 @@
   <servlet>
     <servlet-name>EsTopicCurationServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicCurationServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicSubscriptionRoleServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicSubscriptionRoleServlet</servlet-class>
   </servlet>
 
   <servlet>
@@ -631,11 +631,6 @@
   </servlet-mapping>
 
   <servlet-mapping>
-    <servlet-name>AdminEsSubscriptionServlet</servlet-name>
-    <url-pattern>/admin/es/subscription</url-pattern>
-  </servlet-mapping>
-
-  <servlet-mapping>
     <servlet-name>AdminEsMeetingServlet</servlet-name>
     <url-pattern>/admin/es/meetings</url-pattern>
   </servlet-mapping>
@@ -713,6 +708,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicCurationServlet</servlet-name>
     <url-pattern>/es/topics/curation</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicSubscriptionRoleServlet</servlet-name>
+    <url-pattern>/es/topics/subscription-role</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

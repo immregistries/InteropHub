@@ -14,7 +14,6 @@ import org.airahub.interophub.dao.EsCampaignMeetingBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
-import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
@@ -68,7 +67,6 @@ public class EsTopicDetailServlet extends HttpServlet {
 
         private final AuthFlowService authFlowService;
         private final EsTopicDao esTopicDao;
-        private final EsTopicNeighborhoodDao topicNeighborhoodDao;
         private final EsCampaignDao campaignDao;
         private final EsCampaignTopicDao campaignTopicDao;
         private final EsSubscriptionDao subscriptionDao;
@@ -93,7 +91,6 @@ public class EsTopicDetailServlet extends HttpServlet {
         public EsTopicDetailServlet() {
                 this.authFlowService = new AuthFlowService();
                 this.esTopicDao = new EsTopicDao();
-                this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
                 this.campaignDao = new EsCampaignDao();
                 this.campaignTopicDao = new EsCampaignTopicDao();
                 this.subscriptionDao = new EsSubscriptionDao();
@@ -221,8 +218,6 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 .map(EsTopicPathDefinition::getPathDescription)
                                                 .map(this::trimToNull)
                                                 .orElse(null);
-                String normalizedNeighborhood = String.join(", ",
-                                topicNeighborhoodDao.findNeighborhoodNamesByTopicId(topic.getEsTopicId()));
                 if (authenticatedUser.isPresent()) {
                         try {
                                 topicViewHistoryService.recordAuthenticatedTopicView(authenticatedUser.get().getUserId(), topicId);
@@ -270,6 +265,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         }
                         topicNameMap = nameMap;
                 }
+                List<CuratedTopicRow> curatedTopicRows = buildCuratedTopicRows(topicId, curatedEntries, topicNameMap);
 
                 CuratorNavContext curatorNav = null;
                 if (curatorTopicId != null && !topicSpaceAccessService.canViewTopicId(viewer, curatorTopicId)) {
@@ -389,6 +385,9 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("              </div>");
                         out.println("              <div class=\"aira-topic-actions\">");
                         if (canInteract) {
+                                out.println(
+                                                "                <span class=\"aira-badge aira-badge--success\" id=\"topic-follow-status\" style=\""
+                                                                + (followed ? "" : "display:none") + "\">&#10003; Following</span>");
                                 String followClass = followed ? "aira-button aira-button--tertiary"
                                                 : "aira-button aira-button--primary";
                                 String followLabel = followed ? "Unfollow" : "Follow";
@@ -408,6 +407,27 @@ public class EsTopicDetailServlet extends HttpServlet {
                         }
                         out.println("              </div>");
                         out.println("            </div>");
+                        List<EsSubscription> championSubscriptions = subscriptionDao.findChampionsByTopicId(topicId)
+                                        .stream()
+                                        .filter(sub -> sub.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION)
+                                        .collect(Collectors.toList());
+                        List<String> championNames = new ArrayList<>();
+                        for (EsSubscription championSub : championSubscriptions) {
+                                String championName = championSub.getUserId() != null
+                                                ? userDao.findById(championSub.getUserId())
+                                                                .map(User::getFullName)
+                                                                .map(this::trimToNull)
+                                                                .orElse(null)
+                                                : null;
+                                if (championName == null) {
+                                        championName = trimToNull(championSub.getEmail());
+                                }
+                                if (championName != null) {
+                                        championNames.add(championName);
+                                }
+                        }
+                        int followerCount = subscriptionDao.findActiveByTopicId(topicId).size();
+
                         out.println("            <div class=\"aira-topic-meta\" aria-label=\"Topic metadata\">");
                         out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Stage</span><span class=\"aira-meta-chip__value\">"
                                         + escapeHtml(normalizedStage.isBlank() ? "Other" : normalizedStage)
@@ -427,16 +447,19 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + escapeHtml(trimToNull(topic.getTopicType()) == null ? "Capability"
                                                         : topic.getTopicType())
                                         + "</span></span>");
-                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Visibility</span><span class=\"aira-meta-chip__value\">"
-                                        + escapeHtml(topicSpace.getVisibility() == null ? "Unknown"
-                                                        : capitalize(topicSpace.getVisibility().name().toLowerCase()))
+                        if (!championNames.isEmpty()) {
+                                out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Champion</span><span class=\"aira-meta-chip__value\">"
+                                                + escapeHtml(String.join(", ", championNames))
+                                                + "</span></span>");
+                        }
+                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Followers</span><span class=\"aira-meta-chip__value\">"
+                                        + followerCount
                                         + "</span></span>");
-                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Neighborhood</span><span class=\"aira-meta-chip__value\">"
-                                        + escapeHtml(normalizedNeighborhood.isBlank() ? "Not set"
-                                                        : normalizedNeighborhood)
-                                        + "</span></span>");
-                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Champion</span><span class=\"aira-meta-chip__value\">TBD</span></span>");
-                        out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Last updated</span><span class=\"aira-meta-chip__value\">Pending</span></span>");
+                        if (!curatedEntries.isEmpty()) {
+                                out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Topics</span><span class=\"aira-meta-chip__value\">"
+                                                + curatedEntries.size()
+                                                + "</span></span>");
+                        }
                         out.println("            </div>");
                         out.println("          </header>");
 
@@ -447,14 +470,14 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + escapeHtml(normalizedStage.isBlank() ? "Other" : normalizedStage)
                                         + "</p><p class=\"aira-topic-status-card__description\">"
                                         + escapeHtml(stageDescription == null
-                                                        ? "Active concept development and refinement."
+                                                        ? "No description set."
                                                         : stageDescription)
                                         + "</p></div></article>");
                         out.println("              <article class=\"aira-topic-status-card aira-topic-status-card--path\"><span class=\"aira-topic-status-card__icon\" aria-hidden=\"true\">P</span><div><p class=\"aira-topic-status-card__label\">Path</p><p class=\"aira-topic-status-card__value\">"
                                         + escapeHtml(normalizedPath.isBlank() ? "Not set" : normalizedPath)
                                         + "</p><p class=\"aira-topic-status-card__description\">"
                                         + escapeHtml(pathDescription == null
-                                                        ? "Planning and sponsorship details can be added here."
+                                                        ? "No description set."
                                                         : pathDescription)
                                         + "</p></div></article>");
                         out.println("            </div>");
@@ -478,8 +501,9 @@ public class EsTopicDetailServlet extends HttpServlet {
                         }
                         out.println("              </div>");
                         out.println("              <div class=\"aira-alert aira-alert--info\" role=\"status\" aria-live=\"polite\">");
-                        out.println("                <p class=\"aira-alert__title\">Background placeholder</p>");
-                        out.println("                <p>Use this area later for source material, diagrams, or supporting notes.</p>");
+                        out.println("                <p class=\"aira-alert__title\">Coming soon</p>");
+                        out.println(
+                                        "                <p>Support for source material, diagrams, and supporting notes is coming in a future update.</p>");
                         out.println("              </div>");
                         out.println("            </div>");
                         out.println("          </section>");
@@ -530,10 +554,16 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                                 : "aira-button aira-button--primary aira-button--small";
                                                 String registerLabel = viewerRegisteredForOwnMeeting ? "Unregister"
                                                                 : "Register for Meeting";
-                                                out.println("              <button type=\"button\" id=\"meeting-register-toggle\" class=\""
+                                                out.println("              <div class=\"aira-cluster\">");
+                                                out.println(
+                                                                "                <span class=\"aira-badge aira-badge--success\" id=\"meeting-register-status\" style=\""
+                                                                                + (viewerRegisteredForOwnMeeting ? "" : "display:none")
+                                                                                + "\">&#10003; Registered</span>");
+                                                out.println("                <button type=\"button\" id=\"meeting-register-toggle\" class=\""
                                                                 + registerClass + "\" data-registered=\""
                                                                 + (viewerRegisteredForOwnMeeting ? "1" : "0") + "\">"
                                                                 + registerLabel + "</button>");
+                                                out.println("              </div>");
                                         } else {
                                                 out.println(
                                                                 "              <a class=\"aira-button aira-button--primary aira-button--small\" href=\""
@@ -687,13 +717,45 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("          </section>");
                         }
 
+                        if (!curatedTopicRows.isEmpty()) {
+                                out.println("          <section class=\"aira-section-card\" aria-labelledby=\"topics-panel-title\">");
+                                out.println(
+                                                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"topics-panel-title\">Topics</h2></div>");
+                                out.println("            <div class=\"aira-section-card__body aira-stack\">");
+
+                                Map<String, List<CuratedTopicRow>> curatedByCategory = new LinkedHashMap<>();
+                                List<CuratedTopicRow> curatedUncategorized = new ArrayList<>();
+                                for (CuratedTopicRow row : curatedTopicRows) {
+                                        String category = trimToNull(row.curation().getCategoryLabel());
+                                        if (category == null) {
+                                                curatedUncategorized.add(row);
+                                        } else {
+                                                curatedByCategory.computeIfAbsent(category, k -> new ArrayList<>()).add(row);
+                                        }
+                                }
+
+                                if (curatedByCategory.isEmpty()) {
+                                        renderCuratedTopicTable(out, contextPath, curatedTopicRows, null);
+                                } else {
+                                        List<String> categoryNames = new ArrayList<>(curatedByCategory.keySet());
+                                        categoryNames.sort(String.CASE_INSENSITIVE_ORDER);
+                                        for (String category : categoryNames) {
+                                                renderCuratedTopicTable(out, contextPath, curatedByCategory.get(category), category);
+                                        }
+                                        if (!curatedUncategorized.isEmpty()) {
+                                                renderCuratedTopicTable(out, contextPath, curatedUncategorized, "No Category");
+                                        }
+                                }
+
+                                out.println("            </div>");
+                                out.println("          </section>");
+                        }
+
+                        if (!curatedByEntries.isEmpty()) {
                         out.println("          <section class=\"aira-section-card\" aria-labelledby=\"included-title\">");
                         out.println(
                                         "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"included-title\">Included In</h2></div>");
                         out.println("            <div class=\"aira-section-card__body\"><div class=\"aira-tag-list\">");
-                        if (curatedByEntries.isEmpty()) {
-                                out.println("              <span class=\"aira-tag aira-tag--outline\">Not yet connected</span>");
-                        } else {
                                 for (EsTopicCuration entry : curatedByEntries) {
                                         String curatorName = topicNameMap.getOrDefault(entry.getCuratorTopicId(),
                                                         "#" + entry.getCuratorTopicId());
@@ -702,9 +764,9 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                         + "/es/topic/" + entry.getCuratorTopicId() + "\">"
                                                         + escapeHtml(curatorName) + "</a>");
                                 }
-                        }
                         out.println("            </div></div>");
                         out.println("          </section>");
+                        }
 
                         out.println("          <div class=\"aira-topic-details-strip\" aria-label=\"Topic details\">");
                         out.println("            <span><strong>Topic ID:</strong> " + topicId + "</span>");
@@ -776,12 +838,14 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("        var questionCancel = document.getElementById('topic-question-cancel');");
                                 out.println("        var questionStatus = document.getElementById('topic-question-status');");
 
+                                out.println("        var followStatusBadge = document.getElementById('topic-follow-status');");
                                 out.println("        function setFollowButtonState(isFollowed) {");
                                 out.println("          if (!followButton) { return; }");
                                 out.println("          followButton.setAttribute('data-followed', isFollowed ? '1' : '0');");
                                 out.println("          followButton.textContent = isFollowed ? 'Unfollow' : 'Follow';");
                                 out.println("          followButton.classList.toggle('aira-button--primary', !isFollowed);");
                                 out.println("          followButton.classList.toggle('aira-button--tertiary', isFollowed);");
+                                out.println("          if (followStatusBadge) { followStatusBadge.style.display = isFollowed ? '' : 'none'; }");
                                 out.println("        }");
 
                                 out.println("        if (followButton) {");
@@ -810,6 +874,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("        }");
 
                                 out.println("        var registerButton = document.getElementById('meeting-register-toggle');");
+                                out.println("        var registerStatusBadge = document.getElementById('meeting-register-status');");
                                 out.println("        function setRegisterButtonState(isRegistered) {");
                                 out.println("          if (!registerButton) { return; }");
                                 out.println("          registerButton.setAttribute('data-registered', isRegistered ? '1' : '0');");
@@ -817,6 +882,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                 "          registerButton.textContent = isRegistered ? 'Unregister' : 'Register for Meeting';");
                                 out.println("          registerButton.classList.toggle('aira-button--primary', !isRegistered);");
                                 out.println("          registerButton.classList.toggle('aira-button--tertiary', isRegistered);");
+                                out.println(
+                                                "          if (registerStatusBadge) { registerStatusBadge.style.display = isRegistered ? '' : 'none'; }");
                                 out.println("        }");
 
                                 out.println("        if (registerButton) {");
@@ -1277,5 +1344,104 @@ public class EsTopicDetailServlet extends HttpServlet {
         }
 
         private record RecentOutcomeRow(EsRecordedOutcome outcome, EsMeeting meeting) {
+        }
+
+        /**
+         * Builds the rows for the topic-page "Topics" panel: one row per topic this
+         * topic curates, in curation display order, each carrying the most recent
+         * past meeting (if any) where that curated topic had a non-cancelled,
+         * non-postponed agenda item within THIS topic's own meeting series — the
+         * "Last Appeared" indicator. Topics with no own meeting series (or no such
+         * appearance yet) simply show no Last Appeared link. Category-based
+         * grouping is applied at render time from each row's own
+         * {@code curation().getCategoryLabel()}.
+         */
+        private List<CuratedTopicRow> buildCuratedTopicRows(Long topicId, List<EsTopicCuration> curatedEntries,
+                        Map<Long, String> topicNameMap) {
+                if (curatedEntries.isEmpty()) {
+                        return List.of();
+                }
+                Map<Long, LocalDateTime> lastAppearedAt = new HashMap<>();
+                Map<Long, Long> lastAppearedMeetingId = new HashMap<>();
+                Optional<EsTopicMeeting> ownSeriesOpt = esTopicMeetingDao.findByTopicId(topicId);
+                if (ownSeriesOpt.isPresent()) {
+                        List<EsMeeting> seriesMeetings = esMeetingDao
+                                        .findByEsTopicMeetingId(ownSeriesOpt.get().getEsTopicMeetingId());
+                        Map<Long, EsMeeting> meetingById = new HashMap<>();
+                        for (EsMeeting m : seriesMeetings) {
+                                meetingById.put(m.getEsMeetingId(), m);
+                        }
+                        LocalDateTime now = LocalDateTime.now();
+                        if (!meetingById.isEmpty()) {
+                                for (EsMeetingAgendaItem item : agendaItemDao
+                                                .findByMeetingIds(new ArrayList<>(meetingById.keySet()))) {
+                                        if (item.getEsTopicId() == null
+                                                        || item.getStatus() == EsMeetingAgendaItem.AgendaItemStatus.CANCELLED
+                                                        || item.getStatus() == EsMeetingAgendaItem.AgendaItemStatus.POSTPONED) {
+                                                continue;
+                                        }
+                                        EsMeeting sourceMeeting = meetingById.get(item.getEsMeetingId());
+                                        if (sourceMeeting == null || sourceMeeting.getScheduledStart() == null
+                                                        || sourceMeeting.getScheduledStart().isAfter(now)) {
+                                                continue;
+                                        }
+                                        LocalDateTime existing = lastAppearedAt.get(item.getEsTopicId());
+                                        if (existing == null || sourceMeeting.getScheduledStart().isAfter(existing)) {
+                                                lastAppearedAt.put(item.getEsTopicId(), sourceMeeting.getScheduledStart());
+                                                lastAppearedMeetingId.put(item.getEsTopicId(), sourceMeeting.getEsMeetingId());
+                                        }
+                                }
+                        }
+                }
+
+                List<CuratedTopicRow> rows = new ArrayList<>();
+                for (EsTopicCuration curation : curatedEntries) {
+                        Long curatedTopicId = curation.getCuratedTopicId();
+                        String name = topicNameMap.getOrDefault(curatedTopicId, "#" + curatedTopicId);
+                        rows.add(new CuratedTopicRow(curation, name, lastAppearedAt.get(curatedTopicId),
+                                        lastAppearedMeetingId.get(curatedTopicId)));
+                }
+                return rows;
+        }
+
+        private record CuratedTopicRow(EsTopicCuration curation, String topicName, LocalDateTime lastAppearedAt,
+                        Long lastAppearedMeetingId) {
+        }
+
+        /**
+         * Renders one Topic/Last Appeared table for the "Topics" panel, optionally
+         * preceded by a category heading. Rows are rendered in the order given
+         * (curation display order).
+         */
+        private void renderCuratedTopicTable(PrintWriter out, String contextPath, List<CuratedTopicRow> rows,
+                        String categoryHeading) {
+                out.println("              <section>");
+                if (categoryHeading != null) {
+                        out.println("                <h3 class=\"aira-subsection-title\">" + escapeHtml(categoryHeading)
+                                        + "</h3>");
+                }
+                out.println("                <div class=\"aira-table-wrap\">");
+                out.println("                  <table class=\"aira-table\">");
+                out.println("                    <thead><tr><th>Topic</th><th>Last Appeared</th></tr></thead>");
+                out.println("                    <tbody>");
+                for (CuratedTopicRow row : rows) {
+                        out.println("                      <tr>");
+                        out.println("                        <td><a class=\"agenda-topic-link\" href=\"" + contextPath
+                                        + "/es/topic/" + row.curation().getCuratedTopicId() + "\">"
+                                        + escapeHtml(row.topicName()) + "</a></td>");
+                        if (row.lastAppearedAt() != null && row.lastAppearedMeetingId() != null) {
+                                out.println("                        <td><a class=\"aira-inline-link\" href=\"" + contextPath
+                                                + "/es/agenda?meetingId=" + row.lastAppearedMeetingId() + "\">"
+                                                + escapeHtml(row.lastAppearedAt().toLocalDate().format(AGENDA_DATE_FMT))
+                                                + "</a></td>");
+                        } else {
+                                out.println("                        <td><span class=\"aira-meta\">Never</span></td>");
+                        }
+                        out.println("                      </tr>");
+                }
+                out.println("                    </tbody>");
+                out.println("                  </table>");
+                out.println("                </div>");
+                out.println("              </section>");
         }
 }
