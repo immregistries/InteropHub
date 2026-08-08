@@ -19268,13 +19268,14 @@ img.ProseMirror-separator {
       for (let index = 0; index < state.outcomes.length; index += 1) {
         const outcome = state.outcomes[index];
         const typeLabel = humanizeEnum(outcome.outcomeType || "OUTCOME");
-        const title = escapeHtml(outcome.shortTitle || "Outcome");
+        const shortTitle = trimToNull(outcome.shortTitle);
+        const titleHtml = shortTitle ? '<div class="imw-outcome-title">' + escapeHtml(shortTitle) + "</div>" : "";
         const outcomeText = escapeHtml(outcome.outcomeText || "");
         const sourceNodeId = escapeHtml(outcome.sourceNodeId || "");
         const canManage = Boolean(state.canEdit);
         html += '<tr class="imw-outcome-row" data-source-node-id="' + sourceNodeId + '">';
         html += '<td><span class="aira-badge aira-badge--subtle">' + escapeHtml(typeLabel) + "</span></td>";
-        html += '<td><div class="imw-outcome-title">' + title + '</div><div class="imw-outcome-text">' + outcomeText + "</div></td>";
+        html += '<td>' + titleHtml + '<div class="imw-outcome-text">' + outcomeText + "</div></td>";
         if (canManage) {
           html += '<td class="imw-outcome-table__actions"><div class="aira-cluster">';
           html += '<button type="button" class="aira-button aira-button--secondary" data-outcome-edit="' + outcome.outcomeId + '">Edit</button>';
@@ -19932,6 +19933,12 @@ img.ProseMirror-separator {
         state.addOutcomeButton.hidden = !state.canEdit || !state.editor || !state.noteId || !editorVisible;
         state.addOutcomeButton.disabled = state.saveInProgress;
       }
+      // The outcome dialog's own fields are disabled while a note save is in
+      // flight (see syncOutcomeDialogAvailability), including the save
+      // triggered by opening the dialog itself while the note was dirty. That
+      // save's completion only calls syncControlVisibility, so without this
+      // the dialog's fields never got re-enabled once the save finished.
+      syncOutcomeDialogAvailability(state);
     }
     function setEditorEditable(state, editable) {
       if (!state.editor || typeof state.editor.setEditable !== "function") {

@@ -51,3 +51,89 @@
   color: #fff;
   border-color: var(--aira-focus);
 }
+
+/* Participant agenda: give the Agenda column most of the width so planned
+   agenda text, notes, and outcomes stay readable in one place. Scoped to the
+   read-only (non-editor) rendering, which has a fixed three-column shape;
+   editor views keep auto widths to make room for the Controls/Status
+   columns and click-to-edit affordances. */
+.agenda-main-table--readonly th:nth-child(1),
+.agenda-main-table--readonly td:nth-child(1) {
+  width: 22%;
+}
+
+.agenda-main-table--readonly th:nth-child(2),
+.agenda-main-table--readonly td:nth-child(2) {
+  width: 63%;
+}
+
+.agenda-main-table--readonly th:nth-child(3),
+.agenda-main-table--readonly td:nth-child(3) {
+  width: 15%;
+}
+
+/* Current agenda item: restrained highlight that doesn't shift layout. */
+.agenda-main-table tr.agenda-row-current {
+  background: var(--aira-info-surface);
+  box-shadow: inset 3px 0 0 var(--aira-focus);
+}
+
+.agenda-current-badge {
+  display: none;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: var(--aira-radius-pill);
+  background: var(--aira-focus);
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
+.agenda-row-current .agenda-current-badge {
+  display: inline-block;
+}
+
+/* Notes and outcomes render inside the Agenda cell, below the planned
+   agenda text, as their own real nested lists (never flattened into the
+   agenda paragraph). */
+.agenda-notes,
+.agenda-outcomes {
+  margin-top: 0.6rem;
+}
+
+.agenda-notes-heading,
+.agenda-outcomes-heading {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--aira-text-secondary);
+  margin-bottom: 0.2rem;
+}
+
+.agenda-notes ul,
+.agenda-outcomes ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.agenda-notes ul ul {
+  margin-top: 0.15rem;
+}
+
+.agenda-notes li,
+.agenda-outcomes li {
+  margin-bottom: 0.2rem;
+}
+
+/* Narrow screens: keep nested note indentation legible without collapsing
+   the text into an unusably narrow column. */
+@media (max-width: 40rem) {
+  .agenda-notes ul,
+  .agenda-outcomes ul {
+    padding-left: 1rem;
+  }
+}

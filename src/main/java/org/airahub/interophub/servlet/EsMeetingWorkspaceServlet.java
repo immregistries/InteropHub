@@ -39,6 +39,7 @@ import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.RecordedOutcomeType;
 import org.airahub.interophub.model.TopicNoteStatus;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.AgendaActivityService;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
 import org.airahub.interophub.service.MeetingLifecycleService;
@@ -69,6 +70,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     private final UserDao userDao;
     private final MeetingLifecycleService meetingLifecycleService;
     private final TopicNoteDocumentSupport topicNoteDocumentSupport;
+    private final AgendaActivityService agendaActivityService;
 
     public EsMeetingWorkspaceServlet() {
         this.authFlowService = new AuthFlowService();
@@ -85,6 +87,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         this.userDao = new UserDao();
         this.meetingLifecycleService = new MeetingLifecycleService();
         this.topicNoteDocumentSupport = new TopicNoteDocumentSupport();
+        this.agendaActivityService = new AgendaActivityService();
     }
 
     @Override
@@ -177,6 +180,22 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             if ("endMeeting".equals(action)) {
                 meetingLifecycleService.completeMeeting(meetingId, user.getUserId());
                 redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, "ended=1");
+                return;
+            }
+            if ("markCovered".equals(action)) {
+                if (selectedItemId == null) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "itemId is required.");
+                    return;
+                }
+                agendaItemDao.markCovered(selectedItemId);
+                Long nextItemId = findNextActiveAgendaItemId(meetingId, selectedItemId);
+                if (nextItemId != null) {
+                    agendaActivityService.activateAgendaItem(meetingId, nextItemId, user.getUserId());
+                } else {
+                    agendaActivityService.clearCurrentAgendaItem(meetingId, user.getUserId());
+                }
+                redirectWorkspace(response, request.getContextPath(), meetingId,
+                        nextItemId != null ? nextItemId : selectedItemId, "covered=1");
                 return;
             }
             redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, null);
@@ -325,10 +344,22 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     + (view.canStartSession() ? "" : " disabled")
                     + ">Start session</button>");
             out.println("                </form>");
-            out.println(
-                    "                <button class=\"aira-button aira-button--tertiary\" type=\"button\" disabled>Mark item covered</button>");
-            out.println(
-                    "                <button class=\"aira-button aira-button--tertiary\" type=\"button\" disabled>Add note</button>");
+            boolean canMarkCovered = view.canEndMeeting() && view.selectedItem() != null
+                    && view.selectedItem().agendaItemId() != null;
+            out.println("                <form method=\"post\" action=\""
+                    + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
+                    + "\" class=\"aira-stack aira-stack--compact\">");
+            out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                    + view.meeting().getEsMeetingId() + "\" />");
+            if (view.selectedItem() != null && view.selectedItem().agendaItemId() != null) {
+                out.println("                  <input type=\"hidden\" name=\"itemId\" value=\""
+                        + view.selectedItem().agendaItemId() + "\" />");
+            }
+            out.println("                  <input type=\"hidden\" name=\"action\" value=\"markCovered\" />");
+            out.println("                  <button class=\"aira-button aira-button--tertiary\" type=\"submit\""
+                    + (canMarkCovered ? "" : " disabled")
+                    + ">Mark item covered</button>");
+            out.println("                </form>");
             out.println("                <form method=\"post\" action=\""
                     + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
                     + "\" class=\"aira-stack aira-stack--compact\">");
@@ -680,6 +711,30 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         response.sendRedirect(url.toString());
     }
 
+    /**
+     * Finds the next agenda item after {@code afterItemId} in display order,
+     * skipping cancelled and postponed items, so "Mark item covered" can advance
+     * the meeting's current-item pointer. Returns null when there is no
+     * following active item (the covered item was the last one).
+     */
+    private Long findNextActiveAgendaItemId(Long meetingId, Long afterItemId) {
+        List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
+        boolean foundCurrent = false;
+        for (EsMeetingAgendaItem item : items) {
+            if (foundCurrent) {
+                if (item.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED
+                        && item.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.POSTPONED) {
+                    return item.getEsMeetingAgendaItemId();
+                }
+                continue;
+            }
+            if (afterItemId.equals(item.getEsMeetingAgendaItemId())) {
+                foundCurrent = true;
+            }
+        }
+        return null;
+    }
+
     private static String startSessionHelpText(EsMeeting meeting, boolean canStartSession) {
         if (canStartSession) {
             return "Session can now be started.";
@@ -792,6 +847,24 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return null;
     }
 
+    private static String titleCase(String enumName) {
+        if (enumName == null || enumName.isBlank()) {
+            return "";
+        }
+        String[] words = enumName.split("_");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (result.length() > 0) {
+                result.append(' ');
+            }
+            result.append(word.substring(0, 1)).append(word.substring(1).toLowerCase(Locale.ROOT));
+        }
+        return result.toString();
+    }
+
     private static String formatMeetingSchedule(EsMeeting meeting) {
         if (meeting == null || meeting.getScheduledStart() == null) {
             return "Schedule not set";
@@ -858,7 +931,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         String noteDocumentJson = note != null ? note.getDocumentJson() : null;
         String editorSeedJson = noteDocumentJson != null ? noteDocumentJson
                 : topicNoteDocumentSupport.buildEmptyBulletDocument();
-        String actionLabel = noteDocumentJson == null ? "Edit notes" : "Edit notes";
 
         return new NotePanelView(
                 effectiveTopicName,
@@ -878,11 +950,9 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 responsibilityMessage,
                 assumeActionLabel,
                 assumeActionAriaLabel,
-                actionLabel,
                 noteEditable,
                 canAssumeEditor,
                 showAssumeAction,
-                canAssumeEditor,
                 user != null ? user.getUserId() : null,
                 csrfToken);
     }
@@ -976,11 +1046,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                             + escapeHtml(notePanel.assumeActionAriaLabel()) + "\">"
                             + escapeHtml(notePanel.assumeActionLabel()) + "</button>");
         }
-        if (notePanel.canShowEditButton() && !notePanel.canEdit()) {
-            out.println(
-                    "                <button type=\"button\" class=\"aira-button aira-button--secondary\" data-note-edit-toggle>"
-                            + escapeHtml(notePanel.actionLabel()) + "</button>");
-        }
         out.println(
                 "                <div class=\"aira-stack aira-stack--compact\" data-note-edit hidden>");
         out.println("                  <div class=\"aira-panel aira-prose\" data-note-editor></div>");
@@ -1012,11 +1077,125 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         out.println("                  </div>");
         out.println("                  <div class=\"aira-stack aira-stack--compact\" data-outcome-list></div>");
         out.println("                </section>");
+        renderOutcomeDialogs(out);
         out.println("                <script type=\"application/json\" data-note-config>"
                 + escapeScriptData(noteConfigJson(contextPath, view, notePanel))
                 + "</script>");
         out.println("              </div>");
         out.println("            </article>");
+    }
+
+    /**
+     * Renders the "add/edit recorded outcome" dialog and the "remove recorded
+     * outcome" confirmation dialog. meeting-workspace-notes.js drives both
+     * entirely by the data-outcome-* attributes below (see openOutcomeDialog,
+     * submitOutcomeDialog, and queueRemoveOutcome) — without this markup the
+     * "Add outcome from selected bullet" button silently no-ops because the JS
+     * finds no dialog element to open.
+     */
+    private static void renderOutcomeDialogs(PrintWriter out) {
+        out.println("                <dialog data-outcome-dialog class=\"aira-dialog aira-no-print\""
+                + " aria-labelledby=\"imw-outcome-dialog-title\">");
+        out.println("                  <form data-outcome-form method=\"dialog\" class=\"aira-stack aira-stack--compact\">");
+        out.println("                    <div class=\"aira-cluster aira-cluster--between\">");
+        out.println(
+                "                      <h3 class=\"aira-section-title\" id=\"imw-outcome-dialog-title\" data-outcome-dialog-title>Add Recorded Outcome</h3>");
+        out.println(
+                "                      <button type=\"button\" class=\"aira-button aira-button--tertiary aira-button--small\" data-outcome-dialog-close aria-label=\"Close\">&times;</button>");
+        out.println("                    </div>");
+        out.println(
+                "                    <div class=\"aira-error-summary\" data-outcome-error-summary hidden></div>");
+        out.println("                    <div class=\"aira-stack aira-stack--compact\">");
+        out.println("                      <span class=\"aira-label\">Outcome type</span>");
+        out.println("                      <input type=\"hidden\" data-outcome-type required>");
+        out.println(
+                "                      <div class=\"aira-cluster\" data-outcome-type-options role=\"group\" aria-label=\"Outcome type\">");
+        for (RecordedOutcomeType type : RecordedOutcomeType.values()) {
+            out.println(
+                    "                        <button type=\"button\" class=\"aira-button aira-button--tertiary aira-button--small imw-outcome-type-option\""
+                            + " data-outcome-type-option=\"" + type.name() + "\""
+                            + " onclick=\"imwSetOutcomeType(this,'" + type.name() + "')\">"
+                            + escapeHtml(titleCase(type.name())) + "</button>");
+        }
+        out.println("                      </div>");
+        out.println(
+                "                      <span class=\"aira-field-error\" data-outcome-field-error=\"outcomeType\" hidden></span>");
+        out.println("                    </div>");
+        out.println("                    <label class=\"aira-stack aira-stack--compact\">");
+        out.println("                      <span class=\"aira-label\">Short title (optional)</span>");
+        out.println("                      <input class=\"aira-input\" type=\"text\" data-outcome-short-title maxlength=\"200\">");
+        out.println(
+                "                      <span class=\"aira-field-error\" data-outcome-field-error=\"shortTitle\" hidden></span>");
+        out.println("                    </label>");
+        out.println("                    <label class=\"aira-stack aira-stack--compact\">");
+        out.println("                      <span class=\"aira-label\">Outcome</span>");
+        out.println("                      <textarea class=\"aira-textarea\" data-outcome-text rows=\"4\"></textarea>");
+        out.println(
+                "                      <span class=\"aira-field-error\" data-outcome-field-error=\"outcomeText\" hidden></span>");
+        out.println("                    </label>");
+        out.println("                    <div class=\"aira-cluster aira-cluster--between\">");
+        out.println(
+                "                      <button type=\"button\" class=\"aira-button aira-button--danger\" data-outcome-remove hidden>Remove Outcome</button>");
+        out.println("                      <div class=\"aira-cluster\">");
+        out.println(
+                "                        <button type=\"button\" class=\"aira-button aira-button--secondary\" data-outcome-dialog-cancel>Cancel</button>");
+        out.println(
+                "                        <button type=\"submit\" class=\"aira-button aira-button--primary\" data-outcome-dialog-save>Save Recorded Outcome</button>");
+        out.println("                      </div>");
+        out.println("                    </div>");
+        out.println("                    <p class=\"aira-meta\" data-outcome-dialog-status hidden></p>");
+        out.println("                  </form>");
+        out.println("                </dialog>");
+
+        out.println("                <dialog data-remove-outcome-dialog class=\"aira-dialog aira-no-print\""
+                + " aria-labelledby=\"imw-remove-outcome-title\">");
+        out.println("                  <div class=\"aira-stack aira-stack--compact\">");
+        out.println(
+                "                    <h3 class=\"aira-section-title\" id=\"imw-remove-outcome-title\">Remove Recorded Outcome</h3>");
+        out.println("                    <p data-remove-outcome-message></p>");
+        out.println("                    <div class=\"aira-cluster aira-cluster--end\">");
+        out.println(
+                "                      <button type=\"button\" class=\"aira-button aira-button--secondary\" data-remove-outcome-cancel>Cancel</button>");
+        out.println(
+                "                      <button type=\"button\" class=\"aira-button aira-button--danger\" data-remove-outcome-confirm>Remove Outcome</button>");
+        out.println("                    </div>");
+        out.println("                  </div>");
+        out.println("                </dialog>");
+
+        // Drives the outcome-type button group above: click sets the hidden
+        // data-outcome-type input that meeting-workspace-notes.js reads at save
+        // time, and a MutationObserver keeps the buttons' active state in sync
+        // when the bundle opens the dialog in edit mode (it sets the input's
+        // value directly, before calling showModal()).
+        out.println("                <script>");
+        out.println("                  function imwSyncOutcomeTypeButtons(dialog) {");
+        out.println("                    var input = dialog.querySelector('[data-outcome-type]');");
+        out.println("                    var value = input ? input.value : '';");
+        out.println(
+                "                    dialog.querySelectorAll('.imw-outcome-type-option').forEach(function(btn) {");
+        out.println(
+                "                      btn.classList.toggle('imw-outcome-type-option-active', btn.getAttribute('data-outcome-type-option') === value);");
+        out.println("                    });");
+        out.println("                  }");
+        out.println("                  function imwSetOutcomeType(button, value) {");
+        out.println("                    var dialog = button.closest('dialog');");
+        out.println("                    if (!dialog) return;");
+        out.println("                    var input = dialog.querySelector('[data-outcome-type]');");
+        out.println("                    if (input) {");
+        out.println("                      input.value = value;");
+        out.println("                      input.removeAttribute('aria-invalid');");
+        out.println("                    }");
+        out.println("                    imwSyncOutcomeTypeButtons(dialog);");
+        out.println(
+                "                    var errorEl = dialog.querySelector('[data-outcome-field-error=\"outcomeType\"]');");
+        out.println("                    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }");
+        out.println("                  }");
+        out.println("                  document.querySelectorAll('[data-outcome-dialog]').forEach(function(dialog) {");
+        out.println("                    new MutationObserver(function() {");
+        out.println("                      if (dialog.open) imwSyncOutcomeTypeButtons(dialog);");
+        out.println("                    }).observe(dialog, { attributes: true, attributeFilter: ['open'] });");
+        out.println("                  });");
+        out.println("                </script>");
     }
 
     private static String noteConfigJson(String contextPath, WorkspaceView view, NotePanelView notePanel) {
@@ -1029,7 +1208,6 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         json.put("canEdit", notePanel.canEdit());
         json.put("canAssumeEditor", notePanel.canAssumeEditor());
         json.put("showAssumeAction", notePanel.showAssumeAction());
-        json.put("canShowEditButton", notePanel.canShowEditButton());
         json.put("currentUserId", notePanel.currentUserId() == null ? JSONObject.NULL : notePanel.currentUserId());
         json.put("activeEditorUserId",
                 notePanel.activeEditorUserId() == null ? JSONObject.NULL : notePanel.activeEditorUserId());
@@ -1194,8 +1372,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             Long revision, Long editorVersion, String statusLabel, String statusCode,
             String lastSavedLabel, String lastSavedIso, String readOnlyDocumentJson, String editorDocumentJson,
             Long activeEditorUserId, String activeEditorDisplayName, String responsibilityMessage,
-            String assumeActionLabel, String assumeActionAriaLabel, String actionLabel,
-            boolean canEdit, boolean canAssumeEditor, boolean showAssumeAction, boolean canShowEditButton,
+            String assumeActionLabel, String assumeActionAriaLabel,
+            boolean canEdit, boolean canAssumeEditor, boolean showAssumeAction,
             Long currentUserId, String csrfToken) {
     }
 }

@@ -32,7 +32,9 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
+import org.airahub.interophub.dao.EsRecordedOutcomeDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicNoteDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsMeetingAttendance;
@@ -41,10 +43,12 @@ import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAgendaItem.AgendaItemStatus;
+import org.airahub.interophub.model.EsRecordedOutcome;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import java.util.logging.Level;
@@ -56,7 +60,10 @@ import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsMeetingViewHistoryService;
 import org.airahub.interophub.service.MeetingCommunicationService;
+import org.airahub.interophub.service.TopicNoteDocumentSupport;
 import org.airahub.interophub.service.TopicSpaceAccessService;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class EsAgendaServlet extends HttpServlet {
 
@@ -95,6 +102,9 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsMeetingAttendanceDao attendanceDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsMeetingViewHistoryService meetingViewHistoryService;
+    private final EsTopicNoteDao topicNoteDao;
+    private final EsRecordedOutcomeDao recordedOutcomeDao;
+    private final TopicNoteDocumentSupport topicNoteDocumentSupport;
 
     public EsAgendaServlet() {
         this.authFlowService = new AuthFlowService();
@@ -113,6 +123,9 @@ public class EsAgendaServlet extends HttpServlet {
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.meetingViewHistoryService = new EsMeetingViewHistoryService();
+        this.topicNoteDao = new EsTopicNoteDao();
+        this.recordedOutcomeDao = new EsRecordedOutcomeDao();
+        this.topicNoteDocumentSupport = new TopicNoteDocumentSupport();
     }
 
     // =========================================================================
@@ -174,6 +187,11 @@ public class EsAgendaServlet extends HttpServlet {
 
         boolean editOverride = "true".equals(request.getParameter("edit"));
         boolean canEdit = canEdit(user, meeting, editOverride, isEditor);
+
+        if ("state".equals(trimToNull(request.getParameter("action")))) {
+            renderLiveStateJson(response, meeting, items, isEditor);
+            return;
+        }
 
         // Load presenters keyed by agendaItemId
         Map<Long, List<EsAgendaItemPresenter>> presentersByItem = new LinkedHashMap<>();
@@ -1490,6 +1508,74 @@ public class EsAgendaServlet extends HttpServlet {
     }
 
     // =========================================================================
+    // Live meeting-state polling (notes, outcomes, current agenda item)
+    // =========================================================================
+
+    private static final String AGENDA_NOTES_HEADING_HTML = "<div class=\"agenda-notes-heading\">Notes</div>";
+    private static final String AGENDA_OUTCOMES_HEADING_HTML = "<div class=\"agenda-outcomes-heading\">Outcomes</div>";
+
+    private void renderLiveStateJson(HttpServletResponse response, EsMeeting meeting,
+            List<EsMeetingAgendaItem> items, boolean isEditor) throws IOException {
+        response.setContentType("application/json;charset=UTF-8");
+        boolean meetingInSession = meeting.getStatus() == MeetingStatus.IN_SESSION;
+        Long currentAgendaItemId = meeting.getCurrentAgendaItemId();
+
+        JSONObject json = new JSONObject();
+        json.put("meetingStatus", meeting.getStatus() == null ? JSONObject.NULL : meeting.getStatus().name());
+        JSONArray itemsJson = new JSONArray();
+        for (EsMeetingAgendaItem item : items) {
+            if (item.getStatus() == AgendaItemStatus.CANCELLED) {
+                continue;
+            }
+            if (item.getStatus() == AgendaItemStatus.POSTPONED && !isEditor) {
+                continue;
+            }
+            boolean isCurrent = meetingInSession && item.getEsMeetingAgendaItemId().equals(currentAgendaItemId);
+            EsTopicNote note = topicNoteDao.findByAgendaItemId(item.getEsMeetingAgendaItemId()).orElse(null);
+            List<EsRecordedOutcome> outcomes = note != null
+                    ? recordedOutcomeDao.findByNoteIdOrdered(note.getEsTopicNoteId())
+                    : List.of();
+            JSONObject itemJson = new JSONObject();
+            itemJson.put("agendaItemId", item.getEsMeetingAgendaItemId());
+            itemJson.put("isCurrent", isCurrent);
+            itemJson.put("notesHtml", buildNotesInnerHtml(note, isCurrent));
+            itemJson.put("outcomesHtml", buildOutcomesInnerHtml(outcomes));
+            itemsJson.put(itemJson);
+        }
+        json.put("items", itemsJson);
+        try (PrintWriter out = response.getWriter()) {
+            out.print(json.toString());
+        }
+    }
+
+    /**
+     * Renders the inner HTML of an agenda item's Notes block: a "Notes" heading
+     * followed by the nested note list. The heading is shown with no list when
+     * the item is currently under discussion but no note text has been entered
+     * yet, per the participant-facing agenda's live-notes behavior. Returns an
+     * empty string when nothing should be displayed.
+     */
+    private String buildNotesInnerHtml(EsTopicNote note, boolean forceHeading) {
+        String notesHtml = note != null ? topicNoteDocumentSupport.renderNotesHtml(note.getDocumentJson()) : "";
+        if (notesHtml.isEmpty()) {
+            return forceHeading ? AGENDA_NOTES_HEADING_HTML : "";
+        }
+        return AGENDA_NOTES_HEADING_HTML + notesHtml;
+    }
+
+    private String buildOutcomesInnerHtml(List<EsRecordedOutcome> outcomes) {
+        if (outcomes == null || outcomes.isEmpty()) {
+            return "";
+        }
+        StringBuilder html = new StringBuilder(AGENDA_OUTCOMES_HEADING_HTML).append("<ul>");
+        for (EsRecordedOutcome outcome : outcomes) {
+            html.append("<li>").append(escapeHtml(orEmpty(outcome.getOutcomeText()))).append("</li>");
+        }
+        html.append("</ul>");
+        return html.toString();
+    }
+
+    // =========================================================================
     // Page rendering
     // =========================================================================
 
@@ -2381,7 +2467,8 @@ public class EsAgendaServlet extends HttpServlet {
 
             // --- AGENDA TABLE ---
             out.println("          <div class=\"aira-table-wrap\">");
-            out.println("          <table class=\"aira-table\">");
+            out.println("          <table class=\"aira-table agenda-main-table"
+                    + (!canEdit && !isEditor ? " agenda-main-table--readonly" : "") + "\">");
             out.println("            <thead>");
             out.println("              <tr>");
             if (canEdit)
@@ -2405,7 +2492,16 @@ public class EsAgendaServlet extends HttpServlet {
                 boolean isPostponedItem = item.getStatus() == AgendaItemStatus.POSTPONED;
                 if (isPostponedItem && !isEditor)
                     continue;
-                out.println("              <tr>");
+                boolean meetingInSession = meeting.getStatus() == MeetingStatus.IN_SESSION;
+                boolean isCurrentItem = meetingInSession
+                        && item.getEsMeetingAgendaItemId().equals(meeting.getCurrentAgendaItemId());
+                EsTopicNote itemNote = topicNoteDao.findByAgendaItemId(item.getEsMeetingAgendaItemId())
+                        .orElse(null);
+                List<EsRecordedOutcome> itemOutcomes = itemNote != null
+                        ? recordedOutcomeDao.findByNoteIdOrdered(itemNote.getEsTopicNoteId())
+                        : List.of();
+                out.println("              <tr class=\"" + (isCurrentItem ? "agenda-row-current" : "")
+                        + "\" data-agenda-item-id=\"" + item.getEsMeetingAgendaItemId() + "\">");
 
                 // Controls column
                 if (canEdit) {
@@ -2463,13 +2559,14 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("                <td>");
                 }
                 EsTopic linkedTopic = item.getEsTopicId() != null ? topicById.get(item.getEsTopicId()) : null;
+                String currentTopicBadge = "<span class=\"agenda-current-badge\">Current topic</span>";
                 if (linkedTopic != null && !canEdit) {
                     out.println("          <div class=\"agenda-item-title\"><a href=\"" + contextPath
                             + "/es/topic/" + item.getEsTopicId() + "\" class=\"agenda-topic-link\">"
-                            + escapeHtml(orEmpty(item.getTitle())) + "</a></div>");
+                            + escapeHtml(orEmpty(item.getTitle())) + "</a> " + currentTopicBadge + "</div>");
                 } else {
                     out.println("          <div class=\"agenda-item-title\">" + escapeHtml(orEmpty(item.getTitle()))
-                            + "</div>");
+                            + " " + currentTopicBadge + "</div>");
                 }
                 if (isWithinAttendanceWindow && linkedTopic != null) {
                     TopicEngagementSummary eng = engagementByTopicId.get(item.getEsTopicId());
@@ -2547,6 +2644,12 @@ public class EsAgendaServlet extends HttpServlet {
                                 + renderPlainText(item.getAgendaMarkdown()) + "</div>");
                     }
                 }
+                out.println("                  <div class=\"agenda-notes\" id=\"agenda-notes-"
+                        + item.getEsMeetingAgendaItemId() + "\">"
+                        + buildNotesInnerHtml(itemNote, isCurrentItem) + "</div>");
+                out.println("                  <div class=\"agenda-outcomes\" id=\"agenda-outcomes-"
+                        + item.getEsMeetingAgendaItemId() + "\">"
+                        + buildOutcomesInnerHtml(itemOutcomes) + "</div>");
                 out.println("                </td>");
 
                 // Presenter(s) column
@@ -3333,6 +3436,10 @@ public class EsAgendaServlet extends HttpServlet {
             }
             out.println("</script>");
 
+            out.println("<script type=\"application/json\" id=\"agenda-live-config\">"
+                    + escapeScriptData(agendaLiveConfigJson(contextPath, meeting)) + "</script>");
+            out.println("<script src=\"" + contextPath + "/js/agenda-live.js\"></script>");
+
             out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
@@ -3367,6 +3474,22 @@ public class EsAgendaServlet extends HttpServlet {
         out.println("            </div>");
         out.println("          </section>");
         out.println("        </aside>");
+    }
+
+    private String agendaLiveConfigJson(String contextPath, EsMeeting meeting) {
+        JSONObject json = new JSONObject();
+        json.put("stateUrl", (contextPath == null ? "" : contextPath) + "/es/agenda?action=state&meetingId="
+                + meeting.getEsMeetingId());
+        json.put("meetingStatus", meeting.getStatus() == null ? JSONObject.NULL : meeting.getStatus().name());
+        json.put("pollIntervalMs", 7000);
+        return json.toString();
+    }
+
+    private static String escapeScriptData(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("<", "\\u003c");
     }
 
     private static String jsString(String s) {

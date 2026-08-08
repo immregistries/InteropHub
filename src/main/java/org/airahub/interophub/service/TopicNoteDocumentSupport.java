@@ -101,6 +101,74 @@ public class TopicNoteDocumentSupport {
         return null;
     }
 
+    /**
+     * Renders a topic note document as nested, semantic {@code <ul>/<li>} HTML,
+     * preserving the hierarchy the scribe created. Each {@code <li>} carries the
+     * originating {@code nodeId} as {@code data-note-id} so callers (or future
+     * per-note participant features) can identify an individual note item rather
+     * than an undifferentiated text block. Returns an empty string when the
+     * document has no meaningful content.
+     */
+    public String renderNotesHtml(String documentJson) {
+        NormalizedTopicNoteDocument normalized = normalizeDocument(documentJson);
+        if (normalized.isMeaningfulTextEmpty()) {
+            return "";
+        }
+        JSONObject root = new JSONObject(normalized.json());
+        StringBuilder html = new StringBuilder();
+        JSONArray topLevel = root.optJSONArray("content");
+        if (topLevel != null) {
+            for (int index = 0; index < topLevel.length(); index++) {
+                renderBulletListHtml(topLevel.getJSONObject(index), html);
+            }
+        }
+        return html.toString();
+    }
+
+    private void renderBulletListHtml(JSONObject bulletList, StringBuilder html) {
+        JSONArray items = bulletList.optJSONArray("content");
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        html.append("<ul>");
+        for (int index = 0; index < items.length(); index++) {
+            renderListItemHtml(items.getJSONObject(index), html);
+        }
+        html.append("</ul>");
+    }
+
+    private void renderListItemHtml(JSONObject listItem, StringBuilder html) {
+        JSONObject attrs = listItem.optJSONObject("attrs");
+        String nodeId = attrs == null ? "" : attrs.optString("nodeId", "");
+        html.append("<li data-note-id=\"").append(escapeHtml(nodeId)).append("\">");
+        JSONArray content = listItem.optJSONArray("content");
+        if (content != null) {
+            for (int index = 0; index < content.length(); index++) {
+                JSONObject child = content.getJSONObject(index);
+                String childType = child.optString("type", "");
+                if ("paragraph".equals(childType)) {
+                    StringBuilder text = new StringBuilder();
+                    appendParagraphText(child, text);
+                    html.append(escapeHtml(text.toString()));
+                } else if ("bulletList".equals(childType)) {
+                    renderBulletListHtml(child, html);
+                }
+            }
+        }
+        html.append("</li>");
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
     private JSONObject parseDocument(String documentJson) {
         if (documentJson == null || documentJson.isBlank()) {
             return new JSONObject(buildEmptyBulletDocument());

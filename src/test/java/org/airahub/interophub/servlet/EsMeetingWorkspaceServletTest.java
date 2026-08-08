@@ -128,11 +128,9 @@ class EsMeetingWorkspaceServletTest {
                                                 "You are taking notes for this topic.",
                                                 "Take over notes",
                                                 "Take over notes from Ada Lovelace",
-                                                "Edit notes",
                                                 true,
                                                 true,
                                                 false,
-                                                true,
                                                 1L,
                                                 "csrf-token"));
 
@@ -214,11 +212,9 @@ class EsMeetingWorkspaceServletTest {
                                                 "You are taking notes for this topic.",
                                                 "Take over notes",
                                                 "Take over notes from Ada Lovelace",
-                                                "Edit notes",
                                                 true,
                                                 true,
                                                 false,
-                                                true,
                                                 1L,
                                                 "csrf-token"));
 
@@ -275,11 +271,9 @@ class EsMeetingWorkspaceServletTest {
                                                 "You are taking notes for this topic.",
                                                 "Take over notes",
                                                 "Take over notes from Ada Lovelace",
-                                                "Edit notes",
                                                 true,
                                                 true,
                                                 false,
-                                                true,
                                                 1L,
                                                 "csrf-token"));
 
@@ -333,11 +327,9 @@ class EsMeetingWorkspaceServletTest {
                                                 "You are taking notes for this topic.",
                                                 "Take over notes",
                                                 "Take over notes from Ada Lovelace",
-                                                "Edit notes",
                                                 true,
                                                 true,
                                                 false,
-                                                true,
                                                 1L,
                                                 "csrf-token"));
 

@@ -17,8 +17,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsRecordedOutcomeDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicNoteDao;
 import org.airahub.interophub.dao.HubSettingDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
@@ -26,11 +28,14 @@ import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAgendaItem.AgendaItemStatus;
+import org.airahub.interophub.model.EsRecordedOutcome;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.HubSetting;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.TopicNoteDocumentSupport;
 
 public class EsAgendaConfluenceServlet extends HttpServlet {
 
@@ -45,6 +50,9 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
     private final EsTopicMeetingDao topicMeetingDao;
     private final UserDao userDao;
     private final HubSettingDao hubSettingDao;
+    private final EsTopicNoteDao topicNoteDao;
+    private final EsRecordedOutcomeDao recordedOutcomeDao;
+    private final TopicNoteDocumentSupport topicNoteDocumentSupport;
 
     public EsAgendaConfluenceServlet() {
         this.authFlowService = new AuthFlowService();
@@ -55,6 +63,9 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
         this.topicMeetingDao = new EsTopicMeetingDao();
         this.userDao = new UserDao();
         this.hubSettingDao = new HubSettingDao();
+        this.topicNoteDao = new EsTopicNoteDao();
+        this.recordedOutcomeDao = new EsRecordedOutcomeDao();
+        this.topicNoteDocumentSupport = new TopicNoteDocumentSupport();
     }
 
     // =========================================================================
@@ -273,10 +284,18 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
                         + escapeHtml(itemTimeRange) + "</span>";
             }
 
-            // Agenda cell
+            // Agenda cell: planned agenda text, followed by Notes and Outcomes blocks
+            // (only when present) so the exported record matches the same content
+            // order shown on es/agenda.
             String agendaCellContent = item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()
                     ? renderPlainText(item.getAgendaMarkdown())
                     : "";
+            EsTopicNote itemNote = topicNoteDao.findByAgendaItemId(item.getEsMeetingAgendaItemId()).orElse(null);
+            List<EsRecordedOutcome> itemOutcomes = itemNote != null
+                    ? recordedOutcomeDao.findByNoteIdOrdered(itemNote.getEsTopicNoteId())
+                    : List.of();
+            agendaCellContent += renderConfluenceNotesBlock(itemNote);
+            agendaCellContent += renderConfluenceOutcomesBlock(itemOutcomes);
 
             // Presenter(s) cell — ACCEPTED and INVITED only; DECLINED/REMOVED excluded
             List<EsAgendaItemPresenter> presenters = presentersByItem.getOrDefault(
@@ -375,6 +394,45 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
             }
         }
         return orEmpty(p.getEmail());
+    }
+
+    /**
+     * Renders the "Notes" block for a Confluence agenda cell: a heading followed
+     * by a real, nested unordered list so Confluence's paste-as-rich-text
+     * conversion preserves list structure and indentation rather than
+     * flattening notes into a single paragraph. Returns an empty string when
+     * there is no note or the note has no content yet.
+     */
+    private String renderConfluenceNotesBlock(EsTopicNote note) {
+        if (note == null) {
+            return "";
+        }
+        String notesHtml = topicNoteDocumentSupport.renderNotesHtml(note.getDocumentJson());
+        if (notesHtml.isEmpty()) {
+            return "";
+        }
+        return "<div style=\"margin-top: 10px;\"><strong>Notes</strong></div>"
+                + "<div style=\"margin-top: 2px;\">" + notesHtml + "</div>";
+    }
+
+    /**
+     * Renders the "Outcomes" block for a Confluence agenda cell as a real
+     * bulleted list. Returns an empty string when no outcomes were recorded,
+     * per the export rule that the Outcomes heading only appears when outcomes
+     * exist.
+     */
+    private String renderConfluenceOutcomesBlock(List<EsRecordedOutcome> outcomes) {
+        if (outcomes == null || outcomes.isEmpty()) {
+            return "";
+        }
+        StringBuilder html = new StringBuilder();
+        html.append("<div style=\"margin-top: 10px;\"><strong>Outcomes</strong></div>");
+        html.append("<div style=\"margin-top: 2px;\"><ul>");
+        for (EsRecordedOutcome outcome : outcomes) {
+            html.append("<li>").append(escapeHtml(orEmpty(outcome.getOutcomeText()))).append("</li>");
+        }
+        html.append("</ul></div>");
+        return html.toString();
     }
 
     private String renderPlainText(String text) {

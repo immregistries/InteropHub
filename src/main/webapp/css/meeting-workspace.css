@@ -73,3 +73,44 @@
 .imw-dialog-open {
   overflow: hidden;
 }
+
+/* aira-web's display-setting classes (.aira-stack, .aira-cluster,
+   .aira-button, etc.) are author-origin rules and always beat the
+   browser's built-in [hidden]{display:none} user-agent rule at equal
+   specificity, so toggling the `hidden` attribute alone does not
+   actually hide those elements. Reassert it locally within the note
+   panel, where several controls rely on `hidden` toggling. */
+[data-meeting-note-root] [hidden] {
+  display: none !important;
+}
+
+/* Note bullets: compact, single-line spacing so a block of notes reads
+   as one tight list instead of paragraph-spaced lines. Both the editor
+   and the read-only preview render through ProseMirror, which leaves
+   list-item paragraphs at the browser's default ~1em margin. */
+[data-meeting-note-root] .ProseMirror p {
+  margin: 0;
+}
+
+[data-meeting-note-root] .ProseMirror ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+[data-meeting-note-root] .ProseMirror ul ul {
+  margin-top: 0.15rem;
+}
+
+[data-meeting-note-root] .ProseMirror li {
+  margin: 0.15rem 0;
+}
+
+[data-meeting-note-root] .ProseMirror li:first-child {
+  margin-top: 0;
+}
+
+.imw-outcome-type-option-active {
+  background: var(--aira-focus);
+  color: #fff;
+  border-color: var(--aira-focus);
+}

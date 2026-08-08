@@ -85,6 +85,47 @@ public class AgendaActivityService {
         }
     }
 
+    /**
+     * Ends any open agenda activity and clears the meeting's current-item
+     * pointer, used when there is no next agenda item to advance to (e.g. the
+     * last item was just marked covered).
+     */
+    public void clearCurrentAgendaItem(Long meetingId, Long actingUserId) {
+        if (meetingId == null || actingUserId == null) {
+            throw new IllegalArgumentException("meetingId and actingUserId are required.");
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                EsMeeting meeting = session.get(EsMeeting.class, meetingId);
+                if (meeting == null) {
+                    throw new IllegalArgumentException("Meeting not found: " + meetingId);
+                }
+                immutabilityGuard.ensureMeetingMutable(meeting);
+                if (!authorizationService.canControlMeeting(actingUserId, meeting)) {
+                    throw new IllegalStateException("User is not authorized to update agenda items.");
+                }
+
+                LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+                session.createMutationQuery(
+                        "update EsMeetingAgendaActivity a set a.endedAt = :endedAt, a.endedByUserId = :endedByUserId"
+                                + " where a.esMeetingId = :meetingId and a.endedAt is null")
+                        .setParameter("endedAt", now)
+                        .setParameter("endedByUserId", actingUserId)
+                        .setParameter("meetingId", meetingId)
+                        .executeUpdate();
+
+                meeting.setCurrentAgendaItemId(null);
+                session.merge(meeting);
+
+                tx.commit();
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
     public Optional<EsMeetingAgendaActivity> findCurrentAgendaActivity(Long meetingId) {
         return meetingDao.findById(meetingId).flatMap(meeting -> {
             try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
