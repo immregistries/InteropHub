@@ -24,7 +24,6 @@ Example:
     {
       "externalProjectId": "PRJ-1001",
       "projectName": "Annual Partner Plan",
-      "projectHandle": "annual-partner-plan",
       "projectStatus": "Active",
       "projectTags": [
         "Quarterly Planning",
@@ -96,7 +95,6 @@ When Dandelion creates a new tag:
     {
       "externalProjectId": "PRJ-1001",
       "projectName": "Annual Partner Plan",
-      "projectHandle": "annual-partner-plan",
       "projectStatus": "Active"
     }
   ]
@@ -111,7 +109,6 @@ When Dandelion creates a new tag:
     {
       "externalProjectId": "PRJ-1001",
       "projectName": "Annual Partner Plan",
-      "projectHandle": "annual-partner-plan",
       "projectStatus": "Active",
       "projectTags": ["Planning", "Q3"]
     }
@@ -127,7 +124,6 @@ When Dandelion creates a new tag:
     {
       "externalProjectId": "PRJ-1001",
       "projectName": "Annual Partner Plan",
-      "projectHandle": "annual-partner-plan",
       "projectStatus": "Active",
       "projectTags": []
     }

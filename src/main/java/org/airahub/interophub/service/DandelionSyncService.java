@@ -31,6 +31,12 @@ import org.airahub.interophub.model.User;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+/**
+ * Dandelion sync is scoped per Topic Space: each space that syncs has its own
+ * API endpoint/key (its own Dandelion workspace), its own config row, and its
+ * own outbound queue. A user active in more than one space is upserted as a
+ * contact separately into each relevant space's workspace.
+ */
 public class DandelionSyncService {
     private static final Logger LOGGER = Logger.getLogger(DandelionSyncService.class.getName());
 
@@ -57,8 +63,11 @@ public class DandelionSyncService {
                 .build();
     }
 
-    public Optional<DandelionSyncConfig> findActiveConfig() {
-        return configDao.findActive().or(configDao::findFirst);
+    public Optional<DandelionSyncConfig> findActiveConfigForSpace(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return Optional.empty();
+        }
+        return configDao.findActiveForSpace(esTopicSpaceId).or(() -> configDao.findFirstForSpace(esTopicSpaceId));
     }
 
     public DandelionSyncConfig saveConfig(DandelionSyncConfig config) {
@@ -66,18 +75,36 @@ public class DandelionSyncService {
     }
 
     public void enqueueTopicUpsert(Long topicId) {
-        if (topicId == null || topicDao.findById(topicId).isEmpty()) {
+        if (topicId == null) {
+            return;
+        }
+        Optional<EsTopic> topicOpt = topicDao.findById(topicId);
+        if (topicOpt.isEmpty() || topicOpt.get().getEsTopicSpaceId() == null) {
             return;
         }
         queueDao.replacePending(
+                topicOpt.get().getEsTopicSpaceId(),
                 DandelionSyncQueueItem.EntityType.TOPIC,
                 topicId,
                 null,
                 DandelionSyncQueueItem.OperationType.UPSERT);
     }
 
+    /**
+     * Fans out to every Topic Space where this user currently has an active
+     * topic subscription/follow/champion/support role.
+     */
     public void enqueueContactUpsert(Long userId) {
         if (userId == null) {
+            return;
+        }
+        for (Long spaceId : subscriptionDao.findActiveSubscriptionTopicSpaceIdsByUserId(userId)) {
+            enqueueContactUpsertForSpace(userId, spaceId);
+        }
+    }
+
+    private void enqueueContactUpsertForSpace(Long userId, Long esTopicSpaceId) {
+        if (userId == null || esTopicSpaceId == null) {
             return;
         }
         Optional<User> userOpt = userDao.findById(userId);
@@ -89,6 +116,7 @@ public class DandelionSyncService {
             return;
         }
         queueDao.replacePending(
+                esTopicSpaceId,
                 DandelionSyncQueueItem.EntityType.CONTACT,
                 userId,
                 null,
@@ -111,54 +139,66 @@ public class DandelionSyncService {
             return;
         }
 
+        Optional<EsTopic> topicOpt = topicDao.findById(subscription.getEsTopicId());
+        if (topicOpt.isEmpty() || topicOpt.get().getEsTopicSpaceId() == null) {
+            return;
+        }
+        Long spaceId = topicOpt.get().getEsTopicSpaceId();
+
         enqueueTopicUpsert(subscription.getEsTopicId());
-        enqueueContactUpsert(subscription.getUserId());
+        enqueueContactUpsertForSpace(subscription.getUserId(), spaceId);
 
         DandelionSyncQueueItem.OperationType operation = isActiveAssignment(subscription)
                 ? DandelionSyncQueueItem.OperationType.ASSIGN_ADD
                 : DandelionSyncQueueItem.OperationType.ASSIGN_REMOVE;
-        enqueueAssignment(subscription.getEsTopicId(), subscription.getUserId(), operation);
+        enqueueAssignment(spaceId, subscription.getEsTopicId(), subscription.getUserId(), operation);
     }
 
-    public int enqueueFullSync() {
+    public int enqueueFullSync(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return 0;
+        }
         int enqueued = 0;
-        for (EsTopic topic : topicDao.findAllOrdered()) {
+        for (EsTopic topic : topicDao.findAllBySpaceIdOrderByTopicName(esTopicSpaceId)) {
             enqueueTopicUpsert(topic.getEsTopicId());
             enqueued++;
         }
-        for (User user : userDao.findAllNonDeletedWithEmail()) {
-            if (!isBlank(user.getFirstName()) && !isBlank(user.getLastName())) {
-                enqueueContactUpsert(user.getUserId());
+
+        Set<Long> contactedUserIds = new LinkedHashSet<>();
+        for (EsSubscription subscription : subscriptionDao.findAllTopicSubscriptionsBySpaceId(esTopicSpaceId)) {
+            if (subscription.getEsTopicId() == null || subscription.getUserId() == null) {
+                continue;
+            }
+            if (contactedUserIds.add(subscription.getUserId())) {
+                enqueueContactUpsertForSpace(subscription.getUserId(), esTopicSpaceId);
                 enqueued++;
             }
-        }
-        for (EsSubscription subscription : subscriptionDao.findAll()) {
-            if (subscription.getSubscriptionType() == EsSubscription.SubscriptionType.TOPIC
-                    && subscription.getEsTopicId() != null
-                    && subscription.getUserId() != null) {
-                DandelionSyncQueueItem.OperationType operation = isActiveAssignment(subscription)
-                        ? DandelionSyncQueueItem.OperationType.ASSIGN_ADD
-                        : DandelionSyncQueueItem.OperationType.ASSIGN_REMOVE;
-                enqueueAssignment(subscription.getEsTopicId(), subscription.getUserId(), operation);
-                enqueued++;
-            }
+            DandelionSyncQueueItem.OperationType operation = isActiveAssignment(subscription)
+                    ? DandelionSyncQueueItem.OperationType.ASSIGN_ADD
+                    : DandelionSyncQueueItem.OperationType.ASSIGN_REMOVE;
+            enqueueAssignment(esTopicSpaceId, subscription.getEsTopicId(), subscription.getUserId(), operation);
+            enqueued++;
         }
         return enqueued;
     }
 
-    public RequeueResult requeueFailuresInDependencyOrder() {
-        int topics = queueDao.requeueFailedByEntityType(DandelionSyncQueueItem.EntityType.TOPIC);
-        int contacts = queueDao.requeueFailedByEntityType(DandelionSyncQueueItem.EntityType.CONTACT);
-        int assignments = queueDao.requeueFailedByEntityType(DandelionSyncQueueItem.EntityType.ASSIGNMENT);
+    public RequeueResult requeueFailuresInDependencyOrder(Long esTopicSpaceId) {
+        int topics = queueDao.requeueFailedByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.TOPIC);
+        int contacts = queueDao.requeueFailedByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.CONTACT);
+        int assignments = queueDao.requeueFailedByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.ASSIGNMENT);
         return new RequeueResult(topics, contacts, assignments);
     }
 
-    public int requeueAllProjects() {
-        return queueDao.requeueAllByEntityType(DandelionSyncQueueItem.EntityType.TOPIC);
+    public int requeueAllProjects(Long esTopicSpaceId) {
+        return queueDao.requeueAllByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.TOPIC);
     }
 
-    public ProcessResult processPendingQueue() {
-        Optional<DandelionSyncConfig> configOpt = findActiveConfig();
+    public ProcessResult processPendingQueue(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return new ProcessResult(false, 0, 0, 0, "No Topic Space specified.");
+        }
+
+        Optional<DandelionSyncConfig> configOpt = findActiveConfigForSpace(esTopicSpaceId);
         if (configOpt.isEmpty() || !Boolean.TRUE.equals(configOpt.get().getSyncEnabled())) {
             return new ProcessResult(false, 0, 0, 0, "Sync disabled.");
         }
@@ -171,6 +211,7 @@ public class DandelionSyncService {
         Outcome outcome = new Outcome();
 
         List<DandelionSyncQueueItem> topicItems = queueDao.findPendingByEntityType(
+                esTopicSpaceId,
                 DandelionSyncQueueItem.EntityType.TOPIC,
                 MAX_BATCH_SIZE);
         if (!topicItems.isEmpty()) {
@@ -179,6 +220,7 @@ public class DandelionSyncService {
         }
 
         List<DandelionSyncQueueItem> contactItems = queueDao.findPendingByEntityType(
+                esTopicSpaceId,
                 DandelionSyncQueueItem.EntityType.CONTACT,
                 MAX_BATCH_SIZE);
         if (!contactItems.isEmpty()) {
@@ -186,12 +228,13 @@ public class DandelionSyncService {
             processEntityGroup(config, contactItems, outcome);
         }
 
-        boolean hasPendingDependencies = queueDao.hasPendingByEntityType(DandelionSyncQueueItem.EntityType.TOPIC)
-                || queueDao.hasPendingByEntityType(DandelionSyncQueueItem.EntityType.CONTACT);
+        boolean hasPendingDependencies = queueDao.hasPendingByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.TOPIC)
+                || queueDao.hasPendingByEntityType(esTopicSpaceId, DandelionSyncQueueItem.EntityType.CONTACT);
 
         List<DandelionSyncQueueItem> assignmentItems = List.of();
         if (!hasPendingDependencies) {
             assignmentItems = queueDao.findPendingByEntityType(
+                    esTopicSpaceId,
                     DandelionSyncQueueItem.EntityType.ASSIGNMENT,
                     MAX_BATCH_SIZE);
             if (!assignmentItems.isEmpty()) {
@@ -209,6 +252,18 @@ public class DandelionSyncService {
             message = "Processed projects/contacts first; assignment processing deferred until dependency queue is empty.";
         }
         return new ProcessResult(true, outcome.totalFetched, outcome.sentCount, outcome.failedCount, message);
+    }
+
+    /**
+     * Processes every Topic Space that currently has sync enabled. Used by the
+     * background scheduler, which runs independent of any one admin page.
+     */
+    public Map<Long, ProcessResult> processAllEnabledSpaces() {
+        Map<Long, ProcessResult> results = new LinkedHashMap<>();
+        for (DandelionSyncConfig config : configDao.findAllEnabled()) {
+            results.put(config.getEsTopicSpaceId(), processPendingQueue(config.getEsTopicSpaceId()));
+        }
+        return results;
     }
 
     private void processEntityGroup(DandelionSyncConfig config, List<DandelionSyncQueueItem> items, Outcome outcome) {
@@ -253,14 +308,9 @@ public class DandelionSyncService {
             }
             EsTopic topic = topicOpt.get();
             String projectName = trimToNull(topic.getTopicName());
-            String projectHandle = trimToNull(topic.getTopicCode());
             String projectStatus = mapProjectStatus(topic.getStatus());
             if (projectName == null) {
                 failItem(item, outcome, "Topic name is required for project sync.");
-                continue;
-            }
-            if (!"Closed".equals(projectStatus) && projectHandle == null) {
-                failItem(item, outcome, "Topic code is required for active project sync.");
                 continue;
             }
 
@@ -268,7 +318,6 @@ public class DandelionSyncService {
             json.put("externalProjectId", externalProjectId(topic.getEsTopicId()));
             json.put("projectName", projectName);
             json.put("description", nullableJson(topic.getDescription()));
-            json.put("projectHandle", projectHandle == null ? JSONObject.NULL : projectHandle);
             json.put("projectStatus", projectStatus);
             json.put("projectTags", toJsonArray(resolveProjectTags(topic.getEsTopicId())));
             payloadItems.put(json);
@@ -460,13 +509,15 @@ public class DandelionSyncService {
     }
 
     private void enqueueAssignment(
+            Long esTopicSpaceId,
             Long topicId,
             Long userId,
             DandelionSyncQueueItem.OperationType operation) {
-        if (topicId == null || userId == null || operation == null) {
+        if (esTopicSpaceId == null || topicId == null || userId == null || operation == null) {
             return;
         }
         queueDao.replacePending(
+                esTopicSpaceId,
                 DandelionSyncQueueItem.EntityType.ASSIGNMENT,
                 topicId,
                 userId,

@@ -121,6 +121,55 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    /**
+     * Distinct Topic Space ids where the given user has an active (SUBSCRIBED,
+     * CHAMPION, or SUPPORT) TOPIC subscription. Drives per-space Dandelion
+     * contact fan-out: a user active in more than one space needs a contact
+     * queue row for each of those spaces.
+     */
+    public Set<Long> findActiveSubscriptionTopicSpaceIdsByUserId(Long userId) {
+        if (userId == null) {
+            return Set.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            List<Long> result = session.createQuery(
+                    "select distinct t.esTopicSpaceId from EsSubscription s, org.airahub.interophub.model.EsTopic t"
+                            + " where s.esTopicId = t.esTopicId"
+                            + " and s.userId = :userId"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status in (:statuses)",
+                    Long.class)
+                    .setParameter("userId", userId)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameterList("statuses", ACTIVE_TOPIC_STATUSES)
+                    .getResultList();
+            return Set.copyOf(result);
+        }
+    }
+
+    /**
+     * All TOPIC subscriptions (any status) for topics hosted in the given
+     * Topic Space, so a Dandelion full sync can also resend removals for
+     * subscriptions that are no longer active.
+     */
+    public List<EsSubscription> findAllTopicSubscriptionsBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "select s from EsSubscription s, org.airahub.interophub.model.EsTopic t"
+                            + " where s.esTopicId = t.esTopicId"
+                            + " and t.esTopicSpaceId = :spaceId"
+                            + " and s.subscriptionType = :type"
+                            + " order by s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .getResultList();
+        }
+    }
+
     public Optional<EsSubscription> findByUnsubscribeTokenHash(byte[] tokenHash) {
         if (tokenHash == null) {
             return Optional.empty();

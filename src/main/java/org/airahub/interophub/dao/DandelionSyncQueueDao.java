@@ -13,12 +13,14 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
     }
 
     public DandelionSyncQueueItem replacePending(
+            Long esTopicSpaceId,
             DandelionSyncQueueItem.EntityType entityType,
             Long entityId,
             Long secondaryEntityId,
             DandelionSyncQueueItem.OperationType operation) {
-        if (entityType == null || entityId == null || operation == null) {
-            throw new IllegalArgumentException("Queue item requires entityType, entityId, and operation.");
+        if (esTopicSpaceId == null || entityType == null || entityId == null || operation == null) {
+            throw new IllegalArgumentException(
+                    "Queue item requires esTopicSpaceId, entityType, entityId, and operation.");
         }
 
         org.hibernate.Transaction tx = null;
@@ -28,6 +30,7 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
             StringBuilder hql = new StringBuilder();
             hql.append("delete from DandelionSyncQueueItem q");
             hql.append(" where q.status = :status");
+            hql.append(" and q.esTopicSpaceId = :spaceId");
             hql.append(" and q.entityType = :entityType");
             hql.append(" and q.entityId = :entityId");
             if (secondaryEntityId == null) {
@@ -38,6 +41,7 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
 
             var delete = session.createMutationQuery(hql.toString())
                     .setParameter("status", DandelionSyncQueueItem.QueueStatus.PENDING)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setParameter("entityType", entityType)
                     .setParameter("entityId", entityId);
             if (secondaryEntityId != null) {
@@ -46,6 +50,7 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
             delete.executeUpdate();
 
             DandelionSyncQueueItem item = new DandelionSyncQueueItem();
+            item.setEsTopicSpaceId(esTopicSpaceId);
             item.setEntityType(entityType);
             item.setEntityId(entityId);
             item.setSecondaryEntityId(secondaryEntityId);
@@ -66,56 +71,49 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
         }
     }
 
-    public List<DandelionSyncQueueItem> findPendingBatch(int limit) {
-        int maxRows = limit > 0 ? limit : 100;
-        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
-            return session.createQuery(
-                    "from DandelionSyncQueueItem q where q.status = :status order by q.createdAt asc, q.syncQueueId asc",
-                    DandelionSyncQueueItem.class)
-                    .setParameter("status", DandelionSyncQueueItem.QueueStatus.PENDING)
-                    .setMaxResults(maxRows)
-                    .getResultList();
-        }
-    }
-
     public List<DandelionSyncQueueItem> findPendingByEntityType(
+            Long esTopicSpaceId,
             DandelionSyncQueueItem.EntityType entityType,
             int limit) {
-        if (entityType == null) {
+        if (esTopicSpaceId == null || entityType == null) {
             return List.of();
         }
         int maxRows = limit > 0 ? limit : 100;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "from DandelionSyncQueueItem q"
-                            + " where q.status = :status and q.entityType = :entityType"
+                            + " where q.status = :status and q.esTopicSpaceId = :spaceId"
+                            + " and q.entityType = :entityType"
                             + " order by q.createdAt asc, q.syncQueueId asc",
                     DandelionSyncQueueItem.class)
                     .setParameter("status", DandelionSyncQueueItem.QueueStatus.PENDING)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setParameter("entityType", entityType)
                     .setMaxResults(maxRows)
                     .getResultList();
         }
     }
 
-    public boolean hasPendingByEntityType(DandelionSyncQueueItem.EntityType entityType) {
-        if (entityType == null) {
+    public boolean hasPendingByEntityType(Long esTopicSpaceId, DandelionSyncQueueItem.EntityType entityType) {
+        if (esTopicSpaceId == null || entityType == null) {
             return false;
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             Long count = session.createQuery(
                     "select count(q) from DandelionSyncQueueItem q"
-                            + " where q.status = :status and q.entityType = :entityType",
+                            + " where q.status = :status and q.esTopicSpaceId = :spaceId"
+                            + " and q.entityType = :entityType",
                     Long.class)
                     .setParameter("status", DandelionSyncQueueItem.QueueStatus.PENDING)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setParameter("entityType", entityType)
                     .getSingleResult();
             return count != null && count > 0;
         }
     }
 
-    public int requeueFailedByEntityType(DandelionSyncQueueItem.EntityType entityType) {
-        if (entityType == null) {
+    public int requeueFailedByEntityType(Long esTopicSpaceId, DandelionSyncQueueItem.EntityType entityType) {
+        if (esTopicSpaceId == null || entityType == null) {
             return 0;
         }
         org.hibernate.Transaction tx = null;
@@ -124,9 +122,11 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
             int updated = session.createMutationQuery(
                     "update DandelionSyncQueueItem q"
                             + " set q.status = :pending, q.attemptCount = 0, q.lastError = null, q.sentAt = null"
-                            + " where q.status = :failed and q.entityType = :entityType")
+                            + " where q.status = :failed and q.esTopicSpaceId = :spaceId"
+                            + " and q.entityType = :entityType")
                     .setParameter("pending", DandelionSyncQueueItem.QueueStatus.PENDING)
                     .setParameter("failed", DandelionSyncQueueItem.QueueStatus.FAILED)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setParameter("entityType", entityType)
                     .executeUpdate();
             tx.commit();
@@ -139,8 +139,8 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
         }
     }
 
-    public int requeueAllByEntityType(DandelionSyncQueueItem.EntityType entityType) {
-        if (entityType == null) {
+    public int requeueAllByEntityType(Long esTopicSpaceId, DandelionSyncQueueItem.EntityType entityType) {
+        if (esTopicSpaceId == null || entityType == null) {
             return 0;
         }
         org.hibernate.Transaction tx = null;
@@ -149,8 +149,9 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
             int updated = session.createMutationQuery(
                     "update DandelionSyncQueueItem q"
                             + " set q.status = :pending, q.attemptCount = 0, q.lastError = null, q.sentAt = null"
-                            + " where q.entityType = :entityType")
+                            + " where q.esTopicSpaceId = :spaceId and q.entityType = :entityType")
                     .setParameter("pending", DandelionSyncQueueItem.QueueStatus.PENDING)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setParameter("entityType", entityType)
                     .executeUpdate();
             tx.commit();
@@ -215,11 +216,16 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
         }
     }
 
-    public Map<DandelionSyncQueueItem.QueueStatus, Long> countByStatus() {
+    public Map<DandelionSyncQueueItem.QueueStatus, Long> countByStatus(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return Map.of();
+        }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             List<Object[]> rows = session.createQuery(
-                    "select q.status, count(q) from DandelionSyncQueueItem q group by q.status",
+                    "select q.status, count(q) from DandelionSyncQueueItem q"
+                            + " where q.esTopicSpaceId = :spaceId group by q.status",
                     Object[].class)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .getResultList();
             Map<DandelionSyncQueueItem.QueueStatus, Long> counts = new LinkedHashMap<>();
             for (DandelionSyncQueueItem.QueueStatus status : DandelionSyncQueueItem.QueueStatus.values()) {
@@ -232,13 +238,18 @@ public class DandelionSyncQueueDao extends GenericDao<DandelionSyncQueueItem, Lo
         }
     }
 
-    public List<DandelionSyncQueueItem> findRecentFailures(int limit) {
+    public List<DandelionSyncQueueItem> findRecentFailures(Long esTopicSpaceId, int limit) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
         int maxRows = limit > 0 ? limit : 20;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from DandelionSyncQueueItem q where q.status = :status order by q.updatedAt desc, q.syncQueueId desc",
+                    "from DandelionSyncQueueItem q where q.status = :status and q.esTopicSpaceId = :spaceId"
+                            + " order by q.updatedAt desc, q.syncQueueId desc",
                     DandelionSyncQueueItem.class)
                     .setParameter("status", DandelionSyncQueueItem.QueueStatus.FAILED)
+                    .setParameter("spaceId", esTopicSpaceId)
                     .setMaxResults(maxRows)
                     .getResultList();
         }

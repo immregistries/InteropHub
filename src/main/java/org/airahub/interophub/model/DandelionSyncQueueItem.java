@@ -38,6 +38,9 @@ public class DandelionSyncQueueItem {
     @Column(name = "sync_queue_id")
     private Long syncQueueId;
 
+    @Column(name = "es_topic_space_id", nullable = false)
+    private Long esTopicSpaceId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "entity_type", nullable = false, length = 16)
     private EntityType entityType;
@@ -97,6 +100,14 @@ public class DandelionSyncQueueItem {
 
     public void setSyncQueueId(Long syncQueueId) {
         this.syncQueueId = syncQueueId;
+    }
+
+    public Long getEsTopicSpaceId() {
+        return esTopicSpaceId;
+    }
+
+    public void setEsTopicSpaceId(Long esTopicSpaceId) {
+        this.esTopicSpaceId = esTopicSpaceId;
     }
 
     public EntityType getEntityType() {

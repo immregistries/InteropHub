@@ -191,6 +191,26 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    /**
+     * All topics in the given Topic Space regardless of status. Used for
+     * Dandelion full sync, which needs retired/archived topics too so their
+     * Closed/Paused status is reflected upstream.
+     */
+    public List<EsTopic> findAllBySpaceIdOrderByTopicName(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopic t"
+                            + " where t.esTopicSpaceId = :spaceId"
+                            + " order by lower(t.topicName) asc, t.esTopicId asc",
+                    EsTopic.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getResultList();
+        }
+    }
+
     public List<EsTopic> searchActiveBySpaceId(Long esTopicSpaceId, String query, int maxResults) {
         if (esTopicSpaceId == null) {
             return List.of();

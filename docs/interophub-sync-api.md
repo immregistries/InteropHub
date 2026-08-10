@@ -26,7 +26,6 @@ Example root: `/api/v1/sync`
       "externalProjectId": "PRJ-1001",
       "projectName": "Annual Partner Plan",
       "description": "",
-      "projectHandle": "annual-partner-plan",
       "projectStatus": "Active",
       "projectTags": ["Quarterly Planning", "Customer Success"]
     }
@@ -38,7 +37,6 @@ Example root: `/api/v1/sync`
 - `externalProjectId`: required, immutable identity key.
 - `projectName`: required, cannot be empty.
 - `projectStatus`: required, must be one of: `Active`, `Paused`, `Complete`, `Closed`.
-- `projectHandle`: required for non-closed projects; may be empty only when status is `Closed`.
 - `description`: optional.
 - `projectTags`: optional string array. When present, Dandelion reconciles project-tag mappings to exactly the supplied list.
 

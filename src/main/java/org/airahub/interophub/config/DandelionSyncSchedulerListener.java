@@ -29,7 +29,7 @@ public class DandelionSyncSchedulerListener implements ServletContextListener {
         DandelionSyncService syncService = new DandelionSyncService();
         scheduler.scheduleWithFixedDelay(() -> {
             try {
-                syncService.processPendingQueue();
+                syncService.processAllEnabledSpaces();
             } catch (Exception ex) {
                 LOGGER.log(Level.SEVERE, "Unexpected error in Dandelion sync scheduler", ex);
             }

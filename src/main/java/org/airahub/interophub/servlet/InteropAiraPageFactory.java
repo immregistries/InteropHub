@@ -24,7 +24,7 @@ import org.immregistries.aira.web.AiraSearchConfig;
 final class InteropAiraPageFactory {
     private static final String APPLICATION_NAME = "InteropHub";
     private static final String HOME_HREF = "/home";
-    private static final String ACCOUNT_HREF = "/workspace";
+    private static final String ACCOUNT_HREF = "/account";
     private static final String ADMIN_HREF = "/admin";
     private static final String SEARCH_ACTION = "/search";
     private static final String SEARCH_PARAMETER = "q";
@@ -143,7 +143,7 @@ final class InteropAiraPageFactory {
     /**
      * Dark context-nav row for the 4 top-level admin areas, shown on every
      * admin page (mirrors {@link #topicsMeetingsContext}). Also includes a
-     * plain "Account" link back to the personal workspace, since admins no
+     * plain "Account" link back to the personal account page, since admins no
      * longer see that in the global header once it shows "Admin" instead.
      */
     static AiraContextConfig adminContext(AdminSection activeSection) {

@@ -18,6 +18,9 @@ public class DandelionSyncConfig {
     @Column(name = "config_id")
     private Long configId;
 
+    @Column(name = "es_topic_space_id", nullable = false)
+    private Long esTopicSpaceId;
+
     @Column(name = "active", nullable = false)
     private Boolean active;
 
@@ -62,6 +65,14 @@ public class DandelionSyncConfig {
 
     public void setConfigId(Long configId) {
         this.configId = configId;
+    }
+
+    public Long getEsTopicSpaceId() {
+        return esTopicSpaceId;
+    }
+
+    public void setEsTopicSpaceId(Long esTopicSpaceId) {
+        this.esTopicSpaceId = esTopicSpaceId;
     }
 
     public Boolean getActive() {

@@ -2342,3 +2342,27 @@ SET time_zone = '+00:00';
 
 ALTER TABLE es_topic
   ADD COLUMN search_keywords TEXT NULL AFTER topic_summary;
+
+-- Dandelion sync becomes scoped per Topic Space: each space that syncs gets
+-- its own API endpoint/key (its own Dandelion workspace) instead of one
+-- global config shared by every topic. The existing global config and queue
+-- are being retired in favor of freshly-issued per-space API keys, so wipe
+-- them before adding the space FK as NOT NULL -- there is nothing to
+-- backfill.
+SET NAMES utf8mb4;
+SET time_zone = '+00:00';
+
+TRUNCATE TABLE dandelion_sync_queue;
+TRUNCATE TABLE dandelion_sync_config;
+
+ALTER TABLE dandelion_sync_config
+  ADD COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL AFTER config_id,
+  ADD KEY ix_dd_sync_config_space_active (es_topic_space_id, active),
+  ADD CONSTRAINT fk_dd_sync_config_space FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id);
+
+ALTER TABLE dandelion_sync_queue
+  ADD COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL AFTER sync_queue_id,
+  ADD KEY ix_dd_sync_queue_space_status (es_topic_space_id, status, entity_type, created_at),
+  ADD CONSTRAINT fk_dd_sync_queue_space FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id);

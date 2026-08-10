@@ -31,7 +31,7 @@ class InteropAiraPageFactoryTest {
 
         assertTrue(html.contains("Ada Lovelace"));
         assertTrue(html.contains(">Account<"));
-        assertTrue(html.contains("/workspace"));
+        assertTrue(html.contains("/account"));
         assertFalse(html.contains(">Sign in<"));
     }
 

@@ -106,6 +106,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AccountServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AccountServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AccountServlet</servlet-name>
+    <url-pattern>/account</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>LogoutServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.LogoutServlet</servlet-class>
   </servlet>

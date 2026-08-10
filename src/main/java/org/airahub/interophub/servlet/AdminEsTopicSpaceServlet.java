@@ -362,6 +362,9 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                     out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
                             + "/admin/es/paths?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
                             + "\">Edit Advancement Paths</a>");
+                    out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                            + "/admin/es/dandelion-sync?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()
+                            + "\">Dandelion Sync</a>");
                     out.println("              <a class=\"aira-button aira-button--secondary\" href=\""
                             + buildTopicSpaceTopicsUrl(contextPath, topicSpace) + "\">View Topic Space</a>");
                     out.println("              <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
