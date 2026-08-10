@@ -227,7 +227,7 @@ public class MeetingLifecycleService {
                         actingUserId, transitionMethod, now);
                 tx.commit();
                 for (EsTopicNote finalizedNote : finalizedNotes) {
-                    noteEventPublisher.publishNoteStateChanged(finalizedNote, EsMeeting.MeetingStatus.CLOSED);
+                    noteEventPublisher.publishNoteStateChanged(session, finalizedNote, EsMeeting.MeetingStatus.CLOSED);
                 }
                 return meeting;
             } catch (Exception ex) {

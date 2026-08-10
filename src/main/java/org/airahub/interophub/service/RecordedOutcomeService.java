@@ -90,7 +90,7 @@ public class RecordedOutcomeService {
                 session.persist(outcome);
 
                 tx.commit();
-                eventPublisher.publishOutcomesChanged(note, actingUserId,
+                eventPublisher.publishOutcomesChanged(session, note, actingUserId,
                         meeting == null ? null : meeting.getStatus());
                 return new OutcomeMutationResult(note.getEsTopicNoteId(), note.getRevisionNo(),
                         editorVersion(note), outcome.getEsRecordedOutcomeId());
@@ -133,7 +133,7 @@ public class RecordedOutcomeService {
                 session.merge(outcome);
 
                 tx.commit();
-                eventPublisher.publishOutcomesChanged(note, actingUserId,
+                eventPublisher.publishOutcomesChanged(session, note, actingUserId,
                         meeting == null ? null : meeting.getStatus());
                 return new OutcomeMutationResult(note.getEsTopicNoteId(), note.getRevisionNo(),
                         editorVersion(note), outcome.getEsRecordedOutcomeId());
@@ -163,7 +163,7 @@ public class RecordedOutcomeService {
                 ensureOutcomeMutationAllowed(note, meeting, actingUserId, expectedEditorVersion);
                 session.remove(outcome);
                 tx.commit();
-                eventPublisher.publishOutcomesChanged(note, actingUserId,
+                eventPublisher.publishOutcomesChanged(session, note, actingUserId,
                         meeting == null ? null : meeting.getStatus());
                 return new OutcomeMutationResult(note.getEsTopicNoteId(), note.getRevisionNo(),
                         editorVersion(note), outcomeId);

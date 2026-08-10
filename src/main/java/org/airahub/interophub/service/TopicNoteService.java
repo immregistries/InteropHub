@@ -164,7 +164,7 @@ public class TopicNoteService {
             }
 
             tx.commit();
-            eventPublisher.publishNoteUpdated(note, actingUserId, meeting.getStatus());
+            eventPublisher.publishNoteUpdated(session, note, actingUserId, meeting.getStatus());
             return new SavedMeetingTopicNote(note.getEsTopicNoteId(), note.getRevisionNo(), now,
                     note.getStatus(), false, false, currentEditorVersion, note.getActiveEditorUserId());
         } catch (RuntimeException ex) {
@@ -255,7 +255,7 @@ public class TopicNoteService {
                 session.flush();
                 insertEditorHistory(session, created.getEsTopicNoteId(), null, actingUserId, actingUserId, now);
                 tx.commit();
-                eventPublisher.publishNoteState(created, meeting.getStatus());
+                eventPublisher.publishNoteState(session, created, meeting.getStatus());
                 return toEditorState(created, meeting, true, false);
             }
 
@@ -280,7 +280,7 @@ public class TopicNoteService {
 
             tx.commit();
             if (!alreadyEditor) {
-                eventPublisher.publishEditorChanged(existing, actingUserId, now, meeting.getStatus());
+                eventPublisher.publishEditorChanged(session, existing, actingUserId, now, meeting.getStatus());
             }
             return toEditorState(existing, meeting, false, !alreadyEditor);
         } catch (RuntimeException ex) {
@@ -327,7 +327,7 @@ public class TopicNoteService {
 
             tx.commit();
             if (!actingUserId.equals(previousEditor)) {
-                eventPublisher.publishEditorChanged(note, actingUserId,
+                eventPublisher.publishEditorChanged(session, note, actingUserId,
                         note.getActiveEditorStartedAt(), meeting != null ? meeting.getStatus() : null);
             }
             return toEditorState(note, meeting, false, !actingUserId.equals(previousEditor));
@@ -519,7 +519,7 @@ public class TopicNoteService {
                 }
 
                 tx.commit();
-                eventPublisher.publishNoteUpdated(note, editorUserId, meeting != null ? meeting.getStatus() : null);
+                eventPublisher.publishNoteUpdated(session, note, editorUserId, meeting != null ? meeting.getStatus() : null);
                 return note;
             } catch (RuntimeException ex) {
                 tx.rollback();
@@ -565,7 +565,7 @@ public class TopicNoteService {
                 session.merge(note);
 
                 tx.commit();
-                eventPublisher.publishNoteStateChanged(note, meeting != null ? meeting.getStatus() : null);
+                eventPublisher.publishNoteStateChanged(session, note, meeting != null ? meeting.getStatus() : null);
                 return note;
             } catch (Exception ex) {
                 tx.rollback();
