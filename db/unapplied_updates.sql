@@ -740,15 +740,30 @@ DROP PROCEDURE IF EXISTS migrate_topic_spaces $$
 
 DELIMITER ;
 
+-- The FK constraint has to be dropped before MODIFY and re-added after: on
+-- MySQL 8.0.46 (production), a bare MODIFY or an explicit ALGORITHM=COPY
+-- both fail with ERROR 1832 (Cannot change column ... used in a foreign key
+-- constraint) while the column is still wired into the FK. Verified locally
+-- that this drop/modify/re-add sequence completes cleanly.
+ALTER TABLE es_topic DROP FOREIGN KEY fk_es_topic_topic_space;
+ALTER TABLE es_topic MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL;
 ALTER TABLE es_topic
-  MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL;
+  ADD CONSTRAINT fk_es_topic_topic_space FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id);
 
+ALTER TABLE es_neighborhood DROP FOREIGN KEY fk_es_neighborhood_topic_space;
 ALTER TABLE es_neighborhood
   MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL,
   ADD UNIQUE KEY uq_es_neighborhood_space_name (es_topic_space_id, neighborhood_name);
+ALTER TABLE es_neighborhood
+  ADD CONSTRAINT fk_es_neighborhood_topic_space FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id);
 
+ALTER TABLE es_meeting DROP FOREIGN KEY fk_es_meeting_topic_space;
+ALTER TABLE es_meeting MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL;
 ALTER TABLE es_meeting
-  MODIFY COLUMN es_topic_space_id BIGINT UNSIGNED NOT NULL;
+  ADD CONSTRAINT fk_es_meeting_topic_space FOREIGN KEY (es_topic_space_id)
+    REFERENCES es_topic_space(es_topic_space_id);
 
 CREATE TABLE es_topic_board_definition (
   es_topic_board_definition_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
