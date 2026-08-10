@@ -485,19 +485,22 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                         out.println("          <section class=\"aira-section-card\" aria-labelledby=\"overview-title\">");
                         out.println(
-                                        "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"overview-title\">Overview</h2>");
-                        if (trimToNull(topic.getConfluenceUrl()) != null) {
-                                out.println("              <a class=\"aira-section-card__action\" href=\""
-                                                + escapeHtml(topic.getConfluenceUrl())
-                                                + "\" target=\"_blank\" rel=\"noopener\">Open full background</a>");
-                        }
-                        out.println("            </div>");
+                                        "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"overview-title\">Overview</h2></div>");
                         out.println("            <div class=\"aira-section-card__body aira-topic-overview\">");
-                        out.println("              <div class=\"aira-topic-overview__text aira-prose\">");
+                        out.println("              <div class=\"aira-topic-overview__text\">");
+                        out.println("                <div class=\"aira-prose\">");
                         if (description.isBlank()) {
-                                out.println("                <p>Overview content will be added here.</p>");
+                                out.println("                  <p>Overview content will be added here.</p>");
                         } else {
-                                out.println("                <p>" + escapeHtml(description) + "</p>");
+                                out.println("                  <p>" + escapeHtml(description) + "</p>");
+                        }
+                        out.println("                </div>");
+                        if (trimToNull(topic.getConfluenceUrl()) != null) {
+                                out.println("                <div class=\"aira-chip-list\">");
+                                out.println("                  <a class=\"aira-chip\" href=\""
+                                                + escapeHtml(topic.getConfluenceUrl())
+                                                + "\" target=\"_blank\" rel=\"noopener\">📄 Confluence</a>");
+                                out.println("                </div>");
                         }
                         out.println("              </div>");
                         out.println("              <div class=\"aira-alert aira-alert--info\" role=\"status\" aria-live=\"polite\">");
