@@ -32,10 +32,19 @@ top for exactly this reason.
 Consequences:
 - **Never hand-edit `db/schema.sql`.** Any manual edit is silently
   overwritten on the next refresh.
-- It is **not consumed by the application or the build** — Hibernate
-  manages the live schema via `hibernate.hbm2ddl.auto=update`
-  (`src/main/resources/hibernate.cfg.xml`). `schema.sql` exists purely as a
-  human-readable reference of "what the schema currently looks like."
+- It is **not consumed by the application or the build**, and neither is the
+  live schema managed by the application. `hibernate.hbm2ddl.auto=validate`
+  (`src/main/resources/hibernate.cfg.xml`) only checks at startup that the
+  mapped entities match what's actually in the database — it refuses to
+  start on a mismatch, but never creates or alters anything itself. All
+  schema changes flow exclusively through `db/unapplied_updates.sql` /
+  `db/vX.Y_*.sql`, applied manually. (This used to be
+  `hibernate.hbm2ddl.auto=update`, which silently auto-created missing
+  tables/columns to match the entity mappings. That masked a skipped
+  production release step — the app booted fine with an empty
+  auto-created `es_topic_space` table instead of failing loudly — so it was
+  changed to `validate`.) `schema.sql` exists purely as a human-readable
+  reference of "what the schema currently looks like."
 - If you need to change the schema, edit `db/unapplied_updates.sql`
   instead. `schema.sql` will catch up automatically on the next refresh.
 - Because it regenerates daily, `schema.sql` is often ahead of the most
