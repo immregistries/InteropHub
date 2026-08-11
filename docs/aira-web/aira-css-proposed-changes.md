@@ -13,6 +13,125 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.7 | 2026-08-04 | [`aira-css-changes-revision-7.md`](aira-css-changes-revision-7.md) | Native dialog component (`aira-dialog`) — requested in [`aira-css-request-7.md`](aira-css-request-7.md) |
 | 0.1.8 | 2026-08-06 | [`aira-css-changes-revision-8.md`](aira-css-changes-revision-8.md) | Semantic accent-border modifiers for `aira-table-panel` — requested in [`aira-css-request-8.md`](aira-css-request-8.md) |
 | 0.1.9 | 2026-08-06 | [`aira-css-changes-revision-9.md`](aira-css-changes-revision-9.md) | Search suggestion / combobox popover component — requested in [`aira-css-request-9.md`](aira-css-request-9.md) |
+| 0.1.10 | 2026-08-11 | [`aira-css-changes-revision-10.md`](aira-css-changes-revision-10.md) | Bounded/scrollable `aira-matrix-table-wrap` so sticky headers actually stick; `aira-matrix-table__label` wraps instead of truncating |
+
+---
+
+## Proposal: Bounded/scrollable `aira-matrix-table-wrap` so sticky headers actually stick
+
+**Status:** Available in this project
+**Found during:** Layout feedback on the `/es/topics` board (`EsTopicBoardServlet`) — the board is often taller than one screen, and the column headers did not stay visible while scrolling.
+**Date:** 2026-08-11
+
+### Problem
+
+`.aira-matrix-table-wrap` sets `overflow: auto` but no height bound, so it never grows a scrollport of its own — the surrounding page scrolls past it instead. `position: sticky` on `.aira-matrix-table__corner` / `__col-header` / `__row-header` only sticks relative to the nearest ancestor that actually establishes a scrolling box; with an unbounded wrap, the sticky column headers and corner never visibly stuck to anything once a tall board was scrolled, even though the CSS already declared `position: sticky; top: 0;` on those cells.
+
+### Current local workaround
+
+None. This is a shared-component rule; InteropHub does not want to override it locally.
+
+Current rule in `aira.css`:
+
+```css
+.aira-matrix-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid var(--aira-border);
+  border-radius: var(--aira-radius-panel);
+  background: var(--aira-surface);
+}
+```
+
+### Proposed shared interface
+
+No markup or class changes. This bounds an existing property.
+
+### Proposed `aira.css` changes
+
+```css
+.aira-matrix-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  max-height: var(--aira-matrix-table-max-height, 70vh);
+  overflow: auto;
+  border: 1px solid var(--aira-border);
+  border-radius: var(--aira-radius-panel);
+  background: var(--aira-surface);
+}
+```
+
+`70vh` is a generous default that leaves room for a typical page's global header, contextual nav, and page title above the board, while making the wrap actually scroll — and stick — within itself. Consumers with a shorter or taller layout can override it per instance with the `--aira-matrix-table-max-height` custom property instead of forking the wrap.
+
+### Why this belongs in `aira.css`
+
+This is a correctness fix to a shared component: any consumer using `aira-matrix-table` for a board taller than one screen hits the same dead sticky-header behavior, regardless of application. The component's own documentation already promises headers "remain sticky while the matrix scrolls" — this makes that promise true.
+
+### Compatibility and migration impact
+
+- Only affects `.aira-matrix-table-wrap`. No markup changes needed in InteropHub once the new version is consumed.
+- Boards shorter than `70vh` render identically to today (the max-height never engages).
+- No other component uses `.aira-matrix-table-wrap`'s sizing rule, so this has no effect outside the matrix table.
+
+### Resolution
+
+Implemented upstream in `aira-web-components`/`aira-web-theme` `0.1.10` (see [`aira-css-changes-revision-10.md`](aira-css-changes-revision-10.md)). InteropHub now consumes `0.1.10` (`pom.xml`).
+
+---
+
+## Proposal: Wrap `aira-matrix-table__label` instead of truncating
+
+**Status:** Available in this project
+**Found during:** Layout feedback on the `/es/topics` board (`EsTopicBoardServlet`) — row titles (path names) are truncated to a single line with an ellipsis, and the row header is the only place that title is shown.
+**Date:** 2026-08-11
+
+### Problem
+
+`.aira-matrix-table__label` uses `white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`, so any row or column header title longer than its ~13–14rem cell truncates. Unlike a data-table cell (where the full value is usually visible elsewhere, e.g. a detail page), a matrix header label is frequently the only place that title is rendered, so truncation silently hides information rather than trading it off for density. The header cells already reserve enough width for the label to wrap onto a second line instead.
+
+### Current local workaround
+
+None. This is a shared-component rule; InteropHub does not want to override it locally.
+
+Current rule in `aira.css`:
+
+```css
+.aira-matrix-table__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+### Proposed shared interface
+
+No markup or class changes required.
+
+### Proposed `aira.css` changes
+
+```css
+.aira-matrix-table__label {
+  min-width: 0;
+  overflow-wrap: break-word;
+  white-space: normal;
+}
+```
+
+### Why this belongs in `aira.css`
+
+This is a correctness fix to a shared component's default styling, not an InteropHub-specific preference — any board with a title longer than its column width hits the same silent truncation regardless of which application renders it, and the row/column header cells already reserve enough width for a wrapped label to read comfortably.
+
+### Compatibility and migration impact
+
+- Only affects `.aira-matrix-table__label`. No markup changes needed in InteropHub once the new version is consumed.
+- Row and column headers with short titles render identically to today; only titles that previously overflowed and were ellipsized now wrap onto a second line, increasing that header cell's height.
+- `.aira-entity-card__title` (the topic cards inside matrix cells) is a separate rule and still truncates — this proposal only covers matrix header labels.
+
+### Resolution
+
+Implemented upstream in `aira-web-components`/`aira-web-theme` `0.1.10` (see [`aira-css-changes-revision-10.md`](aira-css-changes-revision-10.md)). InteropHub now consumes `0.1.10` (`pom.xml`).
 
 ---
 

@@ -31,7 +31,7 @@
     <dependency>
       <groupId>org.immregistries</groupId>
       <artifactId>aira-web-components</artifactId>
-      <version>0.1.9</version>
+      <version>0.1.10</version>
     </dependency>
     <dependency>
       <groupId>org.hibernate.orm</groupId>

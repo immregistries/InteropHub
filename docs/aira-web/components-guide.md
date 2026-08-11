@@ -1,4 +1,4 @@
-> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.9`.
+> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.10`.
 > Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
 
 # AIRA Web Components Guide
@@ -294,7 +294,7 @@ Use `aira-table-scroll` with `aira-table--sticky-header` only when a constrained
 
 ### Matrix Tables and Entity Cards
 
-Use `aira-matrix-table` for two-axis boards where a row header and column header both define the meaning of each cell. The wrapper supports two-direction scrolling; the corner, column headers, and row headers remain sticky while the matrix scrolls. Header labels stay left-aligned whether or not a trailing control is present.
+Use `aira-matrix-table` for two-axis boards where a row header and column header both define the meaning of each cell. The wrapper is height-bounded (`max-height`, default `70vh`, overridable per instance with `--aira-matrix-table-max-height`) so it becomes the actual scrolling region; the corner, column headers, and row headers remain sticky while the matrix scrolls within that bounded box. Header labels stay left-aligned whether or not a trailing control is present, and wrap onto multiple lines instead of truncating, since a header label is often the only place that title appears.
 
 Use `aira-entity-card` for compact records inside matrix cells or other dense lists. The leading handle and trailing action are optional. Applications own drag-and-drop behavior and data-grid logic.
 
