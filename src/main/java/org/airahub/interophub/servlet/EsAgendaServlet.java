@@ -26,6 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.immregistries.aira.web.AiraPage;
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
+import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
@@ -34,9 +35,11 @@ import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsRecordedOutcomeDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.EsTopicNoteDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
@@ -48,6 +51,7 @@ import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
@@ -94,6 +98,8 @@ public class EsAgendaServlet extends HttpServlet {
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingDao topicMeetingDao;
+    private final EsTopicMeetingMemberDao topicMeetingMemberDao;
+    private final EsCampaignDao campaignDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final UserDao userDao;
     private final EmailService emailService;
@@ -115,6 +121,8 @@ public class EsAgendaServlet extends HttpServlet {
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
+        this.campaignDao = new EsCampaignDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.userDao = new UserDao();
         this.emailService = new EmailService();
@@ -1911,6 +1919,33 @@ public class EsAgendaServlet extends HttpServlet {
             }
         }
 
+        // Meeting-series registration status for the header action (mirrors the
+        // Register/Unregister control on the topic page, but anonymous visitors can
+        // also request access here without signing in first).
+        boolean showMeetingRegister = topicMeeting != null;
+        boolean viewerRegisteredForMeeting = false;
+        String registerAnonymousUrl = null;
+        if (topicMeeting != null) {
+            if (user != null) {
+                Optional<EsTopicMeetingMember> membership = topicMeetingMemberDao.findByMeetingIdAndUserOrEmail(
+                        topicMeeting.getEsTopicMeetingId(), user.getUserId(), user.getEmailNormalized());
+                viewerRegisteredForMeeting = membership.isPresent()
+                        && (membership.get().getMembershipStatus() == EsTopicMeetingMember.MembershipStatus.REQUESTED
+                                || membership.get()
+                                        .getMembershipStatus() == EsTopicMeetingMember.MembershipStatus.APPROVED);
+            } else {
+                EsTopic seriesTopic = topicById.get(topicMeeting.getEsTopicId());
+                if (seriesTopic != null && trimToNull(seriesTopic.getTopicCode()) != null) {
+                    Optional<EsCampaign> campaign = campaignDao.findMostRecentActive();
+                    if (campaign.isPresent()) {
+                        registerAnonymousUrl = contextPath + "/registerForMeeting/"
+                                + URLEncoder.encode(campaign.get().getCampaignCode(), StandardCharsets.UTF_8) + "/"
+                                + URLEncoder.encode(seriesTopic.getTopicCode(), StandardCharsets.UTF_8);
+                    }
+                }
+            }
+        }
+
         response.setContentType("text/html;charset=UTF-8");
 
         AiraPage page = InteropAiraPageFactory.base(request, orEmpty(meeting.getMeetingName()) + " - Agenda")
@@ -1927,38 +1962,6 @@ public class EsAgendaServlet extends HttpServlet {
         try (PrintWriter out = response.getWriter()) {
             page.writeStart(out);
             out.println("    <div class=\"aira-container--wide aira-stack\">");
-
-            // --- PAGE HEADER: title, previous/next nav, admin/editor actions ---
-            out.println("      <div class=\"aira-page-header\">");
-            out.println("        <div>");
-            out.println("          <div class=\"aira-cluster\">");
-            if (previousMeeting != null) {
-                out.println("            <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
-                        + contextPath + "/es/agenda?meetingId=" + previousMeeting.getEsMeetingId()
-                        + "\">&laquo; Previous</a>");
-            }
-            out.println("            <h1 class=\"aira-page-title\">" + escapeHtml(orEmpty(meeting.getMeetingName()))
-                    + "</h1>");
-            if (nextMeeting != null) {
-                out.println("            <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
-                        + contextPath + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId()
-                        + "\">Next &raquo;</a>");
-            }
-            out.println("          </div>");
-            out.println("        </div>");
-            out.println("        <div class=\"aira-action-group\">");
-            if (isEditor && meeting.getStatus() == MeetingStatus.FINALIZED && !canEdit) {
-                out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + escapeHtml(editUrl)
-                        + "\">Enable editing</a>");
-            }
-            if (meeting.getEsTopicMeetingId() != null) {
-                String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
-                out.println("          <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
-                        + "/es/meeting-series?seriesId=" + meeting.getEsTopicMeetingId() + "\">"
-                        + escapeHtml(allLabel) + "</a>");
-            }
-            out.println("        </div>");
-            out.println("      </div>");
 
             // Cancellation banner
             if (isCancelled) {
@@ -2066,6 +2069,48 @@ public class EsAgendaServlet extends HttpServlet {
 
             out.println("      <div class=\"aira-right-rail-layout\">");
             out.println("        <div class=\"aira-stack\">");
+
+            // --- PAGE HEADER: title, previous/next nav, meeting registration ---
+            out.println("          <div class=\"aira-page-header\">");
+            out.println("            <div>");
+            out.println("              <div class=\"aira-cluster\">");
+            if (previousMeeting != null) {
+                out.println(
+                        "                <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
+                                + contextPath + "/es/agenda?meetingId=" + previousMeeting.getEsMeetingId()
+                                + "\">&laquo; Previous</a>");
+            }
+            out.println("                <h1 class=\"aira-page-title\">"
+                    + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h1>");
+            if (nextMeeting != null) {
+                out.println(
+                        "                <a class=\"aira-button aira-button--tertiary aira-button--small\" href=\""
+                                + contextPath + "/es/agenda?meetingId=" + nextMeeting.getEsMeetingId()
+                                + "\">Next &raquo;</a>");
+            }
+            out.println("              </div>");
+            out.println("            </div>");
+            if (showMeetingRegister) {
+                out.println("            <div class=\"aira-topic-actions\">");
+                if (user != null) {
+                    out.println(
+                            "              <span class=\"aira-badge aira-badge--success\" id=\"meeting-register-status\" style=\""
+                                    + (viewerRegisteredForMeeting ? "" : "display:none")
+                                    + "\">&#10003; Registered</span>");
+                    String registerClass = viewerRegisteredForMeeting
+                            ? "aira-button aira-button--tertiary"
+                            : "aira-button aira-button--primary";
+                    String registerLabel = viewerRegisteredForMeeting ? "Unregister" : "Register for Meeting";
+                    out.println("              <button type=\"button\" id=\"meeting-register-toggle\" class=\""
+                            + registerClass + "\" data-registered=\""
+                            + (viewerRegisteredForMeeting ? "1" : "0") + "\">" + registerLabel + "</button>");
+                } else if (registerAnonymousUrl != null) {
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\""
+                            + escapeHtml(registerAnonymousUrl) + "\">Request to Join</a>");
+                }
+                out.println("            </div>");
+            }
+            out.println("          </div>");
 
             // --- METADATA BLOCK ---
             out.println("          <section class=\"aira-panel\">");
@@ -2286,9 +2331,19 @@ public class EsAgendaServlet extends HttpServlet {
                     && !meeting.getOnlineMeetingUrl().isBlank();
             boolean hasOnlineMeetingDetails = meeting.getOnlineMeetingDetails() != null
                     && !meeting.getOnlineMeetingDetails().isBlank();
-            if (hasDescription || canEdit || hasOnlineMeetingUrl) {
+            boolean hasSeriesLink = meeting.getEsTopicMeetingId() != null;
+            if (hasDescription || canEdit || hasOnlineMeetingUrl || hasSeriesLink) {
                 out.println("          <section class=\"aira-panel\">");
-                out.println("            <h2 class=\"aira-section-title\">Meeting Information</h2>");
+                out.println("            <div class=\"aira-cluster aira-cluster--between\">");
+                out.println("              <h2 class=\"aira-section-title\">Meeting Information</h2>");
+                if (hasSeriesLink) {
+                    String allLabel = seriesName != null ? "All " + seriesName + " Meetings" : "All Meetings";
+                    out.println(
+                            "              <a class=\"aira-button aira-button--secondary aira-button--small\" href=\""
+                                    + contextPath + "/es/meeting-series?seriesId=" + meeting.getEsTopicMeetingId()
+                                    + "\">" + escapeHtml(allLabel) + "</a>");
+                }
+                out.println("            </div>");
                 if (hasDescription) {
                     if (canEdit) {
                         out.println(
@@ -3321,7 +3376,7 @@ public class EsAgendaServlet extends HttpServlet {
             out.println("        </div>"); // end main content aira-stack
 
             renderAgendaRightRail(out, contextPath, user, meeting.getEsMeetingId(), meeting.getEsTopicMeetingId(),
-                    canEdit, isAdmin);
+                    isEditor, canEdit, meeting.getStatus(), isAdmin, editUrl);
 
             out.println("      </div>"); // end aira-right-rail-layout
             out.println("    </div>"); // end aira-container--wide aira-stack
@@ -3421,6 +3476,50 @@ public class EsAgendaServlet extends HttpServlet {
                 out.println("  document.getElementById(hiddenId).value=uid!==undefined?uid:'';");
                 out.println("}");
             }
+            if (showMeetingRegister && user != null) {
+                out.println("(function(){");
+                out.println("  var registerButton=document.getElementById('meeting-register-toggle');");
+                out.println("  var registerStatusBadge=document.getElementById('meeting-register-status');");
+                out.println("  if (!registerButton) { return; }");
+                out.println("  function setRegisterButtonState(isRegistered){");
+                out.println("    registerButton.setAttribute('data-registered',isRegistered?'1':'0');");
+                out.println(
+                        "    registerButton.textContent=isRegistered?'Unregister':'Register for Meeting';");
+                out.println(
+                        "    registerButton.classList.toggle('aira-button--primary',!isRegistered);");
+                out.println(
+                        "    registerButton.classList.toggle('aira-button--tertiary',isRegistered);");
+                out.println(
+                        "    if (registerStatusBadge) { registerStatusBadge.style.display=isRegistered?'':'none'; }");
+                out.println("  }");
+                out.println("  registerButton.addEventListener('click',function(){");
+                out.println(
+                        "    var isRegistered=registerButton.getAttribute('data-registered')==='1';");
+                out.println("    var params=new URLSearchParams();");
+                out.println("    params.set('topicId',String(" + topicMeeting.getEsTopicId() + "));");
+                out.println("    params.set('meetingId',String(" + topicMeeting.getEsTopicMeetingId() + "));");
+                out.println("    params.set('action',isRegistered?'unrequest':'request');");
+                out.println("    registerButton.disabled=true;");
+                out.println("    fetch('" + contextPath + "/es/topics/meeting-toggle',{");
+                out.println("      method:'POST',");
+                out.println(
+                        "      headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},");
+                out.println("      body:params.toString()");
+                out.println("    }).then(function(res){ return res.json(); }).then(function(json){");
+                out.println("      if (!json || !json.ok) {");
+                out.println(
+                        "        window.alert((json && json.error) ? json.error : 'Unable to update meeting registration.');");
+                out.println("        return;");
+                out.println("      }");
+                out.println("      setRegisterButtonState(!!json.requested);");
+                out.println("    }).catch(function(){");
+                out.println("      window.alert('Unable to update meeting registration.');");
+                out.println("    }).finally(function(){");
+                out.println("      registerButton.disabled=false;");
+                out.println("    });");
+                out.println("  });");
+                out.println("})();");
+            }
             out.println("</script>");
 
             out.println("<script type=\"application/json\" id=\"agenda-live-config\">"
@@ -3433,22 +3532,28 @@ public class EsAgendaServlet extends HttpServlet {
     }
 
     private void renderAgendaRightRail(PrintWriter out, String contextPath, User viewer, Long currentMeetingId,
-            Long seriesId, boolean canEdit, boolean isAdmin) {
+            Long seriesId, boolean isEditor, boolean canEdit, MeetingStatus meetingStatus, boolean isAdmin,
+            String editUrl) {
         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Meeting activity\">");
         renderRecentlyViewedMeetingsCard(out, contextPath, viewer, currentMeetingId);
-        if (canEdit) {
-            renderMeetingAdminCard(out, contextPath, currentMeetingId, seriesId, isAdmin);
+        if (isEditor) {
+            boolean showEditMeeting = meetingStatus == MeetingStatus.FINALIZED && !canEdit;
+            renderMeetingAdminCard(out, contextPath, currentMeetingId, seriesId, isAdmin, showEditMeeting, editUrl);
         }
         out.println("        </aside>");
     }
 
     static void renderMeetingAdminCard(PrintWriter out, String contextPath, Long meetingId, Long seriesId,
-            boolean isAdmin) {
+            boolean isAdmin, boolean showEditMeeting, String editUrl) {
         out.println("          <section class=\"aira-section-card\">");
         out.println(
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Meeting Admin</h2></div>");
         out.println("            <div class=\"aira-section-card__body\">");
         out.println("              <nav class=\"aira-sidebar-nav\" aria-label=\"Meeting admin links\">");
+        if (showEditMeeting) {
+            out.println("                <a class=\"aira-sidebar-link\" href=\"" + escapeHtml(editUrl)
+                    + "\">Edit Meeting</a>");
+        }
         out.println("                <a class=\"aira-sidebar-link\" href=\""
                 + EsMeetingWorkspaceServlet.workspaceUrl(contextPath, meetingId, null)
                 + "\">Open Meeting Workspace</a>");
@@ -3475,23 +3580,28 @@ public class EsAgendaServlet extends HttpServlet {
         out.println(
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Recently Viewed Meetings</h2></div>");
         out.println("            <div class=\"aira-section-card__body aira-stack aira-stack--compact\">");
-        List<EsMeetingViewHistoryService.RecentlyViewedMeeting> recent = meetingViewHistoryService
-                .findRecentAuthenticatedMeetingViews(viewer.getUserId(), RECENTLY_VIEWED_LIMIT + 1).stream()
-                .filter(item -> !item.esMeetingId().equals(currentMeetingId))
-                .limit(RECENTLY_VIEWED_LIMIT)
-                .collect(Collectors.toList());
-        if (recent.isEmpty()) {
-            out.println("              <p class=\"aira-meta\">No other meetings viewed yet.</p>");
+        if (viewer == null) {
+            out.println(
+                    "              <p class=\"aira-meta\">Sign in to keep a persistent recently viewed meeting list.</p>");
         } else {
-            for (EsMeetingViewHistoryService.RecentlyViewedMeeting item : recent) {
-                out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
-                        + "/es/agenda?meetingId=" + item.esMeetingId() + "\">");
-                out.println("                <span><span class=\"aira-recent-topic__title\">"
-                        + escapeHtml(orEmpty(item.meetingName())) + "</span>");
-                out.println("                <span class=\"aira-recent-topic__meta\">"
-                        + (item.scheduledStart() == null ? "" : item.scheduledStart().toLocalDate().toString())
-                        + "</span></span>");
-                out.println("              </a>");
+            List<EsMeetingViewHistoryService.RecentlyViewedMeeting> recent = meetingViewHistoryService
+                    .findRecentAuthenticatedMeetingViews(viewer.getUserId(), RECENTLY_VIEWED_LIMIT + 1).stream()
+                    .filter(item -> !item.esMeetingId().equals(currentMeetingId))
+                    .limit(RECENTLY_VIEWED_LIMIT)
+                    .collect(Collectors.toList());
+            if (recent.isEmpty()) {
+                out.println("              <p class=\"aira-meta\">No other meetings viewed yet.</p>");
+            } else {
+                for (EsMeetingViewHistoryService.RecentlyViewedMeeting item : recent) {
+                    out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
+                            + "/es/agenda?meetingId=" + item.esMeetingId() + "\">");
+                    out.println("                <span><span class=\"aira-recent-topic__title\">"
+                            + escapeHtml(orEmpty(item.meetingName())) + "</span>");
+                    out.println("                <span class=\"aira-recent-topic__meta\">"
+                            + (item.scheduledStart() == null ? "" : item.scheduledStart().toLocalDate().toString())
+                            + "</span></span>");
+                    out.println("              </a>");
+                }
             }
         }
         out.println("            </div>");
