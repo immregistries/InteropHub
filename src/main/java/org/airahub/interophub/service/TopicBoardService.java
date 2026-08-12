@@ -262,6 +262,20 @@ public class TopicBoardService {
         }
     }
 
+    public EsTopicBoardDefinition makePrimaryForSpace(Long boardDefinitionId) {
+        if (boardDefinitionId == null) {
+            throw new ValidationException("Board identifier is required.");
+        }
+        EsTopicBoardDefinition definition = boardDefinitionDao.findById(boardDefinitionId)
+                .orElseThrow(() -> new ValidationException("Board definition was not found."));
+        Long topicSpaceId = definition.getEsTopicSpaceId();
+        if (topicSpaceId == null) {
+            throw new ValidationException("Board is not associated with a Topic Space.");
+        }
+        topicSpaceDao.setPrimaryBoard(topicSpaceId, boardDefinitionId);
+        return definition;
+    }
+
     public List<SearchTopicResult> searchActiveTopics(String boardCode, String query, User viewer, int maxResults) {
         BoardView board = loadBoardByCodeForDisplay(boardCode, viewer)
                 .orElseThrow(() -> new ValidationException("Board was not found."));

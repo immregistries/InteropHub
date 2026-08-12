@@ -60,6 +60,24 @@ public class EsTopicSpaceDao extends GenericDao<EsTopicSpace, Long> {
         }
     }
 
+    public void setPrimaryBoard(Long esTopicSpaceId, Long boardDefinitionId) {
+        org.hibernate.Transaction tx = null;
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            tx = session.beginTransaction();
+            EsTopicSpace space = session.get(EsTopicSpace.class, esTopicSpaceId);
+            if (space == null) {
+                throw new IllegalStateException("Topic Space was not found.");
+            }
+            space.setPrimaryEsTopicBoardDefinitionId(boardDefinitionId);
+            tx.commit();
+        } catch (Exception ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw ex;
+        }
+    }
+
     public EsTopicSpace saveOrUpdate(EsTopicSpace topicSpace) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

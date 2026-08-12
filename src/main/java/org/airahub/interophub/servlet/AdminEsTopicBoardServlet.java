@@ -47,7 +47,11 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
 
         if ("edit".equalsIgnoreCase(mode) && boardDefinitionId != null) {
             try {
-                renderEdit(request, response, topicBoardService.loadBoardEditData(boardDefinitionId), false, null);
+                String notice = request.getParameter("primarySet") != null
+                        ? "This board is now the primary board for its Topic Space."
+                        : null;
+                renderEdit(request, response, topicBoardService.loadBoardEditData(boardDefinitionId), false, null,
+                        notice);
             } catch (TopicBoardService.ValidationException ex) {
                 renderList(request, response, ex.getMessage());
             }
@@ -72,6 +76,17 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
 
         if ("changeSpace".equalsIgnoreCase(action)) {
             renderEditForSpaceChange(request, response, creating);
+            return;
+        }
+
+        if ("makePrimary".equalsIgnoreCase(action)) {
+            try {
+                topicBoardService.makePrimaryForSpace(boardDefinitionId);
+                response.sendRedirect(contextPath + "/admin/es/topic-boards?mode=edit&esTopicBoardDefinitionId="
+                        + boardDefinitionId + "&primarySet=1");
+            } catch (TopicBoardService.ValidationException ex) {
+                renderEditWithPostedValues(request, response, creating, ex.getMessage());
+            }
             return;
         }
 
@@ -148,9 +163,21 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
 
     private void renderEdit(HttpServletRequest request, HttpServletResponse response,
             TopicBoardService.BoardEditData data, boolean creating, String errorMessage) throws IOException {
+        renderEdit(request, response, data, creating, errorMessage, null);
+    }
+
+    private void renderEdit(HttpServletRequest request, HttpServletResponse response,
+            TopicBoardService.BoardEditData data, boolean creating, String errorMessage, String noticeMessage)
+            throws IOException {
         String contextPath = request.getContextPath();
         EsTopicBoardDefinition board = data.board();
         Long selectedSpaceId = board.getEsTopicSpaceId();
+        EsTopicSpace selectedSpace = data.topicSpaces().stream()
+                .filter(space -> selectedSpaceId != null && selectedSpaceId.equals(space.getEsTopicSpaceId()))
+                .findFirst()
+                .orElse(null);
+        boolean isPrimary = !creating && selectedSpace != null && board.getEsTopicBoardDefinitionId() != null
+                && board.getEsTopicBoardDefinitionId().equals(selectedSpace.getPrimaryEsTopicBoardDefinitionId());
 
         AdminShellRenderer.render(request, response, (creating ? "Create" : "Edit") + " Topic Board - InteropHub",
                 AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
@@ -163,6 +190,10 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
                     if (errorMessage != null && !errorMessage.isBlank()) {
                         out.println("            <div class=\"aira-alert aira-alert--danger\"><p>"
                                 + escapeHtml(errorMessage) + "</p></div>");
+                    }
+                    if (noticeMessage != null && !noticeMessage.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--success\"><p>"
+                                + escapeHtml(noticeMessage) + "</p></div>");
                     }
 
                     out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
@@ -270,6 +301,28 @@ public class AdminEsTopicBoardServlet extends HttpServlet {
                     out.println("              </div>");
 
                     out.println("            </form>");
+
+                    if (!creating) {
+                        out.println("            <section class=\"aira-panel\">");
+                        out.println("              <h3 class=\"aira-subsection-title\">Primary board</h3>");
+                        if (isPrimary) {
+                            out.println(
+                                    "              <p class=\"aira-meta\">This is the primary board shown on the Topic Space overview page.</p>");
+                        } else {
+                            out.println(
+                                    "              <p class=\"aira-meta\">Show this board on the Topic Space overview page instead of whichever board is primary now.</p>");
+                            out.println("              <form method=\"post\" action=\"" + contextPath
+                                    + "/admin/es/topic-boards\">");
+                            out.println(
+                                    "                <input type=\"hidden\" name=\"esTopicBoardDefinitionId\" value=\""
+                                            + board.getEsTopicBoardDefinitionId() + "\" />");
+                            out.println(
+                                    "                <button class=\"aira-button aira-button--secondary\" type=\"submit\" name=\"action\" value=\"makePrimary\">Make primary board for this Topic Space</button>");
+                            out.println("              </form>");
+                        }
+                        out.println("            </section>");
+                    }
+
                     out.println("          </section>");
                 });
     }
