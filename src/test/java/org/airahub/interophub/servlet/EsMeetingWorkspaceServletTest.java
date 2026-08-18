@@ -341,7 +341,8 @@ class EsMeetingWorkspaceServletTest {
         @Test
         void meetingAdminCardShowsWorkspaceLinkAndGatesAdminLinksOnAdmin() {
                 StringWriter editorBuffer = new StringWriter();
-                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(editorBuffer), "/hub", 123L, 55L, false);
+                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(editorBuffer), "/hub", 123L, 55L, false,
+                                false, null);
                 String editorHtml = editorBuffer.toString();
                 assertTrue(editorHtml.contains("Open Meeting Workspace"));
                 assertTrue(editorHtml.contains("/es/meeting-workspace?meetingId=123"));
@@ -351,7 +352,8 @@ class EsMeetingWorkspaceServletTest {
                 assertTrue(!editorHtml.contains("/admin/es/meetings?meetingId=55"));
 
                 StringWriter adminBuffer = new StringWriter();
-                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(adminBuffer), "/hub", 123L, 55L, true);
+                EsAgendaServlet.renderMeetingAdminCard(new PrintWriter(adminBuffer), "/hub", 123L, 55L, true,
+                                false, null);
                 String adminHtml = adminBuffer.toString();
                 assertTrue(adminHtml.contains("Open Meeting Workspace"));
                 assertTrue(adminHtml.contains("Confluence export"));

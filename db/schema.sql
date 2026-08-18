@@ -222,7 +222,7 @@ CREATE TABLE `auth_magic_link` (
   KEY `ix_magic_user` (`user_id`,`issued_at`),
   KEY `ix_magic_expires` (`expires_at`),
   CONSTRAINT `fk_magic_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=193 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=205 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -250,7 +250,7 @@ CREATE TABLE `auth_magic_link_send_event` (
   `user_agent` varchar(300) DEFAULT NULL,
   `user_id` bigint NOT NULL,
   PRIMARY KEY (`send_event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=430 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=466 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -274,7 +274,7 @@ CREATE TABLE `auth_session` (
   KEY `ix_session_user` (`user_id`,`expires_at`),
   KEY `ix_session_expires` (`expires_at`),
   CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=159 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=170 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -380,7 +380,7 @@ CREATE TABLE `dandelion_sync_queue` (
   PRIMARY KEY (`sync_queue_id`),
   KEY `ix_dd_sync_queue_space_status` (`es_topic_space_id`,`status`,`entity_type`,`created_at`),
   CONSTRAINT `fk_dd_sync_queue_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=752 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=864 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -404,7 +404,7 @@ CREATE TABLE `email_send_log` (
   `subject` varchar(500) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`email_log_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=403 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=470 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -447,7 +447,7 @@ CREATE TABLE `es_agenda_item_presenter` (
   `updated_at` datetime(6) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`es_agenda_item_presenter_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=34 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -692,7 +692,7 @@ CREATE TABLE `es_meeting` (
   KEY `ix_es_meeting_status_close_due` (`status`,`close_due_at`,`es_meeting_id`),
   KEY `ix_es_meeting_current_agenda` (`current_agenda_item_id`),
   CONSTRAINT `fk_es_meeting_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -748,7 +748,7 @@ CREATE TABLE `es_meeting_agenda_item` (
   `title` varchar(200) NOT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_agenda_item_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=65 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=78 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -777,7 +777,7 @@ CREATE TABLE `es_meeting_attendance` (
   KEY `ix_attendance_meeting_date` (`es_topic_meeting_id`,`attendance_date`),
   KEY `ix_attendance_user` (`user_id`),
   CONSTRAINT `fk_attendance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=164 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=180 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -813,7 +813,7 @@ CREATE TABLE `es_meeting_communication` (
   `timezone_id` varchar(64) DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_communication_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -907,7 +907,7 @@ CREATE TABLE `es_meeting_user_view` (
   KEY `ix_es_meeting_user_view_meeting_recent` (`es_meeting_id`,`last_viewed_at`),
   CONSTRAINT `fk_es_meeting_user_view_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_meeting_user_view_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -963,7 +963,7 @@ CREATE TABLE `es_recorded_outcome` (
   CONSTRAINT `fk_es_ro_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_ro_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
   CONSTRAINT `fk_es_ro_updated_by` FOREIGN KEY (`updated_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -987,7 +987,7 @@ CREATE TABLE `es_subscription` (
   `updated_at` datetime(6) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`es_subscription_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1292 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1318 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1164,7 +1164,7 @@ CREATE TABLE `es_topic_board_path` (
   KEY `fk_es_topic_board_path_definition` (`es_topic_path_definition_id`),
   CONSTRAINT `fk_es_topic_board_path_board` FOREIGN KEY (`es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`),
   CONSTRAINT `fk_es_topic_board_path_definition` FOREIGN KEY (`es_topic_path_definition_id`) REFERENCES `es_topic_path_definition` (`es_topic_path_definition_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1185,7 +1185,7 @@ CREATE TABLE `es_topic_board_stage` (
   KEY `fk_es_topic_board_stage_definition` (`es_topic_stage_definition_id`),
   CONSTRAINT `fk_es_topic_board_stage_board` FOREIGN KEY (`es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`),
   CONSTRAINT `fk_es_topic_board_stage_definition` FOREIGN KEY (`es_topic_stage_definition_id`) REFERENCES `es_topic_stage_definition` (`es_topic_stage_definition_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=27 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1381,7 +1381,7 @@ CREATE TABLE `es_topic_neighborhood` (
   UNIQUE KEY `uq_es_topic_neighborhood` (`es_topic_id`,`es_neighborhood_id`),
   KEY `ix_es_topic_neighborhood_topic` (`es_topic_id`),
   KEY `ix_es_topic_neighborhood_neighborhood` (`es_neighborhood_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=309 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=311 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1425,7 +1425,7 @@ CREATE TABLE `es_topic_note` (
   CONSTRAINT `fk_es_topic_note_finalized_by` FOREIGN KEY (`finalized_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_topic_note_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_topic_note_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1451,7 +1451,7 @@ CREATE TABLE `es_topic_note_editor_history` (
   CONSTRAINT `fk_es_tneh_new_editor` FOREIGN KEY (`new_editor_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_tneh_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
   CONSTRAINT `fk_es_tneh_previous_editor` FOREIGN KEY (`previous_editor_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1475,7 +1475,7 @@ CREATE TABLE `es_topic_note_revision` (
   KEY `fk_es_tnr_saved_by` (`saved_by_user_id`),
   CONSTRAINT `fk_es_tnr_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
   CONSTRAINT `fk_es_tnr_saved_by` FOREIGN KEY (`saved_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=16 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1638,7 +1638,7 @@ CREATE TABLE `es_topic_user_view` (
   KEY `ix_es_topic_user_view_topic_recent` (`es_topic_id`,`last_viewed_at`),
   CONSTRAINT `fk_es_topic_user_view_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`),
   CONSTRAINT `fk_es_topic_user_view_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=25 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1997,7 +1997,7 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-08-12  0:30:09
+-- Dump completed on 2026-08-18  0:30:11
 -- ============================================================
 -- AUTO-GENERATED FILE — DO NOT HAND-EDIT
 -- Generated by T:\scripts\python\refresh_interophub_db.py /
