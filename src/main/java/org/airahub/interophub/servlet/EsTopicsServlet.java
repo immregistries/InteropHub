@@ -206,7 +206,7 @@ public class EsTopicsServlet extends HttpServlet {
             }
 
             if (showOverview) {
-                renderOverview(out, selectedSpace, stageDefinitions, pathDefinitions, neighborhoods);
+                renderOverview(out, contextPath, selectedSpace, stageDefinitions, pathDefinitions, neighborhoods);
             } else if (myTopicsView && authenticatedUser.isEmpty()) {
                 out.println("          <p class=\"aira-alert aira-alert--info\"><a href=\"" + contextPath
                         + "/home\">Log in</a> to view topics you follow.</p>");
@@ -264,7 +264,7 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("      </div>");
     }
 
-    private void renderOverview(PrintWriter out, EsTopicSpace selectedSpace,
+    private void renderOverview(PrintWriter out, String contextPath, EsTopicSpace selectedSpace,
             List<EsTopicStageDefinition> stageDefinitions,
             List<EsTopicPathDefinition> pathDefinitions, List<EsNeighborhood> neighborhoods) {
         String stageConceptDescription = trimToNull(selectedSpace.getStageConceptDescription());
@@ -283,8 +283,11 @@ public class EsTopicsServlet extends HttpServlet {
             out.println("                <p class=\"aira-meta\">No stages configured for this Topic Space yet.</p>");
         } else {
             for (EsTopicStageDefinition stage : stageDefinitions) {
-                out.println("                <div><strong>" + escapeHtml(orEmpty(stage.getStageName()))
-                        + "</strong><p class=\"aira-meta\">"
+                String stageName = orEmpty(stage.getStageName());
+                out.println("                <div><a class=\"aira-resource-link\" href=\""
+                        + buildOverviewFilterUrl(contextPath, selectedSpace.getSpaceCode(),
+                                stage.getEsTopicStageDefinitionId(), null, null)
+                        + "\"><strong>" + escapeHtml(stageName) + "</strong></a><p class=\"aira-meta\">"
                         + escapeHtml(orEmpty(stage.getStageDescription())) + "</p></div>");
             }
         }
@@ -303,8 +306,11 @@ public class EsTopicsServlet extends HttpServlet {
                     "                <p class=\"aira-meta\">No advancement paths configured for this Topic Space yet.</p>");
         } else {
             for (EsTopicPathDefinition path : pathDefinitions) {
-                out.println("                <div><strong>" + escapeHtml(orEmpty(path.getPathName()))
-                        + "</strong><p class=\"aira-meta\">"
+                String pathName = orEmpty(path.getPathName());
+                out.println("                <div><a class=\"aira-resource-link\" href=\""
+                        + buildOverviewFilterUrl(contextPath, selectedSpace.getSpaceCode(), null,
+                                path.getEsTopicPathDefinitionId(), null)
+                        + "\"><strong>" + escapeHtml(pathName) + "</strong></a><p class=\"aira-meta\">"
                         + escapeHtml(orEmpty(path.getPathDescription())) + "</p></div>");
             }
         }
@@ -324,7 +330,9 @@ public class EsTopicsServlet extends HttpServlet {
                     continue;
                 }
                 String description = trimToNull(neighborhood.getDescription());
-                out.println("                <div><strong>" + escapeHtml(name) + "</strong><p class=\"aira-meta\">"
+                out.println("                <div><a class=\"aira-resource-link\" href=\""
+                        + buildOverviewFilterUrl(contextPath, selectedSpace.getSpaceCode(), null, null, name)
+                        + "\"><strong>" + escapeHtml(name) + "</strong></a><p class=\"aira-meta\">"
                         + escapeHtml(description == null ? "No description provided." : description)
                         + "</p></div>");
             }
@@ -371,8 +379,9 @@ public class EsTopicsServlet extends HttpServlet {
         out.println(
                 "                    <tr><th class=\"aira-matrix-table__corner\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">Advancement Path</span></div></th>");
         for (EsTopicStageDefinition stage : stages) {
-            out.println("<th class=\"aira-matrix-table__col-header\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">"
-                    + escapeHtml(orEmpty(stage.getStageName())) + "</span></div></th>");
+            out.println(
+                    "<th class=\"aira-matrix-table__col-header\" scope=\"col\"><div class=\"aira-matrix-table__header-inner\"><span class=\"aira-matrix-table__label\">"
+                            + escapeHtml(orEmpty(stage.getStageName())) + "</span></div></th>");
         }
         out.println("</tr>");
         out.println("                  </thead>");
@@ -472,7 +481,8 @@ public class EsTopicsServlet extends HttpServlet {
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Search</h2></div>");
         out.println("            <div class=\"aira-section-card__body\">");
         out.println(
-                "              <form class=\"aira-inline-form\" method=\"get\" action=\"" + contextPath + "/es/topics\">");
+                "              <form class=\"aira-inline-form\" method=\"get\" action=\"" + contextPath
+                        + "/es/topics\">");
         out.println("                <input type=\"hidden\" name=\"space\" value=\"" + escapeHtml(selectedSpaceCode)
                 + "\" />");
         if (trimToNull(view) != null) {
@@ -491,7 +501,8 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("                <input class=\"aira-input\" type=\"search\" name=\"q\" value=\""
                 + escapeHtml(orEmpty(query))
                 + "\" placeholder=\"Search by topic name or description\" autocomplete=\"off\" />");
-        out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Search</button>");
+        out.println(
+                "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Search</button>");
         out.println("              </form>");
         out.println("            </div>");
         out.println("          </section>");
@@ -732,14 +743,19 @@ public class EsTopicsServlet extends HttpServlet {
         return visibleSpaces.get(0);
     }
 
-    private String buildTopicsUrl(String contextPath, String spaceCode, String view, Long stageDefinitionId,
+    public static String buildOverviewFilterUrl(String contextPath, String spaceCode, Long stageDefinitionId,
+            Long pathDefinitionId, String neighborhood) {
+        return buildTopicsUrl(contextPath, spaceCode, null, stageDefinitionId, pathDefinitionId, neighborhood, null);
+    }
+
+    private static String buildTopicsUrl(String contextPath, String spaceCode, String view, Long stageDefinitionId,
             Long pathDefinitionId, String neighborhood, String query) {
         List<String> params = new ArrayList<>();
-        if (trimToNull(spaceCode) != null) {
-            params.add("space=" + urlEncode(spaceCode));
+        if (staticTrimToNull(spaceCode) != null) {
+            params.add("space=" + staticUrlEncode(spaceCode));
         }
-        if (trimToNull(view) != null) {
-            params.add("view=" + urlEncode(view));
+        if (staticTrimToNull(view) != null) {
+            params.add("view=" + staticUrlEncode(view));
         }
         if (stageDefinitionId != null) {
             params.add("s=" + stageDefinitionId);
@@ -747,11 +763,11 @@ public class EsTopicsServlet extends HttpServlet {
         if (pathDefinitionId != null) {
             params.add("p=" + pathDefinitionId);
         }
-        if (trimToNull(neighborhood) != null) {
-            params.add("n=" + urlEncode(neighborhood));
+        if (staticTrimToNull(neighborhood) != null) {
+            params.add("n=" + staticUrlEncode(neighborhood));
         }
-        if (trimToNull(query) != null) {
-            params.add("q=" + urlEncode(query));
+        if (staticTrimToNull(query) != null) {
+            params.add("q=" + staticUrlEncode(query));
         }
         if (params.isEmpty()) {
             return contextPath + "/es/topics";
@@ -863,7 +879,7 @@ public class EsTopicsServlet extends HttpServlet {
         }
     }
 
-    private String trimToNull(String value) {
+    private static String staticTrimToNull(String value) {
         if (value == null) {
             return null;
         }
@@ -871,12 +887,20 @@ public class EsTopicsServlet extends HttpServlet {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
+    private String trimToNull(String value) {
+        return staticTrimToNull(value);
+    }
+
     private String orEmpty(String value) {
         return value == null ? "" : value;
     }
 
-    private String urlEncode(String value) {
+    private static String staticUrlEncode(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String urlEncode(String value) {
+        return staticUrlEncode(value);
     }
 
     private String escapeHtml(String value) {
