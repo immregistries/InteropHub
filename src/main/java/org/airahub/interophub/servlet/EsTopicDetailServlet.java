@@ -41,6 +41,8 @@ import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.EsTopicNoteDao;
 import org.airahub.interophub.dao.EsTopicRelationshipDao;
+import org.airahub.interophub.dao.EsTopicSupporterDao;
+import org.airahub.interophub.dao.SupporterDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
@@ -56,6 +58,7 @@ import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicStageDefinition;
+import org.airahub.interophub.model.Supporter;
 import org.immregistries.aira.web.AiraPage;
 import org.airahub.interophub.service.EsTopicViewHistoryService;
 import org.airahub.interophub.service.TopicNoteDocumentSupport;
@@ -80,6 +83,8 @@ public class EsTopicDetailServlet extends HttpServlet {
         private final EsTopicRelationshipDao relationshipDao;
         private final EsTopicCurationDao curationDao;
         private final EsCommentDao commentDao;
+        private final EsTopicSupporterDao topicSupporterDao;
+        private final SupporterDao supporterDao;
         private final TopicSpaceAccessService topicSpaceAccessService;
         private final EsTopicViewHistoryService topicViewHistoryService;
         private final EsAgendaItemPresenterDao presenterDao;
@@ -104,6 +109,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                 this.relationshipDao = new EsTopicRelationshipDao();
                 this.curationDao = new EsTopicCurationDao();
                 this.commentDao = new EsCommentDao();
+                this.topicSupporterDao = new EsTopicSupporterDao();
+                this.supporterDao = new SupporterDao();
                 this.topicSpaceAccessService = new TopicSpaceAccessService();
                 this.topicViewHistoryService = new EsTopicViewHistoryService();
                 this.presenterDao = new EsAgendaItemPresenterDao();
@@ -427,6 +434,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 }
                         }
                         int followerCount = subscriptionDao.findActiveByTopicId(topicId).size();
+                        List<Supporter> activeSupporters = topicSupporterDao.findActiveSupportersByTopicId(topicId);
 
                         out.println("            <div class=\"aira-topic-meta\" aria-label=\"Topic metadata\">");
                         out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Stage</span><span class=\"aira-meta-chip__value\">"
@@ -450,6 +458,14 @@ public class EsTopicDetailServlet extends HttpServlet {
                         if (!championNames.isEmpty()) {
                                 out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Champion</span><span class=\"aira-meta-chip__value\">"
                                                 + escapeHtml(String.join(", ", championNames))
+                                                + "</span></span>");
+                        }
+                        if (!activeSupporters.isEmpty()) {
+                                String supporterNames = activeSupporters.stream()
+                                                .map(Supporter::getShortName)
+                                                .collect(Collectors.joining(", "));
+                                out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Supporters</span><span class=\"aira-meta-chip__value\">"
+                                                + escapeHtml(supporterNames)
                                                 + "</span></span>");
                         }
                         out.println("              <span class=\"aira-meta-chip\"><span class=\"aira-meta-chip__label\">Followers</span><span class=\"aira-meta-chip__value\">"
@@ -510,6 +526,38 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("              </div>");
                         out.println("            </div>");
                         out.println("          </section>");
+
+                        if (!activeSupporters.isEmpty()) {
+                                out.println("          <section class=\"aira-section-card\" aria-labelledby=\"supporters-title\">");
+                                out.println(
+                                                "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"supporters-title\">Supporters</h2></div>");
+                                out.println("            <div class=\"aira-section-card__body aira-stack\">");
+                                for (Supporter supporter : activeSupporters) {
+                                        String shortName = orEmpty(supporter.getShortName());
+                                        String fullName = trimToNull(supporter.getFullName());
+                                        out.println("              <article class=\"aira-relationship-row\">");
+                                        out.println("                <span class=\"aira-relationship-row__title\">"
+                                                        + escapeHtml(shortName)
+                                                        + (fullName != null && !fullName.equalsIgnoreCase(shortName)
+                                                                        ? " <span class=\"aira-meta\">(" + escapeHtml(fullName) + ")</span>"
+                                                                        : "")
+                                                        + "</span>");
+                                        String supporterDescription = trimToNull(supporter.getDescription());
+                                        if (supporterDescription != null) {
+                                                out.println("                <span class=\"aira-relationship-row__verb\">"
+                                                                + escapeHtml(supporterDescription) + "</span>");
+                                        }
+                                        String websiteUrl = trimToNull(supporter.getWebsiteUrl());
+                                        if (websiteUrl != null) {
+                                                out.println("                <a class=\"aira-relationship-row__action\" href=\""
+                                                                + escapeHtml(websiteUrl)
+                                                                + "\" target=\"_blank\" rel=\"noopener\">Website</a>");
+                                        }
+                                        out.println("              </article>");
+                                }
+                                out.println("            </div>");
+                                out.println("          </section>");
+                        }
 
                         if (!recentOutcomeRows.isEmpty()) {
                                 out.println("          <section class=\"aira-section-card\" aria-labelledby=\"outcomes-title\">");
@@ -798,7 +846,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         if (canManageTopic) {
                                 TopicManageNavRenderer.TopicManageCounts manageCounts = TopicManageNavRenderer.computeCounts(
                                                 topicId, viewer, subscriptionDao, agendaItemDao, esMeetingDao, commentDao,
-                                                relationshipDao, curationDao, topicSpaceAccessService);
+                                                relationshipDao, curationDao, topicSupporterDao, topicSpaceAccessService);
                                 TopicManageNavRenderer.render(out, contextPath, topicId, null, isAdmin,
                                                 meeting != null ? meeting.getEsTopicMeetingId() : null, false, manageCounts);
                         }

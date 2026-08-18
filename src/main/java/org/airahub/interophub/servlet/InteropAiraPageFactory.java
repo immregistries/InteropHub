@@ -36,6 +36,7 @@ final class InteropAiraPageFactory {
     private static final String SIGNED_IN_USER_FALLBACK = "Signed in user";
     private static final String WELCOME_CONTEXT_TITLE = "Interoperability Hub";
     private static final int MAX_WELCOME_SPACE_ITEMS = 5;
+    private static final String EMERGING_STANDARDS_SPACE_CODE = "emerging-standards";
 
     private static final AuthFlowService AUTH_FLOW_SERVICE = new AuthFlowService();
     private static final PublicUrlService PUBLIC_URL_SERVICE = new PublicUrlService();
@@ -82,6 +83,11 @@ final class InteropAiraPageFactory {
 
     static AiraContextConfig topicsMeetingsContext(String contextLabel, String spaceCode, boolean topicsActive,
             boolean meetingsActive) {
+        return topicsMeetingsContext(contextLabel, spaceCode, topicsActive, meetingsActive, false);
+    }
+
+    static AiraContextConfig topicsMeetingsContext(String contextLabel, String spaceCode, boolean topicsActive,
+            boolean meetingsActive, boolean supportersActive) {
         String label = trimToNull(contextLabel);
         if (label == null) {
             label = "InteropHub";
@@ -92,9 +98,16 @@ final class InteropAiraPageFactory {
             meetingsHref = "/es/meetings?space="
                     + URLEncoder.encode(normalizedSpaceCode, StandardCharsets.UTF_8).replace("+", "%20");
         }
-        return new AiraContextConfig(label, List.of(
-                new AiraNavigationItem("Topics", "/es/topics", topicsActive),
-                new AiraNavigationItem("Meetings", meetingsHref, meetingsActive)));
+        List<AiraNavigationItem> items = new ArrayList<>();
+        items.add(new AiraNavigationItem("Topics", "/es/topics", topicsActive));
+        items.add(new AiraNavigationItem("Meetings", meetingsHref, meetingsActive));
+        // Supporters is currently Emerging-Standards-specific presentation of a
+        // system-wide model (see docs/add-supporters.md) - only that Topic Space
+        // gets the nav entry, not every Topic Space using this shared context.
+        if (EMERGING_STANDARDS_SPACE_CODE.equalsIgnoreCase(normalizedSpaceCode)) {
+            items.add(new AiraNavigationItem("Supporters", "/es/supporters", supportersActive));
+        }
+        return new AiraContextConfig(label, items);
     }
 
     /**

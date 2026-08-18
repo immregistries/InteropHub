@@ -87,5 +87,7 @@
     <mapping class="org.airahub.interophub.model.EsTopicMeetingSurvey"/>
     <mapping class="org.airahub.interophub.model.EsSurveyResponse"/>
     <mapping class="org.airahub.interophub.model.EsSurveyAnswer"/>
+    <mapping class="org.airahub.interophub.model.Supporter"/>
+    <mapping class="org.airahub.interophub.model.EsTopicSupporter"/>
   </session-factory>
 </hibernate-configuration>

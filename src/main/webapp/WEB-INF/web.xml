@@ -391,6 +391,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsSupporterServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsSupporterServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsSupportersServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsSupportersServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicsServlet</servlet-class>
   </servlet>
@@ -423,6 +433,11 @@
   <servlet>
     <servlet-name>EsTopicRelationshipServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicRelationshipServlet</servlet-class>
+  </servlet>
+
+  <servlet>
+    <servlet-name>EsTopicSupporterServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicSupporterServlet</servlet-class>
   </servlet>
 
   <servlet>
@@ -681,6 +696,16 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>AdminEsSupporterServlet</servlet-name>
+    <url-pattern>/admin/es/supporters</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsSupportersServlet</servlet-name>
+    <url-pattern>/es/supporters</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>EsTopicsServlet</servlet-name>
     <url-pattern>/es/topics</url-pattern>
   </servlet-mapping>
@@ -713,6 +738,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicRelationshipServlet</servlet-name>
     <url-pattern>/es/topics/relationship</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicSupporterServlet</servlet-name>
+    <url-pattern>/es/topics/supporter</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

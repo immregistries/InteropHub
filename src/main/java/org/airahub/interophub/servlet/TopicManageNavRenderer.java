@@ -11,6 +11,7 @@ import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsTopicRelationshipDao;
+import org.airahub.interophub.dao.EsTopicSupporterDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.User;
@@ -30,7 +31,8 @@ final class TopicManageNavRenderer {
     }
 
     /** Counts shown next to each menu item, when greater than zero. */
-    record TopicManageCounts(int followers, int meetings, int comments, int relationships, int curated) {
+    record TopicManageCounts(int followers, int meetings, int comments, int relationships, int curated,
+            int supporters) {
         int forView(TopicManageView view) {
             return switch (view) {
                 case FOLLOWERS -> followers;
@@ -38,6 +40,7 @@ final class TopicManageNavRenderer {
                 case COMMENTS -> comments;
                 case RELATIONSHIPS -> relationships;
                 case CURATED -> curated;
+                case SUPPORTERS -> supporters;
             };
         }
     }
@@ -49,7 +52,7 @@ final class TopicManageNavRenderer {
     static TopicManageCounts computeCounts(Long topicId, User viewer,
             EsSubscriptionDao subscriptionDao, EsMeetingAgendaItemDao agendaItemDao, EsMeetingDao meetingDao,
             EsCommentDao commentDao, EsTopicRelationshipDao relationshipDao, EsTopicCurationDao curationDao,
-            TopicSpaceAccessService topicSpaceAccessService) {
+            EsTopicSupporterDao topicSupporterDao, TopicSpaceAccessService topicSpaceAccessService) {
         int followers = subscriptionDao.findActiveByTopicId(topicId).size();
 
         Set<Long> meetingIds = agendaItemDao.findByTopicId(topicId).stream()
@@ -70,8 +73,9 @@ final class TopicManageNavRenderer {
                 .filterVisibleRelationships(viewer, relationshipDao.findByFromTopicId(topicId)).size();
         int curated = topicSpaceAccessService
                 .filterVisibleCurations(viewer, curationDao.findByCuratorTopicId(topicId)).size();
+        int supporters = topicSupporterDao.findByTopicId(topicId).size();
 
-        return new TopicManageCounts(followers, meetingCount, comments, relationships, curated);
+        return new TopicManageCounts(followers, meetingCount, comments, relationships, curated, supporters);
     }
 
     static void render(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
@@ -87,6 +91,11 @@ final class TopicManageNavRenderer {
             out.println("              </a>");
         }
         for (TopicManageView menuView : TopicManageView.values()) {
+            // Supporter administration is admin-only, unlike the other manage views
+            // which champions/support subscribers can also reach.
+            if (menuView == TopicManageView.SUPPORTERS && !isAdmin) {
+                continue;
+            }
             String ariaCurrent = menuView == activeView ? " aria-current=\"page\"" : "";
             int count = counts.forView(menuView);
             out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath + "/es/topic-manage/"

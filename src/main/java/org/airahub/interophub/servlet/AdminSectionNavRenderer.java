@@ -70,7 +70,8 @@ final class AdminSectionNavRenderer {
                     new NavGroup("Topics & Campaigns", List.of(
                             new NavItem("ES Topics", "/admin/es/topics"),
                             new NavItem("Campaigns", "/admin/es/campaigns"),
-                            new NavItem("ES Topic Import", "/admin/es-topic-import"))),
+                            new NavItem("ES Topic Import", "/admin/es-topic-import"),
+                            new NavItem("Supporters", "/admin/es/supporters"))),
                     new NavGroup("Meetings", List.of(
                             new NavItem("Meetings", "/admin/es/meetings"),
                             new NavItem("Meeting Polls", "/admin/es/meeting-polls"),

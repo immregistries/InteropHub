@@ -10,7 +10,8 @@ enum TopicManageView {
     MEETINGS("meetings", "Meetings"),
     COMMENTS("comments", "Comments"),
     RELATIONSHIPS("relationships", "Relationships"),
-    CURATED("curated", "Curated Topics");
+    CURATED("curated", "Curated Topics"),
+    SUPPORTERS("supporters", "Supporters");
 
     final String slug;
     final String label;

@@ -26,6 +26,8 @@ import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicRelationshipDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.dao.EsTopicSupporterDao;
+import org.airahub.interophub.dao.SupporterDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsComment;
 import org.airahub.interophub.model.EsMeeting;
@@ -36,6 +38,8 @@ import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.EsTopicSupporter;
+import org.airahub.interophub.model.Supporter;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicViewHistoryService;
@@ -58,6 +62,8 @@ public class EsTopicManageServlet extends HttpServlet {
     private final EsTopicRelationshipDao relationshipDao;
     private final EsTopicCurationDao curationDao;
     private final EsCommentDao commentDao;
+    private final EsTopicSupporterDao topicSupporterDao;
+    private final SupporterDao supporterDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsTopicViewHistoryService topicViewHistoryService;
 
@@ -73,6 +79,8 @@ public class EsTopicManageServlet extends HttpServlet {
         this.relationshipDao = new EsTopicRelationshipDao();
         this.curationDao = new EsTopicCurationDao();
         this.commentDao = new EsCommentDao();
+        this.topicSupporterDao = new EsTopicSupporterDao();
+        this.supporterDao = new SupporterDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.topicViewHistoryService = new EsTopicViewHistoryService();
     }
@@ -122,7 +130,7 @@ public class EsTopicManageServlet extends HttpServlet {
         }
 
         TopicManageView view = TopicManageView.fromSlug(parsed.viewSegment());
-        if (view == null) {
+        if (view == null || (view == TopicManageView.SUPPORTERS && !isAdmin)) {
             response.sendRedirect(contextPath + "/es/topic-manage/" + topicId + "/" + TopicManageView.FOLLOWERS.slug);
             return;
         }
@@ -189,13 +197,14 @@ public class EsTopicManageServlet extends HttpServlet {
                 case COMMENTS -> renderCommentsView(out, topicId);
                 case RELATIONSHIPS -> renderRelationshipsView(out, contextPath, topicId, viewer);
                 case CURATED -> renderCuratedView(out, contextPath, topicId, viewer, editCurationId);
+                case SUPPORTERS -> renderSupportersView(out, contextPath, request, topicId);
             }
 
             out.println("        </div>"); // end main content aira-stack
 
             TopicManageNavRenderer.TopicManageCounts counts = TopicManageNavRenderer.computeCounts(topicId, viewer,
                     subscriptionDao, agendaItemDao, esMeetingDao, commentDao, relationshipDao, curationDao,
-                    topicSpaceAccessService);
+                    topicSupporterDao, topicSpaceAccessService);
             renderRightRail(out, contextPath, topicId, view, isAdmin, topicMeetingSeries, recentlyViewedTopics,
                     manageableTopicIds, counts);
 
@@ -740,6 +749,131 @@ public class EsTopicManageServlet extends HttpServlet {
         out.println("                    </form>");
         out.println("                  </td>");
         out.println("                </tr>");
+    }
+
+    // -------------------------------------------------------------------------
+    // View: Supporters (admin-only)
+    // -------------------------------------------------------------------------
+
+    private void renderSupportersView(PrintWriter out, String contextPath, HttpServletRequest request, Long topicId) {
+        List<EsTopicSupporter> relationships = topicSupporterDao.findByTopicId(topicId);
+        List<Long> supporterIds = relationships.stream()
+                .map(EsTopicSupporter::getSupporterId)
+                .distinct()
+                .collect(Collectors.toList());
+        Map<Long, Supporter> supporterMap = supporterDao.findByIds(supporterIds).stream()
+                .collect(Collectors.toMap(Supporter::getSupporterId, s -> s));
+
+        List<EsTopicSupporter> sorted = new ArrayList<>(relationships);
+        sorted.sort((a, b) -> {
+            Supporter sa = supporterMap.get(a.getSupporterId());
+            Supporter sb = supporterMap.get(b.getSupporterId());
+            String nameA = sa != null ? orEmpty(sa.getShortName()) : "";
+            String nameB = sb != null ? orEmpty(sb.getShortName()) : "";
+            return nameA.compareToIgnoreCase(nameB);
+        });
+
+        String error = trimToNull(request.getParameter("error"));
+
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Supporters (" + sorted.size() + ")</h2>");
+        if (error != null) {
+            out.println(
+                    "            <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(error) + "</p></div>");
+        }
+        if (sorted.isEmpty()) {
+            out.println("            <p class=\"aira-meta\">No Supporters associated with this topic yet.</p>");
+        } else {
+            out.println("            <div class=\"aira-table-wrap\">");
+            out.println("            <table class=\"aira-table\">");
+            out.println(
+                    "              <thead><tr><th>Supporter</th><th>Status</th><th class=\"aira-table__cell--actions\">Actions</th></tr></thead>");
+            out.println("              <tbody>");
+            for (EsTopicSupporter rel : sorted) {
+                Supporter supporter = supporterMap.get(rel.getSupporterId());
+                String name = supporter != null ? orEmpty(supporter.getShortName()) : ("#" + rel.getSupporterId());
+                boolean active = supporter != null && Boolean.TRUE.equals(supporter.getActive());
+                out.println("                <tr>");
+                out.println("                  <td>" + escapeHtml(name) + "</td>");
+                out.println("                  <td>" + (active
+                        ? "<span class=\"aira-badge aira-badge--success\">Active</span>"
+                        : "<span class=\"aira-badge aira-badge--subtle\">Inactive</span>") + "</td>");
+                out.println("                  <td class=\"aira-table__cell--actions\">");
+                out.println("                    <form method=\"post\" action=\"" + contextPath
+                        + "/es/topics/supporter\" style=\"display:inline\">");
+                out.println("                      <input type=\"hidden\" name=\"action\" value=\"remove\">");
+                out.println("                      <input type=\"hidden\" name=\"esTopicSupporterId\" value=\""
+                        + rel.getEsTopicSupporterId() + "\">");
+                out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId
+                        + "\">");
+                out.println(
+                        "                      <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\">Remove</button>");
+                out.println("                    </form>");
+                out.println("                  </td>");
+                out.println("                </tr>");
+            }
+            out.println("              </tbody>");
+            out.println("            </table>");
+            out.println("            </div>");
+        }
+
+        List<Supporter> availableSupporters = supporterDao.findActiveExcludingTopic(topicId);
+        out.println("            <h3 class=\"aira-subsection-title\">Add Existing Supporter</h3>");
+        if (availableSupporters.isEmpty()) {
+            out.println("            <p class=\"aira-meta\">No other active Supporters are available to add.</p>");
+        } else {
+            out.println("            <form class=\"aira-inline-form\" method=\"post\" action=\"" + contextPath
+                    + "/es/topics/supporter\">");
+            out.println("              <input type=\"hidden\" name=\"action\" value=\"add\">");
+            out.println("              <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\">");
+            out.println("              <div class=\"aira-field\">");
+            out.println("                <label>Supporter</label>");
+            out.println("                <select class=\"aira-select\" name=\"supporterId\">");
+            for (Supporter s : availableSupporters) {
+                out.println("                  <option value=\"" + s.getSupporterId() + "\">"
+                        + escapeHtml(orEmpty(s.getShortName())) + "</option>");
+            }
+            out.println("                </select>");
+            out.println("              </div>");
+            out.println(
+                    "              <button class=\"aira-button aira-button--primary\" type=\"submit\">Add Supporter</button>");
+            out.println("            </form>");
+        }
+
+        out.println("            <details>");
+        out.println("              <summary>+ Add New Supporter</summary>");
+        out.println("              <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                + "/es/topics/supporter\">");
+        out.println("                <input type=\"hidden\" name=\"action\" value=\"createAndAdd\">");
+        out.println("                <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\">");
+        out.println("                <div class=\"aira-field\">");
+        out.println("                  <label>Short Name *</label>");
+        out.println(
+                "                  <input class=\"aira-input\" type=\"text\" name=\"shortName\" maxlength=\"120\" required>");
+        out.println("                </div>");
+        out.println("                <div class=\"aira-field\">");
+        out.println("                  <label>Full Name *</label>");
+        out.println(
+                "                  <input class=\"aira-input\" type=\"text\" name=\"fullName\" maxlength=\"200\" required>");
+        out.println("                </div>");
+        out.println("                <div class=\"aira-field\">");
+        out.println("                  <label>Description</label>");
+        out.println("                  <textarea class=\"aira-textarea\" name=\"description\" rows=\"2\"></textarea>");
+        out.println("                </div>");
+        out.println("                <div class=\"aira-field\">");
+        out.println("                  <label>Website URL</label>");
+        out.println(
+                "                  <input class=\"aira-input\" type=\"url\" name=\"websiteUrl\" maxlength=\"500\">");
+        out.println("                </div>");
+        out.println(
+                "                <label class=\"aira-radio\"><input type=\"checkbox\" name=\"active\" checked> Active</label>");
+        out.println("                <div class=\"aira-action-group\">");
+        out.println(
+                "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Create and Add Supporter</button>");
+        out.println("                </div>");
+        out.println("              </form>");
+        out.println("            </details>");
+        out.println("          </section>");
     }
 
     private Map<Long, String> buildTopicNameMap(List<EsTopic> allTopics) {

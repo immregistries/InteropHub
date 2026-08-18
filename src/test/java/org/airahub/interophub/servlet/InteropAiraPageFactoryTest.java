@@ -1,5 +1,6 @@
 package org.airahub.interophub.servlet;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +13,8 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
+import org.immregistries.aira.web.AiraContextConfig;
+import org.immregistries.aira.web.AiraNavigationItem;
 import org.immregistries.aira.web.AiraPage;
 import org.junit.jupiter.api.Test;
 
@@ -131,6 +134,43 @@ class InteropAiraPageFactoryTest {
         assertTrue(html.contains("Space 1"));
         assertTrue(html.contains("Space 5"));
         assertFalse(html.contains("Space 6"));
+    }
+
+    @Test
+    void supportersNavItemOnlyAppearsForEmergingStandardsSpace() {
+        AiraContextConfig emergingStandards = InteropAiraPageFactory.topicsMeetingsContext(
+                "Emerging Standards", "emerging-standards", true, false);
+        AiraContextConfig buildingBridges = InteropAiraPageFactory.topicsMeetingsContext(
+                "Building Bridges", "building-bridges", true, false);
+
+        assertTrue(navLabels(emergingStandards).contains("Supporters"));
+        assertFalse(navLabels(buildingBridges).contains("Supporters"));
+    }
+
+    @Test
+    void supportersNavItemLinksToPublicSupportersPageAndTracksActiveState() {
+        AiraContextConfig inactive = InteropAiraPageFactory.topicsMeetingsContext(
+                "Emerging Standards", "emerging-standards", false, false);
+        AiraContextConfig active = InteropAiraPageFactory.topicsMeetingsContext(
+                "Emerging Standards", "emerging-standards", false, false, true);
+
+        AiraNavigationItem inactiveItem = navItem(inactive, "Supporters");
+        AiraNavigationItem activeItem = navItem(active, "Supporters");
+
+        assertEquals("/es/supporters", inactiveItem.href());
+        assertFalse(inactiveItem.active());
+        assertTrue(activeItem.active());
+    }
+
+    private List<String> navLabels(AiraContextConfig context) {
+        return context.navigationItems().stream().map(AiraNavigationItem::label).toList();
+    }
+
+    private AiraNavigationItem navItem(AiraContextConfig context, String label) {
+        return context.navigationItems().stream()
+                .filter(item -> label.equals(item.label()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private EsTopicSpace topicSpace(String code, String name) {
