@@ -18,14 +18,18 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
+import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.immregistries.aira.web.AiraPage;
@@ -47,6 +51,8 @@ public class EsTopicEditServlet extends HttpServlet {
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingDao esMeetingDao;
     private final EsMeetingAgendaItemDao agendaItemDao;
+    private final EsTopicStageDefinitionDao topicStageDefinitionDao;
+    private final EsTopicPathDefinitionDao topicPathDefinitionDao;
 
     public EsTopicEditServlet() {
         this.authFlowService = new AuthFlowService();
@@ -58,6 +64,8 @@ public class EsTopicEditServlet extends HttpServlet {
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.esMeetingDao = new EsMeetingDao();
         this.agendaItemDao = new EsMeetingAgendaItemDao();
+        this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
+        this.topicPathDefinitionDao = new EsTopicPathDefinitionDao();
     }
 
     @Override
@@ -129,7 +137,8 @@ public class EsTopicEditServlet extends HttpServlet {
         String priorityIisRaw = trimToNull(request.getParameter("priorityIis"));
         String priorityEhrRaw = trimToNull(request.getParameter("priorityEhr"));
         String priorityCdcRaw = trimToNull(request.getParameter("priorityCdc"));
-        String stage = trimToNull(request.getParameter("stage"));
+        Long stageDefinitionId = parseId(trimToNull(request.getParameter("esTopicStageDefinitionId")));
+        Long pathDefinitionId = parseId(trimToNull(request.getParameter("esTopicPathDefinitionId")));
         String policyStatus = trimToNull(request.getParameter("policyStatus"));
         String topicType = trimToNull(request.getParameter("topicType"));
         String confluenceUrl = trimToNull(request.getParameter("confluenceUrl"));
@@ -166,7 +175,10 @@ public class EsTopicEditServlet extends HttpServlet {
             topic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
             topic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
             topic.setPriorityCdc(parseRequiredInt(priorityCdcRaw, "Priority CDC"));
-            topic.setStage(stage);
+            topic.setEsTopicStageDefinitionId(
+                    validateStageSelectionForTopicSpace(topic.getEsTopicSpaceId(), stageDefinitionId));
+            topic.setEsTopicPathDefinitionId(
+                    validatePathSelectionForTopicSpace(topic.getEsTopicSpaceId(), pathDefinitionId));
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
             topic.setConfluenceUrl(validateOptionalUrl(confluenceUrl, "Confluence URL"));
@@ -208,7 +220,8 @@ public class EsTopicEditServlet extends HttpServlet {
             topic.setTopicEmoji(topicEmoji);
             topic.setNeighborhood(null);
             topic.setEsTopicSpaceId(parseId(topicSpaceIdRaw));
-            topic.setStage(stage);
+            topic.setEsTopicStageDefinitionId(stageDefinitionId);
+            topic.setEsTopicPathDefinitionId(pathDefinitionId);
             topic.setPolicyStatus(policyStatus);
             topic.setTopicType(topicType);
             topic.setConfluenceUrl(confluenceUrl);
@@ -297,6 +310,8 @@ public class EsTopicEditServlet extends HttpServlet {
         List<EsNeighborhood> allNeighborhoods = esNeighborhoodDao.findAllActive();
         List<String> policyStatuses = esTopicDao.findDistinctPolicyStatuses();
         List<String> topicTypes = esTopicDao.findDistinctTopicTypes();
+        List<EsTopicStageDefinition> allStageDefinitions = topicStageDefinitionDao.findAll();
+        List<EsTopicPathDefinition> allPathDefinitions = topicPathDefinitionDao.findAll();
         Set<Long> selectedNeighborhoodIds = selectedNeighborhoodIdsOverride;
         if (selectedNeighborhoodIds == null) {
             selectedNeighborhoodIds = topicNeighborhoodDao.findNeighborhoodIdsByTopicId(topic.getEsTopicId());
@@ -471,17 +486,71 @@ public class EsTopicEditServlet extends HttpServlet {
             out.println("          </div>");
 
             out.println("          <div class=\"aira-field\">");
-            out.println("            <label for=\"stage\">Stage</label>");
-            out.println("            <select class=\"aira-select\" id=\"stage\" name=\"stage\">");
+            out.println("            <label for=\"esTopicStageDefinitionId\">Stage</label>");
+            out.println(
+                    "            <select class=\"aira-select\" id=\"esTopicStageDefinitionId\" name=\"esTopicStageDefinitionId\">");
             out.println("              <option value=\"\">— Select —</option>");
-            for (String stageOpt : new String[] { "Start", "Gather", "Draft", "Pilot", "Rollout", "Monitor",
-                    "Parked" }) {
-                String sel = stageOpt.equalsIgnoreCase(orEmpty(topic.getStage())) ? " selected" : "";
-                out.println("              <option value=\"" + stageOpt + "\"" + sel + ">" + stageOpt
-                        + "</option>");
+            for (EsTopicStageDefinition stageDef : allStageDefinitions) {
+                boolean isSelectedStage = stageDef.getEsTopicStageDefinitionId()
+                        .equals(topic.getEsTopicStageDefinitionId());
+                if (!Boolean.TRUE.equals(stageDef.getIsActive()) && !isSelectedStage) {
+                    continue;
+                }
+                out.println("              <option class=\"js-stage-option\" value=\""
+                        + stageDef.getEsTopicStageDefinitionId() + "\" data-space-id=\""
+                        + stageDef.getEsTopicSpaceId() + "\"" + (isSelectedStage ? " selected" : "") + ">"
+                        + escapeHtml(orEmpty(stageDef.getStageName())) + "</option>");
             }
             out.println("            </select>");
             out.println("          </div>");
+
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"esTopicPathDefinitionId\">Advancement Path</label>");
+            out.println(
+                    "            <select class=\"aira-select\" id=\"esTopicPathDefinitionId\" name=\"esTopicPathDefinitionId\">");
+            out.println("              <option value=\"\">— Select —</option>");
+            for (EsTopicPathDefinition pathDef : allPathDefinitions) {
+                boolean isSelectedPath = pathDef.getEsTopicPathDefinitionId()
+                        .equals(topic.getEsTopicPathDefinitionId());
+                if (!Boolean.TRUE.equals(pathDef.getIsActive()) && !isSelectedPath) {
+                    continue;
+                }
+                out.println("              <option class=\"js-path-option\" value=\""
+                        + pathDef.getEsTopicPathDefinitionId() + "\" data-space-id=\""
+                        + pathDef.getEsTopicSpaceId() + "\"" + (isSelectedPath ? " selected" : "") + ">"
+                        + escapeHtml(orEmpty(pathDef.getPathName())) + "</option>");
+            }
+            out.println("            </select>");
+            out.println("          </div>");
+            out.println("          <script>");
+            out.println("            (function(){");
+            out.println("              var spaceSelect = document.getElementById('esTopicSpaceId');");
+            out.println("              var stageSelect = document.getElementById('esTopicStageDefinitionId');");
+            out.println("              var pathSelect = document.getElementById('esTopicPathDefinitionId');");
+            out.println("              if (!spaceSelect) { return; }");
+            out.println("              function filterSelect(select){");
+            out.println("                if (!select) { return; }");
+            out.println("                var spaceId = (spaceSelect.value || '').trim();");
+            out.println(
+                    "                var options = Array.prototype.slice.call(select.querySelectorAll('option[data-space-id]'));");
+            out.println("                var selectedStillVisible = false;");
+            out.println("                options.forEach(function(opt){");
+            out.println(
+                    "                  var matches = spaceId && (opt.getAttribute('data-space-id') === spaceId);");
+            out.println("                  opt.hidden = !matches;");
+            out.println(
+                    "                  if (matches && opt.value === select.value) { selectedStillVisible = true; }");
+            out.println("                });");
+            out.println("                if (!selectedStillVisible) { select.value = ''; }");
+            out.println("              }");
+            out.println("              function applyStagePathFilter(){");
+            out.println("                filterSelect(stageSelect);");
+            out.println("                filterSelect(pathSelect);");
+            out.println("              }");
+            out.println("              spaceSelect.addEventListener('change', applyStagePathFilter);");
+            out.println("              applyStagePathFilter();");
+            out.println("            })();");
+            out.println("          </script>");
 
             out.println("          <div class=\"aira-field\">");
             out.println("            <label for=\"policyStatus\">Policy Status</label>");
@@ -686,6 +755,30 @@ public class EsTopicEditServlet extends HttpServlet {
                     "Neighborhood assignments must belong to the selected Topic Space. Invalid neighborhood IDs: "
                             + invalidIds.stream().map(String::valueOf).collect(Collectors.joining(", ")));
         }
+    }
+
+    private Long validateStageSelectionForTopicSpace(Long topicSpaceId, Long selectedStageDefinitionId) {
+        if (selectedStageDefinitionId == null) {
+            return null;
+        }
+        boolean allowed = topicStageDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+                .anyMatch(d -> selectedStageDefinitionId.equals(d.getEsTopicStageDefinitionId()));
+        if (!allowed) {
+            throw new IllegalArgumentException("Stage must belong to the selected Topic Space.");
+        }
+        return selectedStageDefinitionId;
+    }
+
+    private Long validatePathSelectionForTopicSpace(Long topicSpaceId, Long selectedPathDefinitionId) {
+        if (selectedPathDefinitionId == null) {
+            return null;
+        }
+        boolean allowed = topicPathDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+                .anyMatch(d -> selectedPathDefinitionId.equals(d.getEsTopicPathDefinitionId()));
+        if (!allowed) {
+            throw new IllegalArgumentException("Advancement Path must belong to the selected Topic Space.");
+        }
+        return selectedPathDefinitionId;
     }
 
     private void validateTopicMoveMeetingAssignments(Long topicId, EsTopicSpace targetSpace) {

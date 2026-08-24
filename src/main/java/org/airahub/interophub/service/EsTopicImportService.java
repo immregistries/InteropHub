@@ -18,11 +18,13 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -42,6 +44,7 @@ public class EsTopicImportService {
     private final EsNeighborhoodDao neighborhoodDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicSpaceDao topicSpaceDao;
+    private final EsTopicStageDefinitionDao stageDefinitionDao;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
@@ -53,6 +56,7 @@ public class EsTopicImportService {
         this.neighborhoodDao = new EsNeighborhoodDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
+        this.stageDefinitionDao = new EsTopicStageDefinitionDao();
     }
 
     /**
@@ -81,7 +85,7 @@ public class EsTopicImportService {
      *   "priorityIis": 2,          // integer, defaults 0
      *   "priorityEhr": 1,          // integer, defaults 0
      *   "priorityCdc": 3,          // integer, defaults 0
-     *   "stage": "...",            // nullable
+     *   "stage": "...",            // nullable; must match a stage name defined for the target Topic Space
     *   "policyStatus": "...",     // nullable
     *   "topicType": "...",        // nullable
     *   "confluenceUrl": "...",    // nullable
@@ -183,7 +187,24 @@ public class EsTopicImportService {
                 topic.setPriorityIis(json.optInt("priorityIis", 0));
                 topic.setPriorityEhr(json.optInt("priorityEhr", 0));
                 topic.setPriorityCdc(json.optInt("priorityCdc", 0));
-                topic.setStage(json.isNull("stage") ? null : json.optString("stage", null));
+                String stageName = readNullableTrimmedString(json, "stage");
+                if (stageName == null) {
+                    topic.setEsTopicStageDefinitionId(null);
+                } else {
+                    Optional<EsTopicStageDefinition> matchedStage = stageDefinitionDao.findByNameInSpace(stageName,
+                            targetTopicSpace.getEsTopicSpaceId());
+                    if (matchedStage.isEmpty()) {
+                        return ImportResult.failure(linesProcessed, i + 1,
+                                "Stage '" + stageName + "' on line " + (i + 1)
+                                        + " does not match any stage defined for Topic Space '"
+                                        + targetTopicSpace.getSpaceCode() + "'.",
+                                topicsInserted, topicsUpdated,
+                                campaignTopicsInserted, campaignTopicsUpdated,
+                                duplicateTopicCodes,
+                                campaign.getCampaignCode(), campaign.getCampaignName());
+                    }
+                    topic.setEsTopicStageDefinitionId(matchedStage.get().getEsTopicStageDefinitionId());
+                }
                 topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
                 topic.setTopicType(readNullableTrimmedString(json, "topicType"));
                 topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));

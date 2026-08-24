@@ -209,22 +209,24 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                 String topicName = orEmpty(topic.getTopicName());
                 String description = orEmpty(topic.getDescription());
-                String normalizedStage = orEmpty(topic.getStage());
-                String normalizedPath = orEmpty(topic.getPath());
                 Long stageDefinitionId = topicEntity.getEsTopicStageDefinitionId();
-                String stageDescription = stageDefinitionId == null
-                                ? null
-                                : topicStageDefinitionDao.findById(stageDefinitionId)
-                                                .map(EsTopicStageDefinition::getStageDescription)
-                                                .map(this::trimToNull)
-                                                .orElse(null);
+                Optional<EsTopicStageDefinition> stageDefinition = stageDefinitionId == null
+                                ? Optional.empty()
+                                : topicStageDefinitionDao.findById(stageDefinitionId);
+                String normalizedStage = orEmpty(stageDefinition.map(EsTopicStageDefinition::getStageName)
+                                .map(this::trimToNull).orElse(null));
+                String stageDescription = stageDefinition.map(EsTopicStageDefinition::getStageDescription)
+                                .map(this::trimToNull)
+                                .orElse(null);
                 Long pathDefinitionId = topicEntity.getEsTopicPathDefinitionId();
-                String pathDescription = pathDefinitionId == null
-                                ? null
-                                : topicPathDefinitionDao.findById(pathDefinitionId)
-                                                .map(EsTopicPathDefinition::getPathDescription)
-                                                .map(this::trimToNull)
-                                                .orElse(null);
+                Optional<EsTopicPathDefinition> pathDefinition = pathDefinitionId == null
+                                ? Optional.empty()
+                                : topicPathDefinitionDao.findById(pathDefinitionId);
+                String normalizedPath = orEmpty(pathDefinition.map(EsTopicPathDefinition::getPathName)
+                                .map(this::trimToNull).orElse(null));
+                String pathDescription = pathDefinition.map(EsTopicPathDefinition::getPathDescription)
+                                .map(this::trimToNull)
+                                .orElse(null);
                 if (authenticatedUser.isPresent()) {
                         try {
                                 topicViewHistoryService.recordAuthenticatedTopicView(authenticatedUser.get().getUserId(), topicId);
@@ -384,7 +386,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                                         + "</h1>");
                         String topicSummaryText = trimToNull(topic.getTopicSummary());
                         if (topicSummaryText == null) {
-                                topicSummaryText = description.isBlank() ? buildTopicSummary(topic) : description;
+                                topicSummaryText = description.isBlank() ? buildTopicSummary(topic, normalizedStage)
+                                                : description;
                         }
                         out.println("                <p class=\"aira-topic-summary\">"
                                         + escapeHtml(topicSummaryText)
@@ -1095,9 +1098,9 @@ public class EsTopicDetailServlet extends HttpServlet {
                 return value == null ? "" : value;
         }
 
-        private String buildTopicSummary(EsCampaignTopicBrowseRow topic) {
+        private String buildTopicSummary(EsCampaignTopicBrowseRow topic, String stageName) {
                 List<String> parts = new ArrayList<>();
-                String stage = trimToNull(topic.getStage());
+                String stage = trimToNull(stageName);
                 String policyStatus = trimToNull(topic.getPolicyStatus());
                 String type = trimToNull(topic.getTopicType());
                 String neighborhood = trimToNull(topic.getNeighborhood());

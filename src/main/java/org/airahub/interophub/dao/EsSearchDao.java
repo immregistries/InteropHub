@@ -50,8 +50,9 @@ public class EsSearchDao {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsSearchDao$TopicCandidate("
                             + " t.esTopicId, t.topicName, t.topicSummary, t.description, t.searchKeywords,"
-                            + " t.stage, t.esTopicSpaceId, t.updatedAt)"
-                            + " from EsTopic t"
+                            + " d.stageName, t.esTopicSpaceId, t.updatedAt)"
+                            + " from EsTopic t left join EsTopicStageDefinition d"
+                            + " on d.esTopicStageDefinitionId = t.esTopicStageDefinitionId"
                             + " where t.esTopicSpaceId in (:spaceIds)"
                             + " and t.status = :status"
                             + " and (lower(t.topicName) like :like"

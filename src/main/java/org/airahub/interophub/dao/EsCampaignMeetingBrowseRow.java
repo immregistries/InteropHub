@@ -4,20 +4,20 @@ public class EsCampaignMeetingBrowseRow {
     private final Long esTopicId;
     private final String topicCode;
     private final String topicName;
-    private final String stage;
+    private final Long esTopicStageDefinitionId;
     private final Integer displayOrder;
     private final Long esTopicMeetingId;
     private final String meetingName;
     private final String meetingDescription;
     private final Boolean joinRequiresApproval;
 
-    public EsCampaignMeetingBrowseRow(Long esTopicId, String topicCode, String topicName, String stage,
-            Integer displayOrder,
+    public EsCampaignMeetingBrowseRow(Long esTopicId, String topicCode, String topicName,
+            Long esTopicStageDefinitionId, Integer displayOrder,
             Long esTopicMeetingId, String meetingName, String meetingDescription, Boolean joinRequiresApproval) {
         this.esTopicId = esTopicId;
         this.topicCode = topicCode;
         this.topicName = topicName;
-        this.stage = stage;
+        this.esTopicStageDefinitionId = esTopicStageDefinitionId;
         this.displayOrder = displayOrder;
         this.esTopicMeetingId = esTopicMeetingId;
         this.meetingName = meetingName;
@@ -37,8 +37,8 @@ public class EsCampaignMeetingBrowseRow {
         return topicName;
     }
 
-    public String getStage() {
-        return stage;
+    public Long getEsTopicStageDefinitionId() {
+        return esTopicStageDefinitionId;
     }
 
     public Integer getDisplayOrder() {

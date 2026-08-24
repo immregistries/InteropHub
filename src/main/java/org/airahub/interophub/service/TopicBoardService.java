@@ -304,18 +304,16 @@ public class TopicBoardService {
             String stageName = "Not assigned";
             if (topic.getEsTopicStageDefinitionId() != null) {
                 EsTopicStageDefinition stage = stageById.get(topic.getEsTopicStageDefinitionId());
-                stageName = stage == null ? safe(topic.getStage()) : safe(stage.getStageName());
-                if (stageName.isBlank()) {
-                    stageName = "Not assigned";
+                if (stage != null && !safe(stage.getStageName()).isBlank()) {
+                    stageName = safe(stage.getStageName());
                 }
             }
 
             String pathName = "Not assigned";
             if (topic.getEsTopicPathDefinitionId() != null) {
                 EsTopicPathDefinition path = pathById.get(topic.getEsTopicPathDefinitionId());
-                pathName = path == null ? safe(topic.getPath()) : safe(path.getPathName());
-                if (pathName.isBlank()) {
-                    pathName = "Not assigned";
+                if (path != null && !safe(path.getPathName()).isBlank()) {
+                    pathName = safe(path.getPathName());
                 }
             }
 
@@ -359,8 +357,6 @@ public class TopicBoardService {
 
             topic.setEsTopicStageDefinitionId(targetValidation.stageDefinitionId());
             topic.setEsTopicPathDefinitionId(targetValidation.pathDefinitionId());
-            topic.setStage(targetValidation.stageName());
-            topic.setPath(targetValidation.pathName());
             session.merge(topic);
 
             tx.commit();
@@ -403,8 +399,6 @@ public class TopicBoardService {
 
             topic.setEsTopicStageDefinitionId(null);
             topic.setEsTopicPathDefinitionId(null);
-            topic.setStage(null);
-            topic.setPath(null);
             session.merge(topic);
 
             tx.commit();

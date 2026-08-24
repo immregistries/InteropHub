@@ -9,4 +9,8 @@ To do on the InteropHub:
 
 
 
-[WILL] setup new project” — is that part of this 1on1 admin? prompt wonders what this means
+Scheduling meetings has problems: 
+  + Need to work on emails (need to review and improve)
+  + Once you create a communication you can modify the time, error for sending is not friendly. 
+
+

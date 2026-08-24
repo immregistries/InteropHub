@@ -19,9 +19,11 @@ import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignMeetingBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopicMeetingMember;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
@@ -39,6 +41,7 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
     private final EsCampaignDao campaignDao;
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
+    private final EsTopicStageDefinitionDao topicStageDefinitionDao;
     private final EsInterestService esInterestService;
     private final AuthFlowService authFlowService;
 
@@ -46,6 +49,7 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
         this.campaignDao = new EsCampaignDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
+        this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
         this.esInterestService = new EsInterestService();
         this.authFlowService = new AuthFlowService();
     }
@@ -226,6 +230,9 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
 
         List<EsCampaignMeetingBrowseRow> meetingRows = campaignTopicDao
                 .findActiveMeetingRowsByCampaignIdOrdered(campaign.getEsCampaignId());
+        Map<Long, String> stageNameById = topicStageDefinitionDao.findAll().stream()
+                .collect(Collectors.toMap(EsTopicStageDefinition::getEsTopicStageDefinitionId,
+                        EsTopicStageDefinition::getStageName, (left, right) -> left));
         Map<Long, EsTopicMeetingMember> existingByMeetingId = findExistingMembershipByMeetingId(meetingRows,
                 identity.emailNormalized());
 
@@ -336,6 +343,8 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
                 String description = trimToNull(row.getMeetingDescription()) == null
                         ? orEmpty(row.getTopicName())
                         : row.getMeetingDescription();
+                String rowStage = row.getEsTopicStageDefinitionId() == null ? null
+                        : trimToNull(stageNameById.get(row.getEsTopicStageDefinitionId()));
 
                 out.println("            <article class=\"es-topic-row"
                         + (alreadyRequested ? " is-subscribed" : "") + "\">");
@@ -357,7 +366,7 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
                 out.println(
                         "                <p class=\"es-detail-stage\">Topic: " + escapeHtml(orEmpty(row.getTopicName()))
                                 + " (" + escapeHtml(orEmpty(row.getTopicCode())) + ")"
-                                + (trimToNull(row.getStage()) == null ? "" : " | Stage: " + escapeHtml(row.getStage()))
+                                + (rowStage == null ? "" : " | Stage: " + escapeHtml(rowStage))
                                 + "</p>");
                 if (Boolean.TRUE.equals(row.getJoinRequiresApproval())) {
                     out.println("                <p class=\"es-detail-stage\">Approval required before joining.</p>");

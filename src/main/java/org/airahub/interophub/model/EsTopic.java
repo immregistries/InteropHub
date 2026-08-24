@@ -57,12 +57,6 @@ public class EsTopic {
     @Column(name = "priority_cdc", nullable = false)
     private Integer priorityCdc;
 
-    @Column(name = "stage", length = 80)
-    private String stage;
-
-    @Column(name = "path", length = 80)
-    private String path;
-
     @Column(name = "es_topic_stage_definition_id")
     private Long esTopicStageDefinitionId;
 
@@ -206,22 +200,6 @@ public class EsTopic {
 
     public void setPriorityCdc(Integer priorityCdc) {
         this.priorityCdc = priorityCdc;
-    }
-
-    public String getStage() {
-        return stage;
-    }
-
-    public void setStage(String stage) {
-        this.stage = stage;
-    }
-
-    public String getPath() {
-        return path;
-    }
-
-    public void setPath(String path) {
-        this.path = path;
     }
 
     public Long getEsTopicStageDefinitionId() {

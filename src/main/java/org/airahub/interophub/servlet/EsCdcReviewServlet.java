@@ -8,10 +8,13 @@ import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
@@ -27,6 +30,7 @@ public class EsCdcReviewServlet extends HttpServlet {
         private final AuthFlowService authFlowService;
         private final EsCampaignDao campaignDao;
         private final EsCampaignTopicDao campaignTopicDao;
+        private final EsTopicStageDefinitionDao topicStageDefinitionDao;
         private final EsTopicReviewService reviewService;
         private final TopicSpaceAccessService topicSpaceAccessService;
 
@@ -34,6 +38,7 @@ public class EsCdcReviewServlet extends HttpServlet {
                 this.authFlowService = new AuthFlowService();
                 this.campaignDao = new EsCampaignDao();
                 this.campaignTopicDao = new EsCampaignTopicDao();
+                this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
                 this.reviewService = new EsTopicReviewService();
                 this.topicSpaceAccessService = new TopicSpaceAccessService();
         }
@@ -73,6 +78,9 @@ public class EsCdcReviewServlet extends HttpServlet {
         private void renderPage(HttpServletResponse response, String contextPath, EsCampaign campaign,
                         List<EsCampaignTopicBrowseRow> rows, Map<Long, Integer> scoreByTopicId) throws IOException {
                 response.setContentType("text/html;charset=UTF-8");
+                Map<Long, String> stageNameById = topicStageDefinitionDao.findAll().stream()
+                                .collect(Collectors.toMap(EsTopicStageDefinition::getEsTopicStageDefinitionId,
+                                                EsTopicStageDefinition::getStageName, (left, right) -> left));
 
                 try (PrintWriter out = response.getWriter()) {
                         out.println("<!DOCTYPE html>");
@@ -103,7 +111,8 @@ public class EsCdcReviewServlet extends HttpServlet {
                                 out.println("      </section>");
                         } else {
                                 for (EsCampaignTopicBrowseRow row : rows) {
-                                        renderTopicRow(out, contextPath, row, scoreByTopicId.get(row.getEsTopicId()));
+                                        renderTopicRow(out, contextPath, row, scoreByTopicId.get(row.getEsTopicId()),
+                                                        stageNameById);
                                 }
                         }
                         out.println("    </section>");
@@ -277,10 +286,11 @@ public class EsCdcReviewServlet extends HttpServlet {
         }
 
         private void renderTopicRow(PrintWriter out, String contextPath, EsCampaignTopicBrowseRow row,
-                        Integer selectedScore) {
+                        Integer selectedScore, Map<Long, String> stageNameById) {
                 String topicName = orEmpty(row.getTopicName());
                 String description = orEmpty(row.getDescription());
-                String stage = trimToNull(row.getStage());
+                String stage = row.getEsTopicStageDefinitionId() == null ? null
+                                : trimToNull(stageNameById.get(row.getEsTopicStageDefinitionId()));
                 String topicType = trimToNull(row.getTopicType());
                 String policyStatus = orEmpty(row.getPolicyStatus());
                 boolean blocked = EsTopicReviewService.CDC_POLICY_STATUS_NOT_SUPPORTED.equals(trimToNull(policyStatus));

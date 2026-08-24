@@ -33,20 +33,12 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, ct.displayOrder, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
                             + " and t.status = :activeStatus"
                             + " order by"
-                            + " case"
-                            + " when lower(coalesce(t.stage, '')) = 'draft' then 1"
-                            + " when lower(coalesce(t.stage, '')) = 'gather' then 2"
-                            + " when lower(coalesce(t.stage, '')) = 'monitor' then 3"
-                            + " when lower(coalesce(t.stage, '')) = 'parked' then 4"
-                            + " when lower(coalesce(t.stage, '')) = 'pilot' then 5"
-                            + " when lower(coalesce(t.stage, '')) = 'rollout' then 6"
-                            + " else 99 end asc,"
                             + " ct.displayOrder desc,"
                             + " lower(t.topicName) asc,"
                             + " ct.esCampaignTopicId asc",
@@ -61,7 +53,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignMeetingBrowseRow("
-                            + " t.esTopicId, t.topicCode, t.topicName, t.stage, 0,"
+                            + " t.esTopicId, t.topicCode, t.topicName, t.esTopicStageDefinitionId, 0,"
                             + " m.esTopicMeetingId, m.meetingName, m.meetingDescription, m.joinRequiresApproval)"
                             + " from EsTopicMeeting m, EsTopic t"
                             + " where m.esTopicId = t.esTopicId"
@@ -80,7 +72,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignMeetingBrowseRow("
-                            + " t.esTopicId, t.topicCode, t.topicName, t.stage, 0,"
+                            + " t.esTopicId, t.topicCode, t.topicName, t.esTopicStageDefinitionId, 0,"
                             + " m.esTopicMeetingId, m.meetingName, m.meetingDescription, m.joinRequiresApproval)"
                             + " from EsTopicMeeting m, EsTopic t"
                             + " where m.esTopicId = t.esTopicId"
@@ -102,12 +94,12 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, max(ct.displayOrder), t.confluenceUrl, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
+                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, max(ct.displayOrder), t.confluenceUrl, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.esTopicId = t.esTopicId"
                             + " and t.status = :activeStatus"
-                            + " group by t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId"
+                            + " group by t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId"
                             + " order by max(ct.displayOrder) desc, lower(t.topicName) asc",
                     EsCampaignTopicBrowseRow.class)
                     .setParameter("campaignId", campaignId)
@@ -124,7 +116,7 @@ public class EsCampaignTopicDao extends GenericDao<EsCampaignTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, ct.displayOrder, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
+                            + " ct.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, ct.displayOrder, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
                             + " from EsCampaignTopic ct, EsTopic t"
                             + " where ct.esCampaignId = :campaignId"
                             + " and ct.tableNo = :tableNo"

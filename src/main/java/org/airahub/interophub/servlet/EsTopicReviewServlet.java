@@ -3,10 +3,13 @@ package org.airahub.interophub.servlet;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,7 +17,9 @@ import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCampaignTopicBrowseRow;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
+import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsTopicReviewService;
@@ -22,14 +27,13 @@ import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsTopicReviewServlet extends HttpServlet {
 
-    private static final List<String> STAGE_ORDER = List.of("Start", "Draft", "Gather", "Monitor", "Parked",
-            "Pilot", "Rollout");
     private static final String OTHER_LABEL = "Other";
 
     private final AuthFlowService authFlowService;
     private final EsCampaignDao campaignDao;
     private final EsTopicDao topicDao;
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
+    private final EsTopicStageDefinitionDao topicStageDefinitionDao;
     private final EsTopicReviewService reviewService;
     private final TopicSpaceAccessService topicSpaceAccessService;
 
@@ -38,6 +42,7 @@ public class EsTopicReviewServlet extends HttpServlet {
         this.campaignDao = new EsCampaignDao();
         this.topicDao = new EsTopicDao();
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
+        this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
         this.reviewService = new EsTopicReviewService();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
     }
@@ -74,7 +79,9 @@ public class EsTopicReviewServlet extends HttpServlet {
             List<EsCampaignTopicBrowseRow> rows, Map<Long, Integer> scoreByTopicId) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
-        Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = groupByNeighborhoodThenStage(rows);
+        StageLookup stageLookup = buildStageLookup();
+        Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = groupByNeighborhoodThenStage(rows,
+                stageLookup);
         int totalTopics = rows.size();
         int reviewedCount = scoreByTopicId.size();
         int leftCount = Math.max(0, totalTopics - reviewedCount);
@@ -108,7 +115,7 @@ public class EsTopicReviewServlet extends HttpServlet {
                 out.println("      <section class=\"es-neighborhood-group\" data-neighborhood-name=\""
                         + escapeHtml(neighborhood) + "\">");
                 out.println("        <h2 class=\"es-stage-title\">" + escapeHtml(neighborhood) + "</h2>");
-                for (String stage : orderedStageLabels()) {
+                for (String stage : stageLookup.order()) {
                     List<EsCampaignTopicBrowseRow> stageRows = stageGroups.getOrDefault(stage, List.of());
                     if (!stageRows.isEmpty()) {
                         renderStage(out, stage, stageRows, scoreByTopicId);
@@ -362,7 +369,7 @@ public class EsTopicReviewServlet extends HttpServlet {
                     + " data-topic-type=\"" + escapeHtml(orEmpty(row.getTopicType())) + "\""
                     + " data-policy-status=\"" + escapeHtml(orEmpty(row.getPolicyStatus())) + "\""
                     + " data-topic-neighborhood=\"" + escapeHtml(normalizeNeighborhood(row.getNeighborhood())) + "\""
-                    + " data-topic-stage=\"" + escapeHtml(orEmpty(normalizeStage(row.getStage()))) + "\""
+                    + " data-topic-stage=\"" + escapeHtml(stageName) + "\""
                     + " data-search=\"" + escapeHtml((topicName + " " + description).toLowerCase()) + "\">");
 
             out.println("            <div class=\"es-review-score-wrap\">");
@@ -394,21 +401,21 @@ public class EsTopicReviewServlet extends HttpServlet {
     }
 
     private Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> groupByNeighborhoodThenStage(
-            List<EsCampaignTopicBrowseRow> rows) {
+            List<EsCampaignTopicBrowseRow> rows, StageLookup stageLookup) {
         Map<String, Map<String, List<EsCampaignTopicBrowseRow>>> grouped = new LinkedHashMap<>();
         for (EsCampaignTopicBrowseRow row : rows) {
-            String stage = normalizeStage(row.getStage());
+            String stage = resolveStageLabel(row.getEsTopicStageDefinitionId(), stageLookup);
             List<String> neighborhoods = parseNeighborhoodTokens(row.getNeighborhood());
             if (neighborhoods.isEmpty()) {
                 grouped
-                        .computeIfAbsent(OTHER_LABEL, ignored -> createOrderedStageMap())
+                        .computeIfAbsent(OTHER_LABEL, ignored -> createOrderedStageMap(stageLookup))
                         .computeIfAbsent(stage, ignored -> new ArrayList<>())
                         .add(row);
                 continue;
             }
             for (String neighborhood : neighborhoods) {
                 grouped
-                        .computeIfAbsent(neighborhood, ignored -> createOrderedStageMap())
+                        .computeIfAbsent(neighborhood, ignored -> createOrderedStageMap(stageLookup))
                         .computeIfAbsent(stage, ignored -> new ArrayList<>())
                         .add(row);
             }
@@ -431,19 +438,46 @@ public class EsTopicReviewServlet extends HttpServlet {
         return ordered;
     }
 
-    private Map<String, List<EsCampaignTopicBrowseRow>> createOrderedStageMap() {
+    private Map<String, List<EsCampaignTopicBrowseRow>> createOrderedStageMap(StageLookup stageLookup) {
         Map<String, List<EsCampaignTopicBrowseRow>> grouped = new LinkedHashMap<>();
-        for (String stage : STAGE_ORDER) {
+        for (String stage : stageLookup.order()) {
             grouped.put(stage, new ArrayList<>());
         }
-        grouped.put(OTHER_LABEL, new ArrayList<>());
         return grouped;
     }
 
-    private List<String> orderedStageLabels() {
-        List<String> labels = new ArrayList<>(STAGE_ORDER);
-        labels.add(OTHER_LABEL);
-        return labels;
+    private record StageLookup(Map<Long, String> nameById, List<String> order) {
+    }
+
+    private StageLookup buildStageLookup() {
+        List<EsTopicStageDefinition> definitions = new ArrayList<>(topicStageDefinitionDao.findAll());
+        definitions.sort(Comparator
+                .comparingInt((EsTopicStageDefinition d) -> d.getDisplayOrder() == null
+                        ? Integer.MAX_VALUE
+                        : d.getDisplayOrder())
+                .thenComparing(d -> orEmpty(d.getStageName()).toLowerCase()));
+        Map<Long, String> nameById = new LinkedHashMap<>();
+        List<String> order = new ArrayList<>();
+        Set<String> seenNames = new LinkedHashSet<>();
+        for (EsTopicStageDefinition definition : definitions) {
+            String name = trimToNull(definition.getStageName());
+            if (name == null) {
+                continue;
+            }
+            nameById.put(definition.getEsTopicStageDefinitionId(), name);
+            if (seenNames.add(name.toLowerCase())) {
+                order.add(name);
+            }
+        }
+        order.add(OTHER_LABEL);
+        return new StageLookup(nameById, order);
+    }
+
+    private String resolveStageLabel(Long stageDefinitionId, StageLookup stageLookup) {
+        if (stageDefinitionId == null) {
+            return OTHER_LABEL;
+        }
+        return stageLookup.nameById().getOrDefault(stageDefinitionId, OTHER_LABEL);
     }
 
     private String normalizeNeighborhood(String neighborhood) {
@@ -486,19 +520,6 @@ public class EsTopicReviewServlet extends HttpServlet {
             List<String> names = namesByTopicId.get(row.getEsTopicId());
             row.setNeighborhood(names == null || names.isEmpty() ? null : String.join(", ", names));
         }
-    }
-
-    private String normalizeStage(String stage) {
-        if (stage == null) {
-            return OTHER_LABEL;
-        }
-        String trimmed = stage.trim();
-        for (String candidate : STAGE_ORDER) {
-            if (candidate.equalsIgnoreCase(trimmed)) {
-                return candidate;
-            }
-        }
-        return OTHER_LABEL;
     }
 
     private Optional<User> requireAuthenticatedUser(HttpServletRequest request, HttpServletResponse response)

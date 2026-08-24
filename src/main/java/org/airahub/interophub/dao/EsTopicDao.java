@@ -59,14 +59,6 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
                             + " order by"
                             + " case when t.neighborhood is null or trim(t.neighborhood) = '' then 1 else 0 end asc,"
                             + " lower(coalesce(t.neighborhood, '')) asc,"
-                            + " case"
-                            + " when lower(coalesce(t.stage, '')) = 'draft' then 1"
-                            + " when lower(coalesce(t.stage, '')) = 'gather' then 2"
-                            + " when lower(coalesce(t.stage, '')) = 'monitor' then 3"
-                            + " when lower(coalesce(t.stage, '')) = 'pilot' then 4"
-                            + " when lower(coalesce(t.stage, '')) = 'rollout' then 5"
-                            + " when lower(coalesce(t.stage, '')) = 'parked' then 6"
-                            + " else 99 end asc,"
                             + " lower(t.topicName) asc",
                     EsTopic.class)
                     .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
@@ -81,7 +73,7 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, 0, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
+                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, 0, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
                             + " from EsTopic t"
                             + " where t.esTopicId = :topicId and t.status = :status",
                     EsCampaignTopicBrowseRow.class)
@@ -95,19 +87,10 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
                     "select new org.airahub.interophub.dao.EsCampaignTopicBrowseRow("
-                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, t.stage, 0, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.path, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
+                            + " t.esTopicId, t.topicName, t.description, t.topicType, t.policyStatus, t.neighborhood, 0, t.confluenceUrl, t.topicSummary, t.topicEmoji, t.esTopicStageDefinitionId, t.esTopicPathDefinitionId)"
                             + " from EsTopic t"
                             + " where t.status = :status"
-                            + " order by"
-                            + " case"
-                            + " when lower(coalesce(t.stage, '')) = 'draft' then 1"
-                            + " when lower(coalesce(t.stage, '')) = 'gather' then 2"
-                            + " when lower(coalesce(t.stage, '')) = 'monitor' then 3"
-                            + " when lower(coalesce(t.stage, '')) = 'parked' then 4"
-                            + " when lower(coalesce(t.stage, '')) = 'pilot' then 5"
-                            + " when lower(coalesce(t.stage, '')) = 'rollout' then 6"
-                            + " else 99 end asc,"
-                            + " lower(t.topicName) asc",
+                            + " order by lower(t.topicName) asc",
                     EsCampaignTopicBrowseRow.class)
                     .setParameter("status", EsTopic.EsTopicStatus.ACTIVE)
                     .getResultList();
