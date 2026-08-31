@@ -1,8 +1,11 @@
-# Topic Relationship Proposals — Topic Space #1 ("Emerging Standards")
+# Topic Relationship Review — Round 1 (initial baseline)
 
-**Status:** Draft for review — temporary working document, not a permanent spec.
-**Generated:** 2026-08-24, from a full read of all 110 active topics in Topic Space #1 (`es_topic_space_id = 1`, code `emerging-standards`) in the local dev database.
-**Purpose:** Propose `es_topic_relationship` links a curator/admin could add via the topic management UI, to make the web of connections between topics explorable instead of implicit.
+**Round date:** 2026-08-24
+**Scope:** Full sweep of all 110 active topics in Topic Space #1 (`es_topic_space_id = 1`, code `emerging-standards`) in the local dev database — the first time this topic space's relationship graph was reviewed.
+**Status:** Accepted. See `docs/topic-relationships/decisions-log.md` for the outcome and `db/unapplied_updates.sql` for the applied SQL.
+**Purpose:** Propose `es_topic_relationship` links to make the web of connections between topics explorable instead of implicit.
+
+This file is an **archived record of what was proposed and decided in this round** — kept per `docs/topic-relationships/README.md`'s policy of keeping a permanent audit trail rather than discarding review docs. Don't edit it after the fact; a future round that changes one of these calls should say so in its own round file and in the decisions log, not rewrite history here.
 
 ---
 
@@ -22,25 +25,25 @@ Relationships live in `es_topic_relationship` (`EsTopicRelationship` / `EsTopicR
 | `OPERATIONALIZES` | operationalizes | operationalized by |
 | `DUPLICATE_OF` | duplicate of | duplicate of |
 
-Only two types are symmetric in meaning (`RELATED_TO`, `OVERLAPS`, `DUPLICATE_OF` — same label both directions); the rest are meaningfully directional, so I've chosen a direction for every proposal below rather than defaulting everything to `RELATED_TO`.
+Only two types are symmetric in meaning (`RELATED_TO`, `OVERLAPS`, `DUPLICATE_OF` — same label both directions); the rest are meaningfully directional, so a direction was chosen for every proposal below rather than defaulting everything to `RELATED_TO`.
 
 Authorization: a link can be added by an admin, or by a **champion/supporter of the `from` topic**. Self-links are blocked; duplicate links silently no-op (unique constraint).
 
-**Current state of the data:** Topic Space #1 has 110 active topics and exactly **one** existing relationship: *Query by Parameter (QBP)* `RELATED_TO` *QBP on FHIR*. Everything below is new.
+**State of the data before this round:** Topic Space #1 had 110 active topics and exactly **one** existing relationship: *Query by Parameter (QBP)* `RELATED_TO` *QBP on FHIR*. Everything below is new.
 
 ## 2. Method
 
-I read every topic's `topic_name`, `description`, and `topic_summary`, and used the informal `neighborhood` tag (a free-text categorization field, not itself a relationship) as a starting signal for clustering — but the actual proposals are based on what the description text says a topic does, depends on, extends, or competes with, not just shared tags (the neighborhood field has inconsistent casing/typos, e.g. "Auxiliary" vs "Auxillary", and several topics have `NULL`).
+Every topic's `topic_name`, `description`, and `topic_summary` was read, and the informal `neighborhood` tag (a free-text categorization field, not itself a relationship) was used as a starting signal for clustering — but the actual proposals are based on what the description text says a topic does, depends on, extends, or competes with, not just shared tags (the neighborhood field has inconsistent casing/typos, e.g. "Auxiliary" vs "Auxillary", and several topics have `NULL`).
 
 Proposals are grouped into thematic clusters below for readability. Within each cluster, the table gives `From → Type → To` plus a one-line rationale grounded in the topics' own descriptions.
 
-I did **not** try to link every one of the 110 topics — a handful (e.g. *FHIR Dev Days*, *Machine Learning*, *Synthetic Data*) are genuinely cross-cutting or standalone and I only proposed links where the text gave a real basis. Treat this as a first pass to accept, reject, or retype per-row in the UI, not a batch import.
+Not every one of the 110 topics got a link — a handful (e.g. *FHIR Dev Days*, *Machine Learning*, *Synthetic Data*) are genuinely cross-cutting or standalone and only got a link where the text gave a real basis. That is a deliberate outcome, not a gap — see `docs/topic-relationships/state.md` for how future rounds should treat topics that were considered and intentionally left unlinked.
 
 ---
 
-## 3. Resolved: the two near-duplicate-looking pairs
+## 3. Resolved: two near-duplicate-looking pairs
 
-Two pairs initially looked like they might be duplicates. Reviewed and resolved:
+Two pairs initially looked like they might be duplicates. Reviewed with Nathan and resolved:
 
 | Topic A | Topic B | Resolution |
 |---|---|---|
@@ -177,7 +180,7 @@ Two pairs initially looked like they might be duplicates. Reviewed and resolved:
 
 | From | Type | To | Rationale |
 |---|---|---|---|
-| Data Export Format (DAR-Based) | `OVERLAPS` | Flat File Data Export | Both propose a common flat-file export standard for IIS; see the duplicate-candidates note in §3 — treat one as possibly redundant with the other. |
+| Data Export Format (DAR-Based) | `OVERLAPS` | Flat File Data Export | Both propose a common flat-file export standard for IIS; see §3 — treat one as possibly redundant with the other. |
 | Flat File Data Import | `RELATED_TO` | Flat File Data Export | Natural import/export counterpart pair around the same flat-file concept. |
 | Bulk Data Submission | `RELATED_TO` | Flat File Data Import | File-based bulk import is one plausible transport for high-volume submission. |
 | Bulk Data Submission | `RELATED_TO` | Bulk Data Exchange (FHIR Bulk Data) | Mirror-image "bulk" paradigms: submitting large volumes in vs. retrieving large volumes out. |
@@ -234,10 +237,8 @@ Two pairs initially looked like they might be duplicates. Reviewed and resolved:
 
 - Proposed relationships: **107** across 14 clusters.
 - Types used: `RELATED_TO` (80), `DEPENDS_ON` (7), `FEEDS_INTO` (7), `OVERLAPS` (5), `DERIVED_FROM` (3), `SUPERSEDES` (2), `BLOCKER_FOR` (2), `OPERATIONALIZES` (1). No `DUPLICATE_OF` used — see §3.
-- Topics not touched by any proposal: a handful of genuinely standalone/cross-cutting ones (e.g. *Machine Learning* beyond the one link above, *NITAG* beyond its one link, *Space Health*) where the description didn't give a concrete enough hook to another specific topic without guessing.
+- Topics not touched by any proposal: a handful of genuinely standalone/cross-cutting ones (e.g. *Machine Learning* beyond the one link above, *NITAG* beyond its one link, *Space Health*) where the description didn't give a concrete enough hook to another specific topic without guessing. These count as **reviewed, no link found** for baseline-coverage purposes — see `state.md`.
 
-## 6. Status: accepted for v1, entered into `db/unapplied_updates.sql`
+## 6. Outcome
 
-Reviewed 2026-08-24 — all 107 relationships above (including the resolved §3 items) were accepted as-is for a first pass and added as a single `INSERT ... SELECT` statement at the end of `db/unapplied_updates.sql`, keyed by `topic_code` (stable across environments) rather than raw IDs, attributed to `nbunker@immregistries.org` (`auth_user.user_id = 2`, the same account that created all seeded topics). A `WHERE NOT EXISTS` guard makes the block safe to apply more than once. Tested locally: applying it against the current local database inserted exactly 107 new rows (108 total, including the pre-existing QBP ↔ QBP-on-FHIR link), and re-applying it added zero duplicates. It will land permanently on the next local refresh, and ship to production with the next release per `docs/database-release-practice.md`.
-
-This file can be deleted once that block in `unapplied_updates.sql` has been released and frozen into a `vX.Y_*.sql` file — it was a working proposal, not documentation to keep long-term.
+Reviewed with Nathan 2026-08-24–2026-08-25 — all 107 relationships above (including the resolved §3 items) were accepted as-is for a first pass and added as a single `INSERT ... SELECT` statement in `db/unapplied_updates.sql`, keyed by `topic_code` (stable across environments) rather than raw IDs, attributed to `nbunker@immregistries.org` (`auth_user.user_id = 2`, the same account that created all seeded topics). A `WHERE NOT EXISTS` guard makes the block safe to apply more than once. Tested locally: applying it against the local database inserted exactly 107 new rows (108 total, including the pre-existing QBP ↔ QBP-on-FHIR link), and re-applying it added zero duplicates. It will ship to production with the InteropHub v0.5 release per `docs/database-release-practice.md` — check that release's `db/v0.5_*.sql` file if you need to confirm whether these specific rows have gone live yet.

@@ -76,6 +76,7 @@ public class AdminEsTopicServlet extends HttpServlet {
             blank.setPriorityEhr(0);
             blank.setPriorityCdc(0);
             blank.setStatus(EsTopic.EsTopicStatus.ACTIVE);
+            blank.setEsTopicSpaceId(selectedSpaceId);
             renderNewTopicForm(request, response, blank, null, null, null);
             return;
         }
