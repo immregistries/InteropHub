@@ -36,6 +36,18 @@ public final class EmailReason {
     /** Agenda presenter invitation. */
     public static final String PRESENTER_INVITATION = "PRESENTER_INVITATION";
 
+    /** Topic comment notification sent to a topic's support contact. */
+    public static final String TOPIC_COMMENT_SUPPORT_NOTIFY = "TOPIC_COMMENT_SUPPORT_NOTIFY";
+
+    /** Topic comment notification sent to a topic's champion contact. */
+    public static final String TOPIC_COMMENT_CHAMPION_NOTIFY = "TOPIC_COMMENT_CHAMPION_NOTIFY";
+
+    /**
+     * Topic comment notification sent to administrators when no support/champion
+     * contact exists.
+     */
+    public static final String TOPIC_COMMENT_ADMIN_NOTIFY = "TOPIC_COMMENT_ADMIN_NOTIFY";
+
     private EmailReason() {
     }
 }

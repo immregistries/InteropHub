@@ -1,20 +1,31 @@
 package org.airahub.interophub.service;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsCommentDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicReviewDao;
+import org.airahub.interophub.dao.HubSettingDao;
+import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsComment;
+import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicReview;
 import org.airahub.interophub.model.User;
 
 public class EsTopicReviewService {
+
+    private static final Logger LOGGER = Logger.getLogger(EsTopicReviewService.class.getName());
 
     public static final String CDC_POLICY_STATUS_NOT_SUPPORTED = "Not currently supported by CDC policy";
 
@@ -22,12 +33,22 @@ public class EsTopicReviewService {
     private final EsCampaignTopicDao campaignTopicDao;
     private final EsTopicDao topicDao;
     private final EsCommentDao commentDao;
+    private final EsSubscriptionDao subscriptionDao;
+    private final UserDao userDao;
+    private final HubSettingDao hubSettingDao;
+    private final EmailService emailService;
+    private final EmailSendLogDao emailSendLogDao;
 
     public EsTopicReviewService() {
         this.reviewDao = new EsTopicReviewDao();
         this.campaignTopicDao = new EsCampaignTopicDao();
         this.topicDao = new EsTopicDao();
         this.commentDao = new EsCommentDao();
+        this.subscriptionDao = new EsSubscriptionDao();
+        this.userDao = new UserDao();
+        this.hubSettingDao = new HubSettingDao();
+        this.emailService = new EmailService();
+        this.emailSendLogDao = new EmailSendLogDao();
     }
 
     public List<EsTopicReview> findUserReviews(Long campaignId, Long userId) {
@@ -135,7 +156,9 @@ public class EsTopicReviewService {
         comment.setEmailNormalized(EsNormalizer.normalizeEmail(user.getEmail()));
         comment.setCommentType(EsComment.CommentType.TOPIC);
         comment.setCommentText(normalizedComment);
-        return commentDao.save(comment);
+        EsComment saved = commentDao.save(comment);
+        sendTopicCommentNotifications(topic, saved, nameParts);
+        return saved;
     }
 
     public EsComment addCdcTopicComment(Long campaignId, Long topicId, User user, String commentText) {
@@ -173,7 +196,9 @@ public class EsTopicReviewService {
         comment.setEmailNormalized(EsNormalizer.normalizeEmail(user.getEmail()));
         comment.setCommentType(EsComment.CommentType.TOPIC);
         comment.setCommentText(normalizedComment);
-        return commentDao.save(comment);
+        EsComment saved = commentDao.save(comment);
+        sendTopicCommentNotifications(topic, saved, nameParts);
+        return saved;
     }
 
     public EsTopic updateCdcPolicyStatus(Long campaignId, Long topicId, String action) {
@@ -234,6 +259,96 @@ public class EsTopicReviewService {
 
     public boolean isCdcPolicyBlocked(EsTopic topic) {
         return topic != null && CDC_POLICY_STATUS_NOT_SUPPORTED.equals(trimToNull(topic.getPolicyStatus()));
+    }
+
+    /**
+     * Notifies a topic's support and champion contacts of a new comment; falls
+     * back to administrators when neither exists. The commenter is excluded.
+     */
+    private void sendTopicCommentNotifications(EsTopic topic, EsComment comment, NameParts commenterNameParts) {
+        try {
+            String commenterEmailNormalized = comment.getEmailNormalized();
+
+            // Keyed by emailNormalized to dedupe champion/support overlap.
+            Map<String, Recipient> recipients = new LinkedHashMap<>();
+            for (EsSubscription sub : subscriptionDao.findSupportsByTopicId(topic.getEsTopicId())) {
+                addRecipient(recipients, sub.getEmail(), sub.getEmailNormalized(), sub.getUserId(),
+                        EmailReason.TOPIC_COMMENT_SUPPORT_NOTIFY);
+            }
+            for (EsSubscription sub : subscriptionDao.findChampionOnlyByTopicId(topic.getEsTopicId())) {
+                addRecipient(recipients, sub.getEmail(), sub.getEmailNormalized(), sub.getUserId(),
+                        EmailReason.TOPIC_COMMENT_CHAMPION_NOTIFY);
+            }
+            if (recipients.isEmpty()) {
+                for (User admin : userDao.findAllAdmins()) {
+                    addRecipient(recipients, admin.getEmail(), admin.getEmailNormalized(), admin.getUserId(),
+                            EmailReason.TOPIC_COMMENT_ADMIN_NOTIFY);
+                }
+            }
+            if (commenterEmailNormalized != null) {
+                recipients.remove(commenterEmailNormalized);
+            }
+            if (recipients.isEmpty()) {
+                return;
+            }
+
+            String commenterName = (commenterNameParts.firstName() != null ? commenterNameParts.firstName() : "")
+                    + (commenterNameParts.lastName() != null ? " " + commenterNameParts.lastName() : "");
+            String topicName = topic.getTopicName();
+            String topicLink = buildTopicLink(topic.getEsTopicId());
+            String subject = EmailTemplates.topicCommentNotifySubject(topicName);
+            String body = EmailTemplates.topicCommentNotifyBody(
+                    trimToNull(commenterName), topicName, comment.getCommentText(), topicLink);
+
+            for (Recipient recipient : recipients.values()) {
+                try {
+                    if (subscriptionDao.hasGeneralUnsubscribed(recipient.emailNormalized())) {
+                        continue;
+                    }
+                    EmailService.SendResult result = emailService.send(recipient.email(), subject, body);
+                    EmailSendLog log = new EmailSendLog();
+                    log.setEmailReason(recipient.emailReason());
+                    log.setRecipientEmail(recipient.email());
+                    log.setRecipientEmailNormalized(recipient.emailNormalized());
+                    log.setUserId(recipient.userId());
+                    log.setSubject(subject);
+                    log.setBodyText(body);
+                    log.setSmtpMessageId(result.getSmtpMessageId());
+                    log.setSmtpProvider(result.getSmtpProvider());
+                    emailSendLogDao.log(log);
+                } catch (Exception ex) {
+                    LOGGER.log(Level.WARNING,
+                            "Failed to send topic comment notification to " + recipient.emailNormalized()
+                                    + " for topic " + topic.getEsTopicId(),
+                            ex);
+                }
+            }
+        } catch (Exception ex) {
+            LOGGER.log(Level.WARNING,
+                    "Failed to send topic comment notifications for topic " + topic.getEsTopicId(), ex);
+        }
+    }
+
+    private void addRecipient(Map<String, Recipient> recipients, String email, String emailNormalized, Long userId,
+            String emailReason) {
+        if (emailNormalized == null || email == null || recipients.containsKey(emailNormalized)) {
+            return;
+        }
+        recipients.put(emailNormalized, new Recipient(email, emailNormalized, userId, emailReason));
+    }
+
+    private String buildTopicLink(Long topicId) {
+        String base = hubSettingDao.findActive()
+                .or(() -> hubSettingDao.findFirst())
+                .map(settings -> trimToNull(settings.getExternalBaseUrl()))
+                .orElse(null);
+        if (base == null) {
+            return "/es/topic/" + topicId;
+        }
+        return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + "/es/topic/" + topicId;
+    }
+
+    private record Recipient(String email, String emailNormalized, Long userId, String emailReason) {
     }
 
     private NameParts deriveNameParts(User user) {

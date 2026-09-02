@@ -59,6 +59,13 @@ public class UserDao extends GenericDao<User, Long> {
         }
     }
 
+    public List<User> findAllAdmins() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("from User u where u.isAdmin = true", User.class)
+                    .getResultList();
+        }
+    }
+
     public List<User> searchUsers(String query) {
         String pattern = "%" + query.trim().toLowerCase() + "%";
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

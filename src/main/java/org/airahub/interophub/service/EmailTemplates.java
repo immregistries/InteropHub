@@ -74,6 +74,28 @@ public final class EmailTemplates {
         return body.toString();
     }
 
+    // -------------------------------------------------------------------------
+    // TOPIC_COMMENT_*_NOTIFY — notify a topic's support/champion/admins of a new
+    // comment
+    // -------------------------------------------------------------------------
+
+    public static String topicCommentNotifySubject(String topicName) {
+        return "New comment on " + (topicName != null && !topicName.isBlank() ? topicName : "a topic");
+    }
+
+    public static String topicCommentNotifyBody(
+            String commenterName, String topicName, String commentText, String topicLink) {
+        StringBuilder body = new StringBuilder();
+        body.append(commenterName != null ? commenterName : "Someone")
+                .append(" left a comment on ")
+                .append(topicName != null && !topicName.isBlank() ? topicName : "a topic")
+                .append(":\n\n");
+        body.append("  ").append(commentText != null ? commentText : "").append("\n\n");
+        body.append("View the topic:\n");
+        body.append("  ").append(topicLink).append("\n");
+        return body.toString();
+    }
+
     private EmailTemplates() {
     }
 }

@@ -416,6 +416,24 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
+     * Returns CHAMPION (not SUPPORT) subscriptions for a specific topic.
+     */
+    public List<EsSubscription> findChampionOnlyByTopicId(Long esTopicId) {
+        if (esTopicId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.esTopicId = :topicId"
+                            + " and s.status = :status order by s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("topicId", esTopicId)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.CHAMPION)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Returns SUPPORT subscriptions for a specific topic.
      */
     public List<EsSubscription> findSupportsByTopicId(Long esTopicId) {
