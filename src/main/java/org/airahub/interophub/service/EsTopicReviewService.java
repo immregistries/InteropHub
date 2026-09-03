@@ -266,7 +266,7 @@ public class EsTopicReviewService {
             String commenterEmailNormalized = comment.getEmailNormalized();
 
             List<TopicContactResolver.Contact> contacts = topicContactResolver
-                    .resolveSupportAndChampionOrAdmins(topic.getEsTopicId()).stream()
+                    .resolveContactsForTopic(topic).stream()
                     .filter(contact -> !contact.emailNormalized().equals(commenterEmailNormalized))
                     .toList();
             if (contacts.isEmpty()) {

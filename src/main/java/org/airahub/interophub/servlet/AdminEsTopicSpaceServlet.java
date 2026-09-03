@@ -191,12 +191,6 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             return;
         }
 
-        if (topicSpace.getVisibility() != EsTopicSpace.Visibility.PRIVATE) {
-            renderDetails(request, response, topicSpace,
-                    "Membership is managed only for private Topic Spaces.");
-            return;
-        }
-
         String email = trimToNull(request.getParameter("memberEmail"));
         String roleRaw = trimToNull(request.getParameter("memberRole"));
         try {
@@ -375,8 +369,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                             + "&mode=report\">Printable Topic Narrative Report</a>");
                     out.println("            </div>");
 
-                    if (topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
+                    {
                         out.println("            <h3 class=\"aira-subsection-title\">Members</h3>");
+                        out.println(
+                                "            <p class=\"aira-meta\">MEMBER grants access to this Topic Space when it's private (no effect on public spaces)."
+                                        + " ADMIN can manage this space's content and topics, and is notified by email about a topic's"
+                                        + " activity when that topic itself has no dedicated champion/support contact.</p>");
                         out.println("            <div class=\"aira-table-wrap\">");
                         out.println("            <table class=\"aira-table\">");
                         out.println("              <thead><tr>");
@@ -443,8 +441,6 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                                 "                <button class=\"aira-button aira-button--primary\" type=\"submit\">Add Member</button>");
                         out.println("              </div>");
                         out.println("            </form>");
-                    } else {
-                        out.println("            <p class=\"aira-meta\">Membership is not used for public Topic Spaces.</p>");
                     }
 
                     out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
@@ -483,8 +479,9 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                                 "                <input class=\"aira-input\" id=\"spaceCode\" name=\"spaceCode\" type=\"text\" required"
                                         + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
                     } else {
-                        out.println("                <input class=\"aira-input\" id=\"spaceCode\" type=\"text\" disabled"
-                                + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"spaceCode\" type=\"text\" disabled"
+                                        + " value=\"" + escapeHtml(orEmpty(topicSpace.getSpaceCode())) + "\" />");
                     }
                     out.println("              </div>");
 
@@ -516,11 +513,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                                 + ">PRIVATE</option>");
                         out.println("                </select>");
                     } else {
-                        out.println("                <input class=\"aira-input\" id=\"visibility\" type=\"text\" disabled value=\""
-                                + escapeHtml(topicSpace.getVisibility() == null
-                                        ? ""
-                                        : topicSpace.getVisibility().name())
-                                + "\" />");
+                        out.println(
+                                "                <input class=\"aira-input\" id=\"visibility\" type=\"text\" disabled value=\""
+                                        + escapeHtml(topicSpace.getVisibility() == null
+                                                ? ""
+                                                : topicSpace.getVisibility().name())
+                                        + "\" />");
                     }
                     out.println("              </div>");
 
@@ -543,7 +541,8 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                     out.println("            </form>");
                     out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
                             + "/admin/es/topic-spaces"
-                            + (creating ? "" : "?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId()) + "\">Back</a></p>");
+                            + (creating ? "" : "?esTopicSpaceId=" + topicSpace.getEsTopicSpaceId())
+                            + "\">Back</a></p>");
                     out.println("          </section>");
                 });
     }
@@ -564,14 +563,16 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                             + escapeHtml(orEmpty(topicSpace.getSpaceName())) + "</p>");
                     out.println("            <p><strong>Generated:</strong> "
                             + escapeHtml(formatDate(LocalDateTime.now())) + "</p>");
-                    out.println("            <p class=\"aira-meta\">This is an alphabetical, human-readable list of topics.</p>");
+                    out.println(
+                            "            <p class=\"aira-meta\">This is an alphabetical, human-readable list of topics.</p>");
                     out.println("            <div class=\"aira-action-group\">");
                     out.println(
                             "              <button class=\"aira-button aira-button--secondary\" type=\"button\" onclick=\"window.print()\">Print This Report</button>");
                     out.println("            </div>");
 
                     if (topics.isEmpty()) {
-                        out.println("            <p class=\"aira-meta\">No topics were found for this Topic Space.</p>");
+                        out.println(
+                                "            <p class=\"aira-meta\">No topics were found for this Topic Space.</p>");
                     } else {
                         for (EsTopic topic : topics) {
                             out.println("            <section class=\"aira-panel\">");

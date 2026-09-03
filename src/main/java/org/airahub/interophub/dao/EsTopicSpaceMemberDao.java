@@ -58,6 +58,26 @@ public class EsTopicSpaceMemberDao extends GenericDao<EsTopicSpaceMember, Long> 
         }
     }
 
+    /**
+     * ADMIN members of a Topic Space — used as the notification fallback for
+     * topics in that space with no dedicated champion/support contact.
+     */
+    public List<EsTopicSpaceMember> findAdminsBySpaceId(Long esTopicSpaceId) {
+        if (esTopicSpaceId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopicSpaceMember m"
+                            + " where m.esTopicSpaceId = :spaceId and m.role = :role"
+                            + " order by m.userId asc",
+                    EsTopicSpaceMember.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .setParameter("role", EsTopicSpaceMember.MemberRole.ADMIN)
+                    .getResultList();
+        }
+    }
+
     public EsTopicSpaceMember saveOrUpdate(EsTopicSpaceMember member) {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {

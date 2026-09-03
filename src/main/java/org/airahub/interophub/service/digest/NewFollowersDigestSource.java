@@ -83,7 +83,7 @@ public class NewFollowersDigestSource implements DigestItemSource {
             String bodyText = body.toString();
 
             for (TopicContactResolver.Contact contact : topicContactResolver
-                    .resolveSupportAndChampionOrAdmins(topicId)) {
+                    .resolveContactsForTopic(topic)) {
                 notices.add(new DigestNotice(contact.email(), contact.emailNormalized(), contact.userId(),
                         SECTION_TITLE, bodyText));
             }
