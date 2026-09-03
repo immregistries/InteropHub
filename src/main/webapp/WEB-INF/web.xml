@@ -954,4 +954,8 @@
     <listener-class>org.airahub.interophub.config.DandelionSyncSchedulerListener</listener-class>
   </listener>
 
+  <listener>
+    <listener-class>org.airahub.interophub.config.DailyDigestSchedulerListener</listener-class>
+  </listener>
+
 </web-app>

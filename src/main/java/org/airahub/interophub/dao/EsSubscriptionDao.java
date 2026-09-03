@@ -452,6 +452,30 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
+     * Returns TOPIC/SUBSCRIBED rows created within (since, until] — used by the
+     * daily digest's "new followers" source to find topics with new followers
+     * since the last run.
+     */
+    public List<EsSubscription> findNewTopicFollowersCreatedBetween(LocalDateTime since, LocalDateTime until) {
+        if (since == null || until == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.subscriptionType = :type"
+                            + " and s.status = :status and s.esTopicId is not null"
+                            + " and s.createdAt > :since and s.createdAt <= :until"
+                            + " order by s.esTopicId asc, s.createdAt asc",
+                    EsSubscription.class)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.SUBSCRIBED)
+                    .setParameter("since", since)
+                    .setParameter("until", until)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Sets the status on a subscription row. When setting UNSUBSCRIBED, pass the
      * unsubscribedAt timestamp; otherwise pass null.
      *

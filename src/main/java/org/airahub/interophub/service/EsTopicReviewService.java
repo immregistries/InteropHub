@@ -1,7 +1,6 @@
 package org.airahub.interophub.service;
 
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -13,12 +12,9 @@ import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicReviewDao;
-import org.airahub.interophub.dao.HubSettingDao;
-import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EmailSendLog;
 import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsComment;
-import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicReview;
 import org.airahub.interophub.model.User;
@@ -34,8 +30,8 @@ public class EsTopicReviewService {
     private final EsTopicDao topicDao;
     private final EsCommentDao commentDao;
     private final EsSubscriptionDao subscriptionDao;
-    private final UserDao userDao;
-    private final HubSettingDao hubSettingDao;
+    private final TopicContactResolver topicContactResolver;
+    private final HubLinkService hubLinkService;
     private final EmailService emailService;
     private final EmailSendLogDao emailSendLogDao;
 
@@ -45,8 +41,8 @@ public class EsTopicReviewService {
         this.topicDao = new EsTopicDao();
         this.commentDao = new EsCommentDao();
         this.subscriptionDao = new EsSubscriptionDao();
-        this.userDao = new UserDao();
-        this.hubSettingDao = new HubSettingDao();
+        this.topicContactResolver = new TopicContactResolver();
+        this.hubLinkService = new HubLinkService();
         this.emailService = new EmailService();
         this.emailSendLogDao = new EmailSendLogDao();
     }
@@ -269,48 +265,33 @@ public class EsTopicReviewService {
         try {
             String commenterEmailNormalized = comment.getEmailNormalized();
 
-            // Keyed by emailNormalized to dedupe champion/support overlap.
-            Map<String, Recipient> recipients = new LinkedHashMap<>();
-            for (EsSubscription sub : subscriptionDao.findSupportsByTopicId(topic.getEsTopicId())) {
-                addRecipient(recipients, sub.getEmail(), sub.getEmailNormalized(), sub.getUserId(),
-                        EmailReason.TOPIC_COMMENT_SUPPORT_NOTIFY);
-            }
-            for (EsSubscription sub : subscriptionDao.findChampionOnlyByTopicId(topic.getEsTopicId())) {
-                addRecipient(recipients, sub.getEmail(), sub.getEmailNormalized(), sub.getUserId(),
-                        EmailReason.TOPIC_COMMENT_CHAMPION_NOTIFY);
-            }
-            if (recipients.isEmpty()) {
-                for (User admin : userDao.findAllAdmins()) {
-                    addRecipient(recipients, admin.getEmail(), admin.getEmailNormalized(), admin.getUserId(),
-                            EmailReason.TOPIC_COMMENT_ADMIN_NOTIFY);
-                }
-            }
-            if (commenterEmailNormalized != null) {
-                recipients.remove(commenterEmailNormalized);
-            }
-            if (recipients.isEmpty()) {
+            List<TopicContactResolver.Contact> contacts = topicContactResolver
+                    .resolveSupportAndChampionOrAdmins(topic.getEsTopicId()).stream()
+                    .filter(contact -> !contact.emailNormalized().equals(commenterEmailNormalized))
+                    .toList();
+            if (contacts.isEmpty()) {
                 return;
             }
 
             String commenterName = (commenterNameParts.firstName() != null ? commenterNameParts.firstName() : "")
                     + (commenterNameParts.lastName() != null ? " " + commenterNameParts.lastName() : "");
             String topicName = topic.getTopicName();
-            String topicLink = buildTopicLink(topic.getEsTopicId());
+            String topicLink = hubLinkService.buildTopicLink(topic.getEsTopicId());
             String subject = EmailTemplates.topicCommentNotifySubject(topicName);
             String body = EmailTemplates.topicCommentNotifyBody(
                     trimToNull(commenterName), topicName, comment.getCommentText(), topicLink);
 
-            for (Recipient recipient : recipients.values()) {
+            for (TopicContactResolver.Contact contact : contacts) {
                 try {
-                    if (subscriptionDao.hasGeneralUnsubscribed(recipient.emailNormalized())) {
+                    if (subscriptionDao.hasGeneralUnsubscribed(contact.emailNormalized())) {
                         continue;
                     }
-                    EmailService.SendResult result = emailService.send(recipient.email(), subject, body);
+                    EmailService.SendResult result = emailService.send(contact.email(), subject, body);
                     EmailSendLog log = new EmailSendLog();
-                    log.setEmailReason(recipient.emailReason());
-                    log.setRecipientEmail(recipient.email());
-                    log.setRecipientEmailNormalized(recipient.emailNormalized());
-                    log.setUserId(recipient.userId());
+                    log.setEmailReason(emailReasonFor(contact.role()));
+                    log.setRecipientEmail(contact.email());
+                    log.setRecipientEmailNormalized(contact.emailNormalized());
+                    log.setUserId(contact.userId());
                     log.setSubject(subject);
                     log.setBodyText(body);
                     log.setSmtpMessageId(result.getSmtpMessageId());
@@ -318,7 +299,7 @@ public class EsTopicReviewService {
                     emailSendLogDao.log(log);
                 } catch (Exception ex) {
                     LOGGER.log(Level.WARNING,
-                            "Failed to send topic comment notification to " + recipient.emailNormalized()
+                            "Failed to send topic comment notification to " + contact.emailNormalized()
                                     + " for topic " + topic.getEsTopicId(),
                             ex);
                 }
@@ -329,26 +310,12 @@ public class EsTopicReviewService {
         }
     }
 
-    private void addRecipient(Map<String, Recipient> recipients, String email, String emailNormalized, Long userId,
-            String emailReason) {
-        if (emailNormalized == null || email == null || recipients.containsKey(emailNormalized)) {
-            return;
-        }
-        recipients.put(emailNormalized, new Recipient(email, emailNormalized, userId, emailReason));
-    }
-
-    private String buildTopicLink(Long topicId) {
-        String base = hubSettingDao.findActive()
-                .or(() -> hubSettingDao.findFirst())
-                .map(settings -> trimToNull(settings.getExternalBaseUrl()))
-                .orElse(null);
-        if (base == null) {
-            return "/es/topic/" + topicId;
-        }
-        return (base.endsWith("/") ? base.substring(0, base.length() - 1) : base) + "/es/topic/" + topicId;
-    }
-
-    private record Recipient(String email, String emailNormalized, Long userId, String emailReason) {
+    private String emailReasonFor(TopicContactResolver.ContactRole role) {
+        return switch (role) {
+            case SUPPORT -> EmailReason.TOPIC_COMMENT_SUPPORT_NOTIFY;
+            case CHAMPION -> EmailReason.TOPIC_COMMENT_CHAMPION_NOTIFY;
+            case ADMIN -> EmailReason.TOPIC_COMMENT_ADMIN_NOTIFY;
+        };
     }
 
     private NameParts deriveNameParts(User user) {

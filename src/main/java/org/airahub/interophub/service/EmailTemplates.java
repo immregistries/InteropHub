@@ -96,6 +96,34 @@ public final class EmailTemplates {
         return body.toString();
     }
 
+    // -------------------------------------------------------------------------
+    // DAILY_DIGEST — "InteropHub Daily Digest" recurring roundup
+    // -------------------------------------------------------------------------
+
+    public static String dailyDigestSubject() {
+        return "InteropHub Daily Digest";
+    }
+
+    /**
+     * @param sectionBodies section title (e.g. "New Followers") mapped to its
+     *                      already-formatted item blocks, in the order they
+     *                      should appear.
+     */
+    public static String dailyDigestBody(java.util.Map<String, java.util.List<String>> sectionBodies) {
+        StringBuilder body = new StringBuilder();
+        body.append("Here's what's new on InteropHub:\n\n");
+        for (var entry : sectionBodies.entrySet()) {
+            body.append(entry.getKey()).append("\n\n");
+            for (String itemBody : entry.getValue()) {
+                body.append(itemBody).append("\n");
+            }
+        }
+        body.append("--\n");
+        body.append("You are receiving this because you are listed as a champion, support contact,"
+                + " or administrator in InteropHub.\n");
+        return body.toString();
+    }
+
     private EmailTemplates() {
     }
 }

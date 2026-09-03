@@ -48,6 +48,11 @@ public final class EmailReason {
      */
     public static final String TOPIC_COMMENT_ADMIN_NOTIFY = "TOPIC_COMMENT_ADMIN_NOTIFY";
 
+    /**
+     * InteropHub Daily Digest — recurring digest of topic-contact-worthy activity.
+     */
+    public static final String DAILY_DIGEST = "DAILY_DIGEST";
+
     private EmailReason() {
     }
 }
