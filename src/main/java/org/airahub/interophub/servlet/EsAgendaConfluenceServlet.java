@@ -290,6 +290,13 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
             String agendaCellContent = item.getAgendaMarkdown() != null && !item.getAgendaMarkdown().isBlank()
                     ? renderPlainText(item.getAgendaMarkdown())
                     : "";
+            if (item.getLinkUrl() != null && !item.getLinkUrl().isBlank()) {
+                String linkLabel = item.getLinkTitle() != null && !item.getLinkTitle().isBlank()
+                        ? item.getLinkTitle()
+                        : item.getLinkUrl();
+                agendaCellContent += "<p><a href=\"" + escapeHtml(item.getLinkUrl()) + "\">"
+                        + escapeHtml(linkLabel) + "</a></p>";
+            }
             EsTopicNote itemNote = topicNoteDao.findByAgendaItemId(item.getEsMeetingAgendaItemId()).orElse(null);
             List<EsRecordedOutcome> itemOutcomes = itemNote != null
                     ? recordedOutcomeDao.findByNoteIdOrdered(itemNote.getEsTopicNoteId())

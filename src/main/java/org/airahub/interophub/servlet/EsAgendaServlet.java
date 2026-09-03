@@ -777,6 +777,14 @@ public class EsAgendaServlet extends HttpServlet {
                 // keep existing value
             }
         }
+        String linkUrlRaw = trimToNull(request.getParameter("linkUrl"));
+        if (linkUrlRaw == null) {
+            item.setLinkUrl(null);
+            item.setLinkTitle(null);
+        } else if (isHttpUrl(linkUrlRaw)) {
+            item.setLinkUrl(linkUrlRaw);
+            item.setLinkTitle(trimToNull(request.getParameter("linkTitle")));
+        }
         agendaItemDao.saveOrUpdate(item);
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
@@ -2397,9 +2405,10 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                     out.println("                <div class=\"aira-field\">");
                     out.println("                  <label>Meeting URL</label>");
-                    out.println("                  <input class=\"aira-input\" type=\"text\" name=\"onlineMeetingUrl\" value=\""
-                            + escapeHtml(orEmpty(meeting.getOnlineMeetingUrl()))
-                            + "\" placeholder=\"https://zoom.us/j/...\">");
+                    out.println(
+                            "                  <input class=\"aira-input\" type=\"text\" name=\"onlineMeetingUrl\" value=\""
+                                    + escapeHtml(orEmpty(meeting.getOnlineMeetingUrl()))
+                                    + "\" placeholder=\"https://zoom.us/j/...\">");
                     out.println("                </div>");
                     out.println("                <div class=\"aira-field\">");
                     out.println("                  <label>Connection Details</label>");
@@ -2643,6 +2652,7 @@ public class EsAgendaServlet extends HttpServlet {
                     } else {
                         out.println("                    <span class=\"aira-meta\">Click to edit...</span>");
                     }
+                    renderAgendaItemLink(out, item);
                     out.println("                  </div>");
                     out.println("                  <form id=\"item-" + item.getEsMeetingAgendaItemId()
                             + "-form\" class=\"aira-form aira-no-print\" method=\"post\" action=\""
@@ -2667,16 +2677,28 @@ public class EsAgendaServlet extends HttpServlet {
                             "                    <textarea class=\"aira-textarea\" name=\"agendaMarkdown\" rows=\"2\" placeholder=\"Agenda text\">"
                                     + escapeHtml(orEmpty(item.getAgendaMarkdown())) + "</textarea>");
                     out.println("                    <div class=\"aira-cluster\">");
-                    out.println("                      <input class=\"aira-input\" type=\"number\" name=\"timeMinutes\" value=\""
-                            + (item.getTimeMinutes() != null ? item.getTimeMinutes() : "")
-                            + "\" min=\"0\" max=\"480\" style=\"width:4.5rem\">");
+                    out.println(
+                            "                      <input class=\"aira-input\" type=\"url\" name=\"linkUrl\" value=\""
+                                    + escapeHtml(orEmpty(item.getLinkUrl()))
+                                    + "\" placeholder=\"Link URL (optional)\">");
+                    out.println(
+                            "                      <input class=\"aira-input\" type=\"text\" name=\"linkTitle\" value=\""
+                                    + escapeHtml(orEmpty(item.getLinkTitle()))
+                                    + "\" placeholder=\"Link title\">");
+                    out.println("                    </div>");
+                    out.println("                    <div class=\"aira-cluster\">");
+                    out.println(
+                            "                      <input class=\"aira-input\" type=\"number\" name=\"timeMinutes\" value=\""
+                                    + (item.getTimeMinutes() != null ? item.getTimeMinutes() : "")
+                                    + "\" min=\"0\" max=\"480\" style=\"width:4.5rem\">");
                     out.println("                      <span>min</span>");
                     out.println("                    </div>");
                     out.println("                    <div class=\"aira-action-group\">");
                     out.println(
                             "                      <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
-                    out.println("                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('item-"
-                            + item.getEsMeetingAgendaItemId() + "')\">Cancel</button>");
+                    out.println(
+                            "                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('item-"
+                                    + item.getEsMeetingAgendaItemId() + "')\">Cancel</button>");
                     out.println("                    </div>");
                     out.println("                  </form>");
                 } else {
@@ -2684,6 +2706,7 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("                  <div class=\"agenda-item-text\">"
                                 + renderPlainText(item.getAgendaMarkdown()) + "</div>");
                     }
+                    renderAgendaItemLink(out, item);
                 }
                 out.println("                  <div class=\"agenda-notes\" id=\"agenda-notes-"
                         + item.getEsMeetingAgendaItemId() + "\">"
@@ -2810,10 +2833,11 @@ public class EsAgendaServlet extends HttpServlet {
                     for (EsAgendaItemPresenter.PresenterRole presRole : EsAgendaItemPresenter.PresenterRole.values()) {
                         String roleOptLabel = titleCase(presRole.name());
                         String activeClass = firstRole ? " role-option-active" : "";
-                        out.println("                        <button type=\"button\" class=\"aira-button aira-button--tertiary aira-button--small role-option"
-                                + activeClass + "\""
-                                + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name()
-                                + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
+                        out.println(
+                                "                        <button type=\"button\" class=\"aira-button aira-button--tertiary aira-button--small role-option"
+                                        + activeClass + "\""
+                                        + " onclick=\"esOnPresRoleChange('" + addPanelId + "','" + presRole.name()
+                                        + "',this)\">" + escapeHtml(roleOptLabel) + "</button>");
                         firstRole = false;
                     }
                     out.println("                      </div>");
@@ -2901,8 +2925,9 @@ public class EsAgendaServlet extends HttpServlet {
                                 out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                             out.println(
                                     "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
-                            out.println("                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
-                                    + escapeHtml(qpName) + "</button>");
+                            out.println(
+                                    "                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
+                                            + escapeHtml(qpName) + "</button>");
                             out.println("              </form>");
                         }
                         out.println("            </div>");
@@ -2950,8 +2975,9 @@ public class EsAgendaServlet extends HttpServlet {
                                     out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
                                 out.println(
                                         "                <input type=\"hidden\" name=\"presenterRole\" class=\"pres-role-input\" value=\"LEAD\">");
-                                out.println("                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
-                                        + escapeHtml(champName) + "</button>");
+                                out.println(
+                                        "                <button class=\"aira-button aira-button--tertiary aira-button--small\" type=\"submit\">"
+                                                + escapeHtml(champName) + "</button>");
                                 out.println("              </form>");
                             }
                             out.println("            </div>");
@@ -3043,9 +3069,10 @@ public class EsAgendaServlet extends HttpServlet {
                                         "                      <input type=\"hidden\" name=\"action\" value=\"updateItemStatus\">");
                                 out.println("                      <input type=\"hidden\" name=\"itemId\" value=\""
                                         + item.getEsMeetingAgendaItemId() + "\">");
-                                out.println("                      <input type=\"hidden\" name=\"targetStatus\" value=\""
-                                        + ts.name()
-                                        + "\">");
+                                out.println(
+                                        "                      <input type=\"hidden\" name=\"targetStatus\" value=\""
+                                                + ts.name()
+                                                + "\">");
                                 if (editOverride)
                                     out.println(
                                             "                      <input type=\"hidden\" name=\"edit\" value=\"true\">");
@@ -3096,7 +3123,8 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("              <input type=\"hidden\" name=\"edit\" value=\"true\">");
                 out.println("              <input type=\"hidden\" name=\"topicId\" id=\"add-topic-id\">");
                 out.println("              <div class=\"aira-field\">");
-                out.println("                <input class=\"aira-input\" type=\"text\" id=\"add-topic-search\" list=\"add-topic-list\"");
+                out.println(
+                        "                <input class=\"aira-input\" type=\"text\" id=\"add-topic-search\" list=\"add-topic-list\"");
                 out.println(
                         "                       placeholder=\"Search topics...\" autocomplete=\"off\"");
                 out.println("                       oninput=\"esOnTopicInput(this.value)\">");
@@ -3174,10 +3202,12 @@ public class EsAgendaServlet extends HttpServlet {
                     boolean canCopyOpenItem = oi.getEsTopicId() == null
                             || isTopicAllowedForMeetingHost(topicById.get(oi.getEsTopicId()), hostTopicSpace);
                     if (canCopyOpenItem) {
-                        out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println(
+                                "                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
                         out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
-                        out.println("                    <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
+                        out.println(
+                                "                    <input type=\"hidden\" name=\"action\" value=\"copyAgendaItem\">");
                         out.println("                    <input type=\"hidden\" name=\"sourceItemId\" value=\""
                                 + oi.getEsMeetingAgendaItemId() + "\">");
                         if (editOverride)
@@ -3262,7 +3292,8 @@ public class EsAgendaServlet extends HttpServlet {
                         boolean canCopyItem = ci.getEsTopicId() == null
                                 || isTopicAllowedForMeetingHost(topicById.get(ci.getEsTopicId()), hostTopicSpace);
                         if (canCopyItem) {
-                            out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                            out.println("                  <form method=\"post\" action=\"" + contextPath
+                                    + "/es/agenda\">");
                             out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                     + meeting.getEsMeetingId() + "\">");
                             out.println(
@@ -3346,14 +3377,18 @@ public class EsAgendaServlet extends HttpServlet {
                             + escapeHtml(statusText) + "</span></td>");
                     out.println("                <td>");
                     if (row.onCurrentAgenda) {
-                        out.println("                  <span class=\"aira-badge aira-badge--success\">Already on agenda</span>");
+                        out.println(
+                                "                  <span class=\"aira-badge aira-badge--success\">Already on agenda</span>");
                     } else {
-                        out.println("                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
+                        out.println(
+                                "                  <form method=\"post\" action=\"" + contextPath + "/es/agenda\">");
                         out.println("                    <input type=\"hidden\" name=\"meetingId\" value=\""
                                 + meeting.getEsMeetingId() + "\">");
-                        out.println("                    <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
                         out.println(
-                                "                    <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId + "\">");
+                                "                    <input type=\"hidden\" name=\"action\" value=\"addAgendaItem\">");
+                        out.println(
+                                "                    <input type=\"hidden\" name=\"topicId\" value=\"" + row.topicId
+                                        + "\">");
                         out.println("                    <input type=\"hidden\" name=\"title\" value=\""
                                 + escapeHtml(row.topicName) + "\">");
                         if (editOverride) {
@@ -3628,6 +3663,25 @@ public class EsAgendaServlet extends HttpServlet {
         if (s == null)
             return "\"\"";
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "").replace("\n", "\\n") + "\"";
+    }
+
+    private static boolean isHttpUrl(String url) {
+        return url.startsWith("http://") || url.startsWith("https://");
+    }
+
+    private static void renderAgendaItemLink(PrintWriter out, EsMeetingAgendaItem item) {
+        String url = item.getLinkUrl();
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        String label = item.getLinkTitle();
+        if (label == null || label.isBlank()) {
+            label = url;
+        }
+        out.println("                  <div class=\"agenda-item-link\">"
+                + "<span class=\"agenda-item-link-icon\" aria-hidden=\"true\">&#128279;</span> "
+                + "<a href=\"" + escapeHtml(url) + "\" target=\"_blank\" rel=\"noopener noreferrer\">"
+                + escapeHtml(label) + "</a></div>");
     }
 
     private static String titleCase(String enumName) {

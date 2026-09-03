@@ -14,3 +14,9 @@ CREATE TABLE digest_run_state (
   last_run_date  DATE NOT NULL,
   PRIMARY KEY (digest_key)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Single supporting link per meeting agenda item (title + URL). One link only
+-- by design, no separate link table.
+ALTER TABLE es_meeting_agenda_item
+  ADD COLUMN link_url VARCHAR(500) NULL AFTER time_minutes,
+  ADD COLUMN link_title VARCHAR(200) NULL AFTER link_url;

@@ -33,6 +33,15 @@
   white-space: pre-wrap;
 }
 
+.agenda-item-link {
+  margin-top: 0.3rem;
+  font-size: 0.875rem;
+}
+
+.agenda-item-link a {
+  text-decoration: underline;
+}
+
 .agenda-presenter {
   margin-bottom: 0.3rem;
 }

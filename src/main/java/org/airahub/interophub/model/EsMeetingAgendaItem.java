@@ -50,6 +50,12 @@ public class EsMeetingAgendaItem {
     @Column(name = "time_minutes")
     private Integer timeMinutes;
 
+    @Column(name = "link_url", length = 500)
+    private String linkUrl;
+
+    @Column(name = "link_title", length = 200)
+    private String linkTitle;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     private AgendaItemStatus status;
@@ -146,6 +152,22 @@ public class EsMeetingAgendaItem {
 
     public void setTimeMinutes(Integer timeMinutes) {
         this.timeMinutes = timeMinutes;
+    }
+
+    public String getLinkUrl() {
+        return linkUrl;
+    }
+
+    public void setLinkUrl(String linkUrl) {
+        this.linkUrl = linkUrl;
+    }
+
+    public String getLinkTitle() {
+        return linkTitle;
+    }
+
+    public void setLinkTitle(String linkTitle) {
+        this.linkTitle = linkTitle;
     }
 
     public AgendaItemStatus getStatus() {
