@@ -196,6 +196,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminAdminsServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminAdminsServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>AdminAdminsServlet</servlet-name>
+    <url-pattern>/admin/users/admins</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AdminAppLoginStatsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminAppLoginStatsServlet</servlet-class>
   </servlet>
