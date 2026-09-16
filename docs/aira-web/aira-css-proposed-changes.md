@@ -14,6 +14,43 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.8 | 2026-08-06 | [`aira-css-changes-revision-8.md`](aira-css-changes-revision-8.md) | Semantic accent-border modifiers for `aira-table-panel` — requested in [`aira-css-request-8.md`](aira-css-request-8.md) |
 | 0.1.9 | 2026-08-06 | [`aira-css-changes-revision-9.md`](aira-css-changes-revision-9.md) | Search suggestion / combobox popover component — requested in [`aira-css-request-9.md`](aira-css-request-9.md) |
 | 0.1.10 | 2026-08-11 | [`aira-css-changes-revision-10.md`](aira-css-changes-revision-10.md) | Bounded/scrollable `aira-matrix-table-wrap` so sticky headers actually stick; `aira-matrix-table__label` wraps instead of truncating |
+| 0.1.11 | 2026-09-15 | [`aira-css-changes-revision-11.md`](aira-css-changes-revision-11.md) | Optional badge count on `AiraActionItem`/`addGlobalAction` — requested in [`aira-css-request-11.md`](aira-css-request-11.md) |
+| 0.1.12 | 2026-09-15 | [`aira-css-changes-revision-12.md`](aira-css-changes-revision-12.md) | Fixed `.aira-badge-count` invisible white-on-white text on `primary`/`danger`/`success` button variants |
+
+---
+
+## Proposal: Optional badge count on a global header action item
+
+**Status:** Available in this project
+**Found during:** Design analysis for `docs/interophub-meeting-cadence-design.md` — the shared meeting-action-queue needs a header-level signal when a signed-in user has unresolved actions.
+**Date:** 2026-09-14
+
+### Problem
+
+`AiraActionItem`/`Builder.addGlobalAction(label, href, variant)` renders a plain header button with no way to attach a count, and `aira.css` has no numeric-pill badge component to attach to one. See the standalone request for full detail.
+
+### Current local workaround
+
+None available — InteropHub has no markup access into the header shell (it's rendered entirely by `AiraPage.writeGlobalHeader()`), so there is no local CSS/JS fork that could substitute for this without hacking the shared component's DOM after the fact. An interim v1 may bake the count into the button's label text (e.g. `"3 actions needed"`) while this is pending, but that isn't a substitute for the badge itself.
+
+### Proposed shared interface
+
+See [`aira-css-request-11.md`](aira-css-request-11.md) for the full proposal: a 4th optional `badgeCount` component on `AiraActionItem`, a matching `addGlobalAction(label, href, variant, badgeCount)` builder overload, and a new `.aira-badge-count` pill rendered inside the button.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+A numeric badge on a header action is a general affordance — any AIRA application with a pending/unread/approval count would want the same primitive, not something specific to InteropHub's meeting cadence.
+
+### Compatibility and migration impact
+
+- Additive on both the Java API and CSS sides; existing 3-arg `AiraActionItem`/`addGlobalAction` usage is unaffected.
+- No existing InteropHub page uses `addGlobalAction` today, so there is nothing to migrate.
+
+### Resolution
+
+Implemented upstream in `aira-web-components`/`aira-web-theme` `0.1.11` (see [`aira-css-changes-revision-11.md`](aira-css-changes-revision-11.md), delivered in response to the standalone request [`aira-css-request-11.md`](aira-css-request-11.md)). InteropHub now consumes `0.1.11` (`pom.xml`).
+
+**Follow-up defect found in real use (2026-09-15), fixed in 0.1.12:** `.aira-badge-count` (`color: inherit; background: var(--aira-surface)`) rendered the count invisible on any button variant with white text - `primary` and `danger` both set `color: var(--aira-white)`, so the badge's inherited text color matched its own light background exactly. Fixed upstream by changing to a fixed `color: var(--aira-text)` (see [`aira-css-changes-revision-12.md`](aira-css-changes-revision-12.md)) so the badge's contrast no longer depends on the surrounding button variant. InteropHub's interim workaround (using `secondary` instead of `danger` for the header action-needed badge) has been reverted now that `0.1.12` is consumed (`pom.xml`).
 
 ---
 

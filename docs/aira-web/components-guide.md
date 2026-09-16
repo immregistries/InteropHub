@@ -1,6 +1,3 @@
-> Mirrored from the `aira-web` project's `docs/components-guide.md`, current as of aira-web `0.1.10`.
-> Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
-
 # AIRA Web Components Guide
 
 `aira-web-components` is a plain Java library for rendering the common AIRA application shell around servlet-generated page content.
@@ -13,7 +10,7 @@ It does not provide a base servlet and does not render page-specific business co
 
 - `AiraPage` - document and shell renderer.
 - `AiraLogo` - optional approved logo asset.
-- `AiraActionItem` - global action link rendered as a button-style link.
+- `AiraActionItem` - global action link rendered as a button-style link, with an optional badge count.
 - `AiraSearchConfig` - optional global search form.
 - `AiraAccountConfig` - optional account/sign-in area.
 - `AiraEnvironmentConfig` - optional non-production badge.
@@ -430,6 +427,18 @@ Recommended baseline status mapping:
 | Negative, cancelled, or blocked | `aira-badge--danger` |
 
 This mapping is guidance for consistent presentation. Applications remain responsible for their own domain logic and status text.
+
+### Global Action Badge Counts
+
+`Builder.addGlobalAction(label, href, variant, badgeCount)` attaches a numeric badge to a global header action, for a pending-count, unread-count, or approval-count that should be visible on any page, not just a dashboard:
+
+```java
+.addGlobalAction("Action needed", "/welcome", "primary", pendingActionCount)
+```
+
+A `badgeCount` of `0` or less renders no badge, identically to the existing 3-arg `addGlobalAction(label, href, variant)` overload. When a positive count is supplied, the rendered `<a class="aira-button">` gains an `aira-button--has-badge` class, a nested `<span class="aira-badge-count" aria-hidden="true">` showing the count, and an `aria-label` that includes the count in text (e.g. `"Action needed, 3 pending"`) so assistive tech announces it once rather than twice.
+
+`.aira-badge-count` uses a fixed `background: var(--aira-surface)` / `color: var(--aira-text)` pairing so it reads as a light count chip with its own self-contained contrast, legible against any button variant it sits on (`primary`, `danger`, etc.) regardless of that variant's own text color, instead of introducing a competing accent color.
 
 ### Topic and Meeting Components
 
