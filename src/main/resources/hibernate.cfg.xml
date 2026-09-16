@@ -81,6 +81,7 @@
     <mapping class="org.airahub.interophub.model.EsTopicUserView"/>
     <mapping class="org.airahub.interophub.model.EsMeetingUserView"/>
     <mapping class="org.airahub.interophub.model.EsMeetingActionState"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingRsvp"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
     <mapping class="org.airahub.interophub.model.EsSurvey"/>

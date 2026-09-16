@@ -19,15 +19,18 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsMeetingRsvpDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingAttendance;
+import org.airahub.interophub.model.EsMeetingRsvp;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.MeetingRsvpResponse;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsNormalizer;
@@ -59,6 +62,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
     private final EsTopicDao topicDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingAttendanceDao attendanceDao;
+    private final EsMeetingRsvpDao rsvpDao;
     private final UserDao userDao;
     private final MeetingAttendanceInvitationService invitationService;
 
@@ -70,6 +74,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         this.topicDao = new EsTopicDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
+        this.rsvpDao = new EsMeetingRsvpDao();
         this.userDao = new UserDao();
         this.invitationService = new MeetingAttendanceInvitationService();
     }
@@ -353,6 +358,12 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         boolean windowOpen = isAttendanceManagementWindowOpen(meeting);
         Map<Long, User> resolvedUsers = resolveObserverUsers(all);
 
+        List<EsMeetingRsvp> rsvps = rsvpDao.findByMeetingId(meeting.getEsMeetingId());
+        long comingCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.COMING).count();
+        long maybeCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.MAYBE).count();
+        long notComingCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.NOT_COMING).count();
+        Map<Long, User> rsvpUsers = resolveUsersById(rsvps.stream().map(EsMeetingRsvp::getUserId).toList());
+
         EsMeetingAttendance editing = editId != null
                 ? active.stream()
                         .filter(a -> a.getEsMeetingAttendanceId().equals(editId) && a.getSelfSignedAt() == null)
@@ -415,6 +426,31 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             }
             out.println("        </div>");
             out.println("      </section>");
+
+            // --- RSVP (intent, separate from attendance - lets staff compare expected vs actual) ---
+            if (!rsvps.isEmpty()) {
+                out.println("      <section class=\"aira-panel\">");
+                out.println("        <h2 class=\"aira-section-title\">RSVP</h2>");
+                out.println("        <div class=\"aira-cluster\">");
+                out.println("          <span class=\"aira-badge aira-badge--success\">Coming: " + comingCount
+                        + "</span>");
+                out.println("          <span class=\"aira-badge aira-badge--info\">Maybe: " + maybeCount + "</span>");
+                out.println("          <span class=\"aira-badge aira-badge--subtle\">Not coming: " + notComingCount
+                        + "</span>");
+                out.println("        </div>");
+                out.println("        <ul>");
+                for (EsMeetingRsvp r : rsvps) {
+                    User rsvpUser = rsvpUsers.get(r.getUserId());
+                    String name = rsvpUser != null ? userLabel(rsvpUser) : ("User #" + r.getUserId());
+                    out.println("          <li>" + escapeHtml(name) + " &mdash; " + rsvpLabel(r.getResponse())
+                            + (r.getNote() != null && !r.getNote().isBlank()
+                                    ? " &mdash; " + escapeHtml(r.getNote())
+                                    : "")
+                            + "</li>");
+                }
+                out.println("        </ul>");
+                out.println("      </section>");
+            }
 
             // --- Add observed attendee ---
             out.println("      <section class=\"aira-panel\">");
@@ -629,19 +665,30 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
     }
 
     private Map<Long, User> resolveObserverUsers(List<EsMeetingAttendance> records) {
-        List<Long> ids = records.stream()
+        return resolveUsersById(records.stream()
                 .map(EsMeetingAttendance::getObservedByUserId)
                 .filter(Objects::nonNull)
-                .distinct()
-                .toList();
-        if (ids.isEmpty()) {
+                .toList());
+    }
+
+    private Map<Long, User> resolveUsersById(List<Long> ids) {
+        List<Long> distinctIds = ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (distinctIds.isEmpty()) {
             return Map.of();
         }
         Map<Long, User> map = new LinkedHashMap<>();
-        for (User u : userDao.findByIds(ids)) {
+        for (User u : userDao.findByIds(distinctIds)) {
             map.put(u.getUserId(), u);
         }
         return map;
+    }
+
+    private String rsvpLabel(MeetingRsvpResponse response) {
+        return switch (response) {
+            case COMING -> "Coming";
+            case MAYBE -> "Maybe";
+            case NOT_COMING -> "Not coming";
+        };
     }
 
     private String userLabel(User user) {

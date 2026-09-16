@@ -34,6 +34,7 @@ import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicCurationDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
+import org.airahub.interophub.dao.EsMeetingRsvpDao;
 import org.airahub.interophub.dao.EsRecordedOutcomeDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
@@ -42,6 +43,8 @@ import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsMeetingAttendance;
+import org.airahub.interophub.model.EsMeetingRsvp;
+import org.airahub.interophub.model.MeetingRsvpResponse;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeeting.MeetingStatus;
@@ -107,6 +110,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
     private final EsMeetingAttendanceDao attendanceDao;
+    private final EsMeetingRsvpDao rsvpDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsMeetingViewHistoryService meetingViewHistoryService;
     private final EsTopicNoteDao topicNoteDao;
@@ -130,6 +134,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
         this.attendanceDao = new EsMeetingAttendanceDao();
+        this.rsvpDao = new EsMeetingRsvpDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.meetingViewHistoryService = new EsMeetingViewHistoryService();
         this.topicNoteDao = new EsTopicNoteDao();
@@ -303,10 +308,20 @@ public class EsAgendaServlet extends HttpServlet {
             engagementByTopicId = eng;
         }
 
+        // RSVP: before the meeting only (DRAFT/PROPOSED/FINALIZED) - once it has
+        // started, self sign-in is the relevant action, not stated intent.
+        boolean rsvpOpen = meeting.getStatus() == MeetingStatus.DRAFT
+                || meeting.getStatus() == MeetingStatus.PROPOSED
+                || meeting.getStatus() == MeetingStatus.FINALIZED;
+        MeetingRsvpResponse currentRsvp = (rsvpOpen && user != null)
+                ? rsvpDao.findByMeetingIdAndUserId(meetingId, user.getUserId())
+                        .map(EsMeetingRsvp::getResponse).orElse(null)
+                : null;
+
         renderPage(request, response, contextPath, user, meeting, items, presentersByItem, presenterUsers,
                 isEditor, isAdmin, canEdit, editOverride, previousMeeting, nextMeeting, savedMsg, errorMsg,
                 loginHintMismatch, suggestBanner, attendanceViewerEmail,
-                isWithinAttendanceWindow, meetingAttendees, engagementByTopicId);
+                isWithinAttendanceWindow, meetingAttendees, engagementByTopicId, rsvpOpen, currentRsvp);
     }
 
     // =========================================================================
@@ -364,6 +379,12 @@ public class EsAgendaServlet extends HttpServlet {
         }
         if ("presenterDecline".equals(action)) {
             handlePresenterDecline(request, response, contextPath, meeting, user, editOverride);
+            return;
+        }
+
+        // RSVP (any authenticated viewer responding for themselves, not an editor action)
+        if ("updateRsvp".equals(action)) {
+            handleUpdateRsvp(request, response, contextPath, meeting, user, editOverride);
             return;
         }
 
@@ -1261,6 +1282,27 @@ public class EsAgendaServlet extends HttpServlet {
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
 
+    /**
+     * Records (creating or replacing) the current user's RSVP for this specific
+     * occurrence. RSVP is intent, not attendance - a participant who RSVPs
+     * still needs to self-sign when they actually attend
+     * (docs/meeting-attendance-console-design.md).
+     */
+    private void handleUpdateRsvp(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            EsMeeting meeting, User user, boolean editOverride) throws IOException {
+        MeetingRsvpResponse rsvpResponse;
+        try {
+            rsvpResponse = MeetingRsvpResponse.valueOf(trimToNull(request.getParameter("response")));
+        } catch (Exception ex) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Invalid RSVP response.");
+            return;
+        }
+        String note = trimToNull(request.getParameter("rsvpNote"));
+        rsvpDao.setRsvp(meeting.getEsMeetingId(), user.getUserId(), rsvpResponse, note);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
     private void sendPresenterInvitationEmail(String recipientEmail, String recipientName,
             EsMeetingAgendaItem item, EsMeeting meeting, EsAgendaItemPresenter.PresenterRole role) {
         try {
@@ -1630,7 +1672,8 @@ public class EsAgendaServlet extends HttpServlet {
             EsMeeting previousMeeting, EsMeeting nextMeeting, String savedMsg, String errorMsg,
             String loginHintMismatch, String suggestBanner, String attendanceViewerEmail,
             boolean isWithinAttendanceWindow, List<EsMeetingAttendance> meetingAttendees,
-            Map<Long, TopicEngagementSummary> engagementByTopicId) throws IOException {
+            Map<Long, TopicEngagementSummary> engagementByTopicId,
+            boolean rsvpOpen, MeetingRsvpResponse currentRsvp) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
@@ -2551,6 +2594,24 @@ public class EsAgendaServlet extends HttpServlet {
                     out.println("            <p class=\"aira-meta\">" + compact + "</p>");
                 }
 
+                out.println("          </section>");
+            }
+
+            // --- RSVP SECTION ---
+            // Intent only, separate from attendance - a participant who RSVPs still
+            // needs to self-sign when they actually attend
+            // (docs/meeting-attendance-console-design.md, Phase 4).
+            if (rsvpOpen && user != null) {
+                out.println("          <section class=\"aira-panel\">");
+                out.println("            <h2 class=\"aira-section-title\">Will you attend?</h2>");
+                out.println("            <div class=\"aira-action-group\">");
+                out.println(rsvpButtonForm(contextPath, meeting.getEsMeetingId(), "COMING", "I plan to attend",
+                        currentRsvp));
+                out.println(
+                        rsvpButtonForm(contextPath, meeting.getEsMeetingId(), "MAYBE", "Maybe", currentRsvp));
+                out.println(rsvpButtonForm(contextPath, meeting.getEsMeetingId(), "NOT_COMING", "I cannot attend",
+                        currentRsvp));
+                out.println("            </div>");
                 out.println("          </section>");
             }
 
@@ -4005,6 +4066,22 @@ public class EsAgendaServlet extends HttpServlet {
             return null;
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static String rsvpButtonForm(String contextPath, Long meetingId, String value, String label,
+            MeetingRsvpResponse current) {
+        boolean isCurrent = current != null && current.name().equals(value);
+        String variant = isCurrent ? "aira-button--primary" : "aira-button--secondary";
+        StringBuilder sb = new StringBuilder();
+        sb.append("<form class=\"aira-inline-form\" method=\"post\" action=\"").append(contextPath)
+                .append("/es/agenda\">");
+        sb.append("<input type=\"hidden\" name=\"meetingId\" value=\"").append(meetingId).append("\">");
+        sb.append("<input type=\"hidden\" name=\"action\" value=\"updateRsvp\">");
+        sb.append("<input type=\"hidden\" name=\"response\" value=\"").append(value).append("\">");
+        sb.append("<button class=\"aira-button ").append(variant).append("\" type=\"submit\">")
+                .append(isCurrent ? "&#10003; " : "").append(escapeHtml(label)).append("</button>");
+        sb.append("</form>");
+        return sb.toString();
     }
 
     private static String escapeHtml(String value) {

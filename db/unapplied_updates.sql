@@ -38,3 +38,22 @@ ALTER TABLE es_meeting_attendance
 UPDATE es_meeting_attendance
 SET self_signed_at = created_at
 WHERE self_signed_at IS NULL;
+
+-- Meeting Attendance Console, Phase 4: occurrence RSVP
+-- (docs/meeting-attendance-console-design.md). Separate from attendance -
+-- RSVP is intent, recorded before the meeting; attendance is what actually
+-- happened. One row per (meeting occurrence, user), updatable.
+CREATE TABLE es_meeting_rsvp (
+  es_meeting_rsvp_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  response ENUM('COMING','MAYBE','NOT_COMING') NOT NULL,
+  note TEXT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (es_meeting_rsvp_id),
+  UNIQUE KEY uq_es_meeting_rsvp_meeting_user (es_meeting_id, user_id),
+  KEY ix_es_meeting_rsvp_meeting (es_meeting_id),
+  CONSTRAINT fk_es_meeting_rsvp_meeting FOREIGN KEY (es_meeting_id) REFERENCES es_meeting (es_meeting_id),
+  CONSTRAINT fk_es_meeting_rsvp_user FOREIGN KEY (user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
