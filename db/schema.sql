@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 8.1.0, for Win64 (x86_64)
 --
--- Host: localhost    Database: interophub
+-- Host: 127.0.0.1    Database: interophub
 -- ------------------------------------------------------
 -- Server version	8.1.0
 
@@ -97,7 +97,7 @@ CREATE TABLE `app_login_event` (
   `user_id` bigint NOT NULL,
   `user_ip` varchar(45) DEFAULT NULL,
   PRIMARY KEY (`event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=206 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=200 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -194,7 +194,7 @@ CREATE TABLE `auth_login_code` (
   KEY `ix_login_code_user` (`user_id`,`issued_at`),
   KEY `ix_login_code_expires` (`expires_at`),
   CONSTRAINT `fk_login_code_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=236 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=230 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -222,7 +222,7 @@ CREATE TABLE `auth_magic_link` (
   KEY `ix_magic_user` (`user_id`,`issued_at`),
   KEY `ix_magic_expires` (`expires_at`),
   CONSTRAINT `fk_magic_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=233 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=232 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -250,7 +250,7 @@ CREATE TABLE `auth_magic_link_send_event` (
   `user_agent` varchar(300) DEFAULT NULL,
   `user_id` bigint NOT NULL,
   PRIMARY KEY (`send_event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=535 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=532 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -274,7 +274,7 @@ CREATE TABLE `auth_session` (
   KEY `ix_session_user` (`user_id`,`expires_at`),
   KEY `ix_session_expires` (`expires_at`),
   CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=193 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=192 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -380,22 +380,7 @@ CREATE TABLE `dandelion_sync_queue` (
   PRIMARY KEY (`sync_queue_id`),
   KEY `ix_dd_sync_queue_space_status` (`es_topic_space_id`,`status`,`entity_type`,`created_at`),
   CONSTRAINT `fk_dd_sync_queue_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1163 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `digest_run_state`
---
-
-DROP TABLE IF EXISTS `digest_run_state`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `digest_run_state` (
-  `digest_key` varchar(40) NOT NULL,
-  `last_run_at` datetime NOT NULL,
-  `last_run_date` date NOT NULL,
-  PRIMARY KEY (`digest_key`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1151 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -419,7 +404,7 @@ CREATE TABLE `email_send_log` (
   `subject` varchar(500) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`email_log_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=595 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=592 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -702,40 +687,12 @@ CREATE TABLE `es_meeting` (
   `updated_at` datetime(6) NOT NULL,
   `online_meeting_details` text,
   `online_meeting_url` varchar(2048) DEFAULT NULL,
-  `notes_published_at` datetime DEFAULT NULL,
-  `notes_published_by_user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`es_meeting_id`),
   KEY `ix_es_meeting_topic_space` (`es_topic_space_id`),
   KEY `ix_es_meeting_status_close_due` (`status`,`close_due_at`,`es_meeting_id`),
   KEY `ix_es_meeting_current_agenda` (`current_agenda_item_id`),
-  KEY `fk_es_meeting_notes_published_by` (`notes_published_by_user_id`),
-  CONSTRAINT `fk_es_meeting_notes_published_by` FOREIGN KEY (`notes_published_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=70 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Table structure for table `es_meeting_action_state`
---
-
-DROP TABLE IF EXISTS `es_meeting_action_state`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!50503 SET character_set_client = utf8mb4 */;
-CREATE TABLE `es_meeting_action_state` (
-  `es_meeting_action_state_id` bigint NOT NULL AUTO_INCREMENT,
-  `user_id` bigint NOT NULL,
-  `es_meeting_id` bigint NOT NULL,
-  `action_type` enum('PUBLISH_PROPOSED_AGENDA','FINALIZE_AGENDA','CLOSE_MEETING','PUBLISH_NOTES') NOT NULL,
-  `read_at` datetime DEFAULT NULL,
-  `snoozed_until` datetime DEFAULT NULL,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`es_meeting_action_state_id`),
-  UNIQUE KEY `uq_es_meeting_action_state_user_meeting_action` (`user_id`,`es_meeting_id`,`action_type`),
-  KEY `ix_es_meeting_action_state_meeting` (`es_meeting_id`),
-  CONSTRAINT `fk_es_meeting_action_state_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
-  CONSTRAINT `fk_es_meeting_action_state_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -788,8 +745,6 @@ CREATE TABLE `es_meeting_agenda_item` (
   `status` enum('ACCEPTED','CANCELLED','COVERED','DRAFT','NEEDS_REVISION','NOT_COVERED','POSTPONED','PROPOSED') NOT NULL,
   `status_note` text,
   `time_minutes` int DEFAULT NULL,
-  `link_url` varchar(500) DEFAULT NULL,
-  `link_title` varchar(200) DEFAULT NULL,
   `title` varchar(200) NOT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_agenda_item_id`)
@@ -833,7 +788,7 @@ CREATE TABLE `es_meeting_attendance` (
   CONSTRAINT `fk_attendance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_attendance_observed_by` FOREIGN KEY (`observed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_attendance_removed_by` FOREIGN KEY (`removed_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=238 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=236 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -850,7 +805,7 @@ CREATE TABLE `es_meeting_communication` (
   `cancellation_reason` text,
   `cancelled_at` datetime(6) DEFAULT NULL,
   `cancelled_by_user_id` bigint DEFAULT NULL,
-  `communication_type` enum('CALL_FOR_TOPICS','CANCELLED','FINAL_AGENDA','NOTES_AVAILABLE','PROPOSED_AGENDA','REMINDER') NOT NULL,
+  `communication_type` enum('CALL_FOR_TOPICS','CANCELLED','FINAL_AGENDA','PROPOSED_AGENDA','REMINDER') NOT NULL,
   `created_at` datetime(6) NOT NULL,
   `created_by_user_id` bigint NOT NULL,
   `es_meeting_id` bigint NOT NULL,
@@ -939,7 +894,7 @@ CREATE TABLE `es_meeting_rsvp` (
   KEY `fk_es_meeting_rsvp_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_rsvp_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_meeting_rsvp_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -963,7 +918,7 @@ CREATE TABLE `es_meeting_status_history` (
   KEY `fk_es_msh_changed_by` (`changed_by_user_id`),
   CONSTRAINT `fk_es_msh_changed_by` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_msh_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1066,15 +1021,7 @@ CREATE TABLE `es_subscription` (
   `unsubscribed_at` datetime(6) DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   `user_id` bigint DEFAULT NULL,
-  `contact_first_name` varchar(100) DEFAULT NULL,
-  `contact_last_name` varchar(100) DEFAULT NULL,
-  `contact_organization` varchar(200) DEFAULT NULL,
-  `managed_added_by_user_id` bigint DEFAULT NULL,
-  `managed_added_at` datetime(6) DEFAULT NULL,
-  `managed_add_reason` text,
-  PRIMARY KEY (`es_subscription_id`),
-  KEY `fk_es_subscription_managed_added_by` (`managed_added_by_user_id`),
-  CONSTRAINT `fk_es_subscription_managed_added_by` FOREIGN KEY (`managed_added_by_user_id`) REFERENCES `auth_user` (`user_id`)
+  PRIMARY KEY (`es_subscription_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1456 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1675,7 +1622,7 @@ CREATE TABLE `es_topic_space_member` (
   KEY `ix_es_topic_space_member_space_role` (`es_topic_space_id`,`role`),
   CONSTRAINT `fk_es_topic_space_member_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`),
   CONSTRAINT `fk_es_topic_space_member_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2122,4 +2069,19 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-09-16 10:15:09
+-- Dump completed on 2026-09-16 16:18:18
+-- ============================================================
+-- AUTO-GENERATED FILE — DO NOT HAND-EDIT
+-- Generated by T:\scripts\python\refresh_interophub_db.py /
+--           T:\scripts\python\restore_interophub_db_from_latest_local.py
+-- via `mysqldump --no-data` against the local `interophub` database,
+-- immediately after applying db/local_database_refresh.sql and
+-- db/unapplied_updates.sql to a freshly restored production snapshot.
+--
+-- This is a point-in-time reference snapshot of the full schema, not a
+-- migration and not consumed by the application (Hibernate manages the
+-- live schema via hibernate.hbm2ddl.auto=update). Schema changes belong
+-- in db/unapplied_updates.sql; this file will be silently overwritten on
+-- the next refresh/restore run. See docs/database-release-practice.md.
+-- ============================================================
+
