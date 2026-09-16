@@ -23,12 +23,12 @@ already been done through some other path.
 
 ## The four actions
 
-| Action | Appears when | Due | Goes away when |
+| Action | Appears when | Due | How to complete it |
 |---|---|---|---|
-| **Publish proposed agenda** | Meeting hasn't reached a finalized agenda yet | 14 days before the meeting (or immediately, if the meeting was created inside that window) | The proposed-agenda notice has been sent, or the agenda has since been finalized |
-| **Finalize agenda** | Meeting hasn't started yet | 3 days before the meeting (or immediately, if created inside that window) | The final-agenda notice has been sent, or the meeting has already started |
-| **Close meeting** | The meeting's scheduled end time has passed and it was never started, ended, or cancelled | The moment the scheduled end time passes | The meeting is closed, cancelled, completed, or currently in session |
-| **Publish notes** | The meeting has been marked completed | 24 hours after the meeting completed | Notes have been published *and* the notes-available notice has been sent |
+| **Publish proposed agenda** | Meeting hasn't reached a finalized agenda yet | 14 days before the meeting (or immediately, if the meeting was created inside that window) | Publish the agenda and send the proposed-agenda notice — or finalize the agenda directly, skipping this step. Do this before the meeting; it isn't meaningful once the meeting has already happened. |
+| **Finalize agenda** | Meeting hasn't started yet | 3 days before the meeting (or immediately, if created inside that window) | Finalize the agenda and send the final-agenda notice. Like the step above, this has to happen before the meeting starts. |
+| **Close meeting** | The meeting's scheduled end time has passed and it was never started, ended, or cancelled | The moment the scheduled end time passes | Close the meeting or mark it cancelled. |
+| **Publish notes** | The meeting has been marked completed | 24 hours after the meeting completed | Publish the notes and send the notes-available notice — within 7 days of the meeting, the same window in which note edits are allowed. Notes can't be published for review once that window closes, so don't let this slip. |
 
 "Close meeting" specifically targets meetings that were **forgotten** —
 never started and never explicitly ended. A meeting that's actively running

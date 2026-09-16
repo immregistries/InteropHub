@@ -157,6 +157,35 @@ class MeetingActionQueueServiceTest {
     }
 
     @Test
+    void closeMeetingFallsBackToScheduledStartWhenNoEndTimeWasRecorded() {
+        // In practice almost no meeting has an explicit scheduledEnd - without this
+        // fallback, a "forgotten" meeting with no end time would stay open forever
+        // with no recovery reminder at all (this reproduces meeting 8's real bug).
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.minusDays(7));
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+
+        Optional<MeetingAction> action = derive(meeting, MeetingActionType.CLOSE_MEETING, List.of());
+
+        assertTrue(action.isPresent());
+        assertTrue(action.get().isOverdue());
+    }
+
+    @Test
+    void closeMeetingDoesNotAppearWhileMeetingIsInSession() {
+        // An actively-running meeting past its end time should route people to "End
+        // meeting" on the workspace page, not "Close meeting" - that page's own
+        // Close button is disabled in this exact state (EsMeetingWorkspaceServlet's
+        // canCloseMeeting), so this reminder must not point there either.
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.minusHours(3));
+        meeting.setStatus(EsMeeting.MeetingStatus.IN_SESSION);
+        meeting.setScheduledEnd(NOW.minusHours(1));
+
+        Optional<MeetingAction> action = derive(meeting, MeetingActionType.CLOSE_MEETING, List.of());
+
+        assertTrue(action.isEmpty());
+    }
+
+    @Test
     void closeMeetingDoesNotAppearOnceMeetingHasEnded() {
         EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.minusDays(20));
         meeting.setStatus(EsMeeting.MeetingStatus.COMPLETED);

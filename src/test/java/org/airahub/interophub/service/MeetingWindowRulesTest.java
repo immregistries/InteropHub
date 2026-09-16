@@ -51,8 +51,21 @@ class MeetingWindowRulesTest {
     }
 
     @Test
-    void isPastScheduledEndIsFalseWithNoScheduledEnd() {
+    void isPastScheduledEndIsFalseWithNoScheduledEndOrStart() {
         EsMeeting meeting = new EsMeeting();
         assertFalse(MeetingWindowRules.isPastScheduledEnd(meeting, Instant.now()));
+    }
+
+    @Test
+    void isPastScheduledEndFallsBackToScheduledStartWhenNoEndTimeWasRecorded() {
+        // Almost no meeting has an explicit scheduledEnd in practice - without this
+        // fallback, a meeting with no recorded end time could never be flagged as
+        // overdue to close, no matter how long it was forgotten.
+        EsMeeting meeting = new EsMeeting();
+        meeting.setScheduledStart(LocalDateTime.of(2026, 1, 15, 10, 0));
+        meeting.setTimezoneId("America/New_York");
+
+        assertFalse(MeetingWindowRules.isPastScheduledEnd(meeting, Instant.parse("2026-01-15T14:59:00Z")));
+        assertTrue(MeetingWindowRules.isPastScheduledEnd(meeting, Instant.parse("2026-01-15T15:00:00Z")));
     }
 }

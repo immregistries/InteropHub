@@ -903,7 +903,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
     private static String closeMeetingHelpText(EsMeeting meeting, boolean canCloseMeeting) {
         if (canCloseMeeting) {
-            return "The scheduled end time has passed. Closing locks notes on the usual 7-day timer.";
+            return "The meeting's scheduled time has passed. Closing locks notes on the usual 7-day timer.";
         }
         if (meeting != null && meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION) {
             return "Use End meeting instead while the meeting is in session.";
@@ -913,7 +913,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 || meeting.getStatus() == EsMeeting.MeetingStatus.CANCELLED)) {
             return "This meeting has already ended.";
         }
-        return "Close meeting is only available once the scheduled end time has passed.";
+        return "Close meeting is only available once the meeting's scheduled time has passed"
+                + " (its end time, or start time if no end time was set).";
     }
 
     private Map<Long, User> resolveMeetingUsers(EsMeeting meeting) {

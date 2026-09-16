@@ -241,17 +241,28 @@ public class MeetingActionQueueService {
     }
 
     private static Optional<MeetingAction> deriveCloseMeeting(EsMeeting meeting, ZoneId meetingZone, Instant nowInstant) {
-        LocalDateTime scheduledEnd = meeting.getScheduledEnd();
-        if (scheduledEnd == null || MEETING_ENDED.contains(meeting.getStatus())) {
+        // scheduledEnd if one was recorded, otherwise scheduledStart - see
+        // MeetingWindowRules.closeMeetingAnchor's doc for why the fallback matters
+        // (almost no meeting has an explicit scheduledEnd in practice).
+        LocalDateTime anchor = MeetingWindowRules.closeMeetingAnchor(meeting);
+        if (anchor == null || MEETING_ENDED.contains(meeting.getStatus())) {
             return Optional.empty();
         }
-        if (!isAtOrPast(scheduledEnd, meetingZone, nowInstant)) {
+        if (meeting.getStatus() == MeetingStatus.IN_SESSION) {
+            // An actively-running meeting past its end time uses "End meeting" on the
+            // workspace page instead - that page's own "Close meeting" button is
+            // deliberately disabled in this state (EsMeetingWorkspaceServlet's
+            // canCloseMeeting), so this reminder must not point here either.
+            return Optional.empty();
+        }
+        if (!isAtOrPast(anchor, meetingZone, nowInstant)) {
             return Optional.empty();
         }
         return Optional.of(new MeetingAction(
                 meeting.getEsMeetingId(), meeting.getMeetingName(), MeetingActionType.CLOSE_MEETING,
-                "The scheduled end time has passed. Close the meeting or mark it cancelled.",
-                workspaceHref(meeting), scheduledEnd, true, null, null));
+                "The meeting's scheduled time has passed without it being started, ended, or cancelled."
+                        + " Close the meeting or mark it cancelled.",
+                workspaceHref(meeting), anchor, true, null, null));
     }
 
     private static Optional<MeetingAction> derivePublishNotes(EsMeeting meeting,

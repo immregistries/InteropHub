@@ -2,6 +2,7 @@ package org.airahub.interophub.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -33,17 +34,34 @@ public final class MeetingWindowRules {
     }
 
     /**
-     * True once the meeting's scheduledEnd has passed, comparing actual instants
-     * (scheduledEnd is a naive wall-clock value in the meeting's own timezone -
-     * see MeetingActionQueueService's class doc for why this can't be compared
-     * to "now" without the zone conversion below).
+     * True once the meeting's close-meeting anchor (see {@link #closeMeetingAnchor})
+     * has passed, comparing actual instants (scheduledEnd/scheduledStart are naive
+     * wall-clock values in the meeting's own timezone - see MeetingActionQueueService's
+     * class doc for why this can't be compared to "now" without the zone conversion
+     * below).
      */
     public static boolean isPastScheduledEnd(EsMeeting meeting, Instant nowInstant) {
-        if (meeting == null || meeting.getScheduledEnd() == null || nowInstant == null) {
+        LocalDateTime anchor = closeMeetingAnchor(meeting);
+        if (anchor == null || nowInstant == null) {
             return false;
         }
         ZoneId zone = resolveMeetingZone(meeting.getTimezoneId());
-        return !nowInstant.isBefore(meeting.getScheduledEnd().atZone(zone).toInstant());
+        return !nowInstant.isBefore(anchor.atZone(zone).toInstant());
+    }
+
+    /**
+     * The wall-clock moment a meeting is "supposed to be over" for the forgotten-
+     * meeting recovery flow (the workspace page's Close-meeting button and the
+     * CLOSE_MEETING queue action): scheduledEnd if one was ever recorded, otherwise
+     * scheduledStart. In practice almost no meeting has an explicit scheduledEnd
+     * today, so this fallback is what makes the recovery flow fire at all instead
+     * of leaving a forgotten meeting stuck open forever.
+     */
+    public static LocalDateTime closeMeetingAnchor(EsMeeting meeting) {
+        if (meeting == null) {
+            return null;
+        }
+        return meeting.getScheduledEnd() != null ? meeting.getScheduledEnd() : meeting.getScheduledStart();
     }
 
     /** Package-visible so other meeting-timing logic (e.g. MeetingActionQueueService) shares this fallback. */
