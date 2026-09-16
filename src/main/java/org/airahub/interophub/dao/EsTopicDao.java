@@ -117,7 +117,9 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
 
     public Map<Long, String> findTopicNamesByTopicIds(List<Long> topicIds) {
         if (topicIds == null || topicIds.isEmpty()) {
-            return Map.of();
+            // Not Map.of(): its get() throws NPE on a null key, and callers look up
+            // by agenda-item topic id, which is legitimately null for topicless items.
+            return new LinkedHashMap<>();
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             List<Object[]> rows = session.createQuery(

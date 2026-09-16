@@ -80,6 +80,7 @@
     <mapping class="org.airahub.interophub.model.EsTopicCuration"/>
     <mapping class="org.airahub.interophub.model.EsTopicUserView"/>
     <mapping class="org.airahub.interophub.model.EsMeetingUserView"/>
+    <mapping class="org.airahub.interophub.model.EsMeetingActionState"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
     <mapping class="org.airahub.interophub.model.EsSurvey"/>
@@ -89,5 +90,6 @@
     <mapping class="org.airahub.interophub.model.EsSurveyAnswer"/>
     <mapping class="org.airahub.interophub.model.Supporter"/>
     <mapping class="org.airahub.interophub.model.EsTopicSupporter"/>
+    <mapping class="org.airahub.interophub.model.DigestRunState"/>
   </session-factory>
 </hibernate-configuration>

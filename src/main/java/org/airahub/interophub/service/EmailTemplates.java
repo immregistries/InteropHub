@@ -111,7 +111,7 @@ public final class EmailTemplates {
      */
     public static String dailyDigestBody(java.util.Map<String, java.util.List<String>> sectionBodies) {
         StringBuilder body = new StringBuilder();
-        body.append("Here's what's new on InteropHub:\n\n");
+        body.append("Your InteropHub Daily Digest:\n\n");
         for (var entry : sectionBodies.entrySet()) {
             body.append(entry.getKey()).append("\n\n");
             for (String itemBody : entry.getValue()) {
@@ -119,8 +119,81 @@ public final class EmailTemplates {
             }
         }
         body.append("--\n");
-        body.append("You are receiving this because you are listed as a champion, support contact,"
-                + " or administrator in InteropHub.\n");
+        body.append("You are receiving this because of your role, activity, or responsibilities on InteropHub.\n");
+        return body.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // TOPIC_FOLLOWER_ADDED — notify someone a manager added them as a follower
+    // -------------------------------------------------------------------------
+
+    public static String topicFollowerAddedSubject(String topicName) {
+        return "You've been added as a follower of "
+                + (topicName != null && !topicName.isBlank() ? topicName : "a topic");
+    }
+
+    public static String topicFollowerAddedBody(
+            String recipientName, String topicName, String addedByName, String reason,
+            String topicLink, String manageLink, String homeLink, boolean includeRegistrationCta) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi ").append(recipientName != null && !recipientName.isBlank() ? recipientName : "there")
+                .append(",\n\n");
+        body.append("You've been added as a follower of ")
+                .append(topicName != null && !topicName.isBlank() ? topicName : "a topic")
+                .append(" on InteropHub");
+        if (addedByName != null && !addedByName.isBlank()) {
+            body.append(" by ").append(addedByName);
+        }
+        body.append(".\n");
+        if (reason != null && !reason.isBlank()) {
+            body.append("\nReason given: ").append(reason).append("\n");
+        }
+        body.append("\nView the topic:\n  ").append(topicLink).append("\n");
+        if (includeRegistrationCta) {
+            body.append("\nTo manage your participation and get the most out of InteropHub, finish registering:\n  ")
+                    .append(homeLink != null ? homeLink : topicLink).append("\n");
+        }
+        body.append("\nIf you'd rather not follow this topic, you can unfollow it or manage all of your "
+                + "InteropHub email preferences here:\n  ").append(manageLink).append("\n");
+        return body.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // TOPIC_FOLLOWER_REGISTRATION_INVITE — invite an unregistered follower to
+    // finish registering
+    // -------------------------------------------------------------------------
+
+    public static String topicFollowerRegistrationInviteSubject() {
+        return "Finish registering on InteropHub";
+    }
+
+    public static String topicFollowerRegistrationInviteBody(String topicName, String homeLink) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi,\n\n");
+        body.append("You're currently following ")
+                .append(topicName != null && !topicName.isBlank() ? topicName : "a topic")
+                .append(" on InteropHub by email.\n\n");
+        body.append("To manage your participation, get updates, and take part in discussions, finish "
+                + "registering for an InteropHub account:\n  ").append(homeLink).append("\n");
+        return body.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // TOPIC_FOLLOWER_VERIFY_EMAIL — invite a follower with an unverified account
+    // to verify their email
+    // -------------------------------------------------------------------------
+
+    public static String topicFollowerVerifyEmailSubject() {
+        return "Please verify your email for InteropHub";
+    }
+
+    public static String topicFollowerVerifyEmailBody(String topicName, String magicLinkUrl) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi,\n\n");
+        body.append("You're following ")
+                .append(topicName != null && !topicName.isBlank() ? topicName : "a topic")
+                .append(" on InteropHub, but your email address hasn't been verified yet.\n\n");
+        body.append("Use this link to verify your email and sign in:\n  ").append(magicLinkUrl).append("\n");
         return body.toString();
     }
 

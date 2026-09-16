@@ -3,13 +3,17 @@ package org.airahub.interophub.servlet;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.MeetingAction;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.PublicUrlService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.immregistries.aira.web.AiraAccountConfig;
@@ -24,6 +28,8 @@ import org.immregistries.aira.web.AiraSearchConfig;
 final class InteropAiraPageFactory {
     private static final String APPLICATION_NAME = "InteropHub";
     private static final String HOME_HREF = "/home";
+    private static final String ACTION_QUEUE_HREF = "/welcome";
+    private static final String ACTION_QUEUE_LABEL = "Action needed";
     private static final String ACCOUNT_HREF = "/account";
     private static final String ADMIN_HREF = "/admin";
     private static final String SEARCH_ACTION = "/search";
@@ -42,6 +48,7 @@ final class InteropAiraPageFactory {
     private static final PublicUrlService PUBLIC_URL_SERVICE = new PublicUrlService();
     private static final EsTopicSpaceDao TOPIC_SPACE_DAO = new EsTopicSpaceDao();
     private static final TopicSpaceAccessService TOPIC_SPACE_ACCESS_SERVICE = new TopicSpaceAccessService();
+    private static final MeetingActionQueueService MEETING_ACTION_QUEUE_SERVICE = new MeetingActionQueueService();
 
     private InteropAiraPageFactory() {
     }
@@ -67,7 +74,31 @@ final class InteropAiraPageFactory {
             builder.environment(new AiraEnvironmentConfig(LOCAL_ENV_LABEL, LOCAL_ENV_DESCRIPTION));
         }
 
+        authenticatedUser.map(User::getUserId).ifPresent(userId -> {
+            int needsAttentionCount = countNeedsAttention(userId);
+            if (needsAttentionCount > 0) {
+                builder.addGlobalAction(ACTION_QUEUE_LABEL, ACTION_QUEUE_HREF, "danger", needsAttentionCount);
+            }
+        });
+
         return builder;
+    }
+
+    /**
+     * Count of unsnoozed due-or-overdue meeting-cadence actions, for the header
+     * badge shown on every authenticated page (docs/interophub-meeting-cadence-design.md).
+     * Upcoming (not-yet-due) and snoozed actions are excluded - this is a
+     * "needs attention now" signal, not a full backlog count.
+     */
+    private static int countNeedsAttention(Long userId) {
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        int count = 0;
+        for (MeetingAction action : MEETING_ACTION_QUEUE_SERVICE.getVisibleMeetingActions(userId)) {
+            if (action.isOverdue() && !action.isSnoozed(now)) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /**

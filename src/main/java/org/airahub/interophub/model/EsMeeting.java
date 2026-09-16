@@ -116,6 +116,12 @@ public class EsMeeting {
     @Column(name = "cancellation_reason", columnDefinition = "TEXT")
     private String cancellationReason;
 
+    @Column(name = "notes_published_at")
+    private LocalDateTime notesPublishedAt;
+
+    @Column(name = "notes_published_by_user_id")
+    private Long notesPublishedByUserId;
+
     @Column(name = "online_meeting_url", length = 2048)
     private String onlineMeetingUrl;
 
@@ -359,6 +365,22 @@ public class EsMeeting {
 
     public void setCancellationReason(String cancellationReason) {
         this.cancellationReason = cancellationReason;
+    }
+
+    public LocalDateTime getNotesPublishedAt() {
+        return notesPublishedAt;
+    }
+
+    public void setNotesPublishedAt(LocalDateTime notesPublishedAt) {
+        this.notesPublishedAt = notesPublishedAt;
+    }
+
+    public Long getNotesPublishedByUserId() {
+        return notesPublishedByUserId;
+    }
+
+    public void setNotesPublishedByUserId(Long notesPublishedByUserId) {
+        this.notesPublishedByUserId = notesPublishedByUserId;
     }
 
     public String getOnlineMeetingUrl() {

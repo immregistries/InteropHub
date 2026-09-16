@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -407,6 +408,9 @@ public class EsAgendaServlet extends HttpServlet {
             case "updateMeetingOnlineInfo":
                 handleUpdateMeetingOnlineInfo(request, response, contextPath, meeting, editOverride);
                 break;
+            case "updateMeetingRoles":
+                handleUpdateMeetingRoles(request, response, contextPath, meeting, editOverride);
+                break;
             case "addAgendaItem":
                 handleAddAgendaItem(request, response, contextPath, meeting, items, editOverride);
                 break;
@@ -534,6 +538,11 @@ public class EsAgendaServlet extends HttpServlet {
                 ? meeting.getScheduledStart().toLocalTime()
                 : LocalTime.of(11, 0);
         LocalDateTime newStart = newDate.atTime(existingStartTime);
+        if (isInPast(newStart, meeting)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting date cannot be in the past.");
+            return;
+        }
         if (meeting.getScheduledEnd() != null && meeting.getScheduledStart() != null) {
             long durationMinutes = ChronoUnit.MINUTES.between(meeting.getScheduledStart(), meeting.getScheduledEnd());
             meeting.setScheduledEnd(newStart.plusMinutes(durationMinutes));
@@ -563,7 +572,13 @@ public class EsAgendaServlet extends HttpServlet {
         LocalDate existingDate = meeting.getScheduledStart() != null
                 ? meeting.getScheduledStart().toLocalDate()
                 : LocalDate.now();
-        meeting.setScheduledStart(existingDate.atTime(newStart));
+        LocalDateTime newMeetingStart = existingDate.atTime(newStart);
+        if (isInPast(newMeetingStart, meeting)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting time cannot be in the past.");
+            return;
+        }
+        meeting.setScheduledStart(newMeetingStart);
         if (endTimeRaw != null && !endTimeRaw.isBlank()) {
             try {
                 LocalTime newEnd = LocalTime.parse(endTimeRaw, TIME_PARSE_FMT);
@@ -618,7 +633,13 @@ public class EsAgendaServlet extends HttpServlet {
         LocalDate existingDate = meeting.getScheduledStart() != null
                 ? meeting.getScheduledStart().toLocalDate()
                 : LocalDate.now();
-        meeting.setScheduledStart(existingDate.atTime(newStart));
+        LocalDateTime newMeetingStart = existingDate.atTime(newStart);
+        if (isInPast(newMeetingStart, meeting)) {
+            redirectBackWithError(response, contextPath, meeting.getEsMeetingId(), editOverride,
+                    "Meeting time cannot be in the past.");
+            return;
+        }
+        meeting.setScheduledStart(newMeetingStart);
         // 3. End time (optional)
         String endTimeRaw = trimToNull(request.getParameter("endTime"));
         if (endTimeRaw != null && !endTimeRaw.isBlank()) {
@@ -655,6 +676,14 @@ public class EsAgendaServlet extends HttpServlet {
             String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
         meeting.setOnlineMeetingUrl(trimToNull(request.getParameter("onlineMeetingUrl")));
         meeting.setOnlineMeetingDetails(trimToNull(request.getParameter("onlineMeetingDetails")));
+        meetingDao.saveOrUpdate(meeting);
+        redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
+    }
+
+    private void handleUpdateMeetingRoles(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, EsMeeting meeting, boolean editOverride) throws IOException {
+        meeting.setDesignatedChairUserId(parseId(trimToNull(request.getParameter("chairUserId"))));
+        meeting.setDesignatedScribeUserId(parseId(trimToNull(request.getParameter("scribeUserId"))));
         meetingDao.saveOrUpdate(meeting);
         redirectBack(response, contextPath, meeting.getEsMeetingId(), editOverride);
     }
@@ -1016,8 +1045,15 @@ public class EsAgendaServlet extends HttpServlet {
                 if (meeting.getStatus() == MeetingStatus.FINALIZED) {
                     meetingDao.completeMeeting(meeting.getEsMeetingId());
                 } else {
+                    // completedAt/closeDueAt are UTC-anchored (see MeetingActionQueueService's
+                    // class doc) - closeDueAt drives both the 7-day note-editing lock
+                    // (TopicNoteService) and the publish-notes reminder cutoff
+                    // (MeetingActionQueueService.derivePublishNotes), so it must be set here too,
+                    // the same as EsMeetingDao.completeMeeting and MeetingLifecycleService do.
+                    LocalDateTime nowUtc = LocalDateTime.now(ZoneOffset.UTC);
                     meeting.setStatus(MeetingStatus.COMPLETED);
-                    meeting.setCompletedAt(LocalDateTime.now());
+                    meeting.setCompletedAt(nowUtc);
+                    meeting.setCloseDueAt(nowUtc.plusDays(7));
                     meetingDao.saveOrUpdate(meeting);
                 }
                 break;
@@ -2340,7 +2376,15 @@ public class EsAgendaServlet extends HttpServlet {
             boolean hasOnlineMeetingDetails = meeting.getOnlineMeetingDetails() != null
                     && !meeting.getOnlineMeetingDetails().isBlank();
             boolean hasSeriesLink = meeting.getEsTopicMeetingId() != null;
-            if (hasDescription || canEdit || hasOnlineMeetingUrl || hasSeriesLink) {
+            User designatedChairUser = meeting.getDesignatedChairUserId() != null
+                    ? userDao.findById(meeting.getDesignatedChairUserId()).orElse(null)
+                    : null;
+            User designatedScribeUser = meeting.getDesignatedScribeUserId() != null
+                    ? userDao.findById(meeting.getDesignatedScribeUserId()).orElse(null)
+                    : null;
+            boolean hasChair = designatedChairUser != null;
+            boolean hasScribe = designatedScribeUser != null;
+            if (hasDescription || canEdit || hasOnlineMeetingUrl || hasSeriesLink || hasChair || hasScribe) {
                 out.println("          <section class=\"aira-panel\">");
                 out.println("            <div class=\"aira-cluster aira-cluster--between\">");
                 out.println("              <h2 class=\"aira-section-title\">Meeting Information</h2>");
@@ -2438,6 +2482,75 @@ public class EsAgendaServlet extends HttpServlet {
                         out.println("            </details>");
                     }
                 }
+
+                // --- CHAIR / SCRIBE ---
+                if (canEdit) {
+                    String rolesDisplay = (hasChair ? "Chair: " + escapeHtml(userDisplayName(designatedChairUser))
+                            : "Chair: not set")
+                            + " &middot; "
+                            + (hasScribe ? "Scribe: " + escapeHtml(userDisplayName(designatedScribeUser))
+                                    : "Scribe: not set");
+                    out.println("            <div class=\"aira-field\">");
+                    out.println("              <div id=\"meeting-roles-display\" class=\"click-to-edit\""
+                            + " onclick=\"esShowEdit('meeting-roles')\" title=\"Click to edit\">" + rolesDisplay
+                            + "</div>");
+                    out.println(
+                            "              <form id=\"meeting-roles-form\" class=\"aira-form aira-no-print\" method=\"post\" action=\""
+                                    + contextPath + "/es/agenda\" style=\"display:none\">");
+                    out.println("                <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "                <input type=\"hidden\" name=\"action\" value=\"updateMeetingRoles\">");
+                    if (editOverride)
+                        out.println("                <input type=\"hidden\" name=\"edit\" value=\"true\">");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"meeting-roles-chair\">Chair</label>");
+                    out.println("                  <select class=\"aira-select\" id=\"meeting-roles-chair\" name=\"chairUserId\">");
+                    out.println("                    <option value=\"\">&mdash; None &mdash;</option>");
+                    for (User candidate : allUsers) {
+                        boolean selected = candidate.getUserId() != null
+                                && candidate.getUserId().equals(meeting.getDesignatedChairUserId());
+                        out.println("                    <option value=\"" + candidate.getUserId() + "\""
+                                + (selected ? " selected" : "") + ">" + escapeHtml(userDisplayName(candidate))
+                                + "</option>");
+                    }
+                    out.println("                  </select>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-field\">");
+                    out.println("                  <label for=\"meeting-roles-scribe\">Scribe</label>");
+                    out.println("                  <select class=\"aira-select\" id=\"meeting-roles-scribe\" name=\"scribeUserId\">");
+                    out.println("                    <option value=\"\">&mdash; None &mdash;</option>");
+                    for (User candidate : allUsers) {
+                        boolean selected = candidate.getUserId() != null
+                                && candidate.getUserId().equals(meeting.getDesignatedScribeUserId());
+                        out.println("                    <option value=\"" + candidate.getUserId() + "\""
+                                + (selected ? " selected" : "") + ">" + escapeHtml(userDisplayName(candidate))
+                                + "</option>");
+                    }
+                    out.println("                  </select>");
+                    out.println("                </div>");
+                    out.println("                <div class=\"aira-action-group\">");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--primary aira-button--small\" type=\"submit\">Save</button>");
+                    out.println(
+                            "                  <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" onclick=\"esHideEdit('meeting-roles')\">Cancel</button>");
+                    out.println("                </div>");
+                    out.println("              </form>");
+                    out.println("            </div>");
+                } else if (hasChair || hasScribe) {
+                    StringBuilder compact = new StringBuilder();
+                    if (hasChair) {
+                        compact.append("Chair: ").append(escapeHtml(userDisplayName(designatedChairUser)));
+                    }
+                    if (hasScribe) {
+                        if (compact.length() > 0) {
+                            compact.append(" &middot; ");
+                        }
+                        compact.append("Scribe: ").append(escapeHtml(userDisplayName(designatedScribeUser)));
+                    }
+                    out.println("            <p class=\"aira-meta\">" + compact + "</p>");
+                }
+
                 out.println("          </section>");
             }
 
@@ -3757,6 +3870,11 @@ public class EsAgendaServlet extends HttpServlet {
         return "America/New_York";
     }
 
+    private boolean isInPast(LocalDateTime candidateStart, EsMeeting meeting) {
+        ZoneId zone = safeZoneId(meeting.getTimezoneId(), "America/New_York");
+        return candidateStart.atZone(zone).isBefore(ZonedDateTime.now(zone));
+    }
+
     private ZoneId safeZoneId(String tzId, String fallback) {
         if (tzId != null && !tzId.isBlank()) {
             try {
@@ -3770,6 +3888,17 @@ public class EsAgendaServlet extends HttpServlet {
         } catch (Exception ignored) {
             return ZoneId.of("America/New_York");
         }
+    }
+
+    private String userDisplayName(User user) {
+        if (user == null) {
+            return "";
+        }
+        String fullName = trimToNull(user.getFullName());
+        if (fullName != null) {
+            return fullName;
+        }
+        return orEmpty(user.getEmail());
     }
 
     private String presenterDisplayName(EsAgendaItemPresenter p, Map<Long, User> presenterUsers) {

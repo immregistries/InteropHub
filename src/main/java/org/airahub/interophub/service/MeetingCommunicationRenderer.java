@@ -27,6 +27,8 @@ public class MeetingCommunicationRenderer {
                 new ReminderCommunicationHandler());
         handlers.put(EsMeetingCommunication.CommunicationType.CANCELLED,
                 new CancelledMeetingCommunicationHandler());
+        handlers.put(EsMeetingCommunication.CommunicationType.NOTES_AVAILABLE,
+                new NotesAvailableCommunicationHandler());
     }
 
     public MeetingCommunicationHandler handlerFor(EsMeetingCommunication.CommunicationType type) {

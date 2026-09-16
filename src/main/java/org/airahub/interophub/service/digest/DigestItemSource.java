@@ -17,4 +17,20 @@ public interface DigestItemSource {
 
     /** Returns notices for everything new in (since, until]. */
     List<DigestNotice> collect(LocalDateTime since, LocalDateTime until);
+
+    /**
+     * Whether a recipient's general community unsubscribe
+     * ({@code EsSubscriptionDao.hasGeneralUnsubscribed}) suppresses this
+     * source's notices. True for community content (the default - matches
+     * every source that existed before this method was added). Operational
+     * reminders tied to a person's own staff responsibilities (e.g. the
+     * meeting-cadence action queue) should return false here: a community
+     * content opt-out must not silently stop someone from being reminded of
+     * their own required duties. See docs/interophub-meeting-cadence-design.md
+     * ("Operational reminders to authorized staff may require different
+     * preference handling from community subscription email").
+     */
+    default boolean respectsCommunityUnsubscribe() {
+        return true;
+    }
 }

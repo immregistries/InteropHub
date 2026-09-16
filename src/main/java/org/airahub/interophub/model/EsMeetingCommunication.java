@@ -21,7 +21,8 @@ public class EsMeetingCommunication {
         PROPOSED_AGENDA,
         FINAL_AGENDA,
         REMINDER,
-        CANCELLED
+        CANCELLED,
+        NOTES_AVAILABLE
     }
 
     public enum CommunicationStatus {

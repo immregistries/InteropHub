@@ -461,6 +461,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicFollowerManageServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicFollowerManageServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicMeetingToggleServlet</servlet-class>
   </servlet>
@@ -766,6 +771,11 @@
   </servlet-mapping>
 
   <servlet-mapping>
+    <servlet-name>EsTopicFollowerManageServlet</servlet-name>
+    <url-pattern>/es/topics/followers-manage</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
     <servlet-name>EsTopicMeetingToggleServlet</servlet-name>
     <url-pattern>/es/topics/meeting-toggle</url-pattern>
   </servlet-mapping>
@@ -854,6 +864,16 @@
   <servlet-mapping>
     <servlet-name>EsMeetingTopicNoteStreamServlet</servlet-name>
     <url-pattern>/es/meeting-topic-note-stream</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>EsMeetingActionServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingActionServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingActionServlet</servlet-name>
+    <url-pattern>/es/meeting-action</url-pattern>
   </servlet-mapping>
 
   <servlet>

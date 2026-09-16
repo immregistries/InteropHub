@@ -238,6 +238,12 @@ public class AdminEsMeetingServlet extends HttpServlet {
             onlineMeetingDetails = topicMeeting.getOnlineMeetingDetails();
         }
 
+        if (scheduledStart.atZone(safeZoneId(timezoneId)).isBefore(ZonedDateTime.now(safeZoneId(timezoneId)))) {
+            renderDetail(request, response, topicMeeting,
+                    "Meeting date cannot be in the past: \"" + agendaDateRaw + "\".");
+            return;
+        }
+
         EsMeeting newMeeting = new EsMeeting();
         newMeeting.setEsTopicMeetingId(topicMeeting.getEsTopicMeetingId());
         newMeeting.setEsTopicSpaceId(hostTopic.getEsTopicSpaceId());

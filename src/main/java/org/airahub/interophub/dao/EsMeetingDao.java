@@ -76,6 +76,32 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
     }
 
     /**
+     * Returns every meeting that could still have an incomplete cadence action
+     * (publish/finalize agenda, close meeting, publish notes) - i.e. everything
+     * except the two terminal statuses where all four actions are moot, bounded
+     * to meetings scheduled at or before {@code horizon}. The horizon keeps a
+     * long-running recurring series (which may have draft instances scheduled
+     * a year or more out) from flooding the "Upcoming" section of the action
+     * queue with meetings nobody needs to think about yet, and keeps this query
+     * from scanning the entire future calendar on every page load.
+     * Used by MeetingActionQueueService as the candidate set before per-meeting
+     * applicability/completion is derived.
+     */
+    public List<EsMeeting> findActionQueueCandidates(LocalDateTime horizon) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeeting m where m.status not in (:terminal) and m.scheduledStart <= :horizon"
+                            + " order by m.scheduledStart asc",
+                    EsMeeting.class)
+                    .setParameterList("terminal", List.of(
+                            EsMeeting.MeetingStatus.CLOSED,
+                            EsMeeting.MeetingStatus.CANCELLED))
+                    .setParameter("horizon", horizon)
+                    .getResultList();
+        }
+    }
+
+    /**
      * Returns meetings whose scheduledStart falls within [start, end] inclusive,
      * ordered by scheduledStart ascending.
      */
@@ -192,13 +218,18 @@ public class EsMeetingDao extends GenericDao<EsMeeting, Long> {
         org.hibernate.Transaction tx = null;
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             tx = session.beginTransaction();
+            LocalDateTime now = LocalDateTime.now();
+            // closeDueAt drives the 7-day note-editing lock (see MeetingLifecycleService.completeMeeting) -
+            // must be set here too so meetings completed via this manual status transition get the same lock.
             int updated = session.createMutationQuery(
                     "update EsMeeting m set m.status = :status"
                             + ", m.completedAt = :now"
+                            + ", m.closeDueAt = :closeDueAt"
                             + " where m.esMeetingId = :id"
                             + " and m.status = :finalized")
                     .setParameter("status", EsMeeting.MeetingStatus.COMPLETED)
-                    .setParameter("now", LocalDateTime.now())
+                    .setParameter("now", now)
+                    .setParameter("closeDueAt", now.plusDays(7))
                     .setParameter("id", esMeetingId)
                     .setParameter("finalized", EsMeeting.MeetingStatus.FINALIZED)
                     .executeUpdate();

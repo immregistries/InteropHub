@@ -33,6 +33,9 @@ public final class EmailReason {
     /** Meeting communication: cancellation notice. */
     public static final String MEETING_COMMUNICATION_CANCELLED = "MEETING_COMMUNICATION_CANCELLED";
 
+    /** Meeting communication: notes-available-for-review notification. */
+    public static final String MEETING_COMMUNICATION_NOTES_AVAILABLE = "MEETING_COMMUNICATION_NOTES_AVAILABLE";
+
     /** Agenda presenter invitation. */
     public static final String PRESENTER_INVITATION = "PRESENTER_INVITATION";
 
@@ -52,6 +55,15 @@ public final class EmailReason {
      * InteropHub Daily Digest — recurring digest of topic-contact-worthy activity.
      */
     public static final String DAILY_DIGEST = "DAILY_DIGEST";
+
+    /** Sent when a champion/support/admin manually adds someone as a topic follower. */
+    public static final String TOPIC_FOLLOWER_ADDED = "TOPIC_FOLLOWER_ADDED";
+
+    /** Invites a manually-added, unregistered topic follower to finish registering. */
+    public static final String TOPIC_FOLLOWER_REGISTRATION_INVITE = "TOPIC_FOLLOWER_REGISTRATION_INVITE";
+
+    /** Invites a manually-added topic follower with an unverified account to verify their email. */
+    public static final String TOPIC_FOLLOWER_VERIFY_EMAIL = "TOPIC_FOLLOWER_VERIFY_EMAIL";
 
     private EmailReason() {
     }

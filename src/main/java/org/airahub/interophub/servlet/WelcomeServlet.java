@@ -7,13 +7,17 @@ import java.util.List;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import org.airahub.interophub.dao.AppRegistryDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.MeetingAction;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
+import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.immregistries.aira.web.AiraPage;
 
@@ -23,6 +27,7 @@ public class WelcomeServlet extends HttpServlet {
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsInterestService esInterestService;
     private final TopicSpaceAccessService topicSpaceAccessService;
+    private final MeetingActionQueueService meetingActionQueueService;
 
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
@@ -30,6 +35,7 @@ public class WelcomeServlet extends HttpServlet {
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.esInterestService = new EsInterestService();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
+        this.meetingActionQueueService = new MeetingActionQueueService();
     }
 
     @Override
@@ -81,6 +87,8 @@ public class WelcomeServlet extends HttpServlet {
                 .filter(app -> app.getDefaultRedirectUrl() != null && !app.getDefaultRedirectUrl().isBlank())
                 .toList();
 
+        List<MeetingAction> meetingActions = meetingActionQueueService.getVisibleMeetingActions(user.getUserId());
+
         response.setContentType("text/html;charset=UTF-8");
         AiraPage page = InteropAiraPageFactory.base(request, "Welcome - InteropHub")
                 .applicationSubtitle("Welcome")
@@ -90,7 +98,7 @@ public class WelcomeServlet extends HttpServlet {
         try (PrintWriter out = response.getWriter()) {
             page.writeStart(out);
             renderAuthenticatedContent(out, contextPath, name, availableApps, publicSpaces, privateSpaces,
-                    adminUser);
+                    adminUser, meetingActions);
             out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
@@ -125,7 +133,7 @@ public class WelcomeServlet extends HttpServlet {
 
     private void renderAuthenticatedContent(PrintWriter out, String contextPath, String name,
             List<AppRegistry> availableApps, List<EsTopicSpace> publicSpaces, List<EsTopicSpace> privateSpaces,
-            boolean adminUser) {
+            boolean adminUser, List<MeetingAction> meetingActions) {
         out.println("      <div class=\"aira-container--standard\">");
         out.println("        <div class=\"aira-page-header\">");
         out.println("          <div>");
@@ -148,6 +156,7 @@ public class WelcomeServlet extends HttpServlet {
 
         out.println("        <div class=\"aira-stack\">");
 
+        MeetingActionQueueRenderer.render(out, contextPath, meetingActions, LocalDateTime.now(ZoneOffset.UTC));
         renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
         renderApplicationsSection(out, contextPath, availableApps);
         renderHowInteropHubSupportsSection(out);

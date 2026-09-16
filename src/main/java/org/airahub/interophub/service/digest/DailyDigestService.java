@@ -4,8 +4,10 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.airahub.interophub.dao.DigestRunStateDao;
@@ -42,7 +44,7 @@ public class DailyDigestService {
         this.subscriptionDao = new EsSubscriptionDao();
         this.emailService = new EmailService();
         this.emailSendLogDao = new EmailSendLogDao();
-        this.sources = List.of(new NewFollowersDigestSource());
+        this.sources = List.of(new NewFollowersDigestSource(), new StaffActionDigestSource());
     }
 
     /**
@@ -85,26 +87,37 @@ public class DailyDigestService {
     }
 
     private void runDigest(LocalDateTime since, LocalDateTime until) {
-        Map<String, List<DigestNotice>> noticesByRecipient = new LinkedHashMap<>();
+        // Kept separate rather than one merged map: a community unsubscribe must
+        // suppress only the gated (community) notices for a recipient, never the
+        // ungated (operational/staff) ones - see DigestItemSource.respectsCommunityUnsubscribe().
+        Map<String, List<DigestNotice>> gatedByRecipient = new LinkedHashMap<>();
+        Map<String, List<DigestNotice>> ungatedByRecipient = new LinkedHashMap<>();
         for (DigestItemSource source : sources) {
+            Map<String, List<DigestNotice>> target = source.respectsCommunityUnsubscribe()
+                    ? gatedByRecipient
+                    : ungatedByRecipient;
             try {
                 for (DigestNotice notice : source.collect(since, until)) {
-                    noticesByRecipient
-                            .computeIfAbsent(notice.recipientEmailNormalized(), k -> new ArrayList<>())
-                            .add(notice);
+                    target.computeIfAbsent(notice.recipientEmailNormalized(), k -> new ArrayList<>()).add(notice);
                 }
             } catch (Exception ex) {
                 LOGGER.log(Level.WARNING, "Digest source " + source.key() + " failed", ex);
             }
         }
 
-        for (List<DigestNotice> notices : noticesByRecipient.values()) {
-            if (notices.isEmpty()) {
-                continue;
-            }
-            String emailNormalized = notices.get(0).recipientEmailNormalized();
+        Set<String> recipients = new LinkedHashSet<>();
+        recipients.addAll(gatedByRecipient.keySet());
+        recipients.addAll(ungatedByRecipient.keySet());
+
+        for (String emailNormalized : recipients) {
+            List<DigestNotice> ungated = ungatedByRecipient.getOrDefault(emailNormalized, List.of());
+            List<DigestNotice> gated = gatedByRecipient.getOrDefault(emailNormalized, List.of());
             try {
-                if (subscriptionDao.hasGeneralUnsubscribed(emailNormalized)) {
+                List<DigestNotice> notices = new ArrayList<>(ungated);
+                if (!gated.isEmpty() && !subscriptionDao.hasGeneralUnsubscribed(emailNormalized)) {
+                    notices.addAll(gated);
+                }
+                if (notices.isEmpty()) {
                     continue;
                 }
                 sendDigestEmail(notices);

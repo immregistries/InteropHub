@@ -15,11 +15,13 @@ public class HubLinkService {
     }
 
     public String buildTopicLink(Long topicId) {
+        return buildLink("/es/topic/" + topicId);
+    }
+
+    /** Prepends the configured external base URL to an app-relative path (e.g. "/es/agenda?meetingId=1"). */
+    public String buildLink(String path) {
         String base = baseUrl();
-        if (base == null) {
-            return "/es/topic/" + topicId;
-        }
-        return base + "/es/topic/" + topicId;
+        return base == null ? path : base + path;
     }
 
     private String baseUrl() {

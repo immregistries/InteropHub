@@ -36,6 +36,7 @@ import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.MeetingRoleType;
 import org.airahub.interophub.model.RecordedOutcomeType;
 import org.airahub.interophub.model.TopicNoteStatus;
 import org.airahub.interophub.model.User;
@@ -43,6 +44,7 @@ import org.airahub.interophub.service.AgendaActivityService;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
 import org.airahub.interophub.service.MeetingLifecycleService;
+import org.airahub.interophub.service.MeetingRoleService;
 import org.airahub.interophub.service.MeetingWindowRules;
 import org.airahub.interophub.service.TopicNoteDocumentSupport;
 import org.airahub.interophub.service.TopicSpaceAccessService;
@@ -69,6 +71,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     private final EsMeetingAttendanceDao attendanceDao;
     private final UserDao userDao;
     private final MeetingLifecycleService meetingLifecycleService;
+    private final MeetingRoleService meetingRoleService;
     private final TopicNoteDocumentSupport topicNoteDocumentSupport;
     private final AgendaActivityService agendaActivityService;
 
@@ -86,6 +89,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.userDao = new UserDao();
         this.meetingLifecycleService = new MeetingLifecycleService();
+        this.meetingRoleService = new MeetingRoleService();
         this.topicNoteDocumentSupport = new TopicNoteDocumentSupport();
         this.agendaActivityService = new AgendaActivityService();
     }
@@ -112,9 +116,18 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         Long selectedItemId = parseId(request.getParameter("itemId"));
         String feedbackMessage = resolveFeedbackMessage(request);
         String errorMessage = trimToNull(request.getParameter("err"));
+        String suggestBanner = buildSuggestBanner(request.getContextPath(), meetingId,
+                trimToNull(request.getParameter("suggest")));
         String csrfToken = CsrfTokenSupport.getOrCreateToken(request);
         WorkspaceView view = buildWorkspaceView(meeting, selectedItemId, user, feedbackMessage, errorMessage,
-                csrfToken);
+                suggestBanner, csrfToken);
+        // Live chair/scribe reassignment is a during-the-meeting action, not the normal
+        // pre-meeting planning mechanism (that's the designated chair/scribe, edited on
+        // the agenda page) - only offered while the session is actually running, and
+        // only to whoever could already control this meeting.
+        boolean canAssignLiveRoles = meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION
+                && meetingAuthorizationService.canControlMeeting(user != null ? user.getUserId() : null, meeting);
+        List<User> assignableUsers = canAssignLiveRoles ? userDao.findAllOrderByName() : List.of();
         EsTopicSpace meetingSpace = meeting.getEsTopicSpaceId() == null ? null
                 : topicSpaceDao.findById(meeting.getEsTopicSpaceId()).orElse(null);
         String meetingSpaceName = meetingSpace == null ? "Meeting Workspace" : meetingSpace.getSpaceName();
@@ -137,7 +150,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     .build();
 
             page.writeStart(out);
-            renderWorkspaceContent(out, request.getContextPath(), view);
+            renderWorkspaceContent(out, request.getContextPath(), view, assignableUsers);
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             page.writeEnd(out);
         }
@@ -182,6 +195,33 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, "ended=1");
                 return;
             }
+            if ("assignRole".equals(action)) {
+                MeetingRoleType roleType = parseMeetingRoleType(request.getParameter("roleType"));
+                Long assigneeUserId = parseId(request.getParameter("userId"));
+                if (roleType == null || assigneeUserId == null) {
+                    response.sendError(HttpServletResponse.SC_BAD_REQUEST, "roleType and userId are required.");
+                    return;
+                }
+                if (roleType == MeetingRoleType.CHAIR) {
+                    meetingRoleService.assignChair(meetingId, assigneeUserId, user.getUserId());
+                } else {
+                    meetingRoleService.assignScribe(meetingId, assigneeUserId, user.getUserId());
+                }
+                redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, "roleAssigned=1");
+                return;
+            }
+            if ("publishNotes".equals(action)) {
+                meetingLifecycleService.publishNotesForReview(meetingId, user.getUserId());
+                redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId,
+                        "notesPublished=1&suggest=" + URLEncoder.encode("NOTES_AVAILABLE",
+                                java.nio.charset.StandardCharsets.UTF_8));
+                return;
+            }
+            if ("closeMeeting".equals(action)) {
+                meetingLifecycleService.closeMeeting(meetingId, user.getUserId());
+                redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, "closed=1");
+                return;
+            }
             if ("markCovered".equals(action)) {
                 if (selectedItemId == null) {
                     response.sendError(HttpServletResponse.SC_BAD_REQUEST, "itemId is required.");
@@ -222,6 +262,11 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     }
 
     static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view) {
+        renderWorkspaceContent(out, contextPath, view, List.of());
+    }
+
+    static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view,
+            List<User> assignableUsers) {
         out.println("    <div class=\"aira-container--wide aira-stack aira-stack--compact\">");
         if (view.feedbackMessage() != null && !"Session started.".equals(view.feedbackMessage())
                 && !"Meeting ended.".equals(view.feedbackMessage())) {
@@ -231,6 +276,9 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         if (view.errorMessage() != null) {
             out.println("      <div class=\"aira-alert aira-alert--danger\" role=\"alert\">"
                     + escapeHtml(view.errorMessage()) + "</div>");
+        }
+        if (view.suggestBanner() != null) {
+            out.println("      <div class=\"aira-alert aira-alert--info\"><p>" + view.suggestBanner() + "</p></div>");
         }
         out.println("      <div class=\"aira-sidebar-layout\">");
         out.println("        <aside class=\"aira-sidebar\">");
@@ -374,6 +422,34 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     + (view.canEndMeeting() ? "" : " disabled")
                     + ">End meeting</button>");
             out.println("                </form>");
+            out.println("                <form method=\"post\" action=\""
+                    + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
+                    + "\" class=\"aira-stack aira-stack--compact\">");
+            out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                    + view.meeting().getEsMeetingId() + "\" />");
+            if (view.selectedItem() != null && view.selectedItem().agendaItemId() != null) {
+                out.println("                  <input type=\"hidden\" name=\"itemId\" value=\""
+                        + view.selectedItem().agendaItemId() + "\" />");
+            }
+            out.println("                  <input type=\"hidden\" name=\"action\" value=\"publishNotes\" />");
+            out.println("                  <button class=\"aira-button aira-button--secondary\" type=\"submit\""
+                    + (view.canPublishNotes() ? "" : " disabled")
+                    + ">Publish notes for review</button>");
+            out.println("                </form>");
+            out.println("                <form method=\"post\" action=\""
+                    + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
+                    + "\" class=\"aira-stack aira-stack--compact\">");
+            out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                    + view.meeting().getEsMeetingId() + "\" />");
+            if (view.selectedItem() != null && view.selectedItem().agendaItemId() != null) {
+                out.println("                  <input type=\"hidden\" name=\"itemId\" value=\""
+                        + view.selectedItem().agendaItemId() + "\" />");
+            }
+            out.println("                  <input type=\"hidden\" name=\"action\" value=\"closeMeeting\" />");
+            out.println("                  <button class=\"aira-button aira-button--danger\" type=\"submit\""
+                    + (view.canCloseMeeting() ? "" : " disabled")
+                    + ">Close meeting</button>");
+            out.println("                </form>");
             out.println("              </div>");
             out.println("              <div class=\"aira-stack aira-stack--compact\" style=\"margin-top: 1rem;\">");
             out.println("                <h4 class=\"aira-section-title\">Roles</h4>");
@@ -390,8 +466,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 out.println("                    <tr>");
                 out.println("                      <td>" + escapeHtml(role.label()) + "</td>");
                 out.println("                      <td>" + escapeHtml(role.name()) + "</td>");
-                out.println(
-                        "                      <td><button class=\"aira-button aira-button--small\" type=\"button\" disabled>Assign</button></td>");
+                out.println("                      <td>" + renderRoleAssignControl(contextPath, view, role,
+                        assignableUsers) + "</td>");
                 out.println("                    </tr>");
             }
             if (!hasVisibleRole) {
@@ -418,7 +494,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     }
 
     WorkspaceView buildWorkspaceView(EsMeeting meeting, Long requestedSelectedItemId, User user,
-            String feedbackMessage, String errorMessage, String csrfToken) {
+            String feedbackMessage, String errorMessage, String suggestBanner, String csrfToken) {
         List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId()).stream()
                 .filter(item -> item.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED)
                 .sorted(Comparator.comparingInt(EsMeetingWorkspaceServlet::agendaOrder)
@@ -450,22 +526,35 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
         Map<Long, User> resolvedUsers = resolveMeetingUsers(meeting);
 
-        List<RoleSummary> roleSummaries = List.of(
-                new RoleSummary("Designated chair", userLabel(resolvedUsers.get(meeting.getDesignatedChairUserId())),
-                        roleMeta(meeting.getDesignatedChairUserId(),
-                                resolvedUsers.containsKey(meeting.getDesignatedChairUserId()))),
-                new RoleSummary("Current chair", userLabel(resolvedUsers.get(meeting.getCurrentChairUserId())),
-                        roleMeta(meeting.getCurrentChairUserId(),
-                                resolvedUsers.containsKey(meeting.getCurrentChairUserId()))),
-                new RoleSummary("Designated scribe", userLabel(resolvedUsers.get(meeting.getDesignatedScribeUserId())),
-                        roleMeta(meeting.getDesignatedScribeUserId(),
-                                resolvedUsers.containsKey(meeting.getDesignatedScribeUserId()))),
-                new RoleSummary("Current scribe", userLabel(resolvedUsers.get(meeting.getCurrentScribeUserId())),
-                        roleMeta(meeting.getCurrentScribeUserId(),
-                                resolvedUsers.containsKey(meeting.getCurrentScribeUserId()))),
-                new RoleSummary("Created by", userLabel(resolvedUsers.get(meeting.getCreatedByUserId())),
-                        roleMeta(meeting.getCreatedByUserId(),
-                                resolvedUsers.containsKey(meeting.getCreatedByUserId()))));
+        // "Chair"/"Scribe" are the designated (pre-planned) responsibilities, edited
+        // on the agenda page. "Current chair"/"Current scribe" only appear when a
+        // live in-session reassignment has actually diverged from that plan -
+        // otherwise the Chair/Scribe row already tells the whole story, and a
+        // second identical row would just be noise (docs/interophub-meeting-cadence-design.md
+        // -adjacent chair/scribe follow-up).
+        List<RoleSummary> roleSummaries = new ArrayList<>();
+        roleSummaries.add(new RoleSummary("Chair", userLabel(resolvedUsers.get(meeting.getDesignatedChairUserId())),
+                roleMeta(meeting.getDesignatedChairUserId(),
+                        resolvedUsers.containsKey(meeting.getDesignatedChairUserId()))));
+        if (meeting.getCurrentChairUserId() != null
+                && !meeting.getCurrentChairUserId().equals(meeting.getDesignatedChairUserId())) {
+            roleSummaries.add(new RoleSummary("Current chair",
+                    userLabel(resolvedUsers.get(meeting.getCurrentChairUserId())),
+                    roleMeta(meeting.getCurrentChairUserId(),
+                            resolvedUsers.containsKey(meeting.getCurrentChairUserId()))));
+        }
+        roleSummaries.add(new RoleSummary("Scribe", userLabel(resolvedUsers.get(meeting.getDesignatedScribeUserId())),
+                roleMeta(meeting.getDesignatedScribeUserId(),
+                        resolvedUsers.containsKey(meeting.getDesignatedScribeUserId()))));
+        if (meeting.getCurrentScribeUserId() != null
+                && !meeting.getCurrentScribeUserId().equals(meeting.getDesignatedScribeUserId())) {
+            roleSummaries.add(new RoleSummary("Current scribe",
+                    userLabel(resolvedUsers.get(meeting.getCurrentScribeUserId())),
+                    roleMeta(meeting.getCurrentScribeUserId(),
+                            resolvedUsers.containsKey(meeting.getCurrentScribeUserId()))));
+        }
+        roleSummaries.add(new RoleSummary("Created by", userLabel(resolvedUsers.get(meeting.getCreatedByUserId())),
+                roleMeta(meeting.getCreatedByUserId(), resolvedUsers.containsKey(meeting.getCreatedByUserId()))));
 
         List<Long> noteEditorUserIds = notesByAgendaItemId.values().stream()
                 .map(EsTopicNote::getActiveEditorUserId)
@@ -545,6 +634,17 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 || meeting.getStatus() == EsMeeting.MeetingStatus.COMPLETED)
                 && MeetingWindowRules.isMeetingStartWindowOpen(meeting);
         boolean canEndMeeting = meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION;
+        boolean canPublishNotes = meeting.getStatus() == EsMeeting.MeetingStatus.COMPLETED
+                && meeting.getNotesPublishedAt() == null;
+        // Only for a meeting that never got underway and is now overdue - the
+        // "forgotten meeting" fallback from docs/interophub-meeting-cadence-design.md
+        // Step 3. An IN_SESSION meeting past its end time should use "End meeting"
+        // instead (it has content worth completing properly, not force-closing).
+        boolean canCloseMeeting = MeetingWindowRules.isPastScheduledEnd(meeting)
+                && meeting.getStatus() != EsMeeting.MeetingStatus.IN_SESSION
+                && meeting.getStatus() != EsMeeting.MeetingStatus.COMPLETED
+                && meeting.getStatus() != EsMeeting.MeetingStatus.CLOSED
+                && meeting.getStatus() != EsMeeting.MeetingStatus.CANCELLED;
 
         NotePanelView notePanel = buildNotePanelView(meeting, topicMeeting, selectedItem, user, csrfToken, noteEditors);
 
@@ -556,10 +656,15 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 userLabel(resolvedUsers.get(meeting.getCreatedByUserId())),
                 canStartSession,
                 canEndMeeting,
+                canPublishNotes,
+                canCloseMeeting,
                 startSessionHelpText(meeting, canStartSession),
                 endMeetingHelpText(meeting, canEndMeeting),
+                publishNotesHelpText(meeting, canPublishNotes),
+                closeMeetingHelpText(meeting, canCloseMeeting),
                 feedbackMessage,
                 errorMessage,
+                suggestBanner,
                 notePanel);
     }
 
@@ -699,7 +804,32 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         if ("1".equals(request.getParameter("ended"))) {
             return "Meeting ended.";
         }
+        if ("1".equals(request.getParameter("notesPublished"))) {
+            return "Notes published for review.";
+        }
+        if ("1".equals(request.getParameter("closed"))) {
+            return "Meeting closed.";
+        }
+        if ("1".equals(request.getParameter("roleAssigned"))) {
+            return "Role updated.";
+        }
         return null;
+    }
+
+    /**
+     * Suggests the matching community communication right after a status change
+     * that a comm type exists for - mirrors EsAgendaServlet's suggest-banner
+     * pattern for PROPOSED_AGENDA/FINAL_AGENDA, applied here to NOTES_AVAILABLE
+     * after publishing notes (docs/interophub-meeting-cadence-design.md Step 4:
+     * "one action, not separate content and communication actions").
+     */
+    private static String buildSuggestBanner(String contextPath, Long meetingId, String suggestType) {
+        if (suggestType == null || meetingId == null || !"NOTES_AVAILABLE".equals(suggestType)) {
+            return null;
+        }
+        String link = (contextPath == null ? "" : contextPath) + "/es/meeting-communication?meetingId=" + meetingId
+                + "&suggestType=" + URLEncoder.encode(suggestType, java.nio.charset.StandardCharsets.UTF_8);
+        return "<a href=\"" + link + "\">Send Notes Available communication</a>";
     }
 
     private static void redirectWorkspace(HttpServletResponse response, String contextPath, Long meetingId,
@@ -761,6 +891,31 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return "End meeting is only available when the meeting is in session.";
     }
 
+    private static String publishNotesHelpText(EsMeeting meeting, boolean canPublishNotes) {
+        if (canPublishNotes) {
+            return "Publishing notifies the community that notes are ready for review.";
+        }
+        if (meeting != null && meeting.getNotesPublishedAt() != null) {
+            return "Notes have already been published for review.";
+        }
+        return "Notes can be published once the meeting is completed.";
+    }
+
+    private static String closeMeetingHelpText(EsMeeting meeting, boolean canCloseMeeting) {
+        if (canCloseMeeting) {
+            return "The scheduled end time has passed. Closing locks notes on the usual 7-day timer.";
+        }
+        if (meeting != null && meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION) {
+            return "Use End meeting instead while the meeting is in session.";
+        }
+        if (meeting != null && (meeting.getStatus() == EsMeeting.MeetingStatus.COMPLETED
+                || meeting.getStatus() == EsMeeting.MeetingStatus.CLOSED
+                || meeting.getStatus() == EsMeeting.MeetingStatus.CANCELLED)) {
+            return "This meeting has already ended.";
+        }
+        return "Close meeting is only available once the scheduled end time has passed.";
+    }
+
     private Map<Long, User> resolveMeetingUsers(EsMeeting meeting) {
         List<Long> userIds = new ArrayList<>();
         addIfNotNull(userIds, meeting.getDesignatedChairUserId());
@@ -799,15 +954,50 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         if (role == null) {
             return false;
         }
-        String label = role.label() != null ? role.label().toLowerCase(Locale.ROOT) : "";
         String name = role.name() != null ? role.name().trim() : "";
-        if (label.contains("designated") || label.contains("created by")) {
-            return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
-        }
-        if (label.contains("current")) {
-            return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
-        }
         return !name.isEmpty() && !"unassigned".equalsIgnoreCase(name);
+    }
+
+    /**
+     * Chair/Scribe (and, when it differs from the designated one, Current
+     * chair/Current scribe) get a real inline reassignment form once
+     * {@code assignableUsers} is non-empty - populated by the caller only while
+     * the meeting is actually in session and the viewer can control it (see
+     * doGet). Every other role row (Created by) keeps the inert placeholder, as
+     * before.
+     */
+    private static String renderRoleAssignControl(String contextPath, WorkspaceView view, RoleSummary role,
+            List<User> assignableUsers) {
+        MeetingRoleType roleType = switch (role.label()) {
+            case "Chair", "Current chair" -> MeetingRoleType.CHAIR;
+            case "Scribe", "Current scribe" -> MeetingRoleType.SCRIBE;
+            default -> null;
+        };
+        if (roleType == null || assignableUsers.isEmpty()) {
+            return "<button class=\"aira-button aira-button--small\" type=\"button\" disabled>Assign</button>";
+        }
+        String base = contextPath == null ? "" : contextPath;
+        StringBuilder form = new StringBuilder();
+        form.append("<form method=\"post\" action=\"").append(escapeHtml(base + WORKSPACE_PATH))
+                .append("\" class=\"aira-inline-form\">");
+        form.append("<input type=\"hidden\" name=\"meetingId\" value=\"").append(view.meeting().getEsMeetingId())
+                .append("\" />");
+        if (view.selectedItem() != null && view.selectedItem().agendaItemId() != null) {
+            form.append("<input type=\"hidden\" name=\"itemId\" value=\"")
+                    .append(view.selectedItem().agendaItemId()).append("\" />");
+        }
+        form.append("<input type=\"hidden\" name=\"action\" value=\"assignRole\" />");
+        form.append("<input type=\"hidden\" name=\"roleType\" value=\"").append(roleType.name()).append("\" />");
+        form.append("<select class=\"aira-select\" name=\"userId\" required>");
+        form.append("<option value=\"\" disabled selected>Choose a person&#8230;</option>");
+        for (User candidate : assignableUsers) {
+            form.append("<option value=\"").append(candidate.getUserId()).append("\">")
+                    .append(escapeHtml(userLabel(candidate))).append("</option>");
+        }
+        form.append("</select> ");
+        form.append("<button class=\"aira-button aira-button--small\" type=\"submit\">Assign</button>");
+        form.append("</form>");
+        return form.toString();
     }
 
     private static String noteSummary(EsTopicNote note) {
@@ -1309,6 +1499,18 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         return view != null && view.displayOrder() != null ? view.displayOrder() : Integer.MAX_VALUE;
     }
 
+    private static MeetingRoleType parseMeetingRoleType(String raw) {
+        String trimmed = trimToNull(raw);
+        if (trimmed == null) {
+            return null;
+        }
+        try {
+            return MeetingRoleType.valueOf(trimmed);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
     private static Long parseId(String raw) {
         String trimmed = trimToNull(raw);
         if (trimmed == null) {
@@ -1350,9 +1552,10 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             String seriesDescription, String scheduleText, String meetingStatusLabel, String meetingStatusClass,
             List<RoleSummary> roleSummaries, List<AgendaItemView> agendaItems, AgendaItemView selectedItem,
             int attendeeCount, int openNoteCount, String createdByName,
-            boolean canStartSession, boolean canEndMeeting,
-            String startSessionHelpText, String endMeetingHelpText,
-            String feedbackMessage, String errorMessage, NotePanelView notePanel) {
+            boolean canStartSession, boolean canEndMeeting, boolean canPublishNotes, boolean canCloseMeeting,
+            String startSessionHelpText, String endMeetingHelpText, String publishNotesHelpText,
+            String closeMeetingHelpText,
+            String feedbackMessage, String errorMessage, String suggestBanner, NotePanelView notePanel) {
     }
 
     public record RoleSummary(String label, String name, String meta) {

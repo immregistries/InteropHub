@@ -158,6 +158,48 @@ public class MeetingLifecycleService {
         }
     }
 
+    /**
+     * Records that a completed meeting's notes have been reviewed and are ready
+     * for community review. This only stamps notesPublishedAt/notesPublishedByUserId -
+     * it deliberately does not touch TopicNoteStatus or closeDueAt, since the
+     * existing 7-day editing lock (see {@link #closeMeetingInternal}) is a
+     * separate concern from this milestone (docs/interophub-meeting-cadence-design.md,
+     * Step 4/5).
+     *
+     * <p>Idempotent: publishing again after the first time is a no-op that
+     * preserves the original publish timestamp and publisher.
+     */
+    public EsMeeting publishNotesForReview(Long meetingId, Long actingUserId) {
+        if (meetingId == null || actingUserId == null) {
+            throw new IllegalArgumentException("meetingId and actingUserId are required.");
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            org.hibernate.Transaction tx = session.beginTransaction();
+            try {
+                EsMeeting meeting = session.find(EsMeeting.class, meetingId, LockModeType.PESSIMISTIC_WRITE);
+                if (meeting == null) {
+                    throw new IllegalArgumentException("Meeting not found: " + meetingId);
+                }
+                if (!authorizationService.canControlMeeting(actingUserId, meeting)) {
+                    throw new IllegalStateException("User is not authorized to publish notes for this meeting.");
+                }
+                if (meeting.getStatus() != EsMeeting.MeetingStatus.COMPLETED) {
+                    throw new IllegalStateException("Meeting notes can only be published once the meeting is completed.");
+                }
+                if (meeting.getNotesPublishedAt() == null) {
+                    meeting.setNotesPublishedAt(LocalDateTime.now(ZoneOffset.UTC));
+                    meeting.setNotesPublishedByUserId(actingUserId);
+                    session.merge(meeting);
+                }
+                tx.commit();
+                return meeting;
+            } catch (Exception ex) {
+                tx.rollback();
+                throw ex;
+            }
+        }
+    }
+
     public EsMeeting closeMeeting(Long meetingId, Long actingUserId) {
         return closeMeetingInternal(meetingId, actingUserId, MeetingCloseMethod.MANUAL, MeetingTransitionMethod.USER);
     }
