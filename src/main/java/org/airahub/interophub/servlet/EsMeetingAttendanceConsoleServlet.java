@@ -9,26 +9,37 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
+import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsMeetingRsvpDao;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsMeetingRsvp;
+import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.MeetingRsvpResponse;
 import org.airahub.interophub.model.User;
@@ -41,13 +52,15 @@ import org.airahub.interophub.service.TopicFollowerManagementService;
 import org.immregistries.aira.web.AiraPage;
 
 /**
- * Staff-facing attendance console (Phases 2-3 of
+ * Staff-facing attendance console (Phases 2-5 of
  * docs/meeting-attendance-console-design.md): lets meeting staff record
  * staff-observed attendance alongside participant self sign-in, edit or
  * remove an observed-only entry, invite an observed attendee with a known
- * email to confirm their own attendance, and see attendance counts at a
- * glance. Self-reported entries (selfSignedAt != null) are never editable
- * or removable here - only the participant's own self sign-in changes those.
+ * email to confirm their own attendance, see RSVPs, and see who's expected
+ * (by series membership, RSVP, presenting, or topic-following) but not yet
+ * seen - meeting-wide and broken down per agenda topic. Self-reported
+ * entries (selfSignedAt != null) are never editable or removable here -
+ * only the participant's own self sign-in changes those.
  *
  * URL: /es/meeting-attendance?meetingId={id}
  */
@@ -59,10 +72,14 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
     private final MeetingAuthorizationService meetingAuthorizationService;
     private final EsMeetingDao meetingDao;
     private final EsTopicMeetingDao topicMeetingDao;
+    private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsTopicDao topicDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final EsMeetingRsvpDao rsvpDao;
+    private final EsMeetingAgendaItemDao agendaItemDao;
+    private final EsAgendaItemPresenterDao presenterDao;
+    private final EsSubscriptionDao subscriptionDao;
     private final UserDao userDao;
     private final MeetingAttendanceInvitationService invitationService;
 
@@ -71,10 +88,14 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         this.meetingAuthorizationService = new MeetingAuthorizationService();
         this.meetingDao = new EsMeetingDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.topicDao = new EsTopicDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.rsvpDao = new EsMeetingRsvpDao();
+        this.agendaItemDao = new EsMeetingAgendaItemDao();
+        this.presenterDao = new EsAgendaItemPresenterDao();
+        this.subscriptionDao = new EsSubscriptionDao();
         this.userDao = new UserDao();
         this.invitationService = new MeetingAttendanceInvitationService();
     }
@@ -364,6 +385,88 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         long notComingCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.NOT_COMING).count();
         Map<Long, User> rsvpUsers = resolveUsersById(rsvps.stream().map(EsMeetingRsvp::getUserId).toList());
 
+        // --- Phase 5: expected-but-not-seen, meeting-wide and per agenda topic ---
+        // "Seen" means an active attendance record (self-signed or observed) exists -
+        // identity matched by userId first, falling back to email.
+        Set<Long> seenUserIds = active.stream().map(EsMeetingAttendance::getUserId)
+                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+        Set<String> seenEmails = active.stream().map(EsMeetingAttendance::getEmailNormalized)
+                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
+
+        List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId());
+        List<EsMeetingAgendaItem> topicItems = agendaItems.stream()
+                .filter(i -> i.getEsTopicId() != null
+                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED
+                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.POSTPONED)
+                .toList();
+        List<Long> agendaTopicIds = topicItems.stream().map(EsMeetingAgendaItem::getEsTopicId).distinct().toList();
+        List<Long> agendaItemIds = topicItems.stream().map(EsMeetingAgendaItem::getEsMeetingAgendaItemId).toList();
+        Map<Long, EsTopic> topicById = new LinkedHashMap<>();
+        for (Long topicId : agendaTopicIds) {
+            topicDao.findById(topicId).ifPresent(t -> topicById.put(topicId, t));
+        }
+        List<EsAgendaItemPresenter> allPresenters = presenterDao.findByAgendaItemIds(agendaItemIds).stream()
+                .filter(p -> p.getStatus() == EsAgendaItemPresenter.PresenterStatus.ACCEPTED)
+                .toList();
+        List<EsSubscription> allFollowers = subscriptionDao.findActiveSubscribersByTopicIds(agendaTopicIds);
+        List<EsTopicMeetingMember> seriesMembers = topicMeetingMemberDao.findByMeetingIdAndStatus(
+                meeting.getEsTopicMeetingId(), EsTopicMeetingMember.MembershipStatus.APPROVED);
+
+        // Meeting-wide candidates: series members, RSVP Coming/Maybe, any accepted
+        // presenter, any follower of a topic on this agenda.
+        Map<String, InterestedPerson> meetingWideCandidates = new LinkedHashMap<>();
+        for (EsTopicMeetingMember m : seriesMembers) {
+            addCandidate(meetingWideCandidates, m.getUserId(), m.getEmailNormalized(), "Series member");
+        }
+        for (EsMeetingRsvp r : rsvps) {
+            if (r.getResponse() != MeetingRsvpResponse.NOT_COMING) {
+                addCandidate(meetingWideCandidates, r.getUserId(), null,
+                        "RSVP: " + rsvpLabel(r.getResponse()));
+            }
+        }
+        for (EsAgendaItemPresenter p : allPresenters) {
+            addCandidate(meetingWideCandidates, p.getUserId(), p.getEmailNormalized(), "Presenter");
+        }
+        for (EsSubscription s : allFollowers) {
+            addCandidate(meetingWideCandidates, s.getUserId(), s.getEmailNormalized(), "Topic follower");
+        }
+        List<InterestedPerson> expectedNotSeen = filterNotSeen(meetingWideCandidates.values(), seenUserIds, seenEmails);
+        Map<Long, User> expectedUsers = resolveUsersById(
+                meetingWideCandidates.values().stream().map(InterestedPerson::userId).toList());
+
+        // Per-topic breakdown: presenters + followers of that specific topic.
+        List<TopicBreakdown> topicBreakdowns = new ArrayList<>();
+        Map<Long, List<EsAgendaItemPresenter>> presentersByItem = new LinkedHashMap<>();
+        for (EsAgendaItemPresenter p : presenterDao.findByAgendaItemIds(agendaItemIds)) {
+            if (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.ACCEPTED) {
+                presentersByItem.computeIfAbsent(p.getEsMeetingAgendaItemId(), k -> new ArrayList<>()).add(p);
+            }
+        }
+        for (EsMeetingAgendaItem item : topicItems) {
+            EsTopic topic = topicById.get(item.getEsTopicId());
+            if (topic == null) {
+                continue;
+            }
+            Map<String, InterestedPerson> topicCandidates = new LinkedHashMap<>();
+            List<EsAgendaItemPresenter> itemPresenters = presentersByItem
+                    .getOrDefault(item.getEsMeetingAgendaItemId(), List.of());
+            for (EsAgendaItemPresenter p : itemPresenters) {
+                addCandidate(topicCandidates, p.getUserId(), p.getEmailNormalized(), "Presenter");
+            }
+            for (EsSubscription s : allFollowers) {
+                if (topic.getEsTopicId().equals(s.getEsTopicId())) {
+                    addCandidate(topicCandidates, s.getUserId(), s.getEmailNormalized(), "Follower");
+                }
+            }
+            List<InterestedPerson> notSeen = filterNotSeen(topicCandidates.values(), seenUserIds, seenEmails);
+            topicBreakdowns.add(new TopicBreakdown(topic.getTopicName(), itemPresenters.size(),
+                    topicCandidates.size(), notSeen));
+        }
+        Map<Long, User> topicPersonUsers = resolveUsersById(topicBreakdowns.stream()
+                .flatMap(b -> b.notSeen().stream())
+                .map(InterestedPerson::userId)
+                .toList());
+
         EsMeetingAttendance editing = editId != null
                 ? active.stream()
                         .filter(a -> a.getEsMeetingAttendanceId().equals(editId) && a.getSelfSignedAt() == null)
@@ -449,6 +552,45 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
                             + "</li>");
                 }
                 out.println("        </ul>");
+                out.println("      </section>");
+            }
+
+            // --- Expected but not seen (Phase 5: series members, RSVP, presenters,
+            // topic followers, minus anyone with an active attendance record) ---
+            if (!expectedNotSeen.isEmpty()) {
+                out.println("      <section class=\"aira-panel\">");
+                out.println("        <h2 class=\"aira-section-title\">Expected But Not Seen</h2>");
+                out.println(
+                        "        <p class=\"aira-meta\">Series members, RSVPs, presenters, and topic followers who don&rsquo;t have an attendance record yet.</p>");
+                out.println("        <ul>");
+                for (InterestedPerson p : expectedNotSeen) {
+                    out.println("          <li>" + escapeHtml(personLabel(p, expectedUsers)) + " &mdash; "
+                            + escapeHtml(p.source()) + "</li>");
+                }
+                out.println("        </ul>");
+                out.println("      </section>");
+            }
+
+            // --- By topic (Phase 5: "we're discussing this topic, are the interested
+            // people here?") ---
+            if (!topicBreakdowns.isEmpty()) {
+                out.println("      <section class=\"aira-panel\">");
+                out.println("        <h2 class=\"aira-section-title\">By Topic</h2>");
+                for (TopicBreakdown b : topicBreakdowns) {
+                    int seenCount = b.interestedCount() - b.notSeen().size();
+                    out.println("        <div class=\"aira-stack aira-stack--compact\">");
+                    out.println("          <p><strong>" + escapeHtml(b.topicName()) + "</strong> &mdash; "
+                            + b.presenterCount() + " presenter" + (b.presenterCount() == 1 ? "" : "s")
+                            + ", " + seenCount + " of " + b.interestedCount() + " interested people seen</p>");
+                    if (!b.notSeen().isEmpty()) {
+                        out.println("          <p class=\"aira-meta\">Not yet seen: "
+                                + escapeHtml(b.notSeen().stream()
+                                        .map(p -> personLabel(p, topicPersonUsers) + " (" + p.source() + ")")
+                                        .collect(java.util.stream.Collectors.joining(", ")))
+                                + "</p>");
+                    }
+                    out.println("        </div>");
+                }
                 out.println("      </section>");
             }
 
@@ -681,6 +823,42 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             map.put(u.getUserId(), u);
         }
         return map;
+    }
+
+    /** One candidate "expected" person, identified by userId (preferred) or email, with why they're expected. */
+    private record InterestedPerson(Long userId, String emailNormalized, String source) {
+    }
+
+    /** One agenda topic's presenter/follower coverage for the "By Topic" facilitation view. */
+    private record TopicBreakdown(String topicName, int presenterCount, int interestedCount,
+            List<InterestedPerson> notSeen) {
+    }
+
+    /** Adds a candidate keyed by userId if present, else by email - first source given for a person wins. */
+    private void addCandidate(Map<String, InterestedPerson> candidates, Long userId, String emailNormalized,
+            String source) {
+        if (userId == null && (emailNormalized == null || emailNormalized.isBlank())) {
+            return;
+        }
+        String key = userId != null ? "u:" + userId : "e:" + emailNormalized;
+        candidates.putIfAbsent(key, new InterestedPerson(userId, emailNormalized, source));
+    }
+
+    private List<InterestedPerson> filterNotSeen(Collection<InterestedPerson> candidates, Set<Long> seenUserIds,
+            Set<String> seenEmails) {
+        return candidates.stream()
+                .filter(p -> p.userId() == null || !seenUserIds.contains(p.userId()))
+                .filter(p -> p.userId() != null || p.emailNormalized() == null
+                        || !seenEmails.contains(p.emailNormalized()))
+                .toList();
+    }
+
+    private String personLabel(InterestedPerson p, Map<Long, User> resolvedUsers) {
+        if (p.userId() != null) {
+            User u = resolvedUsers.get(p.userId());
+            return u != null ? userLabel(u) : ("User #" + p.userId());
+        }
+        return orEmpty(p.emailNormalized());
     }
 
     private String rsvpLabel(MeetingRsvpResponse response) {
