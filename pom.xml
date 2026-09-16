@@ -5,7 +5,7 @@
 
   <groupId>org.airahub</groupId>
   <artifactId>interophub</artifactId>
-  <version>0.5.1</version>
+  <version>0.6.0</version>
   <packaging>war</packaging>
 
   <name>InteropHub</name>
@@ -31,7 +31,7 @@
     <dependency>
       <groupId>org.immregistries</groupId>
       <artifactId>aira-web-components</artifactId>
-      <version>0.1.10</version>
+      <version>0.1.12</version>
     </dependency>
     <dependency>
       <groupId>org.hibernate.orm</groupId>
