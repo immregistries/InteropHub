@@ -877,6 +877,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>EsMeetingAttendanceConsoleServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingAttendanceConsoleServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingAttendanceConsoleServlet</servlet-name>
+    <url-pattern>/es/meeting-attendance</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>EsAgendaConfluenceServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsAgendaConfluenceServlet</servlet-class>
   </servlet>

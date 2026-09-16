@@ -325,6 +325,10 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                 + escapeHtml((contextPath == null ? "" : contextPath) + "/es/agenda?meetingId="
                         + view.meeting().getEsMeetingId())
                 + "\">View Agenda</a>");
+        out.println("              <a class=\"aira-link\" href=\""
+                + escapeHtml((contextPath == null ? "" : contextPath) + "/es/meeting-attendance?meetingId="
+                        + view.meeting().getEsMeetingId())
+                + "\">Manage Attendance</a>");
         out.println(
                 "              <button class=\"aira-button aira-button--secondary\" type=\"button\" disabled>Next topic</button>");
         out.println("            </div>");

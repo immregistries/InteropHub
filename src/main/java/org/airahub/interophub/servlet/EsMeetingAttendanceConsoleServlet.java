@@ -1,0 +1,620 @@
+package org.airahub.interophub.servlet;
+
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsMeetingAttendanceDao;
+import org.airahub.interophub.dao.EsMeetingDao;
+import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicMeetingDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.dao.UserDao;
+import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsMeetingAttendance;
+import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicMeeting;
+import org.airahub.interophub.model.EsTopicSpace;
+import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.MeetingAuthorizationService;
+import org.airahub.interophub.service.MeetingWindowRules;
+import org.immregistries.aira.web.AiraPage;
+
+/**
+ * Staff-facing attendance console (Phase 2 of
+ * docs/meeting-attendance-console-design.md): lets meeting staff record
+ * staff-observed attendance alongside participant self sign-in, edit or
+ * remove an observed-only entry, and see attendance counts at a glance.
+ * Self-reported entries (selfSignedAt != null) are never editable or
+ * removable here - only the participant's own self sign-in changes those.
+ *
+ * URL: /es/meeting-attendance?meetingId={id}
+ */
+public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
+
+    private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("MMM d, h:mm a");
+
+    private final AuthFlowService authFlowService;
+    private final MeetingAuthorizationService meetingAuthorizationService;
+    private final EsMeetingDao meetingDao;
+    private final EsTopicMeetingDao topicMeetingDao;
+    private final EsTopicDao topicDao;
+    private final EsTopicSpaceDao topicSpaceDao;
+    private final EsMeetingAttendanceDao attendanceDao;
+    private final UserDao userDao;
+
+    public EsMeetingAttendanceConsoleServlet() {
+        this.authFlowService = new AuthFlowService();
+        this.meetingAuthorizationService = new MeetingAuthorizationService();
+        this.meetingDao = new EsMeetingDao();
+        this.topicMeetingDao = new EsTopicMeetingDao();
+        this.topicDao = new EsTopicDao();
+        this.topicSpaceDao = new EsTopicSpaceDao();
+        this.attendanceDao = new EsMeetingAttendanceDao();
+        this.userDao = new UserDao();
+    }
+
+    // =========================================================================
+    // GET
+    // =========================================================================
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Long meetingId = parseId(request.getParameter("meetingId"));
+        if (meetingId == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, "meetingId is required.");
+            return;
+        }
+        EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
+        if (meeting == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Meeting was not found.");
+            return;
+        }
+        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
+        if (userOpt.isEmpty() || !meetingAuthorizationService.canControlMeeting(userOpt.get().getUserId(), meeting)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                    "You do not have access to the attendance console for this meeting.");
+            return;
+        }
+
+        String savedMessage = "1".equals(request.getParameter("saved")) ? "Attendance updated." : null;
+        String errorMessage = trimToNull(request.getParameter("err"));
+        Long editId = parseId(request.getParameter("editId"));
+
+        render(request, response, meeting, savedMessage, errorMessage, editId);
+    }
+
+    // =========================================================================
+    // POST
+    // =========================================================================
+
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        request.setCharacterEncoding("UTF-8");
+        String contextPath = request.getContextPath();
+
+        Long meetingId = parseId(request.getParameter("meetingId"));
+        if (meetingId == null) {
+            response.sendRedirect(contextPath + "/es/topics");
+            return;
+        }
+        EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
+        if (meeting == null) {
+            response.sendRedirect(contextPath + "/es/topics");
+            return;
+        }
+        Optional<User> userOpt = authFlowService.findAuthenticatedUser(request);
+        if (userOpt.isEmpty() || !meetingAuthorizationService.canControlMeeting(userOpt.get().getUserId(), meeting)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                    "You do not have access to the attendance console for this meeting.");
+            return;
+        }
+        User user = userOpt.get();
+
+        if (!isAttendanceManagementWindowOpen(meeting)) {
+            redirectWithError(response, contextPath, meetingId,
+                    "This meeting is outside its attendance-management window.");
+            return;
+        }
+
+        String action = trimToNull(request.getParameter("action"));
+        if ("addObserved".equals(action)) {
+            handleAddObserved(request, response, contextPath, meeting, user);
+        } else if ("updateObserved".equals(action)) {
+            handleUpdateObserved(request, response, contextPath, meeting);
+        } else if ("removeObserved".equals(action)) {
+            handleRemoveObserved(request, response, contextPath, meeting, user);
+        } else {
+            response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meetingId);
+        }
+    }
+
+    private void handleAddObserved(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            EsMeeting meeting, User user) throws IOException {
+        String displayName = trimToNull(request.getParameter("displayName"));
+        if (displayName == null) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(), "Display name is required.");
+            return;
+        }
+        String firstName = trimToNull(request.getParameter("firstName"));
+        String lastName = trimToNull(request.getParameter("lastName"));
+        String organization = trimToNull(request.getParameter("organization"));
+        String emailRaw = trimToNull(request.getParameter("email"));
+        String note = trimToNull(request.getParameter("note"));
+        String emailNormalized = emailRaw != null ? EsNormalizer.normalizeEmail(emailRaw) : null;
+
+        LocalDate attendanceDate = meeting.getScheduledStart() != null
+                ? meeting.getScheduledStart().toLocalDate()
+                : LocalDate.now();
+
+        EsMeetingAttendance record = emailNormalized != null
+                ? attendanceDao.findByMeetingIdDateAndEmailNormalized(
+                        meeting.getEsTopicMeetingId(), attendanceDate, emailNormalized).orElse(null)
+                : null;
+
+        if (record != null) {
+            // Already have a record for this email on this occurrence - just stamp the
+            // observation. Never overwrite a self-reported attendee's own identity.
+            if (record.getSelfSignedAt() == null) {
+                record.setDisplayName(displayName);
+                record.setFirstName(firstName);
+                record.setLastName(lastName);
+                record.setOrganization(organization);
+                record.setEmail(emailRaw);
+                record.setEmailNormalized(emailNormalized);
+                if (note != null) {
+                    record.setObservationNote(note);
+                }
+            }
+        } else {
+            record = new EsMeetingAttendance();
+            record.setEsTopicMeetingId(meeting.getEsTopicMeetingId());
+            record.setAttendanceDate(attendanceDate);
+            record.setDisplayName(displayName);
+            record.setFirstName(firstName);
+            record.setLastName(lastName);
+            record.setOrganization(organization);
+            record.setEmail(emailRaw);
+            record.setEmailNormalized(emailNormalized);
+            record.setObservationNote(note);
+        }
+        record.setEsMeetingId(meeting.getEsMeetingId());
+        record.setObservedAt(LocalDateTime.now());
+        record.setObservedByUserId(user.getUserId());
+
+        attendanceDao.saveOrUpdate(record);
+        response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&saved=1");
+    }
+
+    private void handleUpdateObserved(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            EsMeeting meeting) throws IOException {
+        EsMeetingAttendance record = loadEditableObservedRecord(request, meeting);
+        if (record == null) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(),
+                    "That attendance entry can no longer be edited.");
+            return;
+        }
+        String displayName = trimToNull(request.getParameter("displayName"));
+        if (displayName == null) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(), "Display name is required.");
+            return;
+        }
+        record.setDisplayName(displayName);
+        record.setFirstName(trimToNull(request.getParameter("firstName")));
+        record.setLastName(trimToNull(request.getParameter("lastName")));
+        record.setOrganization(trimToNull(request.getParameter("organization")));
+        String emailRaw = trimToNull(request.getParameter("email"));
+        record.setEmail(emailRaw);
+        record.setEmailNormalized(emailRaw != null ? EsNormalizer.normalizeEmail(emailRaw) : null);
+        record.setObservationNote(trimToNull(request.getParameter("note")));
+
+        attendanceDao.saveOrUpdate(record);
+        response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&saved=1");
+    }
+
+    private void handleRemoveObserved(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            EsMeeting meeting, User user) throws IOException {
+        EsMeetingAttendance record = loadEditableObservedRecord(request, meeting);
+        if (record == null) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(),
+                    "That attendance entry can no longer be removed.");
+            return;
+        }
+        record.setRemovedAt(LocalDateTime.now());
+        record.setRemovedByUserId(user.getUserId());
+        attendanceDao.saveOrUpdate(record);
+        response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&saved=1");
+    }
+
+    /** An entry is only editable/removable here while it's observed-only, active, and belongs to this occurrence. */
+    private EsMeetingAttendance loadEditableObservedRecord(HttpServletRequest request, EsMeeting meeting) {
+        Long attendanceId = parseId(request.getParameter("attendanceId"));
+        if (attendanceId == null) {
+            return null;
+        }
+        EsMeetingAttendance record = attendanceDao.findById(attendanceId).orElse(null);
+        if (record == null || !meeting.getEsMeetingId().equals(record.getEsMeetingId())
+                || record.getSelfSignedAt() != null || record.getRemovedAt() != null) {
+            return null;
+        }
+        return record;
+    }
+
+    private void redirectWithError(HttpServletResponse response, String contextPath, Long meetingId, String message)
+            throws IOException {
+        response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meetingId
+                + "&err=" + URLEncoder.encode(message, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Mirrors the practical window described in the design doc: from 15 minutes
+     * before scheduled start through the meeting's note-editing period (same
+     * close_due_at anchor used elsewhere - see MeetingActionQueueService's class
+     * doc for why it's UTC-anchored), and never once the meeting is Closed or
+     * Cancelled.
+     */
+    private boolean isAttendanceManagementWindowOpen(EsMeeting meeting) {
+        if (meeting.getStatus() == EsMeeting.MeetingStatus.CLOSED
+                || meeting.getStatus() == EsMeeting.MeetingStatus.CANCELLED) {
+            return false;
+        }
+        if (!MeetingWindowRules.isMeetingStartWindowOpen(meeting)) {
+            return false;
+        }
+        if (meeting.getCloseDueAt() == null) {
+            return true;
+        }
+        Instant closeDueInstant = meeting.getCloseDueAt().atZone(ZoneOffset.UTC).toInstant();
+        return Instant.now().isBefore(closeDueInstant);
+    }
+
+    // =========================================================================
+    // Rendering
+    // =========================================================================
+
+    private void render(HttpServletRequest request, HttpServletResponse response, EsMeeting meeting,
+            String savedMessage, String errorMessage, Long editId) throws IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        String contextPath = request.getContextPath();
+
+        EsTopicMeeting topicMeeting = topicMeetingDao.findById(meeting.getEsTopicMeetingId()).orElse(null);
+        EsTopic hostTopic = topicMeeting != null && topicMeeting.getEsTopicId() != null
+                ? topicDao.findById(topicMeeting.getEsTopicId()).orElse(null)
+                : null;
+        EsTopicSpace hostTopicSpace = hostTopic != null && hostTopic.getEsTopicSpaceId() != null
+                ? topicSpaceDao.findById(hostTopic.getEsTopicSpaceId()).orElse(null)
+                : null;
+
+        List<EsMeetingAttendance> all = attendanceDao.findAllByEsMeetingIdIncludingRemoved(meeting.getEsMeetingId());
+        List<EsMeetingAttendance> active = all.stream().filter(a -> a.getRemovedAt() == null).toList();
+        List<EsMeetingAttendance> removed = all.stream().filter(a -> a.getRemovedAt() != null).toList();
+
+        long signedInCount = active.stream().filter(a -> a.getSelfSignedAt() != null).count();
+        long observedOnlyCount = active.stream().filter(a -> a.getSelfSignedAt() == null).count();
+        long missingEmailCount = active.stream()
+                .filter(a -> a.getEmail() == null || a.getEmail().isBlank())
+                .count();
+
+        boolean windowOpen = isAttendanceManagementWindowOpen(meeting);
+        Map<Long, User> resolvedUsers = resolveObserverUsers(all);
+
+        EsMeetingAttendance editing = editId != null
+                ? active.stream()
+                        .filter(a -> a.getEsMeetingAttendanceId().equals(editId) && a.getSelfSignedAt() == null)
+                        .findFirst().orElse(null)
+                : null;
+
+        AiraPage page = InteropAiraPageFactory.base(request,
+                "Attendance - " + orEmpty(meeting.getMeetingName()) + " - InteropHub")
+                .applicationSubtitle("Meeting Attendance")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.topicsMeetingsContext(
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceName() : "InteropHub",
+                        hostTopicSpace != null ? hostTopicSpace.getSpaceCode() : null,
+                        false,
+                        true))
+                .build();
+
+        try (PrintWriter out = response.getWriter()) {
+            page.writeStart(out);
+            out.println("    <div class=\"aira-container aira-stack\">");
+
+            out.println("      <div class=\"aira-page-header\">");
+            out.println("        <div>");
+            out.println("          <h1 class=\"aira-page-title\">Attendance &mdash; "
+                    + escapeHtml(meeting.getMeetingName()) + "</h1>");
+            out.println(
+                    "          <p class=\"aira-page-intro\">Track who attended, whether self-signed or observed by staff.</p>");
+            out.println("        </div>");
+            out.println("        <a class=\"aira-link\" href=\"" + contextPath + "/es/meeting-workspace?meetingId="
+                    + meeting.getEsMeetingId() + "\">Back to Workspace</a>");
+            out.println("      </div>");
+
+            if (savedMessage != null) {
+                out.println("      <div class=\"aira-alert aira-alert--success\"><p>" + escapeHtml(savedMessage)
+                        + "</p></div>");
+            }
+            if (errorMessage != null) {
+                out.println("      <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(errorMessage)
+                        + "</p></div>");
+            }
+            if (!windowOpen) {
+                out.println("      <div class=\"aira-alert aira-alert--warning\"><p>This meeting is outside its "
+                        + "attendance-management window (15 minutes before start, through the note-editing period). "
+                        + "You can still view attendance, but adding, editing, or removing entries is disabled.</p></div>");
+            }
+
+            // --- Summary ---
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <h2 class=\"aira-section-title\">Summary</h2>");
+            out.println("        <div class=\"aira-cluster\">");
+            out.println("          <span class=\"aira-badge aira-badge--success\">Signed in: " + signedInCount
+                    + "</span>");
+            out.println("          <span class=\"aira-badge aira-badge--info\">Observed only: " + observedOnlyCount
+                    + "</span>");
+            out.println("          <span class=\"aira-badge aira-badge--warning\">Missing email: " + missingEmailCount
+                    + "</span>");
+            if (!removed.isEmpty()) {
+                out.println("          <span class=\"aira-badge aira-badge--subtle\">Removed: " + removed.size()
+                        + "</span>");
+            }
+            out.println("        </div>");
+            out.println("      </section>");
+
+            // --- Add observed attendee ---
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <h2 class=\"aira-section-title\">Add Observed Attendee</h2>");
+            out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                    + "/es/meeting-attendance\">");
+            out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
+                    + "\">");
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"addObserved\">");
+            String disabledAttr = windowOpen ? "" : " disabled";
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"displayName\">Display Name *</label>");
+            out.println(
+                    "            <input class=\"aira-input\" id=\"displayName\" name=\"displayName\" type=\"text\" required"
+                            + " placeholder=\"e.g. Zoom name as shown\"" + disabledAttr + " />");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"firstName\">First Name</label>");
+            out.println("            <input class=\"aira-input\" id=\"firstName\" name=\"firstName\" type=\"text\""
+                    + disabledAttr + " />");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"lastName\">Last Name</label>");
+            out.println("            <input class=\"aira-input\" id=\"lastName\" name=\"lastName\" type=\"text\""
+                    + disabledAttr + " />");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"organization\">Organization</label>");
+            out.println(
+                    "            <input class=\"aira-input\" id=\"organization\" name=\"organization\" type=\"text\""
+                            + disabledAttr + " />");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"email\">Email (optional)</label>");
+            out.println("            <input class=\"aira-input\" id=\"email\" name=\"email\" type=\"email\""
+                    + disabledAttr + " />");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-field\">");
+            out.println("            <label for=\"note\">Note (optional)</label>");
+            out.println("            <textarea class=\"aira-textarea\" id=\"note\" name=\"note\" rows=\"2\""
+                    + disabledAttr + "></textarea>");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-action-group\">");
+            out.println("            <button class=\"aira-button aira-button--primary\" type=\"submit\""
+                    + disabledAttr + ">Add Observed Attendee</button>");
+            out.println("          </div>");
+            out.println("        </form>");
+            out.println("      </section>");
+
+            // --- Attendee list ---
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <h2 class=\"aira-section-title\">Attendees</h2>");
+            if (active.isEmpty()) {
+                out.println("        <p class=\"aira-meta\">No attendance recorded yet.</p>");
+            } else {
+                out.println("        <div class=\"aira-table-wrap\">");
+                out.println("        <table class=\"aira-table\">");
+                out.println(
+                        "          <thead><tr><th>Name</th><th>Status</th><th>Organization</th><th>Email</th><th>Details</th><th></th></tr></thead>");
+                out.println("          <tbody>");
+                for (EsMeetingAttendance a : active) {
+                    boolean isSelfSigned = a.getSelfSignedAt() != null;
+                    boolean isEditingThis = editing != null
+                            && editing.getEsMeetingAttendanceId().equals(a.getEsMeetingAttendanceId());
+                    out.println("            <tr>");
+                    if (isEditingThis) {
+                        out.println("              <td colspan=\"6\">");
+                        renderEditForm(out, contextPath, meeting, a);
+                        out.println("              </td>");
+                    } else {
+                        out.println("              <td>" + escapeHtml(a.getDisplayName()) + "</td>");
+                        out.println("              <td>" + (isSelfSigned
+                                ? "<span class=\"aira-badge aira-badge--success\">Signed in</span>"
+                                : "<span class=\"aira-badge aira-badge--info\">Observed</span>") + "</td>");
+                        out.println("              <td>" + escapeHtml(orEmpty(a.getOrganization())) + "</td>");
+                        out.println("              <td>" + (a.getEmail() != null && !a.getEmail().isBlank()
+                                ? escapeHtml(a.getEmail())
+                                : "<span class=\"aira-badge aira-badge--warning\">Email missing</span>") + "</td>");
+                        out.println(
+                                "              <td class=\"aira-meta\">" + escapeHtml(observationDetail(a, resolvedUsers))
+                                        + "</td>");
+                        out.println("              <td>");
+                        if (!isSelfSigned && windowOpen) {
+                            out.println("                <a class=\"aira-link\" href=\"" + contextPath
+                                    + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&editId="
+                                    + a.getEsMeetingAttendanceId() + "\">Edit</a>");
+                            out.println(
+                                    "                <form class=\"aira-inline-form\" method=\"post\" action=\""
+                                            + contextPath
+                                            + "/es/meeting-attendance\" onsubmit=\"return confirm('Remove this observed attendee?');\">");
+                            out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                                    + meeting.getEsMeetingId() + "\">");
+                            out.println(
+                                    "                  <input type=\"hidden\" name=\"action\" value=\"removeObserved\">");
+                            out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
+                                    + a.getEsMeetingAttendanceId() + "\">");
+                            out.println(
+                                    "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Remove</button>");
+                            out.println("                </form>");
+                        }
+                        out.println("              </td>");
+                    }
+                    out.println("            </tr>");
+                }
+                out.println("          </tbody>");
+                out.println("        </table>");
+                out.println("        </div>");
+            }
+            out.println("      </section>");
+
+            if (!removed.isEmpty()) {
+                out.println("      <section class=\"aira-panel\">");
+                out.println("        <h2 class=\"aira-section-title\">Removed Observed Records</h2>");
+                out.println("        <ul>");
+                for (EsMeetingAttendance a : removed) {
+                    out.println("          <li>" + escapeHtml(a.getDisplayName()) + " &mdash; "
+                            + escapeHtml(observationDetail(a, resolvedUsers)) + "</li>");
+                }
+                out.println("        </ul>");
+                out.println("      </section>");
+            }
+
+            out.println("    </div>");
+            out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
+            page.writeEnd(out);
+        }
+    }
+
+    private void renderEditForm(PrintWriter out, String contextPath, EsMeeting meeting, EsMeetingAttendance a) {
+        out.println("                <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
+                + contextPath + "/es/meeting-attendance\">");
+        out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
+                + "\">");
+        out.println("                  <input type=\"hidden\" name=\"action\" value=\"updateObserved\">");
+        out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
+                + a.getEsMeetingAttendanceId() + "\">");
+        out.println("                  <div class=\"aira-field\"><label>Display Name *</label>"
+                + "<input class=\"aira-input\" name=\"displayName\" type=\"text\" required value=\""
+                + escapeHtml(a.getDisplayName()) + "\"></div>");
+        out.println("                  <div class=\"aira-field\"><label>First Name</label>"
+                + "<input class=\"aira-input\" name=\"firstName\" type=\"text\" value=\""
+                + escapeHtml(orEmpty(a.getFirstName())) + "\"></div>");
+        out.println("                  <div class=\"aira-field\"><label>Last Name</label>"
+                + "<input class=\"aira-input\" name=\"lastName\" type=\"text\" value=\""
+                + escapeHtml(orEmpty(a.getLastName())) + "\"></div>");
+        out.println("                  <div class=\"aira-field\"><label>Organization</label>"
+                + "<input class=\"aira-input\" name=\"organization\" type=\"text\" value=\""
+                + escapeHtml(orEmpty(a.getOrganization())) + "\"></div>");
+        out.println("                  <div class=\"aira-field\"><label>Email</label>"
+                + "<input class=\"aira-input\" name=\"email\" type=\"email\" value=\""
+                + escapeHtml(orEmpty(a.getEmail())) + "\"></div>");
+        out.println("                  <div class=\"aira-field\"><label>Note</label>"
+                + "<textarea class=\"aira-textarea\" name=\"note\" rows=\"2\">"
+                + escapeHtml(orEmpty(a.getObservationNote())) + "</textarea></div>");
+        out.println("                  <div class=\"aira-action-group\">");
+        out.println("                    <button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button>");
+        out.println("                    <a class=\"aira-link\" href=\"" + contextPath
+                + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "\">Cancel</a>");
+        out.println("                  </div>");
+        out.println("                </form>");
+    }
+
+    private String observationDetail(EsMeetingAttendance a, Map<Long, User> resolvedUsers) {
+        if (a.getSelfSignedAt() != null) {
+            return "Self-signed " + DATE_TIME_FMT.format(a.getSelfSignedAt());
+        }
+        StringBuilder sb = new StringBuilder();
+        if (a.getObservedAt() != null) {
+            sb.append("Observed ").append(DATE_TIME_FMT.format(a.getObservedAt()));
+        }
+        User observer = a.getObservedByUserId() != null ? resolvedUsers.get(a.getObservedByUserId()) : null;
+        if (observer != null) {
+            sb.append(" by ").append(userLabel(observer));
+        }
+        if (a.getObservationNote() != null && !a.getObservationNote().isBlank()) {
+            if (sb.length() > 0) {
+                sb.append(" — ");
+            }
+            sb.append(a.getObservationNote());
+        }
+        return sb.toString();
+    }
+
+    private Map<Long, User> resolveObserverUsers(List<EsMeetingAttendance> records) {
+        List<Long> ids = records.stream()
+                .map(EsMeetingAttendance::getObservedByUserId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, User> map = new LinkedHashMap<>();
+        for (User u : userDao.findByIds(ids)) {
+            map.put(u.getUserId(), u);
+        }
+        return map;
+    }
+
+    private String userLabel(User user) {
+        String name = (orEmpty(user.getFirstName()) + " " + orEmpty(user.getLastName())).trim();
+        return name.isEmpty() ? orEmpty(user.getEmail()) : name;
+    }
+
+    // =========================================================================
+    // Utilities
+    // =========================================================================
+
+    private Long parseId(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String orEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+}
