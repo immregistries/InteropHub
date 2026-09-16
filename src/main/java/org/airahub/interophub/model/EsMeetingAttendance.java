@@ -32,16 +32,24 @@ public class EsMeetingAttendance {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "first_name", nullable = false, length = 100)
+    /**
+     * What staff know or saw, including a partial or cryptic Zoom name - the one
+     * required identity field, present whether the record is self-reported or
+     * staff-observed. See docs/meeting-attendance-console-design.md.
+     */
+    @Column(name = "display_name", nullable = false, length = 150)
+    private String displayName;
+
+    @Column(name = "first_name", length = 100)
     private String firstName;
 
     @Column(name = "last_name", length = 100)
     private String lastName;
 
-    @Column(name = "email", nullable = false, length = 254)
+    @Column(name = "email", length = 254)
     private String email;
 
-    @Column(name = "email_normalized", nullable = false, length = 254)
+    @Column(name = "email_normalized", length = 254)
     private String emailNormalized;
 
     @Column(name = "organization", length = 200)
@@ -49,6 +57,27 @@ public class EsMeetingAttendance {
 
     @Column(name = "hope_text", columnDefinition = "TEXT")
     private String hopeText;
+
+    /** Set whenever the attendee personally signs attendance - the strongest attendance signal. */
+    @Column(name = "self_signed_at")
+    private LocalDateTime selfSignedAt;
+
+    /** Set when meeting staff record having seen this person attend. */
+    @Column(name = "observed_at")
+    private LocalDateTime observedAt;
+
+    @Column(name = "observed_by_user_id")
+    private Long observedByUserId;
+
+    @Column(name = "observation_note", columnDefinition = "TEXT")
+    private String observationNote;
+
+    /** Staff-entered-in-error observed records may be removed; self-reported ones may not. */
+    @Column(name = "removed_at")
+    private LocalDateTime removedAt;
+
+    @Column(name = "removed_by_user_id")
+    private Long removedByUserId;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -110,6 +139,14 @@ public class EsMeetingAttendance {
         this.userId = userId;
     }
 
+    public String getDisplayName() {
+        return displayName;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
     public String getFirstName() {
         return firstName;
     }
@@ -156,6 +193,54 @@ public class EsMeetingAttendance {
 
     public void setHopeText(String hopeText) {
         this.hopeText = hopeText;
+    }
+
+    public LocalDateTime getSelfSignedAt() {
+        return selfSignedAt;
+    }
+
+    public void setSelfSignedAt(LocalDateTime selfSignedAt) {
+        this.selfSignedAt = selfSignedAt;
+    }
+
+    public LocalDateTime getObservedAt() {
+        return observedAt;
+    }
+
+    public void setObservedAt(LocalDateTime observedAt) {
+        this.observedAt = observedAt;
+    }
+
+    public Long getObservedByUserId() {
+        return observedByUserId;
+    }
+
+    public void setObservedByUserId(Long observedByUserId) {
+        this.observedByUserId = observedByUserId;
+    }
+
+    public String getObservationNote() {
+        return observationNote;
+    }
+
+    public void setObservationNote(String observationNote) {
+        this.observationNote = observationNote;
+    }
+
+    public LocalDateTime getRemovedAt() {
+        return removedAt;
+    }
+
+    public void setRemovedAt(LocalDateTime removedAt) {
+        this.removedAt = removedAt;
+    }
+
+    public Long getRemovedByUserId() {
+        return removedByUserId;
+    }
+
+    public void setRemovedByUserId(Long removedByUserId) {
+        this.removedByUserId = removedByUserId;
     }
 
     public LocalDateTime getCreatedAt() {

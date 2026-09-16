@@ -19,6 +19,7 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
                     "from EsMeetingAttendance a"
                             + " where a.esTopicMeetingId = :meetingId"
                             + " and a.attendanceDate = :date"
+                            + " and a.removedAt is null"
                             + " order by a.firstName, a.lastName",
                     EsMeetingAttendance.class)
                     .setParameter("meetingId", esTopicMeetingId)
@@ -27,6 +28,7 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
         }
     }
 
+    /** Excludes removed records - a self-signed-in attendee should never resurrect one removed in error. */
     public Optional<EsMeetingAttendance> findByMeetingIdDateAndEmailNormalized(
             Long esTopicMeetingId, LocalDate date, String emailNormalized) {
         if (esTopicMeetingId == null || date == null || emailNormalized == null) {
@@ -37,7 +39,8 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
                     "from EsMeetingAttendance a"
                             + " where a.esTopicMeetingId = :meetingId"
                             + " and a.attendanceDate = :date"
-                            + " and a.emailNormalized = :emailNormalized",
+                            + " and a.emailNormalized = :emailNormalized"
+                            + " and a.removedAt is null",
                     EsMeetingAttendance.class)
                     .setParameter("meetingId", esTopicMeetingId)
                     .setParameter("date", date)
@@ -85,6 +88,22 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
         }
     }
 
+    /** Includes removed records too - for the staff attendance console, which needs to show them separately. */
+    public List<EsMeetingAttendance> findAllByEsMeetingIdIncludingRemoved(Long esMeetingId) {
+        if (esMeetingId == null) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsMeetingAttendance a"
+                            + " where a.esMeetingId = :meetingId"
+                            + " order by a.firstName, a.lastName",
+                    EsMeetingAttendance.class)
+                    .setParameter("meetingId", esMeetingId)
+                    .getResultList();
+        }
+    }
+
     public List<EsMeetingAttendance> findByEsMeetingId(Long esMeetingId) {
         if (esMeetingId == null) {
             return List.of();
@@ -93,6 +112,7 @@ public class EsMeetingAttendanceDao extends GenericDao<EsMeetingAttendance, Long
             return session.createQuery(
                     "from EsMeetingAttendance a"
                             + " where a.esMeetingId = :meetingId"
+                            + " and a.removedAt is null"
                             + " order by a.firstName, a.lastName",
                     EsMeetingAttendance.class)
                     .setParameter("meetingId", esMeetingId)

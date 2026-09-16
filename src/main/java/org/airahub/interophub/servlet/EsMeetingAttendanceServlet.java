@@ -228,12 +228,14 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
         Optional<EsMeetingAttendance> existing = attendanceDao.findByMeetingIdDateAndEmailNormalized(meetingId, today,
                 emailNormalized);
+        String displayName = buildDisplayName(firstName, lastName);
 
         EsMeetingAttendance record;
         if (existing.isPresent()) {
             record = existing.get();
             record.setFirstName(firstName);
             record.setLastName(lastName);
+            record.setDisplayName(displayName);
             if (!anonymousMode && userId != null) {
                 record.setUserId(userId);
             }
@@ -248,11 +250,16 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             record.setUserId(userId);
             record.setFirstName(firstName);
             record.setLastName(lastName);
+            record.setDisplayName(displayName);
             record.setEmail(anonymousMode ? email : authenticatedUser.map(User::getEmail).orElse(email));
             record.setEmailNormalized(emailNormalized);
             record.setOrganization(organization);
             record.setHopeText(hopeText);
         }
+        // A self sign-in always (re-)asserts self-signed status, even for a record
+        // staff previously observed - self-reporting supersedes staff observation
+        // for the same person (docs/meeting-attendance-console-design.md).
+        record.setSelfSignedAt(LocalDateTime.now());
 
         // Link to the explicit meeting (if provided via
         // /attend/{topicCode}/{meetingKey})
@@ -745,6 +752,10 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
 
     private String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private String buildDisplayName(String firstName, String lastName) {
+        return (lastName != null && !lastName.isBlank()) ? firstName + " " + lastName : firstName;
     }
 
     private String escapeHtml(String value) {

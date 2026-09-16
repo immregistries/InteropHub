@@ -2556,9 +2556,14 @@ public class EsAgendaServlet extends HttpServlet {
 
             // --- ATTENDANCE SECTION ---
             if (isWithinAttendanceWindow) {
+                // Requires self_signed_at specifically, not just a matching attendance row -
+                // a staff-observed-only record must not read back as "you're registered"
+                // (docs/meeting-attendance-console-design.md: observation supplements
+                // attendance but never replaces participant self-confirmation).
                 boolean viewerIsRegistered = attendanceViewerEmail != null
                         && meetingAttendees.stream()
-                                .anyMatch(a -> attendanceViewerEmail.equalsIgnoreCase(a.getEmailNormalized()));
+                                .anyMatch(a -> a.getSelfSignedAt() != null
+                                        && attendanceViewerEmail.equalsIgnoreCase(a.getEmailNormalized()));
 
                 // Build the /attend/ URL using the topic code from the meeting series topic
                 EsTopic meetingSeriesTopic = (topicMeeting != null && topicMeeting.getEsTopicId() != null)
