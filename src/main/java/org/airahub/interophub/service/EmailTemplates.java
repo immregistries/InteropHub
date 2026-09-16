@@ -197,6 +197,67 @@ public final class EmailTemplates {
         return body.toString();
     }
 
+    // -------------------------------------------------------------------------
+    // MEETING_ATTENDANCE_OBSERVED_INVITE — invite a staff-observed attendee
+    // (registered, verified account) to confirm/sign their own attendance
+    // -------------------------------------------------------------------------
+
+    public static String meetingAttendanceObservedInviteSubject(String meetingName) {
+        return "Please confirm your attendance at "
+                + (meetingName != null && !meetingName.isBlank() ? meetingName : "a recent InteropHub meeting");
+    }
+
+    public static String meetingAttendanceObservedInviteBody(String meetingName, String attendLink) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi,\n\n");
+        body.append("Meeting staff noted that you attended ")
+                .append(meetingName != null && !meetingName.isBlank() ? meetingName : "a recent InteropHub meeting")
+                .append(", but haven't seen you sign your own attendance yet. Self sign-in is the record that "
+                        + "counts, so please confirm it yourself.\n\n");
+        body.append("Confirm your attendance (sign in if asked):\n  ").append(attendLink).append("\n");
+        return body.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // MEETING_ATTENDANCE_REGISTRATION_INVITE — invite a staff-observed
+    // attendee with no registered account to confirm attendance
+    // -------------------------------------------------------------------------
+
+    public static String meetingAttendanceRegistrationInviteSubject(String meetingName) {
+        return "Confirm your attendance at "
+                + (meetingName != null && !meetingName.isBlank() ? meetingName : "a recent InteropHub meeting");
+    }
+
+    public static String meetingAttendanceRegistrationInviteBody(String meetingName, String attendLink) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi,\n\n");
+        body.append("Meeting staff noted that you attended ")
+                .append(meetingName != null && !meetingName.isBlank() ? meetingName : "a recent InteropHub meeting")
+                .append(" on InteropHub, but haven't seen you sign your own attendance yet.\n\n");
+        body.append("You don't need an account to confirm it yourself - just visit this link:\n  ")
+                .append(attendLink).append("\n");
+        return body.toString();
+    }
+
+    // -------------------------------------------------------------------------
+    // MEETING_ATTENDANCE_VERIFY_EMAIL — invite a staff-observed attendee with
+    // an unverified account to verify their email
+    // -------------------------------------------------------------------------
+
+    public static String meetingAttendanceVerifyEmailSubject() {
+        return "Please verify your email for InteropHub";
+    }
+
+    public static String meetingAttendanceVerifyEmailBody(String meetingName, String magicLinkUrl) {
+        StringBuilder body = new StringBuilder();
+        body.append("Hi,\n\n");
+        body.append("Meeting staff noted that you attended ")
+                .append(meetingName != null && !meetingName.isBlank() ? meetingName : "a recent InteropHub meeting")
+                .append(", but your email address hasn't been verified yet.\n\n");
+        body.append("Use this link to verify your email and sign in:\n  ").append(magicLinkUrl).append("\n");
+        return body.toString();
+    }
+
     private EmailTemplates() {
     }
 }

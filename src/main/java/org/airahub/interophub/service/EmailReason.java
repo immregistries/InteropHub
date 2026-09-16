@@ -65,6 +65,18 @@ public final class EmailReason {
     /** Invites a manually-added topic follower with an unverified account to verify their email. */
     public static final String TOPIC_FOLLOWER_VERIFY_EMAIL = "TOPIC_FOLLOWER_VERIFY_EMAIL";
 
+    /**
+     * Invites a staff-observed attendee (registered, verified account) to
+     * confirm/sign their own attendance.
+     */
+    public static final String MEETING_ATTENDANCE_OBSERVED_INVITE = "MEETING_ATTENDANCE_OBSERVED_INVITE";
+
+    /** Invites a staff-observed attendee with no registered account to confirm attendance. */
+    public static final String MEETING_ATTENDANCE_REGISTRATION_INVITE = "MEETING_ATTENDANCE_REGISTRATION_INVITE";
+
+    /** Invites a staff-observed attendee with an unverified account to verify their email. */
+    public static final String MEETING_ATTENDANCE_VERIFY_EMAIL = "MEETING_ATTENDANCE_VERIFY_EMAIL";
+
     private EmailReason() {
     }
 }

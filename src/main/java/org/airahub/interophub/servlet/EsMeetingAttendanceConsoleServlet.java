@@ -31,17 +31,20 @@ import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.MeetingAttendanceInvitationService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
 import org.airahub.interophub.service.MeetingWindowRules;
+import org.airahub.interophub.service.TopicFollowerManagementService;
 import org.immregistries.aira.web.AiraPage;
 
 /**
- * Staff-facing attendance console (Phase 2 of
+ * Staff-facing attendance console (Phases 2-3 of
  * docs/meeting-attendance-console-design.md): lets meeting staff record
  * staff-observed attendance alongside participant self sign-in, edit or
- * remove an observed-only entry, and see attendance counts at a glance.
- * Self-reported entries (selfSignedAt != null) are never editable or
- * removable here - only the participant's own self sign-in changes those.
+ * remove an observed-only entry, invite an observed attendee with a known
+ * email to confirm their own attendance, and see attendance counts at a
+ * glance. Self-reported entries (selfSignedAt != null) are never editable
+ * or removable here - only the participant's own self sign-in changes those.
  *
  * URL: /es/meeting-attendance?meetingId={id}
  */
@@ -57,6 +60,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final UserDao userDao;
+    private final MeetingAttendanceInvitationService invitationService;
 
     public EsMeetingAttendanceConsoleServlet() {
         this.authFlowService = new AuthFlowService();
@@ -67,6 +71,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.userDao = new UserDao();
+        this.invitationService = new MeetingAttendanceInvitationService();
     }
 
     // =========================================================================
@@ -139,6 +144,8 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             handleUpdateObserved(request, response, contextPath, meeting);
         } else if ("removeObserved".equals(action)) {
             handleRemoveObserved(request, response, contextPath, meeting, user);
+        } else if ("sendInvite".equals(action)) {
+            handleSendInvite(request, response, contextPath, meeting, user);
         } else {
             response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meetingId);
         }
@@ -238,6 +245,39 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         record.setRemovedAt(LocalDateTime.now());
         record.setRemovedByUserId(user.getUserId());
         attendanceDao.saveOrUpdate(record);
+        response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&saved=1");
+    }
+
+    /**
+     * Non-admins are blocked from resending within the cooldown unless they
+     * pass confirm=1 (the "Send again" link) - admins can always send,
+     * matching TopicFollowerManagementService's resend-cooldown convention.
+     */
+    private void handleSendInvite(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            EsMeeting meeting, User user) throws IOException {
+        EsMeetingAttendance record = loadEditableObservedRecord(request, meeting);
+        if (record == null) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(),
+                    "That attendance entry can no longer be invited.");
+            return;
+        }
+        boolean isAdmin = authFlowService.isAdminUser(user);
+        boolean confirm = "1".equals(request.getParameter("confirm"));
+        if (!isAdmin && !confirm) {
+            Optional<LocalDateTime> lastSent = invitationService.lastInviteSentAt(record.getEmailNormalized());
+            if (lastSent.isPresent() && TopicFollowerManagementService.isWithinCooldown(
+                    lastSent.get(), LocalDateTime.now(), MeetingAttendanceInvitationService.RESEND_COOLDOWN_DAYS)) {
+                redirectWithError(response, contextPath, meeting.getEsMeetingId(),
+                        "An invite was sent recently. Use \"Send again\" to confirm.");
+                return;
+            }
+        }
+        TopicFollowerManagementService.Outcome<Void> outcome = invitationService.sendInvite(
+                record.getEsMeetingAttendanceId(), request);
+        if (!outcome.isSuccess()) {
+            redirectWithError(response, contextPath, meeting.getEsMeetingId(), outcome.getErrorMessage());
+            return;
+        }
         response.sendRedirect(contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&saved=1");
     }
 
@@ -450,17 +490,40 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
                                 ? "<span class=\"aira-badge aira-badge--success\">Signed in</span>"
                                 : "<span class=\"aira-badge aira-badge--info\">Observed</span>") + "</td>");
                         out.println("              <td>" + escapeHtml(orEmpty(a.getOrganization())) + "</td>");
-                        out.println("              <td>" + (a.getEmail() != null && !a.getEmail().isBlank()
+                        boolean hasEmail = a.getEmail() != null && !a.getEmail().isBlank();
+                        out.println("              <td>" + (hasEmail
                                 ? escapeHtml(a.getEmail())
                                 : "<span class=\"aira-badge aira-badge--warning\">Email missing</span>") + "</td>");
-                        out.println(
-                                "              <td class=\"aira-meta\">" + escapeHtml(observationDetail(a, resolvedUsers))
-                                        + "</td>");
+                        Optional<LocalDateTime> lastInvited = !isSelfSigned && hasEmail
+                                ? invitationService.lastInviteSentAt(a.getEmailNormalized())
+                                : Optional.empty();
+                        out.println("              <td class=\"aira-meta\">"
+                                + escapeHtml(observationDetail(a, resolvedUsers, lastInvited)) + "</td>");
                         out.println("              <td>");
                         if (!isSelfSigned && windowOpen) {
                             out.println("                <a class=\"aira-link\" href=\"" + contextPath
                                     + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&editId="
                                     + a.getEsMeetingAttendanceId() + "\">Edit</a>");
+                            if (hasEmail) {
+                                out.println("                <form class=\"aira-inline-form\" method=\"post\" action=\""
+                                        + contextPath + "/es/meeting-attendance\">");
+                                out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                                        + meeting.getEsMeetingId() + "\">");
+                                out.println(
+                                        "                  <input type=\"hidden\" name=\"action\" value=\"sendInvite\">");
+                                out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
+                                        + a.getEsMeetingAttendanceId() + "\">");
+                                if (lastInvited.isPresent()) {
+                                    out.println(
+                                            "                  <input type=\"hidden\" name=\"confirm\" value=\"1\">");
+                                    out.println(
+                                            "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Send again</button>");
+                                } else {
+                                    out.println(
+                                            "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Invite</button>");
+                                }
+                                out.println("                </form>");
+                            }
                             out.println(
                                     "                <form class=\"aira-inline-form\" method=\"post\" action=\""
                                             + contextPath
@@ -491,7 +554,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
                 out.println("        <ul>");
                 for (EsMeetingAttendance a : removed) {
                     out.println("          <li>" + escapeHtml(a.getDisplayName()) + " &mdash; "
-                            + escapeHtml(observationDetail(a, resolvedUsers)) + "</li>");
+                            + escapeHtml(observationDetail(a, resolvedUsers, Optional.empty())) + "</li>");
                 }
                 out.println("        </ul>");
                 out.println("      </section>");
@@ -537,7 +600,8 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         out.println("                </form>");
     }
 
-    private String observationDetail(EsMeetingAttendance a, Map<Long, User> resolvedUsers) {
+    private String observationDetail(EsMeetingAttendance a, Map<Long, User> resolvedUsers,
+            Optional<LocalDateTime> lastInvited) {
         if (a.getSelfSignedAt() != null) {
             return "Self-signed " + DATE_TIME_FMT.format(a.getSelfSignedAt());
         }
@@ -554,6 +618,12 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
                 sb.append(" — ");
             }
             sb.append(a.getObservationNote());
+        }
+        if (lastInvited.isPresent()) {
+            if (sb.length() > 0) {
+                sb.append(" — ");
+            }
+            sb.append("Last invited ").append(DATE_TIME_FMT.format(lastInvited.get()));
         }
         return sb.toString();
     }
