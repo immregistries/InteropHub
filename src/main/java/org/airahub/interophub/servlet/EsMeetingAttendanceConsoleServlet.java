@@ -10,36 +10,29 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
-import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsMeetingRsvpDao;
-import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
-import org.airahub.interophub.dao.EsTopicMeetingMemberDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.UserDao;
-import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
-import org.airahub.interophub.model.EsMeetingAgendaItem;
 import org.airahub.interophub.model.EsMeetingAttendance;
 import org.airahub.interophub.model.EsMeetingRsvp;
-import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicMeeting;
-import org.airahub.interophub.model.EsTopicMeetingMember;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.MeetingRsvpResponse;
 import org.airahub.interophub.model.User;
@@ -47,6 +40,8 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsNormalizer;
 import org.airahub.interophub.service.MeetingAttendanceInvitationService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
+import org.airahub.interophub.service.MeetingExpectedPeopleService;
+import org.airahub.interophub.service.MeetingExpectedPeopleService.ExpectedPerson;
 import org.airahub.interophub.service.MeetingWindowRules;
 import org.airahub.interophub.service.TopicFollowerManagementService;
 import org.immregistries.aira.web.AiraPage;
@@ -56,30 +51,30 @@ import org.immregistries.aira.web.AiraPage;
  * docs/meeting-attendance-console-design.md): lets meeting staff record
  * staff-observed attendance alongside participant self sign-in, edit or
  * remove an observed-only entry, invite an observed attendee with a known
- * email to confirm their own attendance, see RSVPs, and see who's expected
- * (by series membership, RSVP, presenting, or topic-following) but not yet
- * seen - meeting-wide and broken down per agenda topic. Self-reported
- * entries (selfSignedAt != null) are never editable or removable here -
- * only the participant's own self sign-in changes those.
+ * email to confirm their own attendance, scan RSVPs against arrivals, and
+ * find/check in anyone expected (series member, RSVP, presenter, or topic
+ * follower) or anyone else registered in InteropHub. Self-reported entries
+ * (selfSignedAt != null) are never editable or removable here - only the
+ * participant's own self sign-in changes those.
  *
- * URL: /es/meeting-attendance?meetingId={id}
+ * URL: /es/meeting-attendance?meetingId={id}[&topicId={id}]
  */
 public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
 
     private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("MMM d, h:mm a");
 
+    /** Below this many rows, render a plain table; at/above it, switch to search-to-reveal. */
+    static final int LIST_VS_SEARCH_THRESHOLD = 20;
+
     private final AuthFlowService authFlowService;
     private final MeetingAuthorizationService meetingAuthorizationService;
     private final EsMeetingDao meetingDao;
     private final EsTopicMeetingDao topicMeetingDao;
-    private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsTopicDao topicDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsMeetingAttendanceDao attendanceDao;
     private final EsMeetingRsvpDao rsvpDao;
-    private final EsMeetingAgendaItemDao agendaItemDao;
-    private final EsAgendaItemPresenterDao presenterDao;
-    private final EsSubscriptionDao subscriptionDao;
+    private final MeetingExpectedPeopleService expectedPeopleService;
     private final UserDao userDao;
     private final MeetingAttendanceInvitationService invitationService;
 
@@ -88,14 +83,11 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         this.meetingAuthorizationService = new MeetingAuthorizationService();
         this.meetingDao = new EsMeetingDao();
         this.topicMeetingDao = new EsTopicMeetingDao();
-        this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.topicDao = new EsTopicDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.rsvpDao = new EsMeetingRsvpDao();
-        this.agendaItemDao = new EsMeetingAgendaItemDao();
-        this.presenterDao = new EsAgendaItemPresenterDao();
-        this.subscriptionDao = new EsSubscriptionDao();
+        this.expectedPeopleService = new MeetingExpectedPeopleService();
         this.userDao = new UserDao();
         this.invitationService = new MeetingAttendanceInvitationService();
     }
@@ -126,8 +118,9 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         String savedMessage = "1".equals(request.getParameter("saved")) ? "Attendance updated." : null;
         String errorMessage = trimToNull(request.getParameter("err"));
         Long editId = parseId(request.getParameter("editId"));
+        Long topicId = parseId(request.getParameter("topicId"));
 
-        render(request, response, meeting, savedMessage, errorMessage, editId);
+        render(request, response, meeting, savedMessage, errorMessage, editId, topicId);
     }
 
     // =========================================================================
@@ -177,6 +170,12 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         }
     }
 
+    /**
+     * Also used as the one-click "Present" check-in for anyone already known
+     * (RSVP'd, expected, or found via search) - those flows submit this same
+     * action with displayName/firstName/lastName/organization/email/userId
+     * already filled in as hidden fields, so no typing is required.
+     */
     private void handleAddObserved(HttpServletRequest request, HttpServletResponse response, String contextPath,
             EsMeeting meeting, User user) throws IOException {
         String displayName = trimToNull(request.getParameter("displayName"));
@@ -190,6 +189,16 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         String emailRaw = trimToNull(request.getParameter("email"));
         String note = trimToNull(request.getParameter("note"));
         String emailNormalized = emailRaw != null ? EsNormalizer.normalizeEmail(emailRaw) : null;
+
+        // Prefer an explicitly-known userId (from RSVP/expected/search); otherwise
+        // auto-link by email match, same as self sign-in already does.
+        Long userId = parseId(trimToNull(request.getParameter("userId")));
+        if (userId == null && emailNormalized != null) {
+            userId = userDao.findByEmailNormalized(emailNormalized)
+                    .filter(u -> u.getStatus() != User.UserStatus.DELETED)
+                    .map(User::getUserId)
+                    .orElse(null);
+        }
 
         LocalDate attendanceDate = meeting.getScheduledStart() != null
                 ? meeting.getScheduledStart().toLocalDate()
@@ -213,6 +222,9 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
                 if (note != null) {
                     record.setObservationNote(note);
                 }
+                if (userId != null) {
+                    record.setUserId(userId);
+                }
             }
         } else {
             record = new EsMeetingAttendance();
@@ -225,6 +237,7 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             record.setEmail(emailRaw);
             record.setEmailNormalized(emailNormalized);
             record.setObservationNote(note);
+            record.setUserId(userId);
         }
         record.setEsMeetingId(meeting.getEsMeetingId());
         record.setObservedAt(LocalDateTime.now());
@@ -350,11 +363,127 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
     }
 
     // =========================================================================
+    // Roster row model - shared by the top Roster table and the By-Topic table
+    // =========================================================================
+
+    /** One person in a roster-style table: known identity, optional RSVP, optional attendance record. */
+    private record RosterRow(Long userId, String emailNormalized, String displayName, String organization,
+            String email, MeetingRsvpResponse rsvp, EsMeetingAttendance attendance) {
+    }
+
+    /** Everyone with an RSVP and/or an active attendance record for this meeting - the top "Roster" table. */
+    private List<RosterRow> buildMeetingRoster(List<EsMeetingAttendance> active, List<EsMeetingRsvp> rsvps,
+            Map<Long, User> rsvpUsers) {
+        Map<String, RosterRow> byKey = new LinkedHashMap<>();
+        for (EsMeetingAttendance a : active) {
+            byKey.put(identityKey(a.getUserId(), a.getEmailNormalized()),
+                    new RosterRow(a.getUserId(), a.getEmailNormalized(), a.getDisplayName(),
+                            orEmpty(a.getOrganization()), orEmpty(a.getEmail()), null, a));
+        }
+        for (EsMeetingRsvp r : rsvps) {
+            String key = identityKey(r.getUserId(), null);
+            RosterRow existing = byKey.get(key);
+            if (existing != null) {
+                byKey.put(key, new RosterRow(existing.userId(), existing.emailNormalized(), existing.displayName(),
+                        existing.organization(), existing.email(), r.getResponse(), existing.attendance()));
+            } else {
+                User u = rsvpUsers.get(r.getUserId());
+                byKey.put(key, new RosterRow(r.getUserId(), u != null ? u.getEmailNormalized() : null,
+                        u != null ? userLabel(u) : ("User #" + r.getUserId()),
+                        u != null ? orEmpty(u.getOrganization()) : "",
+                        u != null ? orEmpty(u.getEmail()) : "",
+                        r.getResponse(), null));
+            }
+        }
+        return sortedRows(byKey.values());
+    }
+
+    /**
+     * Expected people (series member / RSVP / presenter / topic follower) who
+     * have neither RSVP'd nor attended yet - the ones the Roster table above
+     * doesn't already cover, so nobody appears twice with two "Present"
+     * buttons.
+     */
+    private List<RosterRow> buildNotYetCheckedIn(List<ExpectedPerson> expected, List<EsMeetingAttendance> active,
+            List<EsMeetingRsvp> rsvps, Map<Long, User> resolvedUsers) {
+        Set<String> alreadyCovered = new java.util.HashSet<>();
+        for (EsMeetingAttendance a : active) {
+            alreadyCovered.add(identityKey(a.getUserId(), a.getEmailNormalized()));
+        }
+        for (EsMeetingRsvp r : rsvps) {
+            alreadyCovered.add(identityKey(r.getUserId(), null));
+        }
+        List<RosterRow> rows = new ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        for (ExpectedPerson p : expected) {
+            String key = identityKey(p.userId(), p.emailNormalized());
+            if (alreadyCovered.contains(key) || !seen.add(key)) {
+                continue;
+            }
+            User u = p.userId() != null ? resolvedUsers.get(p.userId()) : null;
+            rows.add(new RosterRow(p.userId(), p.emailNormalized(),
+                    u != null ? userLabel(u) : orEmpty(p.emailNormalized()),
+                    u != null ? orEmpty(u.getOrganization()) : "",
+                    u != null ? orEmpty(u.getEmail()) : orEmpty(p.emailNormalized()),
+                    null, null));
+        }
+        return sortedRows(rows);
+    }
+
+    /** Everyone interested in one topic (followers + presenters), decorated with RSVP/attendance status if any. */
+    private List<RosterRow> buildTopicRoster(List<ExpectedPerson> interested, List<EsMeetingAttendance> active,
+            List<EsMeetingRsvp> rsvps, Map<Long, User> resolvedUsers) {
+        Map<String, EsMeetingAttendance> attendanceByKey = new LinkedHashMap<>();
+        for (EsMeetingAttendance a : active) {
+            attendanceByKey.put(identityKey(a.getUserId(), a.getEmailNormalized()), a);
+        }
+        Map<Long, MeetingRsvpResponse> rsvpByUserId = rsvps.stream()
+                .collect(Collectors.toMap(EsMeetingRsvp::getUserId, EsMeetingRsvp::getResponse, (x, y) -> x));
+
+        List<RosterRow> rows = new ArrayList<>();
+        Set<String> seen = new java.util.HashSet<>();
+        for (ExpectedPerson p : interested) {
+            String key = identityKey(p.userId(), p.emailNormalized());
+            if (!seen.add(key)) {
+                continue;
+            }
+            EsMeetingAttendance attendance = attendanceByKey.get(key);
+            MeetingRsvpResponse rsvp = p.userId() != null ? rsvpByUserId.get(p.userId()) : null;
+            String displayName;
+            String organization;
+            String email;
+            if (attendance != null) {
+                displayName = attendance.getDisplayName();
+                organization = orEmpty(attendance.getOrganization());
+                email = orEmpty(attendance.getEmail());
+            } else {
+                User u = p.userId() != null ? resolvedUsers.get(p.userId()) : null;
+                displayName = u != null ? userLabel(u) : orEmpty(p.emailNormalized());
+                organization = u != null ? orEmpty(u.getOrganization()) : "";
+                email = u != null ? orEmpty(u.getEmail()) : orEmpty(p.emailNormalized());
+            }
+            rows.add(new RosterRow(p.userId(), p.emailNormalized(), displayName, organization, email, rsvp,
+                    attendance));
+        }
+        return sortedRows(rows);
+    }
+
+    private List<RosterRow> sortedRows(java.util.Collection<RosterRow> rows) {
+        return rows.stream()
+                .sorted(Comparator.comparing(r -> orEmpty(r.displayName()).toLowerCase()))
+                .toList();
+    }
+
+    private String identityKey(Long userId, String emailNormalized) {
+        return userId != null ? "u:" + userId : "e:" + orEmpty(emailNormalized);
+    }
+
+    // =========================================================================
     // Rendering
     // =========================================================================
 
     private void render(HttpServletRequest request, HttpServletResponse response, EsMeeting meeting,
-            String savedMessage, String errorMessage, Long editId) throws IOException {
+            String savedMessage, String errorMessage, Long editId, Long selectedTopicId) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
         String contextPath = request.getContextPath();
 
@@ -380,92 +509,26 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
         Map<Long, User> resolvedUsers = resolveObserverUsers(all);
 
         List<EsMeetingRsvp> rsvps = rsvpDao.findByMeetingId(meeting.getEsMeetingId());
-        long comingCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.COMING).count();
-        long maybeCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.MAYBE).count();
-        long notComingCount = rsvps.stream().filter(r -> r.getResponse() == MeetingRsvpResponse.NOT_COMING).count();
         Map<Long, User> rsvpUsers = resolveUsersById(rsvps.stream().map(EsMeetingRsvp::getUserId).toList());
 
-        // --- Phase 5: expected-but-not-seen, meeting-wide and per agenda topic ---
-        // "Seen" means an active attendance record (self-signed or observed) exists -
-        // identity matched by userId first, falling back to email.
-        Set<Long> seenUserIds = active.stream().map(EsMeetingAttendance::getUserId)
-                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-        Set<String> seenEmails = active.stream().map(EsMeetingAttendance::getEmailNormalized)
-                .filter(Objects::nonNull).collect(java.util.stream.Collectors.toSet());
-
-        List<EsMeetingAgendaItem> agendaItems = agendaItemDao.findByMeetingIdOrdered(meeting.getEsMeetingId());
-        List<EsMeetingAgendaItem> topicItems = agendaItems.stream()
-                .filter(i -> i.getEsTopicId() != null
-                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.CANCELLED
-                        && i.getStatus() != EsMeetingAgendaItem.AgendaItemStatus.POSTPONED)
-                .toList();
-        List<Long> agendaTopicIds = topicItems.stream().map(EsMeetingAgendaItem::getEsTopicId).distinct().toList();
-        List<Long> agendaItemIds = topicItems.stream().map(EsMeetingAgendaItem::getEsMeetingAgendaItemId).toList();
-        Map<Long, EsTopic> topicById = new LinkedHashMap<>();
-        for (Long topicId : agendaTopicIds) {
-            topicDao.findById(topicId).ifPresent(t -> topicById.put(topicId, t));
-        }
-        List<EsAgendaItemPresenter> allPresenters = presenterDao.findByAgendaItemIds(agendaItemIds).stream()
-                .filter(p -> p.getStatus() == EsAgendaItemPresenter.PresenterStatus.ACCEPTED)
-                .toList();
-        List<EsSubscription> allFollowers = subscriptionDao.findActiveSubscribersByTopicIds(agendaTopicIds);
-        List<EsTopicMeetingMember> seriesMembers = topicMeetingMemberDao.findByMeetingIdAndStatus(
-                meeting.getEsTopicMeetingId(), EsTopicMeetingMember.MembershipStatus.APPROVED);
-
-        // Meeting-wide candidates: series members, RSVP Coming/Maybe, any accepted
-        // presenter, any follower of a topic on this agenda.
-        Map<String, InterestedPerson> meetingWideCandidates = new LinkedHashMap<>();
-        for (EsTopicMeetingMember m : seriesMembers) {
-            addCandidate(meetingWideCandidates, m.getUserId(), m.getEmailNormalized(), "Series member");
-        }
-        for (EsMeetingRsvp r : rsvps) {
-            if (r.getResponse() != MeetingRsvpResponse.NOT_COMING) {
-                addCandidate(meetingWideCandidates, r.getUserId(), null,
-                        "RSVP: " + rsvpLabel(r.getResponse()));
-            }
-        }
-        for (EsAgendaItemPresenter p : allPresenters) {
-            addCandidate(meetingWideCandidates, p.getUserId(), p.getEmailNormalized(), "Presenter");
-        }
-        for (EsSubscription s : allFollowers) {
-            addCandidate(meetingWideCandidates, s.getUserId(), s.getEmailNormalized(), "Topic follower");
-        }
-        List<InterestedPerson> expectedNotSeen = filterNotSeen(meetingWideCandidates.values(), seenUserIds, seenEmails);
+        List<ExpectedPerson> expectedMeetingWide = expectedPeopleService.findExpectedMeetingWide(meeting, rsvps);
         Map<Long, User> expectedUsers = resolveUsersById(
-                meetingWideCandidates.values().stream().map(InterestedPerson::userId).toList());
+                expectedMeetingWide.stream().map(ExpectedPerson::userId).toList());
 
-        // Per-topic breakdown: presenters + followers of that specific topic.
-        List<TopicBreakdown> topicBreakdowns = new ArrayList<>();
-        Map<Long, List<EsAgendaItemPresenter>> presentersByItem = new LinkedHashMap<>();
-        for (EsAgendaItemPresenter p : presenterDao.findByAgendaItemIds(agendaItemIds)) {
-            if (p.getStatus() == EsAgendaItemPresenter.PresenterStatus.ACCEPTED) {
-                presentersByItem.computeIfAbsent(p.getEsMeetingAgendaItemId(), k -> new ArrayList<>()).add(p);
-            }
+        List<RosterRow> roster = buildMeetingRoster(active, rsvps, rsvpUsers);
+        List<RosterRow> notYetCheckedIn = buildNotYetCheckedIn(expectedMeetingWide, active, rsvps, expectedUsers);
+
+        List<EsTopic> agendaTopics = expectedPeopleService.listAgendaTopics(meeting.getEsMeetingId());
+        EsTopic selectedTopic = selectedTopicId != null
+                ? agendaTopics.stream().filter(t -> t.getEsTopicId().equals(selectedTopicId)).findFirst().orElse(null)
+                : null;
+        List<RosterRow> topicRoster = List.of();
+        if (selectedTopic != null) {
+            List<ExpectedPerson> interested = expectedPeopleService.findExpectedForTopic(
+                    meeting.getEsMeetingId(), selectedTopic.getEsTopicId());
+            Map<Long, User> topicUsers = resolveUsersById(interested.stream().map(ExpectedPerson::userId).toList());
+            topicRoster = buildTopicRoster(interested, active, rsvps, topicUsers);
         }
-        for (EsMeetingAgendaItem item : topicItems) {
-            EsTopic topic = topicById.get(item.getEsTopicId());
-            if (topic == null) {
-                continue;
-            }
-            Map<String, InterestedPerson> topicCandidates = new LinkedHashMap<>();
-            List<EsAgendaItemPresenter> itemPresenters = presentersByItem
-                    .getOrDefault(item.getEsMeetingAgendaItemId(), List.of());
-            for (EsAgendaItemPresenter p : itemPresenters) {
-                addCandidate(topicCandidates, p.getUserId(), p.getEmailNormalized(), "Presenter");
-            }
-            for (EsSubscription s : allFollowers) {
-                if (topic.getEsTopicId().equals(s.getEsTopicId())) {
-                    addCandidate(topicCandidates, s.getUserId(), s.getEmailNormalized(), "Follower");
-                }
-            }
-            List<InterestedPerson> notSeen = filterNotSeen(topicCandidates.values(), seenUserIds, seenEmails);
-            topicBreakdowns.add(new TopicBreakdown(topic.getTopicName(), itemPresenters.size(),
-                    topicCandidates.size(), notSeen));
-        }
-        Map<Long, User> topicPersonUsers = resolveUsersById(topicBreakdowns.stream()
-                .flatMap(b -> b.notSeen().stream())
-                .map(InterestedPerson::userId)
-                .toList());
 
         EsMeetingAttendance editing = editId != null
                 ? active.stream()
@@ -530,73 +593,51 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             out.println("        </div>");
             out.println("      </section>");
 
-            // --- RSVP (intent, separate from attendance - lets staff compare expected vs actual) ---
-            if (!rsvps.isEmpty()) {
-                out.println("      <section class=\"aira-panel\">");
-                out.println("        <h2 class=\"aira-section-title\">RSVP</h2>");
-                out.println("        <div class=\"aira-cluster\">");
-                out.println("          <span class=\"aira-badge aira-badge--success\">Coming: " + comingCount
-                        + "</span>");
-                out.println("          <span class=\"aira-badge aira-badge--info\">Maybe: " + maybeCount + "</span>");
-                out.println("          <span class=\"aira-badge aira-badge--subtle\">Not coming: " + notComingCount
-                        + "</span>");
-                out.println("        </div>");
-                out.println("        <ul>");
-                for (EsMeetingRsvp r : rsvps) {
-                    User rsvpUser = rsvpUsers.get(r.getUserId());
-                    String name = rsvpUser != null ? userLabel(rsvpUser) : ("User #" + r.getUserId());
-                    out.println("          <li>" + escapeHtml(name) + " &mdash; " + rsvpLabel(r.getResponse())
-                            + (r.getNote() != null && !r.getNote().isBlank()
-                                    ? " &mdash; " + escapeHtml(r.getNote())
-                                    : "")
-                            + "</li>");
-                }
-                out.println("        </ul>");
-                out.println("      </section>");
-            }
+            // --- Roster: everyone who RSVP'd and/or attended, one combined table ---
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <h2 class=\"aira-section-title\">Roster</h2>");
+            out.println(
+                    "        <p class=\"aira-meta\">Everyone who RSVP&rsquo;d or has an attendance record. Scan for key people and mark them present as they arrive.</p>");
+            renderRosterTable(out, contextPath, meeting, roster, resolvedUsers, windowOpen, editing, true);
+            out.println("      </section>");
 
-            // --- Expected but not seen (Phase 5: series members, RSVP, presenters,
-            // topic followers, minus anyone with an active attendance record) ---
-            if (!expectedNotSeen.isEmpty()) {
-                out.println("      <section class=\"aira-panel\">");
-                out.println("        <h2 class=\"aira-section-title\">Expected But Not Seen</h2>");
-                out.println(
-                        "        <p class=\"aira-meta\">Series members, RSVPs, presenters, and topic followers who don&rsquo;t have an attendance record yet.</p>");
-                out.println("        <ul>");
-                for (InterestedPerson p : expectedNotSeen) {
-                    out.println("          <li>" + escapeHtml(personLabel(p, expectedUsers)) + " &mdash; "
-                            + escapeHtml(p.source()) + "</li>");
-                }
-                out.println("        </ul>");
-                out.println("      </section>");
-            }
+            // --- Not yet checked in: expected people with neither an RSVP nor attendance ---
+            out.println("      <section class=\"aira-panel\">");
+            out.println("        <h2 class=\"aira-section-title\">Not Yet Checked In</h2>");
+            out.println(
+                    "        <p class=\"aira-meta\">Series members, presenters, and topic followers with no RSVP or attendance record yet.</p>");
+            renderListOrSearch(out, contextPath, meeting, notYetCheckedIn, resolvedUsers, windowOpen, editing,
+                    "not-yet-checked-in", null);
+            out.println("      </section>");
 
-            // --- By topic (Phase 5: "we're discussing this topic, are the interested
-            // people here?") ---
-            if (!topicBreakdowns.isEmpty()) {
+            // --- By topic: pick a topic, see everyone interested in it ---
+            if (!agendaTopics.isEmpty()) {
                 out.println("      <section class=\"aira-panel\">");
                 out.println("        <h2 class=\"aira-section-title\">By Topic</h2>");
-                for (TopicBreakdown b : topicBreakdowns) {
-                    int seenCount = b.interestedCount() - b.notSeen().size();
-                    out.println("        <div class=\"aira-stack aira-stack--compact\">");
-                    out.println("          <p><strong>" + escapeHtml(b.topicName()) + "</strong> &mdash; "
-                            + b.presenterCount() + " presenter" + (b.presenterCount() == 1 ? "" : "s")
-                            + ", " + seenCount + " of " + b.interestedCount() + " interested people seen</p>");
-                    if (!b.notSeen().isEmpty()) {
-                        out.println("          <p class=\"aira-meta\">Not yet seen: "
-                                + escapeHtml(b.notSeen().stream()
-                                        .map(p -> personLabel(p, topicPersonUsers) + " (" + p.source() + ")")
-                                        .collect(java.util.stream.Collectors.joining(", ")))
-                                + "</p>");
-                    }
-                    out.println("        </div>");
+                out.println("        <div class=\"aira-cluster\">");
+                for (EsTopic t : agendaTopics) {
+                    boolean isSelected = selectedTopic != null
+                            && selectedTopic.getEsTopicId().equals(t.getEsTopicId());
+                    out.println("          <a class=\"aira-button "
+                            + (isSelected ? "aira-button--primary" : "aira-button--secondary") + "\" href=\""
+                            + contextPath + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId()
+                            + "&topicId=" + t.getEsTopicId() + "\">" + escapeHtml(t.getTopicName()) + "</a>");
+                }
+                out.println("        </div>");
+                if (selectedTopic != null) {
+                    out.println("        <h3 class=\"aira-section-title\">" + escapeHtml(selectedTopic.getTopicName())
+                            + "</h3>");
+                    renderListOrSearch(out, contextPath, meeting, topicRoster, resolvedUsers, windowOpen, editing,
+                            "topic", selectedTopic.getEsTopicId());
                 }
                 out.println("      </section>");
             }
 
-            // --- Add observed attendee ---
+            // --- Add observed attendee (fallback for someone not found anywhere above) ---
             out.println("      <section class=\"aira-panel\">");
-            out.println("        <h2 class=\"aira-section-title\">Add Observed Attendee</h2>");
+            out.println("        <h2 class=\"aira-section-title\">Add Someone Not Found Above</h2>");
+            out.println(
+                    "        <p class=\"aira-meta\">For someone with no InteropHub account at all - e.g. a bare Zoom display name.</p>");
             out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
                     + "/es/meeting-attendance\">");
             out.println("          <input type=\"hidden\" name=\"meetingId\" value=\"" + meeting.getEsMeetingId()
@@ -637,93 +678,9 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             out.println("          </div>");
             out.println("          <div class=\"aira-action-group\">");
             out.println("            <button class=\"aira-button aira-button--primary\" type=\"submit\""
-                    + disabledAttr + ">Add Observed Attendee</button>");
+                    + disabledAttr + ">Add</button>");
             out.println("          </div>");
             out.println("        </form>");
-            out.println("      </section>");
-
-            // --- Attendee list ---
-            out.println("      <section class=\"aira-panel\">");
-            out.println("        <h2 class=\"aira-section-title\">Attendees</h2>");
-            if (active.isEmpty()) {
-                out.println("        <p class=\"aira-meta\">No attendance recorded yet.</p>");
-            } else {
-                out.println("        <div class=\"aira-table-wrap\">");
-                out.println("        <table class=\"aira-table\">");
-                out.println(
-                        "          <thead><tr><th>Name</th><th>Status</th><th>Organization</th><th>Email</th><th>Details</th><th></th></tr></thead>");
-                out.println("          <tbody>");
-                for (EsMeetingAttendance a : active) {
-                    boolean isSelfSigned = a.getSelfSignedAt() != null;
-                    boolean isEditingThis = editing != null
-                            && editing.getEsMeetingAttendanceId().equals(a.getEsMeetingAttendanceId());
-                    out.println("            <tr>");
-                    if (isEditingThis) {
-                        out.println("              <td colspan=\"6\">");
-                        renderEditForm(out, contextPath, meeting, a);
-                        out.println("              </td>");
-                    } else {
-                        out.println("              <td>" + escapeHtml(a.getDisplayName()) + "</td>");
-                        out.println("              <td>" + (isSelfSigned
-                                ? "<span class=\"aira-badge aira-badge--success\">Signed in</span>"
-                                : "<span class=\"aira-badge aira-badge--info\">Observed</span>") + "</td>");
-                        out.println("              <td>" + escapeHtml(orEmpty(a.getOrganization())) + "</td>");
-                        boolean hasEmail = a.getEmail() != null && !a.getEmail().isBlank();
-                        out.println("              <td>" + (hasEmail
-                                ? escapeHtml(a.getEmail())
-                                : "<span class=\"aira-badge aira-badge--warning\">Email missing</span>") + "</td>");
-                        Optional<LocalDateTime> lastInvited = !isSelfSigned && hasEmail
-                                ? invitationService.lastInviteSentAt(a.getEmailNormalized())
-                                : Optional.empty();
-                        out.println("              <td class=\"aira-meta\">"
-                                + escapeHtml(observationDetail(a, resolvedUsers, lastInvited)) + "</td>");
-                        out.println("              <td>");
-                        if (!isSelfSigned && windowOpen) {
-                            out.println("                <a class=\"aira-link\" href=\"" + contextPath
-                                    + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&editId="
-                                    + a.getEsMeetingAttendanceId() + "\">Edit</a>");
-                            if (hasEmail) {
-                                out.println("                <form class=\"aira-inline-form\" method=\"post\" action=\""
-                                        + contextPath + "/es/meeting-attendance\">");
-                                out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
-                                        + meeting.getEsMeetingId() + "\">");
-                                out.println(
-                                        "                  <input type=\"hidden\" name=\"action\" value=\"sendInvite\">");
-                                out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
-                                        + a.getEsMeetingAttendanceId() + "\">");
-                                if (lastInvited.isPresent()) {
-                                    out.println(
-                                            "                  <input type=\"hidden\" name=\"confirm\" value=\"1\">");
-                                    out.println(
-                                            "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Send again</button>");
-                                } else {
-                                    out.println(
-                                            "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Invite</button>");
-                                }
-                                out.println("                </form>");
-                            }
-                            out.println(
-                                    "                <form class=\"aira-inline-form\" method=\"post\" action=\""
-                                            + contextPath
-                                            + "/es/meeting-attendance\" onsubmit=\"return confirm('Remove this observed attendee?');\">");
-                            out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
-                                    + meeting.getEsMeetingId() + "\">");
-                            out.println(
-                                    "                  <input type=\"hidden\" name=\"action\" value=\"removeObserved\">");
-                            out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
-                                    + a.getEsMeetingAttendanceId() + "\">");
-                            out.println(
-                                    "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Remove</button>");
-                            out.println("                </form>");
-                        }
-                        out.println("              </td>");
-                    }
-                    out.println("            </tr>");
-                }
-                out.println("          </tbody>");
-                out.println("        </table>");
-                out.println("        </div>");
-            }
             out.println("      </section>");
 
             if (!removed.isEmpty()) {
@@ -740,8 +697,162 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
 
             out.println("    </div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
+            out.println("    <script src=\"" + contextPath + "/js/meeting-attendance-search.js\" defer></script>");
             page.writeEnd(out);
         }
+    }
+
+    /**
+     * Renders {@code rows} as a plain table when under
+     * {@link #LIST_VS_SEARCH_THRESHOLD}, otherwise as a search-to-reveal widget
+     * (mirrors the header search's debounced-fetch pattern) backed by
+     * {@code EsMeetingAttendanceSearchServlet} - searching every registered
+     * user, not just this candidate pool, so a walk-in can still be found.
+     */
+    private void renderListOrSearch(PrintWriter out, String contextPath, EsMeeting meeting, List<RosterRow> rows,
+            Map<Long, User> resolvedUsers, boolean windowOpen, EsMeetingAttendance editing, String widgetId,
+            Long topicId) {
+        if (rows.size() < LIST_VS_SEARCH_THRESHOLD) {
+            renderRosterTable(out, contextPath, meeting, rows, resolvedUsers, windowOpen, editing, false);
+            return;
+        }
+        out.println("        <div class=\"aira-people-search\" data-widget-id=\"" + widgetId
+                + "\" data-meeting-id=\"" + meeting.getEsMeetingId() + "\""
+                + (topicId != null ? " data-topic-id=\"" + topicId + "\"" : "")
+                + " data-window-open=\"" + windowOpen + "\">");
+        out.println("          <div class=\"aira-field\">");
+        out.println("            <label>" + rows.size()
+                + " people - too many to list. Search InteropHub to check someone in:</label>");
+        out.println(
+                "            <input class=\"aira-input\" type=\"text\" data-role=\"query\" autocomplete=\"off\" placeholder=\"Type a name or email...\" />");
+        out.println("          </div>");
+        out.println("          <div data-role=\"status\" class=\"aira-meta\"></div>");
+        out.println("          <div class=\"aira-table-wrap\"><table class=\"aira-table\" data-role=\"results\">"
+                + "<thead><tr><th>Name</th><th>Organization</th><th>Email</th><th></th></tr></thead>"
+                + "<tbody></tbody></table></div>");
+        out.println("        </div>");
+    }
+
+    private void renderRosterTable(PrintWriter out, String contextPath, EsMeeting meeting, List<RosterRow> rows,
+            Map<Long, User> resolvedUsers, boolean windowOpen, EsMeetingAttendance editing, boolean showRsvpColumn) {
+        if (rows.isEmpty()) {
+            out.println("        <p class=\"aira-meta\">No one yet.</p>");
+            return;
+        }
+        out.println("        <div class=\"aira-table-wrap\">");
+        out.println("        <table class=\"aira-table\">");
+        out.println("          <thead><tr><th>Name</th><th>Organization</th><th>Email</th>"
+                + (showRsvpColumn ? "<th>RSVP</th>" : "") + "<th>Status</th><th>Details</th><th></th></tr></thead>");
+        out.println("          <tbody>");
+        for (RosterRow row : rows) {
+            EsMeetingAttendance a = row.attendance();
+            boolean isSelfSigned = a != null && a.getSelfSignedAt() != null;
+            boolean isEditingThis = editing != null && a != null
+                    && editing.getEsMeetingAttendanceId().equals(a.getEsMeetingAttendanceId());
+            int colspan = showRsvpColumn ? 7 : 6;
+            out.println("            <tr>");
+            if (isEditingThis) {
+                out.println("              <td colspan=\"" + colspan + "\">");
+                renderEditForm(out, contextPath, meeting, a);
+                out.println("              </td>");
+                out.println("            </tr>");
+                continue;
+            }
+            out.println("              <td>" + escapeHtml(orEmpty(row.displayName())) + "</td>");
+            out.println("              <td>" + escapeHtml(orEmpty(row.organization())) + "</td>");
+            boolean hasEmail = row.email() != null && !row.email().isBlank();
+            out.println("              <td>" + (hasEmail ? escapeHtml(row.email())
+                    : "<span class=\"aira-badge aira-badge--warning\">Email missing</span>") + "</td>");
+            if (showRsvpColumn) {
+                out.println("              <td>" + (row.rsvp() != null ? rsvpLabel(row.rsvp()) : "&mdash;")
+                        + "</td>");
+            }
+            out.println("              <td>" + statusBadge(a) + "</td>");
+            Optional<LocalDateTime> lastInvited = a != null && !isSelfSigned && hasEmail
+                    ? invitationService.lastInviteSentAt(a.getEmailNormalized())
+                    : Optional.empty();
+            out.println("              <td class=\"aira-meta\">"
+                    + escapeHtml(a != null ? observationDetail(a, resolvedUsers, lastInvited) : "") + "</td>");
+            out.println("              <td>");
+            if (a == null) {
+                renderPresentForm(out, contextPath, meeting.getEsMeetingId(), windowOpen, row.userId(),
+                        row.displayName(), row.organization(), row.email());
+            } else if (!isSelfSigned && windowOpen) {
+                out.println("                <a class=\"aira-link\" href=\"" + contextPath
+                        + "/es/meeting-attendance?meetingId=" + meeting.getEsMeetingId() + "&editId="
+                        + a.getEsMeetingAttendanceId() + "\">Edit</a>");
+                if (hasEmail) {
+                    out.println("                <form class=\"aira-inline-form\" method=\"post\" action=\""
+                            + contextPath + "/es/meeting-attendance\">");
+                    out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                            + meeting.getEsMeetingId() + "\">");
+                    out.println(
+                            "                  <input type=\"hidden\" name=\"action\" value=\"sendInvite\">");
+                    out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
+                            + a.getEsMeetingAttendanceId() + "\">");
+                    if (lastInvited.isPresent()) {
+                        out.println("                  <input type=\"hidden\" name=\"confirm\" value=\"1\">");
+                        out.println(
+                                "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Send again</button>");
+                    } else {
+                        out.println(
+                                "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Invite</button>");
+                    }
+                    out.println("                </form>");
+                }
+                out.println("                <form class=\"aira-inline-form\" method=\"post\" action=\""
+                        + contextPath
+                        + "/es/meeting-attendance\" onsubmit=\"return confirm('Remove this observed attendee?');\">");
+                out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\""
+                        + meeting.getEsMeetingId() + "\">");
+                out.println("                  <input type=\"hidden\" name=\"action\" value=\"removeObserved\">");
+                out.println("                  <input type=\"hidden\" name=\"attendanceId\" value=\""
+                        + a.getEsMeetingAttendanceId() + "\">");
+                out.println(
+                        "                  <button class=\"aira-button aira-button--link\" type=\"submit\">Remove</button>");
+                out.println("                </form>");
+            }
+            out.println("              </td>");
+            out.println("            </tr>");
+        }
+        out.println("          </tbody>");
+        out.println("        </table>");
+        out.println("        </div>");
+    }
+
+    private String statusBadge(EsMeetingAttendance a) {
+        if (a == null) {
+            return "<span class=\"aira-badge aira-badge--subtle\">Not checked in</span>";
+        }
+        return a.getSelfSignedAt() != null
+                ? "<span class=\"aira-badge aira-badge--success\">Signed in</span>"
+                : "<span class=\"aira-badge aira-badge--info\">Observed</span>";
+    }
+
+    /** One-click check-in: submits addObserved with everything already known about this person prefilled. */
+    private void renderPresentForm(PrintWriter out, String contextPath, Long meetingId, boolean windowOpen,
+            Long userId, String displayName, String organization, String email) {
+        if (!windowOpen) {
+            return;
+        }
+        out.println("                <form class=\"aira-inline-form\" method=\"post\" action=\"" + contextPath
+                + "/es/meeting-attendance\">");
+        out.println("                  <input type=\"hidden\" name=\"meetingId\" value=\"" + meetingId + "\">");
+        out.println("                  <input type=\"hidden\" name=\"action\" value=\"addObserved\">");
+        out.println("                  <input type=\"hidden\" name=\"displayName\" value=\""
+                + escapeHtml(orEmpty(displayName)) + "\">");
+        if (userId != null) {
+            out.println("                  <input type=\"hidden\" name=\"userId\" value=\"" + userId + "\">");
+        }
+        out.println("                  <input type=\"hidden\" name=\"organization\" value=\""
+                + escapeHtml(orEmpty(organization)) + "\">");
+        if (email != null && !email.isBlank()) {
+            out.println("                  <input type=\"hidden\" name=\"email\" value=\"" + escapeHtml(email)
+                    + "\">");
+        }
+        out.println(
+                "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Present</button>");
+        out.println("                </form>");
     }
 
     private void renderEditForm(PrintWriter out, String contextPath, EsMeeting meeting, EsMeetingAttendance a) {
@@ -823,42 +934,6 @@ public class EsMeetingAttendanceConsoleServlet extends HttpServlet {
             map.put(u.getUserId(), u);
         }
         return map;
-    }
-
-    /** One candidate "expected" person, identified by userId (preferred) or email, with why they're expected. */
-    private record InterestedPerson(Long userId, String emailNormalized, String source) {
-    }
-
-    /** One agenda topic's presenter/follower coverage for the "By Topic" facilitation view. */
-    private record TopicBreakdown(String topicName, int presenterCount, int interestedCount,
-            List<InterestedPerson> notSeen) {
-    }
-
-    /** Adds a candidate keyed by userId if present, else by email - first source given for a person wins. */
-    private void addCandidate(Map<String, InterestedPerson> candidates, Long userId, String emailNormalized,
-            String source) {
-        if (userId == null && (emailNormalized == null || emailNormalized.isBlank())) {
-            return;
-        }
-        String key = userId != null ? "u:" + userId : "e:" + emailNormalized;
-        candidates.putIfAbsent(key, new InterestedPerson(userId, emailNormalized, source));
-    }
-
-    private List<InterestedPerson> filterNotSeen(Collection<InterestedPerson> candidates, Set<Long> seenUserIds,
-            Set<String> seenEmails) {
-        return candidates.stream()
-                .filter(p -> p.userId() == null || !seenUserIds.contains(p.userId()))
-                .filter(p -> p.userId() != null || p.emailNormalized() == null
-                        || !seenEmails.contains(p.emailNormalized()))
-                .toList();
-    }
-
-    private String personLabel(InterestedPerson p, Map<Long, User> resolvedUsers) {
-        if (p.userId() != null) {
-            User u = resolvedUsers.get(p.userId());
-            return u != null ? userLabel(u) : ("User #" + p.userId());
-        }
-        return orEmpty(p.emailNormalized());
     }
 
     private String rsvpLabel(MeetingRsvpResponse response) {

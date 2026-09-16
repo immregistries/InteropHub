@@ -887,6 +887,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>EsMeetingAttendanceSearchServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsMeetingAttendanceSearchServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>EsMeetingAttendanceSearchServlet</servlet-name>
+    <url-pattern>/es/meeting-attendance/search-people</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>EsAgendaConfluenceServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsAgendaConfluenceServlet</servlet-class>
   </servlet>
