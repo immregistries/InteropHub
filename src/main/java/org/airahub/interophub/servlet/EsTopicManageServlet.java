@@ -2,6 +2,7 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -42,7 +43,9 @@ import org.airahub.interophub.model.EsTopicSupporter;
 import org.airahub.interophub.model.Supporter;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.EmailReason;
 import org.airahub.interophub.service.EsTopicViewHistoryService;
+import org.airahub.interophub.service.TopicFollowerManagementService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import org.immregistries.aira.web.AiraPage;
 
@@ -50,6 +53,7 @@ public class EsTopicManageServlet extends HttpServlet {
 
     private static final Logger LOGGER = Logger.getLogger(EsTopicManageServlet.class.getName());
     private static final DateTimeFormatter MEETING_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a");
+    private static final DateTimeFormatter INVITE_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
 
     private final AuthFlowService authFlowService;
     private final EsTopicDao esTopicDao;
@@ -66,6 +70,7 @@ public class EsTopicManageServlet extends HttpServlet {
     private final SupporterDao supporterDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsTopicViewHistoryService topicViewHistoryService;
+    private final TopicFollowerManagementService topicFollowerManagementService;
 
     public EsTopicManageServlet() {
         this.authFlowService = new AuthFlowService();
@@ -83,6 +88,7 @@ public class EsTopicManageServlet extends HttpServlet {
         this.supporterDao = new SupporterDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.topicViewHistoryService = new EsTopicViewHistoryService();
+        this.topicFollowerManagementService = new TopicFollowerManagementService();
     }
 
     @Override
@@ -117,13 +123,12 @@ public class EsTopicManageServlet extends HttpServlet {
         }
 
         boolean isAdmin = authFlowService.isAdminUser(viewer);
-        String viewerEmail = trimToNull(viewer.getEmailNormalized());
+        boolean isSpaceAdmin = topicSpaceAccessService.canAdministerSpace(viewer, topicEntity.getEsTopicSpaceId());
         List<EsSubscription> topicSubscriptions = subscriptionDao.findActiveByTopicId(topicId);
-        boolean canManage = isAdmin || topicSubscriptions.stream().anyMatch(s -> isChampionEquivalentStatus(
-                s.getStatus())
-                && ((s.getUserId() != null && s.getUserId().equals(viewer.getUserId()))
-                        || (viewerEmail != null
-                                && viewerEmail.equals(s.getEmailNormalized()))));
+        boolean isChampionOrSupport = TopicFollowerManagementService.isChampionOrSupportForTopic(viewer,
+                topicSubscriptions);
+        boolean canManage = TopicFollowerManagementService.canManageFollowers(isAdmin, isSpaceAdmin,
+                isChampionOrSupport);
         if (!canManage) {
             response.sendRedirect(contextPath + "/es/topic/" + topicId);
             return;
@@ -192,7 +197,8 @@ public class EsTopicManageServlet extends HttpServlet {
                     + "</h1>");
 
             switch (view) {
-                case FOLLOWERS -> renderFollowersView(out, contextPath, topicId, topicSubscriptions, isAdmin);
+                case FOLLOWERS -> renderFollowersView(out, contextPath, request, topicId, topicSubscriptions,
+                        isAdmin);
                 case MEETINGS -> renderMeetingsView(out, contextPath, topicId, viewer, topicMeetingSeries);
                 case COMMENTS -> renderCommentsView(out, topicId);
                 case RELATIONSHIPS -> renderRelationshipsView(out, contextPath, topicId, viewer);
@@ -243,7 +249,7 @@ public class EsTopicManageServlet extends HttpServlet {
     // View: Followers
     // -------------------------------------------------------------------------
 
-    private void renderFollowersView(PrintWriter out, String contextPath, Long topicId,
+    private void renderFollowersView(PrintWriter out, String contextPath, HttpServletRequest request, Long topicId,
             List<EsSubscription> subscriptions, boolean isAdmin) {
         List<Long> subUserIds = subscriptions.stream()
                 .map(EsSubscription::getUserId)
@@ -266,17 +272,19 @@ public class EsTopicManageServlet extends HttpServlet {
             }
             User uA = a.getUserId() != null ? finalUserMap.get(a.getUserId()) : null;
             User uB = b.getUserId() != null ? finalUserMap.get(b.getUserId()) : null;
-            String nameA = uA != null
-                    ? (orEmpty(uA.getFirstName()) + " " + orEmpty(uA.getLastName())).trim()
-                    : orEmpty(a.getEmail());
-            String nameB = uB != null
-                    ? (orEmpty(uB.getFirstName()) + " " + orEmpty(uB.getLastName())).trim()
-                    : orEmpty(b.getEmail());
+            String nameA = TopicFollowerManagementService.resolveDisplayName(uA, a);
+            String nameB = TopicFollowerManagementService.resolveDisplayName(uB, b);
             return nameA.compareToIgnoreCase(nameB);
         });
 
+        String error = trimToNull(request.getParameter("error"));
+
         out.println("          <section class=\"aira-panel\">");
         out.println("            <h2 class=\"aira-section-title\">Followers (" + sortedSubs.size() + ")</h2>");
+        if (error != null) {
+            out.println(
+                    "            <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(error) + "</p></div>");
+        }
         if (sortedSubs.isEmpty()) {
             out.println("            <p class=\"aira-meta\">No followers yet.</p>");
         } else {
@@ -286,88 +294,171 @@ public class EsTopicManageServlet extends HttpServlet {
             out.println("                <th>Name</th>");
             out.println("                <th>Organization</th>");
             out.println("                <th>Email</th>");
+            out.println("                <th>Status</th>");
             out.println("                <th>Role</th>");
-            if (isAdmin) {
-                out.println("                <th class=\"aira-table__cell--actions\">Actions</th>");
-            }
             out.println("              </tr></thead>");
             out.println("              <tbody>");
             for (EsSubscription s : sortedSubs) {
                 User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
-                String name = u != null
-                        ? (orEmpty(u.getFirstName()) + " " + orEmpty(u.getLastName())).trim()
-                        : "";
-                String org = u != null ? orEmpty(u.getOrganization()) : "";
+                boolean hasName = TopicFollowerManagementService.hasDisplayName(u, s);
+                String org = TopicFollowerManagementService.resolveDisplayOrganization(u, s);
                 String email = orEmpty(s.getEmail());
+                TopicFollowerManagementService.FollowerStatus status = TopicFollowerManagementService
+                        .resolveFollowerStatus(u);
+
                 out.println("                <tr>");
-                out.println("                  <td>" + escapeHtml(name) + "</td>");
+                out.println("                  <td>");
+                if (hasName) {
+                    out.println("                    "
+                            + escapeHtml(TopicFollowerManagementService.resolveDisplayName(u, s)));
+                } else {
+                    renderAddNameForm(out, contextPath, topicId, s.getEsSubscriptionId());
+                }
+                out.println("                  </td>");
                 out.println("                  <td>" + escapeHtml(org) + "</td>");
                 out.println("                  <td>" + escapeHtml(email) + "</td>");
-                if (isAdmin) {
-                    out.println("                  <td>");
-                    out.println("                    <form class=\"aira-inline-form\" method=\"post\" action=\""
-                            + contextPath + "/es/topics/subscription-role\">");
-                    out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
-                            + s.getEsSubscriptionId() + "\" />");
-                    out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId
-                            + "\" />");
-                    out.println(
-                            "                      <label class=\"aira-visually-hidden\" for=\"follower-role-"
-                                    + s.getEsSubscriptionId() + "\">Role for " + escapeHtml(name.isBlank() ? email : name)
-                                    + "</label>");
-                    out.println("                      <select class=\"aira-select\" id=\"follower-role-"
-                            + s.getEsSubscriptionId() + "\" name=\"status\" onchange=\"this.form.submit()\">");
-                    out.println("                        <option value=\"SUBSCRIBED\""
-                            + (s.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED ? " selected" : "")
-                            + ">Follower</option>");
-                    out.println("                        <option value=\"CHAMPION\""
-                            + (s.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION ? " selected" : "")
-                            + ">Champion</option>");
-                    out.println("                        <option value=\"SUPPORT\""
-                            + (s.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT ? " selected" : "")
-                            + ">Support</option>");
-                    out.println("                      </select>");
-                    out.println(
-                            "                      <noscript><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Save</button></noscript>");
-                    out.println("                    </form>");
-                    out.println("                  </td>");
-                    out.println("                  <td class=\"aira-table__cell--actions\">");
-                    out.println("                    <form method=\"post\" action=\"" + contextPath
-                            + "/es/topics/subscription-role\" style=\"display:inline\">");
-                    out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
-                            + s.getEsSubscriptionId() + "\" />");
-                    out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId
-                            + "\" />");
-                    out.println("                      <input type=\"hidden\" name=\"status\" value=\"UNSUBSCRIBED\" />");
-                    out.println(
-                            "                      <button class=\"aira-button aira-button--danger aira-button--small\" type=\"submit\">Remove</button>");
-                    out.println("                    </form>");
-                    out.println("                  </td>");
+                out.println("                  <td>");
+                if (status == TopicFollowerManagementService.FollowerStatus.REGISTERED) {
+                    out.println("                    <span class=\"aira-badge aira-badge--success\">Registered</span>");
                 } else {
-                    String badgeVariant = switch (s.getStatus()) {
-                        case CHAMPION -> "aira-badge--info";
-                        case SUPPORT -> "aira-badge--subtle";
-                        default -> null;
-                    };
-                    String role = switch (s.getStatus()) {
-                        case CHAMPION -> "Champion";
-                        case SUPPORT -> "Support";
-                        default -> "Follower";
-                    };
-                    if (badgeVariant != null) {
-                        out.println("                  <td><span class=\"aira-badge " + badgeVariant + "\">"
-                                + escapeHtml(role) + "</span></td>");
-                    } else {
-                        out.println("                  <td>" + escapeHtml(role) + "</td>");
-                    }
+                    renderInviteAction(out, contextPath, topicId, s, status, isAdmin);
                 }
+                out.println("                  </td>");
+                out.println("                  <td>");
+                renderRoleSelect(out, contextPath, topicId, s, email);
+                out.println("                  </td>");
                 out.println("                </tr>");
             }
             out.println("              </tbody>");
             out.println("            </table>");
             out.println("            </div>");
         }
+
+        renderAddFollowerForm(out, contextPath, topicId);
+
         out.println("          </section>");
+    }
+
+    private void renderRoleSelect(PrintWriter out, String contextPath, Long topicId, EsSubscription s,
+            String email) {
+        out.println("                    <form class=\"aira-inline-form\" method=\"post\" action=\""
+                + contextPath + "/es/topics/subscription-role\">");
+        out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                + s.getEsSubscriptionId() + "\" />");
+        out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\" />");
+        out.println("                      <label class=\"aira-visually-hidden\" for=\"follower-role-"
+                + s.getEsSubscriptionId() + "\">Role for " + escapeHtml(email) + "</label>");
+        out.println("                      <select class=\"aira-select\" id=\"follower-role-"
+                + s.getEsSubscriptionId() + "\" name=\"status\" onchange=\"this.form.submit()\">");
+        out.println("                        <option value=\"SUBSCRIBED\""
+                + (s.getStatus() == EsSubscription.SubscriptionStatus.SUBSCRIBED ? " selected" : "")
+                + ">Follower</option>");
+        out.println("                        <option value=\"CHAMPION\""
+                + (s.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION ? " selected" : "")
+                + ">Champion</option>");
+        out.println("                        <option value=\"SUPPORT\""
+                + (s.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT ? " selected" : "")
+                + ">Support</option>");
+        out.println("                        <option value=\"UNSUBSCRIBED\">Unfollow</option>");
+        out.println("                      </select>");
+        out.println(
+                "                      <noscript><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Save</button></noscript>");
+        out.println("                    </form>");
+    }
+
+    private void renderInviteAction(PrintWriter out, String contextPath, Long topicId, EsSubscription s,
+            TopicFollowerManagementService.FollowerStatus status, boolean isAdmin) {
+        boolean isVerify = status == TopicFollowerManagementService.FollowerStatus.UNVERIFIED;
+        String action = isVerify ? "inviteVerify" : "inviteRegistration";
+        String reasonCode = isVerify ? EmailReason.TOPIC_FOLLOWER_VERIFY_EMAIL
+                : EmailReason.TOPIC_FOLLOWER_REGISTRATION_INVITE;
+        String title = isVerify ? "Send a verification email" : "Send a registration invite";
+
+        LocalDateTime lastSent = topicFollowerManagementService
+                .lastSentAt(s.getEmailNormalized(), reasonCode)
+                .orElse(null);
+        boolean cooldown = !isAdmin && TopicFollowerManagementService.isWithinCooldown(
+                lastSent, LocalDateTime.now(), TopicFollowerManagementService.RESEND_COOLDOWN_DAYS);
+
+        if (lastSent != null) {
+            out.println("                    <div class=\"aira-meta\">Last sent "
+                    + escapeHtml(INVITE_DATE_FMT.format(lastSent)) + "</div>");
+        }
+        out.println("                    <form method=\"post\" action=\"" + contextPath
+                + "/es/topics/followers-manage\" style=\"display:inline\">");
+        out.println("                      <input type=\"hidden\" name=\"action\" value=\"" + action + "\" />");
+        out.println("                      <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                + s.getEsSubscriptionId() + "\" />");
+        out.println("                      <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\" />");
+        if (cooldown) {
+            out.println("                      <input type=\"hidden\" name=\"confirm\" value=\"1\" />");
+        }
+        out.println("                      <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\" title=\""
+                + escapeHtml(title) + "\">" + escapeHtml(cooldown ? "Send Again" : "Send Invite") + "</button>");
+        out.println("                    </form>");
+    }
+
+    private void renderAddNameForm(PrintWriter out, String contextPath, Long topicId, Long subscriptionId) {
+        out.println("                    <details>");
+        out.println("                      <summary>+ Add name</summary>");
+        out.println("                      <form class=\"aira-inline-form\" method=\"post\" action=\""
+                + contextPath + "/es/topics/followers-manage\">");
+        out.println("                        <input type=\"hidden\" name=\"action\" value=\"updateContact\" />");
+        out.println("                        <input type=\"hidden\" name=\"subscriptionId\" value=\""
+                + subscriptionId + "\" />");
+        out.println("                        <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\" />");
+        out.println(
+                "                        <input class=\"aira-input\" type=\"text\" name=\"firstName\" maxlength=\"100\" placeholder=\"First name\" />");
+        out.println(
+                "                        <input class=\"aira-input\" type=\"text\" name=\"lastName\" maxlength=\"100\" placeholder=\"Last name\" />");
+        out.println(
+                "                        <input class=\"aira-input\" type=\"text\" name=\"organization\" maxlength=\"200\" placeholder=\"Organization\" />");
+        out.println(
+                "                        <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Save</button>");
+        out.println("                      </form>");
+        out.println("                    </details>");
+    }
+
+    private void renderAddFollowerForm(PrintWriter out, String contextPath, Long topicId) {
+        out.println("            <details>");
+        out.println("              <summary>+ Add a follower</summary>");
+        out.println("              <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                + "/es/topics/followers-manage\">");
+        out.println("                <input type=\"hidden\" name=\"action\" value=\"add\">");
+        out.println("                <input type=\"hidden\" name=\"topicId\" value=\"" + topicId + "\">");
+        out.println("                <div class=\"aira-field-row\">");
+        out.println("                  <div class=\"aira-field\">");
+        out.println("                    <label>Email *</label>");
+        out.println(
+                "                    <input class=\"aira-input\" type=\"email\" name=\"email\" maxlength=\"254\" required>");
+        out.println("                  </div>");
+        out.println("                  <div class=\"aira-field\">");
+        out.println("                    <label>First Name</label>");
+        out.println("                    <input class=\"aira-input\" type=\"text\" name=\"firstName\" maxlength=\"100\">");
+        out.println("                  </div>");
+        out.println("                  <div class=\"aira-field\">");
+        out.println("                    <label>Last Name</label>");
+        out.println("                    <input class=\"aira-input\" type=\"text\" name=\"lastName\" maxlength=\"100\">");
+        out.println("                  </div>");
+        out.println("                  <div class=\"aira-field\">");
+        out.println("                    <label>Organization</label>");
+        out.println(
+                "                    <input class=\"aira-input\" type=\"text\" name=\"organization\" maxlength=\"200\">");
+        out.println("                  </div>");
+        out.println("                </div>");
+        out.println("                <div class=\"aira-field\">");
+        out.println("                  <label>Reason / context</label>");
+        out.println(
+                "                  <textarea class=\"aira-textarea\" name=\"reason\" rows=\"2\" placeholder=\"e.g. requested by email on 9/12\"></textarea>");
+        out.println("                </div>");
+        out.println(
+                "                <label class=\"aira-radio\"><input type=\"checkbox\" name=\"sendNotification\" checked> Send them an email now</label>");
+        out.println("                <div class=\"aira-action-group\">");
+        out.println(
+                "                  <button class=\"aira-button aira-button--primary\" type=\"submit\">Add Follower</button>");
+        out.println("                </div>");
+        out.println("              </form>");
+        out.println("            </details>");
     }
 
     // -------------------------------------------------------------------------

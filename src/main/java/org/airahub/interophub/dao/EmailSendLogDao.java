@@ -127,6 +127,28 @@ public class EmailSendLogDao {
     }
 
     /**
+     * Returns the most recent send of a given reason to a given email, if any.
+     * Used to show "Last sent ..." and to apply the resend cooldown warning for
+     * managed topic-follower invitations.
+     */
+    public Optional<EmailSendLog> findMostRecentByEmailAndReason(String emailNormalized, String emailReason) {
+        if (emailNormalized == null || emailReason == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EmailSendLog e where e.recipientEmailNormalized = :email"
+                            + " and e.emailReason = :reason"
+                            + " order by e.sentAt desc, e.emailLogId desc",
+                    EmailSendLog.class)
+                    .setParameter("email", emailNormalized)
+                    .setParameter("reason", emailReason)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    /**
      * Returns a log entry by its primary key. Used by the unsubscribe servlet to
      * verify that the log_id in the unsubscribe URL matches the claimed email.
      */

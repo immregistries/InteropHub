@@ -68,6 +68,24 @@ public class EsSubscription {
     @Column(name = "unsubscribed_at")
     private LocalDateTime unsubscribedAt;
 
+    @Column(name = "contact_first_name", length = 100)
+    private String contactFirstName;
+
+    @Column(name = "contact_last_name", length = 100)
+    private String contactLastName;
+
+    @Column(name = "contact_organization", length = 200)
+    private String contactOrganization;
+
+    @Column(name = "managed_added_by_user_id")
+    private Long managedAddedByUserId;
+
+    @Column(name = "managed_added_at")
+    private LocalDateTime managedAddedAt;
+
+    @Column(name = "managed_add_reason", columnDefinition = "TEXT")
+    private String managedAddReason;
+
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
@@ -179,5 +197,53 @@ public class EsSubscription {
 
     public void setUnsubscribedAt(LocalDateTime unsubscribedAt) {
         this.unsubscribedAt = unsubscribedAt;
+    }
+
+    public String getContactFirstName() {
+        return contactFirstName;
+    }
+
+    public void setContactFirstName(String contactFirstName) {
+        this.contactFirstName = contactFirstName;
+    }
+
+    public String getContactLastName() {
+        return contactLastName;
+    }
+
+    public void setContactLastName(String contactLastName) {
+        this.contactLastName = contactLastName;
+    }
+
+    public String getContactOrganization() {
+        return contactOrganization;
+    }
+
+    public void setContactOrganization(String contactOrganization) {
+        this.contactOrganization = contactOrganization;
+    }
+
+    public Long getManagedAddedByUserId() {
+        return managedAddedByUserId;
+    }
+
+    public void setManagedAddedByUserId(Long managedAddedByUserId) {
+        this.managedAddedByUserId = managedAddedByUserId;
+    }
+
+    public LocalDateTime getManagedAddedAt() {
+        return managedAddedAt;
+    }
+
+    public void setManagedAddedAt(LocalDateTime managedAddedAt) {
+        this.managedAddedAt = managedAddedAt;
+    }
+
+    public String getManagedAddReason() {
+        return managedAddReason;
+    }
+
+    public void setManagedAddReason(String managedAddReason) {
+        this.managedAddReason = managedAddReason;
     }
 }
