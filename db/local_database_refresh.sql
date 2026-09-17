@@ -25,18 +25,25 @@ SET
 WHERE active = 1;
 
 -- -------------------------
+-- PRODUCTION → LOCAL ORIGIN
+-- -------------------------
+-- Single source of truth for the two URL-UPDATES sections below.
+
+SET @prod_origin  = 'https://informatics.immregistries.org';
+SET @local_origin = 'http://localhost:8080';
+
+-- -------------------------
 -- APP REGISTRY — URL UPDATES
 -- -------------------------
--- Redirect production app URLs to localhost.
--- Safe to run even when the production URL is absent (0 rows updated = no-op).
+-- Redirect any production app URL to its localhost equivalent, preserving
+-- the path after the origin. Prefix match, not exact match, so this covers
+-- every app automatically -- no per-app statement needs to be added here as
+-- new apps reach production. See db/local_database_refresh.md.
+-- Safe to run even when no row matches (0 rows updated = no-op).
 
 UPDATE app_registry
-SET default_redirect_url = 'http://localhost:8080/step'
-WHERE default_redirect_url = 'https://informatics.immregistries.org/step';
-
-UPDATE app_registry
-SET default_redirect_url = 'http://localhost:8080/clear/'
-WHERE default_redirect_url = 'https://informatics.immregistries.org/clear/';
+SET default_redirect_url = CONCAT(@local_origin, SUBSTRING(default_redirect_url, LENGTH(@prod_origin) + 1))
+WHERE default_redirect_url LIKE CONCAT(@prod_origin, '%');
 
 -- -------------------------
 -- APP REGISTRY — TEMPORARY LOCAL-ONLY INSERTS
@@ -52,20 +59,13 @@ VALUES
 -- -------------------------
 -- APP REDIRECT ALLOWLIST — URL UPDATES
 -- -------------------------
--- Swap any production base URLs for localhost equivalents.
--- The path suffix after the domain root is preserved.
+-- Same prefix-match swap as above, applied to the allowlist. The path
+-- suffix after the domain root is preserved. Non-production-origin entries
+-- (e.g. a staging URL on a different domain) are left untouched.
 
 UPDATE app_redirect_allowlist
-SET base_url = 'http://localhost:8080/step'
-WHERE base_url = 'https://informatics.immregistries.org/step';
-
-UPDATE app_redirect_allowlist
-SET base_url = 'http://localhost:8080/clear/login'
-WHERE base_url = 'https://informatics.immregistries.org/clear/login';
-
-UPDATE app_redirect_allowlist
-SET base_url = 'http://localhost:8080/clear/'
-WHERE base_url = 'https://informatics.immregistries.org/clear/';
+SET base_url = CONCAT(@local_origin, SUBSTRING(base_url, LENGTH(@prod_origin) + 1))
+WHERE base_url LIKE CONCAT(@prod_origin, '%');
 
 -- -------------------------
 -- APP REDIRECT ALLOWLIST — TEMPORARY LOCAL-ONLY INSERTS

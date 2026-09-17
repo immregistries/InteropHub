@@ -19,6 +19,8 @@ InteropHub acts as a central authentication hub. External applications (e.g. Ste
 
 Production points these URLs at the live servers (e.g. `https://informatics.immregistries.org/...`). Local development must point them at `http://localhost:8080/...`. The script handles this translation every time a prod snapshot is restored.
 
+The translation is a **prefix swap**, not a per-app lookup: any `default_redirect_url` / `base_url` that starts with `@prod_origin` (`https://informatics.immregistries.org`) has that prefix replaced with `@local_origin` (`http://localhost:8080`), preserving whatever path follows. This means it covers every app that exists in the production snapshot automatically — nothing needs to be added to the script when a new app reaches production.
+
 ---
 
 ## Application Lifecycle in This Script
@@ -37,17 +39,17 @@ The app is under development and needs to work locally. Since the daily prod sna
 
 ### Phase 2 — App is deployed to production
 
-Once the app appears in the production database, the daily snapshot will carry its rows. The insert blocks are no longer needed and must be removed. The update blocks (which were no-ops until now) will start working automatically on every refresh.
+Once the app appears in the production database, the daily snapshot will carry its rows, already pointed at the production origin. The generalized prefix-swap `UPDATE` statements pick these up automatically — no script change needed.
 
 **Action on production deploy:**
 1. Delete the `INSERT IGNORE` block(s) for that app from both sections.
-2. Verify the `UPDATE` statements for that app are already present (they should have been added in Phase 1 — see below).
+2. Run the script against a fresh snapshot and confirm the app's URLs now read `http://localhost:8080/...`.
 
 ---
 
 ## Adding a New Application
 
-When you begin local development on a new InteropHub-authenticated app, update this script in two places.
+When you begin local development on a new InteropHub-authenticated app, the **URL UPDATES** sections need no changes — the prefix swap already covers any URL starting with `https://informatics.immregistries.org`, for any app, present or future. You only need to add temporary local-only inserts so the app works locally before it exists in the production snapshot.
 
 ### Information you need
 
@@ -57,40 +59,12 @@ When you begin local development on a new InteropHub-authenticated app, update t
 | `app_code` | `myapp` |
 | `app_name` | `My Application` |
 | `app_description` | `Short description` |
-| Production `default_redirect_url` | `https://informatics.immregistries.org/myapp/` |
 | Local `default_redirect_url` | `http://localhost:8080/myapp/` |
-| Production redirect URLs (one per allowlist row) | `https://informatics.immregistries.org/myapp/login`, `https://informatics.immregistries.org/myapp/` |
-| Local redirect URLs (matching set) | `http://localhost:8080/myapp/login`, `http://localhost:8080/myapp/` |
-
-> The path suffix after the domain root is always preserved exactly — only the scheme+host changes between production and local.
+| Local redirect URLs (one per allowlist row) | `http://localhost:8080/myapp/login`, `http://localhost:8080/myapp/` |
 
 ---
 
-### Step 1 — Add UPDATE statements (permanent)
-
-Add these to the existing update sections. They are no-ops until the app reaches production, but adding them now means you only need to delete inserts when that day comes.
-
-**APP REGISTRY — URL UPDATES**
-```sql
-UPDATE app_registry
-SET default_redirect_url = 'http://localhost:8080/myapp/'
-WHERE default_redirect_url = 'https://informatics.immregistries.org/myapp/';
-```
-
-**APP REDIRECT ALLOWLIST — URL UPDATES**
-```sql
-UPDATE app_redirect_allowlist
-SET base_url = 'http://localhost:8080/myapp/login'
-WHERE base_url = 'https://informatics.immregistries.org/myapp/login';
-
-UPDATE app_redirect_allowlist
-SET base_url = 'http://localhost:8080/myapp/'
-WHERE base_url = 'https://informatics.immregistries.org/myapp/';
-```
-
----
-
-### Step 2 — Add INSERT blocks (temporary)
+### Add INSERT blocks (temporary)
 
 Add these to the temporary insert sections. Mark them clearly with the app name and a reminder to remove them on production deploy.
 
@@ -119,8 +93,7 @@ VALUES
 1. [ ] Confirm the app row appears in the prod snapshot (`SELECT * FROM app_registry WHERE app_code = 'myapp'`).
 2. [ ] Delete the `INSERT IGNORE` block for the app from **APP REGISTRY — TEMPORARY LOCAL-ONLY INSERTS**.
 3. [ ] Delete the `INSERT IGNORE` block for the app from **APP REDIRECT ALLOWLIST — TEMPORARY LOCAL-ONLY INSERTS**.
-4. [ ] Verify the corresponding `UPDATE` statements are present in the permanent sections.
-5. [ ] Run the script against a fresh snapshot and confirm the URLs are correct.
+4. [ ] Run the script against a fresh snapshot and confirm the URLs read `http://localhost:8080/...` (the generalized `UPDATE` statements need no per-app change).
 
 ---
 
@@ -128,5 +101,6 @@ VALUES
 
 | App | app_id | Phase | Notes |
 |---|---|---|---|
-| StepIntoCDSI | 1 | Production | Updates in place |
+| StepIntoCDSI | 1 | Production | Covered by the generalized URL swap |
 | Clear | 2 | **Pre-production** | Temporary inserts active — remove once deployed |
+| Mismo | 3 | Production | Covered by the generalized URL swap |
