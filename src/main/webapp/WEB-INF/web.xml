@@ -406,6 +406,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>AdminEsArtifactTestServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminEsArtifactTestServlet</servlet-class>
+    <multipart-config>
+      <max-file-size>10485760</max-file-size>
+      <max-request-size>10485760</max-request-size>
+      <file-size-threshold>262144</file-size-threshold>
+    </multipart-config>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsSupportersServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsSupportersServlet</servlet-class>
   </servlet>
@@ -713,6 +723,11 @@
   <servlet-mapping>
     <servlet-name>AdminEsSupporterServlet</servlet-name>
     <url-pattern>/admin/es/supporters</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>AdminEsArtifactTestServlet</servlet-name>
+    <url-pattern>/admin/es/artifact-test</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

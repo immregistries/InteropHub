@@ -10,8 +10,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import org.airahub.interophub.dao.AppRegistryDao;
+import org.airahub.interophub.dao.EsArtifactDemoDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.AppRegistry;
+import org.airahub.interophub.model.EsArtifactDemo;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.MeetingAction;
 import org.airahub.interophub.model.User;
@@ -19,6 +21,7 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
+import org.airahub.interophub.config.ArtifactStorageConfig;
 import org.immregistries.aira.web.AiraPage;
 
 public class WelcomeServlet extends HttpServlet {
@@ -28,6 +31,7 @@ public class WelcomeServlet extends HttpServlet {
     private final EsInterestService esInterestService;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final MeetingActionQueueService meetingActionQueueService;
+    private final EsArtifactDemoDao artifactDemoDao;
 
     public WelcomeServlet() {
         this.authFlowService = new AuthFlowService();
@@ -36,6 +40,7 @@ public class WelcomeServlet extends HttpServlet {
         this.esInterestService = new EsInterestService();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
         this.meetingActionQueueService = new MeetingActionQueueService();
+        this.artifactDemoDao = new EsArtifactDemoDao();
     }
 
     @Override
@@ -57,6 +62,8 @@ public class WelcomeServlet extends HttpServlet {
         List<EsTopicSpace> spacePickerOrder = new ArrayList<>(publicSpaces);
         spacePickerOrder.addAll(privateSpaces);
 
+        EsArtifactDemo demoArtifact = artifactDemoDao.findBySlotKey(EsArtifactDemo.SLOT_WELCOME_DEMO).orElse(null);
+
         if (user == null) {
             response.setContentType("text/html;charset=UTF-8");
             AiraPage page = InteropAiraPageFactory.base(request, "Welcome - InteropHub")
@@ -66,7 +73,7 @@ public class WelcomeServlet extends HttpServlet {
                     .build();
             try (PrintWriter out = response.getWriter()) {
                 page.writeStart(out);
-                renderAnonymousContent(out, contextPath, publicSpaces);
+                renderAnonymousContent(out, contextPath, publicSpaces, demoArtifact);
                 out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
                 page.writeEnd(out);
             }
@@ -98,13 +105,14 @@ public class WelcomeServlet extends HttpServlet {
         try (PrintWriter out = response.getWriter()) {
             page.writeStart(out);
             renderAuthenticatedContent(out, contextPath, name, availableApps, publicSpaces, privateSpaces,
-                    adminUser, meetingActions);
+                    adminUser, meetingActions, demoArtifact);
             out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
     }
 
-    private void renderAnonymousContent(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces) {
+    private void renderAnonymousContent(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces,
+            EsArtifactDemo demoArtifact) {
         out.println("      <div class=\"aira-container--standard\">");
         out.println("        <div class=\"aira-page-header\">");
         out.println("          <div>");
@@ -118,6 +126,8 @@ public class WelcomeServlet extends HttpServlet {
         out.println("        </div>");
 
         out.println("        <div class=\"aira-stack\">");
+
+        renderDemoArtifact(out, demoArtifact);
 
         out.println("          <section class=\"aira-panel\">");
         out.println("            <h2 class=\"aira-section-title\">Public Topic Spaces</h2>");
@@ -133,7 +143,7 @@ public class WelcomeServlet extends HttpServlet {
 
     private void renderAuthenticatedContent(PrintWriter out, String contextPath, String name,
             List<AppRegistry> availableApps, List<EsTopicSpace> publicSpaces, List<EsTopicSpace> privateSpaces,
-            boolean adminUser, List<MeetingAction> meetingActions) {
+            boolean adminUser, List<MeetingAction> meetingActions, EsArtifactDemo demoArtifact) {
         out.println("      <div class=\"aira-container--standard\">");
         out.println("        <div class=\"aira-page-header\">");
         out.println("          <div>");
@@ -156,6 +166,7 @@ public class WelcomeServlet extends HttpServlet {
 
         out.println("        <div class=\"aira-stack\">");
 
+        renderDemoArtifact(out, demoArtifact);
         MeetingActionQueueRenderer.render(out, contextPath, meetingActions, LocalDateTime.now(ZoneOffset.UTC));
         renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
         renderApplicationsSection(out, contextPath, availableApps);
@@ -167,6 +178,20 @@ public class WelcomeServlet extends HttpServlet {
 
         out.println("        </div>");
         out.println("      </div>");
+    }
+
+    // TEMPORARY - verifies anonymous Blob reads work signed in and signed out.
+    // Removed with the rest of the artifact storage spike (see
+    // docs/communication-bundles/artifact-storage-deployment-handoff.md).
+    private void renderDemoArtifact(PrintWriter out, EsArtifactDemo demoArtifact) {
+        if (demoArtifact == null || demoArtifact.getObjectKey() == null) {
+            return;
+        }
+        String readUrl = ArtifactStorageConfig.getReadUrl(demoArtifact.getObjectKey());
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <img src=\"" + escapeHtml(readUrl) + "\" alt=\""
+                + escapeHtml(demoArtifact.getOriginalFilename()) + "\" style=\"max-width:100%;height:auto;\" />");
+        out.println("          </section>");
     }
 
     private void renderTopicSpacesSection(PrintWriter out, String contextPath, List<EsTopicSpace> publicSpaces,

@@ -76,7 +76,9 @@ final class AdminSectionNavRenderer {
                                                         new NavItem("ES Topics", "/admin/es/topics"),
                                                         new NavItem("Campaigns", "/admin/es/campaigns"),
                                                         new NavItem("ES Topic Import", "/admin/es-topic-import"),
-                                                        new NavItem("Supporters", "/admin/es/supporters"))),
+                                                        new NavItem("Supporters", "/admin/es/supporters"),
+                                                        new NavItem("Artifact Storage Test",
+                                                                        "/admin/es/artifact-test"))),
                                         new NavGroup("Meetings", List.of(
                                                         new NavItem("Meetings", "/admin/es/meetings"),
                                                         new NavItem("Meeting Polls", "/admin/es/meeting-polls"),

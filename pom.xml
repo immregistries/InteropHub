@@ -5,7 +5,7 @@
 
   <groupId>org.airahub</groupId>
   <artifactId>interophub</artifactId>
-  <version>0.7.0</version>
+  <version>0.7.1</version>
   <packaging>war</packaging>
 
   <name>InteropHub</name>
@@ -67,6 +67,11 @@
       <groupId>com.google.zxing</groupId>
       <artifactId>javase</artifactId>
       <version>3.5.3</version>
+    </dependency>
+    <dependency>
+      <groupId>com.azure</groupId>
+      <artifactId>azure-storage-blob</artifactId>
+      <version>12.28.0</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
