@@ -899,10 +899,6 @@ public class EsTopicsServlet extends HttpServlet {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    private String urlEncode(String value) {
-        return staticUrlEncode(value);
-    }
-
     private String escapeHtml(String value) {
         if (value == null) {
             return "";

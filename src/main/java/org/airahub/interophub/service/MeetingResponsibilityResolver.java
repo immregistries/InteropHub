@@ -14,7 +14,6 @@ import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsAgendaItemPresenter;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingAgendaItem;
-import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopicSpaceMember;
 import org.airahub.interophub.model.User;
 
@@ -32,19 +31,25 @@ import org.airahub.interophub.model.User;
  * <li>If there are none of those either, all site administrators.</li>
  * </ol>
  *
- * <p>{@link #resolveForNotesPublishing} is a narrower tier-1 for the
+ * <p>
+ * {@link #resolveForNotesPublishing} is a narrower tier-1 for the
  * PUBLISH_NOTES action specifically: publishing notes is the scribe's job,
  * or the chair's if there's no scribe - not every meeting-role contact. It
  * falls through to the same Topic-Space-admin / site-admin tiers as above
- * when there's neither.</p>
+ * when there's neither.
+ * </p>
  *
- * <p>{@link #resolveForAgendaOwnership} is a separate narrower cascade for
+ * <p>
+ * {@link #resolveForAgendaOwnership} is a separate narrower cascade for
  * PUBLISH_PROPOSED_AGENDA and FINALIZE_AGENDA specifically - agenda upkeep
  * is the chair's job, not a presenter's or cochair's: chair, then the
  * meeting's topic champions if there's no chair, then Topic-Space admins,
- * then site admins.</p>
+ * then site admins.
+ * </p>
  *
- * <p>This is deliberately narrower than {@link MeetingAuthorizationService#canControlMeeting}
+ * <p>
+ * This is deliberately narrower than
+ * {@link MeetingAuthorizationService#canControlMeeting}
  * (which also always includes site admins, unconditionally, and is what the
  * dashboard/action queue keeps using - an admin should still be able to see
  * and act on anything). This resolver is for "who should be proactively
