@@ -251,41 +251,18 @@ public class EsTopicManageServlet extends HttpServlet {
 
     private void renderFollowersView(PrintWriter out, String contextPath, HttpServletRequest request, Long topicId,
             List<EsSubscription> subscriptions, boolean isAdmin) {
-        List<Long> subUserIds = subscriptions.stream()
-                .map(EsSubscription::getUserId)
-                .filter(id -> id != null)
-                .distinct()
-                .collect(Collectors.toList());
-        Map<Long, User> userMap = Map.of();
-        if (!subUserIds.isEmpty()) {
-            userMap = userDao.findByIds(subUserIds).stream()
-                    .collect(Collectors.toMap(User::getUserId, u -> u));
-        }
-
-        List<EsSubscription> sortedSubs = new ArrayList<>(subscriptions);
-        Map<Long, User> finalUserMap = userMap;
-        sortedSubs.sort((a, b) -> {
-            boolean aIsChamp = isChampionEquivalentStatus(a.getStatus());
-            boolean bIsChamp = isChampionEquivalentStatus(b.getStatus());
-            if (aIsChamp != bIsChamp) {
-                return aIsChamp ? -1 : 1;
-            }
-            User uA = a.getUserId() != null ? finalUserMap.get(a.getUserId()) : null;
-            User uB = b.getUserId() != null ? finalUserMap.get(b.getUserId()) : null;
-            String nameA = TopicFollowerManagementService.resolveDisplayName(uA, a);
-            String nameB = TopicFollowerManagementService.resolveDisplayName(uB, b);
-            return nameA.compareToIgnoreCase(nameB);
-        });
+        List<TopicFollowerManagementService.FollowerRow> rows = topicFollowerManagementService
+                .listFollowerRows(subscriptions);
 
         String error = trimToNull(request.getParameter("error"));
 
         out.println("          <section class=\"aira-panel\">");
-        out.println("            <h2 class=\"aira-section-title\">Followers (" + sortedSubs.size() + ")</h2>");
+        out.println("            <h2 class=\"aira-section-title\">Followers (" + rows.size() + ")</h2>");
         if (error != null) {
             out.println(
                     "            <div class=\"aira-alert aira-alert--danger\"><p>" + escapeHtml(error) + "</p></div>");
         }
-        if (sortedSubs.isEmpty()) {
+        if (rows.isEmpty()) {
             out.println("            <p class=\"aira-meta\">No followers yet.</p>");
         } else {
             out.println("            <div class=\"aira-table-wrap\">");
@@ -298,19 +275,16 @@ public class EsTopicManageServlet extends HttpServlet {
             out.println("                <th>Role</th>");
             out.println("              </tr></thead>");
             out.println("              <tbody>");
-            for (EsSubscription s : sortedSubs) {
-                User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
-                boolean hasName = TopicFollowerManagementService.hasDisplayName(u, s);
-                String org = TopicFollowerManagementService.resolveDisplayOrganization(u, s);
+            for (TopicFollowerManagementService.FollowerRow row : rows) {
+                EsSubscription s = row.subscription();
+                String org = row.organization();
                 String email = orEmpty(s.getEmail());
-                TopicFollowerManagementService.FollowerStatus status = TopicFollowerManagementService
-                        .resolveFollowerStatus(u);
+                TopicFollowerManagementService.FollowerStatus status = row.status();
 
                 out.println("                <tr>");
                 out.println("                  <td>");
-                if (hasName) {
-                    out.println("                    "
-                            + escapeHtml(TopicFollowerManagementService.resolveDisplayName(u, s)));
+                if (row.hasDisplayName()) {
+                    out.println("                    " + escapeHtml(row.displayName()));
                 } else {
                     renderAddNameForm(out, contextPath, topicId, s.getEsSubscriptionId());
                 }
@@ -337,6 +311,42 @@ public class EsTopicManageServlet extends HttpServlet {
         renderAddFollowerForm(out, contextPath, topicId);
 
         out.println("          </section>");
+
+        renderFollowerAdminTools(out, contextPath, topicId, rows.size());
+    }
+
+    /**
+     * "Admin Tools" section below the Followers panel: a grid of cards, one
+     * per tool. Add future tools (e.g. upload a list) as another card method
+     * here plus a matching action in {@link EsTopicFollowerManageServlet}.
+     */
+    private void renderFollowerAdminTools(PrintWriter out, String contextPath, Long topicId, int followerCount) {
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Admin Tools</h2>");
+        out.println("            <div class=\"aira-card-grid\">");
+        renderDownloadFollowersCard(out, contextPath, topicId, followerCount);
+        out.println("            </div>");
+        out.println("          </section>");
+    }
+
+    private void renderDownloadFollowersCard(PrintWriter out, String contextPath, Long topicId, int followerCount) {
+        out.println("              <div class=\"aira-card\">");
+        out.println("                <div class=\"aira-card__body aira-stack\">");
+        out.println("                  <h3 class=\"aira-section-title\">Download followers</h3>");
+        out.println("                  <p class=\"aira-meta\">A CSV file of everyone listed above, with names,"
+                + " organizations, emails, status, and role. People who have opted out of InteropHub email"
+                + " are included and flagged in an &ldquo;Opted Out of Email&rdquo; column.</p>");
+        out.println("                  <div class=\"aira-action-group\">");
+        if (followerCount == 0) {
+            out.println("                    <span class=\"aira-meta\">No followers to download yet.</span>");
+        } else {
+            out.println("                    <a class=\"aira-button aira-button--secondary\" href=\"" + contextPath
+                    + "/es/topics/followers-manage?action=exportCsv&amp;topicId=" + topicId
+                    + "\" download>Download CSV (" + followerCount + ")</a>");
+        }
+        out.println("                  </div>");
+        out.println("                </div>");
+        out.println("              </div>");
     }
 
     private void renderRoleSelect(PrintWriter out, String contextPath, Long topicId, EsSubscription s,

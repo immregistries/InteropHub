@@ -816,6 +816,29 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
     }
 
     /**
+     * Batch form of {@link #hasGeneralUnsubscribed(String)}: returns the subset
+     * of the given normalized emails that have a GENERAL_ES subscription with
+     * UNSUBSCRIBED status.
+     */
+    public Set<String> findGeneralUnsubscribedEmails(java.util.Collection<String> emailsNormalized) {
+        if (emailsNormalized == null || emailsNormalized.isEmpty()) {
+            return Set.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return new java.util.HashSet<>(session.createQuery(
+                    "select distinct s.emailNormalized from EsSubscription s"
+                            + " where s.emailNormalized in (:emails)"
+                            + " and s.subscriptionType = :type"
+                            + " and s.status = :status",
+                    String.class)
+                    .setParameterList("emails", emailsNormalized)
+                    .setParameter("type", EsSubscription.SubscriptionType.GENERAL_ES)
+                    .setParameter("status", EsSubscription.SubscriptionStatus.UNSUBSCRIBED)
+                    .getResultList());
+        }
+    }
+
+    /**
      * Returns the IDs of duplicate subscription rows that should be deleted.
      * For each group of (user_id, subscription_type, es_topic_id) with more than
      * one row, the "losers" are those for which a strictly-better row exists in

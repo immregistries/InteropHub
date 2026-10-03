@@ -7,9 +7,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EmailSendLogDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
@@ -166,9 +172,73 @@ public class TopicFollowerManagementService {
                                 || (viewerEmail != null && viewerEmail.equals(s.getEmailNormalized()))));
     }
 
+    /**
+     * Followers-list order: champion/support contacts first, then everyone
+     * else, each group sorted case-insensitively by display name.
+     */
+    public static List<FollowerRow> sortForDisplay(List<FollowerRow> rows) {
+        List<FollowerRow> sorted = new ArrayList<>(rows);
+        sorted.sort((a, b) -> {
+            boolean aIsChamp = a.isChampionOrSupport();
+            boolean bIsChamp = b.isChampionOrSupport();
+            if (aIsChamp != bIsChamp) {
+                return aIsChamp ? -1 : 1;
+            }
+            return a.displayName().compareToIgnoreCase(b.displayName());
+        });
+        return sorted;
+    }
+
     // -------------------------------------------------------------------------
     // Orchestration
     // -------------------------------------------------------------------------
+
+    /**
+     * Loads the active followers of a topic with their linked user accounts,
+     * opt-out flags, and managed-add details, in Followers-list display
+     * order. Shared by the Followers page and its CSV export so both always
+     * show the same people in the same order.
+     */
+    public List<FollowerRow> listFollowerRows(List<EsSubscription> activeSubscriptions) {
+        List<Long> userIds = new ArrayList<>();
+        for (EsSubscription s : activeSubscriptions) {
+            if (s.getUserId() != null && !userIds.contains(s.getUserId())) {
+                userIds.add(s.getUserId());
+            }
+            if (s.getManagedAddedByUserId() != null && !userIds.contains(s.getManagedAddedByUserId())) {
+                userIds.add(s.getManagedAddedByUserId());
+            }
+        }
+        Map<Long, User> userMap = new HashMap<>();
+        if (!userIds.isEmpty()) {
+            for (User u : userDao.findByIds(userIds)) {
+                userMap.put(u.getUserId(), u);
+            }
+        }
+        Set<String> optedOut = subscriptionDao.findGeneralUnsubscribedEmails(activeSubscriptions.stream()
+                .map(EsSubscription::getEmailNormalized)
+                .filter(e -> e != null)
+                .collect(Collectors.toSet()));
+
+        List<FollowerRow> rows = new ArrayList<>();
+        for (EsSubscription s : activeSubscriptions) {
+            User u = s.getUserId() != null ? userMap.get(s.getUserId()) : null;
+            User addedBy = s.getManagedAddedByUserId() != null ? userMap.get(s.getManagedAddedByUserId()) : null;
+            rows.add(new FollowerRow(s, u, addedBy,
+                    s.getEmailNormalized() != null && optedOut.contains(s.getEmailNormalized())));
+        }
+        return sortForDisplay(rows);
+    }
+
+    /**
+     * Records that a manager downloaded a topic's follower list. The file
+     * holds contact details, so who pulled it is worth keeping in the log.
+     */
+    public void logFollowerExport(User viewer, Long topicId, int rowCount) {
+        LOGGER.info("Follower CSV export: topicId=" + topicId + ", rows=" + rowCount
+                + ", byUserId=" + (viewer != null ? viewer.getUserId() : null)
+                + ", byEmail=" + (viewer != null ? viewer.getEmail() : null));
+    }
 
     /**
      * Shared permission check for every managed-follower action (add, invite,
@@ -413,6 +483,36 @@ public class TopicFollowerManagementService {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    /**
+     * One active follower of a topic, with everything the Followers page and
+     * its CSV export need: the subscription, the linked user account (if
+     * any), the manager who added them (if any), and whether the address has
+     * opted out of all InteropHub email.
+     */
+    public record FollowerRow(EsSubscription subscription, User user, User addedByUser, boolean optedOutOfEmail) {
+
+        public String displayName() {
+            return resolveDisplayName(user, subscription);
+        }
+
+        public boolean hasDisplayName() {
+            return TopicFollowerManagementService.hasDisplayName(user, subscription);
+        }
+
+        public String organization() {
+            return resolveDisplayOrganization(user, subscription);
+        }
+
+        public FollowerStatus status() {
+            return resolveFollowerStatus(user);
+        }
+
+        public boolean isChampionOrSupport() {
+            return subscription.getStatus() == EsSubscription.SubscriptionStatus.CHAMPION
+                    || subscription.getStatus() == EsSubscription.SubscriptionStatus.SUPPORT;
+        }
     }
 
     /** Simple success/failure result wrapper for orchestration methods. */

@@ -4,9 +4,12 @@ import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
@@ -15,6 +18,7 @@ import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailReason;
+import org.airahub.interophub.service.TopicFollowerCsv;
 import org.airahub.interophub.service.TopicFollowerManagementService;
 
 /**
@@ -27,6 +31,9 @@ import org.airahub.interophub.service.TopicFollowerManagementService;
  *
  * URL: POST /es/topics/followers-manage
  * action=add|inviteRegistration|inviteVerify|updateContact
+ *
+ * URL: GET /es/topics/followers-manage?topicId=..&action=exportCsv
+ * (the Followers page's "Admin Tools" section)
  */
 public class EsTopicFollowerManageServlet extends HttpServlet {
 
@@ -40,6 +47,51 @@ public class EsTopicFollowerManageServlet extends HttpServlet {
         this.esTopicDao = new EsTopicDao();
         this.subscriptionDao = new EsSubscriptionDao();
         this.followerService = new TopicFollowerManagementService();
+    }
+
+    /**
+     * Read-only admin tools on the Followers page. Currently just
+     * action=exportCsv, which downloads the follower list shown on the page.
+     */
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String contextPath = request.getContextPath();
+        Long topicId = parseLong(request.getParameter("topicId"));
+        String action = trimToNull(request.getParameter("action"));
+
+        if (topicId == null) {
+            response.sendRedirect(contextPath + "/es/topics");
+            return;
+        }
+
+        Optional<User> viewerOpt = requireFollowerManager(request, topicId);
+        if (viewerOpt.isEmpty()) {
+            response.sendRedirect(contextPath + "/es/topic/" + topicId);
+            return;
+        }
+
+        if ("exportCsv".equals(action)) {
+            handleExportCsv(response, topicId, viewerOpt.get());
+            return;
+        }
+
+        response.sendRedirect(manageUrl(contextPath, topicId));
+    }
+
+    private void handleExportCsv(HttpServletResponse response, Long topicId, User viewer) throws IOException {
+        String topicName = esTopicDao.findById(topicId).map(EsTopic::getTopicName).orElse(null);
+        List<TopicFollowerManagementService.FollowerRow> rows = followerService
+                .listFollowerRows(subscriptionDao.findActiveByTopicId(topicId));
+        followerService.logFollowerExport(viewer, topicId, rows.size());
+
+        response.setContentType("text/csv;charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\""
+                + TopicFollowerCsv.fileName(topicName, LocalDate.now()) + "\"");
+        response.setHeader("Cache-Control", "no-store");
+        try (PrintWriter out = response.getWriter()) {
+            out.write(TopicFollowerCsv.UTF8_BOM);
+            out.write(TopicFollowerCsv.toCsv(rows));
+        }
     }
 
     @Override

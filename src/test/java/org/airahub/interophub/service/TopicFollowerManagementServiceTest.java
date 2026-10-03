@@ -56,6 +56,33 @@ class TopicFollowerManagementServiceTest {
     }
 
     // -------------------------------------------------------------------------
+    // sortForDisplay
+    // -------------------------------------------------------------------------
+
+    @Test
+    void sortForDisplayPutsChampionAndSupportFirstThenByName() {
+        TopicFollowerManagementService.FollowerRow zed = followerRow("Zed", EsSubscription.SubscriptionStatus.SUPPORT);
+        TopicFollowerManagementService.FollowerRow amy = followerRow("amy",
+                EsSubscription.SubscriptionStatus.SUBSCRIBED);
+        TopicFollowerManagementService.FollowerRow bea = followerRow("Bea", EsSubscription.SubscriptionStatus.CHAMPION);
+        TopicFollowerManagementService.FollowerRow carl = followerRow("Carl",
+                EsSubscription.SubscriptionStatus.SUBSCRIBED);
+
+        List<TopicFollowerManagementService.FollowerRow> sorted = TopicFollowerManagementService
+                .sortForDisplay(List.of(zed, amy, bea, carl));
+
+        assertEquals(List.of(bea, zed, amy, carl), sorted);
+    }
+
+    private static TopicFollowerManagementService.FollowerRow followerRow(String firstName,
+            EsSubscription.SubscriptionStatus status) {
+        EsSubscription sub = new EsSubscription();
+        sub.setContactFirstName(firstName);
+        sub.setStatus(status);
+        return new TopicFollowerManagementService.FollowerRow(sub, null, null, false);
+    }
+
+    // -------------------------------------------------------------------------
     // resolveDisplayName / resolveDisplayOrganization
     // -------------------------------------------------------------------------
 
