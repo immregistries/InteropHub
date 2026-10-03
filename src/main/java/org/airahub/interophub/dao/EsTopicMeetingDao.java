@@ -44,6 +44,16 @@ public class EsTopicMeetingDao extends GenericDao<EsTopicMeeting, Long> {
         }
     }
 
+    public java.util.Set<Long> findTopicIdsWithActiveMeeting() {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return new java.util.HashSet<>(session.createQuery(
+                    "select m.esTopicId from EsTopicMeeting m where m.status = :status and m.esTopicId is not null",
+                    Long.class)
+                    .setParameter("status", EsTopicMeeting.MeetingStatus.ACTIVE)
+                    .getResultList());
+        }
+    }
+
     public List<AdminMeetingBrowseRow> findAllActiveBrowseRows() {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             List<EsTopicMeeting> meetings = session.createQuery(

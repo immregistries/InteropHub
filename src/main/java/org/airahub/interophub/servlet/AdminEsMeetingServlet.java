@@ -80,6 +80,13 @@ public class AdminEsMeetingServlet extends HttpServlet {
             return;
         }
 
+        if ("new".equals(request.getParameter("action"))) {
+            EsTopicMeeting draft = new EsTopicMeeting();
+            draft.setEsTopicId(parseId(trimToNull(request.getParameter("topicId"))));
+            renderNewSeriesForm(request, response, draft, null);
+            return;
+        }
+
         String meetingIdRaw = trimToNull(request.getParameter("meetingId"));
 
         if (meetingIdRaw != null) {
@@ -95,7 +102,9 @@ public class AdminEsMeetingServlet extends HttpServlet {
                 return;
             }
 
-            String savedMsg = request.getParameter("saved") != null ? "Membership status updated." : null;
+            String savedMsg = request.getParameter("created") != null
+                    ? "Meeting series created. Create its first agenda below."
+                    : request.getParameter("saved") != null ? "Membership status updated." : null;
             renderDetail(request, response, meeting, savedMsg);
             return;
         }
@@ -114,6 +123,11 @@ public class AdminEsMeetingServlet extends HttpServlet {
         Long memberId = parseId(trimToNull(request.getParameter("memberId")));
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
         String action = trimToNull(request.getParameter("action"));
+
+        if ("createSeries".equals(action)) {
+            handleCreateSeries(request, response, adminUser.get());
+            return;
+        }
 
         if (meetingId == null || action == null) {
             response.sendRedirect(contextPath + "/admin/es/meetings");
@@ -262,27 +276,174 @@ public class AdminEsMeetingServlet extends HttpServlet {
         response.sendRedirect(contextPath + "/admin/es/meetings?meetingId=" + meetingId + "&saved=1");
     }
 
-    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+    private void handleCreateSeries(HttpServletRequest request, HttpServletResponse response, User adminUser)
             throws IOException {
-        String contextPath = request.getContextPath();
-        List<AdminMeetingBrowseRow> meetings = meetingDao.findAllActiveBrowseRows();
+        EsTopicMeeting draft = new EsTopicMeeting();
+        draft.setEsTopicId(parseId(trimToNull(request.getParameter("topicId"))));
+        draft.setMeetingName(trimToNull(request.getParameter("meetingName")));
+        draft.setMeetingDescription(trimToNull(request.getParameter("meetingDescription")));
+        draft.setOnlineMeetingUrl(trimToNull(request.getParameter("onlineMeetingUrl")));
+        draft.setOnlineMeetingDetails(trimToNull(request.getParameter("onlineMeetingDetails")));
+        draft.setJoinRequiresApproval(request.getParameter("meetingRequiresApproval") != null);
 
-        AdminShellRenderer.render(request, response, "ES Meetings Admin - InteropHub", AdminSection.TOPIC_SPACES,
+        EsTopic topic = draft.getEsTopicId() == null
+                ? null
+                : topicDao.findById(draft.getEsTopicId()).orElse(null);
+        if (topic == null) {
+            renderNewSeriesForm(request, response, draft, "Select the topic this meeting series belongs to.");
+            return;
+        }
+        if (topic.getStatus() != EsTopic.EsTopicStatus.ACTIVE
+                || !topicSpaceDao.isActiveSpaceId(topic.getEsTopicSpaceId())) {
+            renderNewSeriesForm(request, response, draft,
+                    "Meeting series can only be created for active topics in an active Topic Space.");
+            return;
+        }
+
+        // A topic hosts at most one series; a previously disabled one is reactivated
+        // rather than duplicated.
+        EsTopicMeeting meeting = meetingDao.findByTopicId(topic.getEsTopicId()).orElse(null);
+        if (meeting != null && meeting.getStatus() == EsTopicMeeting.MeetingStatus.ACTIVE) {
+            renderNewSeriesForm(request, response, draft,
+                    "\"" + topic.getTopicName() + "\" already has a meeting series.");
+            return;
+        }
+        if (meeting == null) {
+            meeting = new EsTopicMeeting();
+            meeting.setEsTopicId(topic.getEsTopicId());
+        }
+        meeting.setMeetingName(draft.getMeetingName() != null ? draft.getMeetingName() : topic.getTopicName());
+        meeting.setMeetingDescription(draft.getMeetingDescription());
+        meeting.setOnlineMeetingUrl(draft.getOnlineMeetingUrl());
+        meeting.setOnlineMeetingDetails(draft.getOnlineMeetingDetails());
+        meeting.setJoinRequiresApproval(draft.getJoinRequiresApproval());
+        meeting.setStatus(EsTopicMeeting.MeetingStatus.ACTIVE);
+        meeting.setDisabledAt(null);
+        meeting.setDisabledByUserId(null);
+        EsTopicMeeting saved = meetingDao.saveOrUpdate(meeting);
+
+        response.sendRedirect(request.getContextPath() + "/admin/es/meetings?meetingId="
+                + saved.getEsTopicMeetingId() + "&created=1");
+    }
+
+    private void renderNewSeriesForm(HttpServletRequest request, HttpServletResponse response,
+            EsTopicMeeting draft, String message) throws IOException {
+        String contextPath = request.getContextPath();
+        java.util.Set<Long> topicIdsWithSeries = meetingDao.findTopicIdsWithActiveMeeting();
+        Map<String, List<EsTopic>> candidatesBySpace = new LinkedHashMap<>();
+        for (org.airahub.interophub.model.EsTopicSpace space : topicSpaceDao.findAllActiveOrdered()) {
+            List<EsTopic> candidates = topicDao.findActiveBySpaceIdOrderByTopicName(space.getEsTopicSpaceId())
+                    .stream()
+                    .filter(t -> !topicIdsWithSeries.contains(t.getEsTopicId()))
+                    .collect(Collectors.toList());
+            if (!candidates.isEmpty()) {
+                candidatesBySpace.put(orEmpty(space.getSpaceName()), candidates);
+            }
+        }
+
+        AdminShellRenderer.render(request, response, "New Meeting Series - InteropHub", AdminSection.TOPIC_SPACES,
                 ACTIVE_HREF, out -> {
                     out.println("          <section class=\"aira-panel\">");
-                    out.println("            <h2 class=\"aira-section-title\">ES Meetings</h2>");
-                    out.println(
-                            "            <p class=\"aira-meta\">View and manage Emerging Standards topic meeting memberships.</p>");
+                    out.println("            <h2 class=\"aira-section-title\">New Meeting Series</h2>");
+                    out.println("            <p class=\"aira-meta\">A meeting series belongs to a topic; its attendance"
+                            + " link and membership come from that topic. Each topic can host one series."
+                            + " (You can also enable a series from the topic's edit page.)</p>");
                     if (message != null && !message.isBlank()) {
                         out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
                                 + escapeHtml(message) + "</p></div>");
                     }
 
+                    if (candidatesBySpace.isEmpty()) {
+                        out.println("            <p>Every active topic already has a meeting series."
+                                + " Create a topic first, then add its series.</p>");
+                    } else {
+                        out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath
+                                + "/admin/es/meetings\">");
+                        out.println("              <input type=\"hidden\" name=\"action\" value=\"createSeries\">");
+
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"topicId\">Topic</label>");
+                        out.println("                <select class=\"aira-select\" id=\"topicId\" name=\"topicId\" required>");
+                        out.println("                  <option value=\"\">Select a topic&hellip;</option>");
+                        for (Map.Entry<String, List<EsTopic>> group : candidatesBySpace.entrySet()) {
+                            out.println("                  <optgroup label=\"" + escapeHtml(group.getKey()) + "\">");
+                            for (EsTopic t : group.getValue()) {
+                                boolean selected = t.getEsTopicId().equals(draft.getEsTopicId());
+                                out.println("                    <option value=\"" + t.getEsTopicId() + "\""
+                                        + (selected ? " selected" : "") + ">"
+                                        + escapeHtml(orEmpty(t.getTopicName())) + "</option>");
+                            }
+                            out.println("                  </optgroup>");
+                        }
+                        out.println("                </select>");
+                        out.println("              </div>");
+
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"meetingName\">Series Name (defaults to the topic name)</label>");
+                        out.println("                <input class=\"aira-input\" id=\"meetingName\" name=\"meetingName\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(draft.getMeetingName())) + "\" />");
+                        out.println("              </div>");
+
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"meetingDescription\">Description</label>");
+                        out.println("                <textarea class=\"aira-textarea\" id=\"meetingDescription\" name=\"meetingDescription\" rows=\"4\">"
+                                + escapeHtml(orEmpty(draft.getMeetingDescription())) + "</textarea>");
+                        out.println("              </div>");
+
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"onlineMeetingUrl\">Meeting URL (e.g. Zoom link)</label>");
+                        out.println("                <input class=\"aira-input\" id=\"onlineMeetingUrl\" name=\"onlineMeetingUrl\" type=\"text\" value=\""
+                                + escapeHtml(orEmpty(draft.getOnlineMeetingUrl())) + "\" />");
+                        out.println("              </div>");
+
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"onlineMeetingDetails\">Connection Details (dial-in info, passcode, etc.)</label>");
+                        out.println("                <textarea class=\"aira-textarea\" id=\"onlineMeetingDetails\" name=\"onlineMeetingDetails\" rows=\"5\">"
+                                + escapeHtml(orEmpty(draft.getOnlineMeetingDetails())) + "</textarea>");
+                        out.println("              </div>");
+
+                        out.println("              <label class=\"aira-radio\"><input type=\"checkbox\" name=\"meetingRequiresApproval\""
+                                + (Boolean.TRUE.equals(draft.getJoinRequiresApproval()) ? " checked" : "")
+                                + " /> Join Requires Approval</label>");
+
+                        out.println("              <div class=\"aira-action-group\">");
+                        out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create Meeting Series</button>");
+                        out.println("              </div>");
+                        out.println("            </form>");
+                    }
+
+                    out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                            + "/admin/es/meetings\">Back to Meeting Series</a></p>");
+                    out.println("          </section>");
+                });
+    }
+
+    private void renderList(HttpServletRequest request, HttpServletResponse response, String message)
+            throws IOException {
+        String contextPath = request.getContextPath();
+        List<AdminMeetingBrowseRow> meetings = meetingDao.findAllActiveBrowseRows();
+
+        AdminShellRenderer.render(request, response, "Meeting Series Admin - InteropHub", AdminSection.TOPIC_SPACES,
+                ACTIVE_HREF, out -> {
+                    out.println("          <section class=\"aira-panel\">");
+                    out.println("            <h2 class=\"aira-section-title\">Meeting Series</h2>");
+                    out.println(
+                            "            <p class=\"aira-meta\">Each topic can host one recurring meeting series."
+                                    + " Open a series to manage its members and create agendas for individual meetings.</p>");
+                    if (message != null && !message.isBlank()) {
+                        out.println("            <div class=\"aira-alert aira-alert--info\"><p>"
+                                + escapeHtml(message) + "</p></div>");
+                    }
+                    out.println("            <div class=\"aira-action-group\">");
+                    out.println("              <a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                            + "/admin/es/meetings?action=new\">+ New Meeting Series</a>");
+                    out.println("            </div>");
+
                     out.println("            <div class=\"aira-table-wrap\">");
                     out.println("            <table class=\"aira-table\">");
                     out.println("              <thead>");
                     out.println("                <tr>");
-                    out.println("                  <th>Meeting Name</th>");
+                    out.println("                  <th>Series Name</th>");
                     out.println("                  <th>Approved</th>");
                     out.println("                  <th>Requested</th>");
                     out.println("                </tr>");
@@ -300,7 +461,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
                     }
                     if (meetings.isEmpty()) {
                         out.println("                <tr>");
-                        out.println("                  <td colspan=\"3\">No active meetings found.</td>");
+                        out.println("                  <td colspan=\"3\">No active meeting series found.</td>");
                         out.println("                </tr>");
                     }
                     out.println("              </tbody>");
@@ -462,6 +623,11 @@ public class AdminEsMeetingServlet extends HttpServlet {
                         out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
                                 + "/es/topic/"
                                 + topic.getEsTopicId() + "\">View Topic Page</a></p>");
+                        out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
+                                + "/es/topic-edit/"
+                                + topic.getEsTopicId() + "\">Edit Series Settings</a>"
+                                + " <span class=\"aira-meta\">(name, meeting URL, and approval are"
+                                + " configured on the topic)</span></p>");
                     }
                     out.println("            <p><a class=\"aira-inline-link\" href=\"" + contextPath
                             + "/admin/es/meeting-polls?esTopicMeetingId="
@@ -471,7 +637,7 @@ public class AdminEsMeetingServlet extends HttpServlet {
                             + "\">View Public Meetings</a></p>");
                     out.println(
                             "            <p><a class=\"aira-inline-link\" href=\"" + contextPath
-                                    + "/admin/es/meetings\">Back to Meetings</a></p>");
+                                    + "/admin/es/meetings\">Back to Meeting Series</a></p>");
                     out.println("          </section>");
                 });
     }

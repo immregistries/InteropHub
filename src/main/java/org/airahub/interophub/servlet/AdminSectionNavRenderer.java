@@ -80,7 +80,7 @@ final class AdminSectionNavRenderer {
                                                         new NavItem("Artifact Storage Test",
                                                                         "/admin/es/artifact-test"))),
                                         new NavGroup("Meetings", List.of(
-                                                        new NavItem("Meetings", "/admin/es/meetings"),
+                                                        new NavItem("Meeting Series", "/admin/es/meetings"),
                                                         new NavItem("Meeting Polls", "/admin/es/meeting-polls"),
                                                         new NavItem("Meeting Surveys", "/admin/es/meeting-survey"))),
                                         new NavGroup("Feedback & Sync", List.of(
