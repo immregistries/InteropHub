@@ -571,10 +571,34 @@ public class EsMeetingAttendanceServlet extends HttpServlet {
             // --- Today's attendees ---
             renderAttendeeSections(out, todayAttendees, today);
 
+            renderWorkingWellTogether(out, contextPath);
+
             out.println("    </div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(contextPath));
             page.writeEnd(out);
         }
+    }
+
+    // Optional, informational introduction to the Working Well Together
+    // principles - kept last so it never interrupts the attendance flow.
+    private void renderWorkingWellTogether(PrintWriter out, String contextPath) {
+        out.println("      <section class=\"aira-panel\">");
+        out.println("        <div class=\"aira-stack\">");
+        out.println("          <p class=\"aira-page-intro\">Our meetings work best when we make room for one another, "
+                + "listen carefully, and build on the knowledge each person brings. These shared principles help us "
+                + "create useful conversations and a group people want to return to. Our facilitators help us put "
+                + "them into practice as we work together.</p>");
+        out.println("          <figure class=\"aira-figure\">");
+        out.println("            <div class=\"aira-figure__frame\">");
+        out.println("              <img class=\"aira-figure__image\" src=\"" + contextPath
+                + "/image/working-well-together.webp\" alt=\"Working Well Together: make room for every "
+                + "contribution; understand an idea before evaluating it; help each other develop ideas; make "
+                + "learning welcome; build something together; help the conversation move forward; care for the "
+                + "group.\" width=\"1672\" height=\"941\" loading=\"lazy\" />");
+        out.println("            </div>");
+        out.println("          </figure>");
+        out.println("        </div>");
+        out.println("      </section>");
     }
 
     private EsTopicSpace findTopicHostSpace(EsTopic topic) {
