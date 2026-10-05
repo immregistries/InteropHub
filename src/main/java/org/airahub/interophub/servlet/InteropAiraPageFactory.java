@@ -123,14 +123,17 @@ final class InteropAiraPageFactory {
         if (label == null) {
             label = "InteropHub";
         }
+        String topicsHref = "/es/topics";
         String meetingsHref = "/es/meetings";
         String normalizedSpaceCode = trimToNull(spaceCode);
         if (normalizedSpaceCode != null) {
-            meetingsHref = "/es/meetings?space="
+            String spaceQuery = "?space="
                     + URLEncoder.encode(normalizedSpaceCode, StandardCharsets.UTF_8).replace("+", "%20");
+            topicsHref += spaceQuery;
+            meetingsHref += spaceQuery;
         }
         List<AiraNavigationItem> items = new ArrayList<>();
-        items.add(new AiraNavigationItem("Topics", "/es/topics", topicsActive));
+        items.add(new AiraNavigationItem("Topics", topicsHref, topicsActive));
         items.add(new AiraNavigationItem("Meetings", meetingsHref, meetingsActive));
         // Supporters is currently Emerging-Standards-specific presentation of a
         // system-wide model (see docs/add-supporters.md) - only that Topic Space

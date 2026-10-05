@@ -162,6 +162,19 @@ class InteropAiraPageFactoryTest {
         assertTrue(activeItem.active());
     }
 
+    @Test
+    void topicsAndMeetingsNavItemsCarryTopicSpace() {
+        AiraContextConfig conformance = InteropAiraPageFactory.topicsMeetingsContext(
+                "HL7 Conformance", "hl7-conformance", true, false);
+        AiraContextConfig noSpace = InteropAiraPageFactory.topicsMeetingsContext(
+                "InteropHub", null, true, false);
+
+        assertEquals("/es/topics?space=hl7-conformance", navItem(conformance, "Topics").href());
+        assertEquals("/es/meetings?space=hl7-conformance", navItem(conformance, "Meetings").href());
+        assertEquals("/es/topics", navItem(noSpace, "Topics").href());
+        assertEquals("/es/meetings", navItem(noSpace, "Meetings").href());
+    }
+
     private List<String> navLabels(AiraContextConfig context) {
         return context.navigationItems().stream().map(AiraNavigationItem::label).toList();
     }
