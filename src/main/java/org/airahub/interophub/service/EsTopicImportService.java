@@ -17,21 +17,23 @@ import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
+import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
 import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * One-time admin import service for ES topics and campaign topic assignments.
+ * Admin import service for ES topics and optional campaign topic assignments.
  * Parses newline-separated JSON objects and upserts into es_topic /
- * es_campaign_topic.
+ * es_topic_neighborhood and, when a campaign is chosen, es_campaign_topic.
  */
 public class EsTopicImportService {
 
@@ -45,6 +47,7 @@ public class EsTopicImportService {
     private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsTopicStageDefinitionDao stageDefinitionDao;
+    private final EsTopicPathDefinitionDao pathDefinitionDao;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
@@ -57,11 +60,12 @@ public class EsTopicImportService {
         this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.stageDefinitionDao = new EsTopicStageDefinitionDao();
+        this.pathDefinitionDao = new EsTopicPathDefinitionDao();
     }
 
     /**
-     * Imports topics from newline-separated JSON objects and assigns them to a
-     * campaign.
+     * Imports topics from newline-separated JSON objects and, optionally, assigns
+     * them to a campaign.
      *
      * <p>
      * Campaign resolution order:
@@ -70,27 +74,38 @@ public class EsTopicImportService {
      * non-blank, find or
      * create the campaign by code (new campaign wins over selectedCampaignId).</li>
      * <li>Otherwise, use {@code selectedCampaignId}.</li>
-     * <li>If neither is supplied, throws {@link IllegalArgumentException}.</li>
+     * <li>If neither is supplied, topics are imported without any campaign
+     * assignment, and {@code set} / {@code displayOrder} are ignored.</li>
      * </ol>
      *
      * <p>
+     * Optional fields follow partial-update rules: a missing key leaves the
+     * existing value unchanged, while an explicit {@code null} or {@code ""}
+     * clears it (priorities clear to 0). New topics get the defaults below.
+     *
+     * <p>
      * Expected JSON fields per line:
-     * 
+     *
      * <pre>
      * {
      *   "topicCode": "code",       // required
      *   "topicName": "name",       // required
+     *   "topicSummary": "...",     // nullable; one sentence, max 300 characters
      *   "description": "...",      // nullable
+     *   "searchKeywords": "...",   // nullable
+     *   "topicEmoji": "...",       // nullable; max 64 characters
      *   "neighborhood": "...",     // nullable
      *   "priorityIis": 2,          // integer, defaults 0
      *   "priorityEhr": 1,          // integer, defaults 0
      *   "priorityCdc": 3,          // integer, defaults 0
      *   "stage": "...",            // nullable; must match a stage name defined for the target Topic Space
-    *   "policyStatus": "...",     // nullable
-    *   "topicType": "...",        // nullable
-    *   "confluenceUrl": "...",    // nullable
-     *   "displayOrder": 10,        // integer, defaults 0
-     *   "set": 1                   // nullable integer for topic_set_no
+     *   "path": "...",             // nullable; must match a path name defined for the target Topic Space
+     *   "status": "ACTIVE",        // ACTIVE, ARCHIVED, or RETIRED; new topics default to ACTIVE
+     *   "policyStatus": "...",     // nullable
+     *   "topicType": "...",        // nullable
+     *   "confluenceUrl": "...",    // nullable
+     *   "displayOrder": 10,        // integer, defaults 0; campaign only
+     *   "set": 1                   // nullable integer for topic_set_no; campaign only
      * }
      * </pre>
      */
@@ -98,12 +113,12 @@ public class EsTopicImportService {
             String newCampaignCode, String newCampaignName, Long adminUserId, int tablesPerSet,
             String topicSpaceCode) {
 
+        EsTopicSpace targetTopicSpace = resolveTopicSpace(topicSpaceCode);
         EsCampaign campaign = resolveCampaign(
                 selectedCampaignId, newCampaignCode, newCampaignName, adminUserId);
-        EsTopicSpace targetTopicSpace = resolveTopicSpace(topicSpaceCode);
 
-        boolean allowCampaignReset = campaign.getStatus() == null
-                || campaign.getStatus() == EsCampaign.CampaignStatus.DRAFT;
+        boolean allowCampaignReset = campaign != null
+                && (campaign.getStatus() == null || campaign.getStatus() == EsCampaign.CampaignStatus.DRAFT);
 
         if (allowCampaignReset) {
             Long campaignId = campaign.getEsCampaignId();
@@ -115,12 +130,7 @@ public class EsTopicImportService {
         }
 
         String[] lines = rawLines.split("\r?\n");
-        int linesProcessed = 0;
-        int topicsInserted = 0;
-        int topicsUpdated = 0;
-        int campaignTopicsInserted = 0;
-        int campaignTopicsUpdated = 0;
-        int duplicateTopicCodes = 0;
+        Tally tally = new Tally(campaign, allowCampaignReset);
         Set<String> seenTopicCodes = new HashSet<>();
         Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup(
                 targetTopicSpace.getEsTopicSpaceId());
@@ -135,23 +145,18 @@ public class EsTopicImportService {
             try {
                 json = new JSONObject(line);
             } catch (JSONException ex) {
-                return ImportResult.failure(linesProcessed, i + 1,
-                        "Malformed JSON on line " + (i + 1) + ": " + ex.getMessage(),
-                        topicsInserted, topicsUpdated,
-                        campaignTopicsInserted, campaignTopicsUpdated,
-                        duplicateTopicCodes,
-                        campaign.getCampaignCode(), campaign.getCampaignName());
+                return ImportResult.failure(tally, i + 1,
+                        "Malformed JSON on line " + (i + 1) + ": " + ex.getMessage());
             }
 
             try {
-                Integer topicSetNo = !json.has("set") || json.isNull("set") ? null : json.getInt("set");
                 validateLineTopicSpace(json, targetTopicSpace.getSpaceCode());
 
                 // ── Upsert es_topic ──────────────────────────────────────────────────
                 String topicCode = json.getString("topicCode");
 
                 if (seenTopicCodes.contains(topicCode)) {
-                    duplicateTopicCodes++;
+                    tally.duplicateTopicCodes++;
                 }
                 seenTopicCodes.add(topicCode);
 
@@ -176,54 +181,82 @@ public class EsTopicImportService {
                 }
 
                 // Import policy: topic metadata is always upserted regardless of campaign
-                // status. Only campaign-assignment rebuild logic is gated to DRAFT campaigns.
+                // status. Optional fields are applied to new topics (to get defaults) or when
+                // the key is present; a missing key leaves an existing topic's value alone.
                 topic.setEsTopicSpaceId(targetTopicSpace.getEsTopicSpaceId());
                 topic.setTopicName(json.getString("topicName"));
-                topic.setDescription(
-                        json.isNull("description") ? null : json.optString("description", null));
-                String neighborhoodRaw = json.isNull("neighborhood") ? null : json.optString("neighborhood", null);
-                Set<Long> neighborhoodIds = resolveNeighborhoodIds(neighborhoodRaw, activeNeighborhoodsByName);
-                topic.setNeighborhood(joinNeighborhoodNames(neighborhoodIds, activeNeighborhoodsByName));
-                topic.setPriorityIis(json.optInt("priorityIis", 0));
-                topic.setPriorityEhr(json.optInt("priorityEhr", 0));
-                topic.setPriorityCdc(json.optInt("priorityCdc", 0));
-                String stageName = readNullableTrimmedString(json, "stage");
-                if (stageName == null) {
-                    topic.setEsTopicStageDefinitionId(null);
-                } else {
-                    Optional<EsTopicStageDefinition> matchedStage = stageDefinitionDao.findByNameInSpace(stageName,
-                            targetTopicSpace.getEsTopicSpaceId());
-                    if (matchedStage.isEmpty()) {
-                        return ImportResult.failure(linesProcessed, i + 1,
-                                "Stage '" + stageName + "' on line " + (i + 1)
-                                        + " does not match any stage defined for Topic Space '"
-                                        + targetTopicSpace.getSpaceCode() + "'.",
-                                topicsInserted, topicsUpdated,
-                                campaignTopicsInserted, campaignTopicsUpdated,
-                                duplicateTopicCodes,
-                                campaign.getCampaignCode(), campaign.getCampaignName());
-                    }
-                    topic.setEsTopicStageDefinitionId(matchedStage.get().getEsTopicStageDefinitionId());
+                if (isNewTopic || json.has("topicSummary")) {
+                    topic.setTopicSummary(readLimitedString(json, "topicSummary", 300));
                 }
-                topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
-                topic.setTopicType(readNullableTrimmedString(json, "topicType"));
-                topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));
+                if (isNewTopic || json.has("description")) {
+                    topic.setDescription(readNullableTrimmedString(json, "description"));
+                }
+                if (isNewTopic || json.has("searchKeywords")) {
+                    topic.setSearchKeywords(readNullableTrimmedString(json, "searchKeywords"));
+                }
+                if (isNewTopic || json.has("topicEmoji")) {
+                    topic.setTopicEmoji(readLimitedString(json, "topicEmoji", 64));
+                }
+                boolean replaceNeighborhoods = isNewTopic || json.has("neighborhood");
+                Set<Long> neighborhoodIds = Set.of();
+                if (replaceNeighborhoods) {
+                    neighborhoodIds = resolveNeighborhoodIds(readNullableTrimmedString(json, "neighborhood"),
+                            activeNeighborhoodsByName);
+                    topic.setNeighborhood(joinNeighborhoodNames(neighborhoodIds, activeNeighborhoodsByName));
+                }
+                if (isNewTopic || json.has("priorityIis")) {
+                    topic.setPriorityIis(readPriority(json, "priorityIis"));
+                }
+                if (isNewTopic || json.has("priorityEhr")) {
+                    topic.setPriorityEhr(readPriority(json, "priorityEhr"));
+                }
+                if (isNewTopic || json.has("priorityCdc")) {
+                    topic.setPriorityCdc(readPriority(json, "priorityCdc"));
+                }
+                if (isNewTopic || json.has("stage")) {
+                    topic.setEsTopicStageDefinitionId(resolveStageId(
+                            readNullableTrimmedString(json, "stage"), targetTopicSpace, i + 1));
+                }
+                if (isNewTopic || json.has("path")) {
+                    topic.setEsTopicPathDefinitionId(resolvePathId(
+                            readNullableTrimmedString(json, "path"), targetTopicSpace, i + 1));
+                }
+                if (json.has("status")) {
+                    topic.setStatus(parseTopicStatus(readNullableTrimmedString(json, "status")));
+                }
+                if (isNewTopic || json.has("policyStatus")) {
+                    topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
+                }
+                if (isNewTopic || json.has("topicType")) {
+                    topic.setTopicType(readNullableTrimmedString(json, "topicType"));
+                }
+                if (isNewTopic || json.has("confluenceUrl")) {
+                    topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));
+                }
 
                 topic = topicDao.saveOrUpdate(topic);
-                topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), neighborhoodIds);
-
-                if (isNewTopic) {
-                    topicsInserted++;
-                } else {
-                    topicsUpdated++;
+                if (replaceNeighborhoods) {
+                    topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), neighborhoodIds);
                 }
 
-                if (allowCampaignReset) {
+                if (isNewTopic) {
+                    tally.topicsInserted++;
+                } else {
+                    tally.topicsUpdated++;
+                }
+
+                if (!allowCampaignReset) {
+                    // No campaign, or a non-DRAFT campaign: assignments are left untouched.
+                    if (hasNonNull(json, "set") || hasNonNull(json, "displayOrder")) {
+                        tally.campaignFieldsIgnored++;
+                    }
+                } else {
                     // ── Rebuild es_campaign_topic rows only while campaign is DRAFT ───────────
                     // Topics without a valid set are intentionally not assigned to any campaign
                     // table.
+                    Integer topicSetNo = hasNonNull(json, "set") ? json.getInt("set") : null;
                     if (topicSetNo == null || topicSetNo < 1) {
-                        linesProcessed++;
+                        tally.linesProcessed++;
                         continue;
                     }
 
@@ -265,30 +298,27 @@ public class EsTopicImportService {
                         campaignTopicDao.saveOrUpdate(ct);
 
                         if (isNewCt) {
-                            campaignTopicsInserted++;
+                            tally.campaignTopicsInserted++;
                         } else {
-                            campaignTopicsUpdated++;
+                            tally.campaignTopicsUpdated++;
                         }
                     }
                 }
 
             } catch (JSONException ex) {
-                return ImportResult.failure(linesProcessed, i + 1,
-                        "Invalid field on line " + (i + 1) + ": " + ex.getMessage(),
-                        topicsInserted, topicsUpdated,
-                        campaignTopicsInserted, campaignTopicsUpdated,
-                        duplicateTopicCodes,
-                        campaign.getCampaignCode(), campaign.getCampaignName());
+                return ImportResult.failure(tally, i + 1,
+                        "Invalid field on line " + (i + 1) + ": " + ex.getMessage());
+            } catch (IllegalArgumentException ex) {
+                return ImportResult.failure(tally, i + 1, ex.getMessage());
             }
 
-            linesProcessed++;
+            tally.linesProcessed++;
         }
 
-        return ImportResult.success(linesProcessed, topicsInserted, topicsUpdated,
-                campaignTopicsInserted, campaignTopicsUpdated, duplicateTopicCodes,
-                campaign.getCampaignCode(), campaign.getCampaignName());
+        return ImportResult.success(tally);
     }
 
+    /** Returns the chosen campaign, or {@code null} when none was requested. */
     private EsCampaign resolveCampaign(Long selectedCampaignId, String newCampaignCode,
             String newCampaignName, Long adminUserId) {
         if (newCampaignCode != null && newCampaignName != null) {
@@ -302,12 +332,66 @@ public class EsTopicImportService {
             campaign.setCreatedByUserId(adminUserId);
             return campaignDao.saveOrUpdate(campaign);
         }
+        if (newCampaignCode != null || newCampaignName != null) {
+            throw new IllegalArgumentException(
+                    "To create a new campaign, enter both a campaign code and a campaign name.");
+        }
         if (selectedCampaignId != null) {
             return campaignDao.findById(selectedCampaignId)
                     .orElseThrow(() -> new IllegalArgumentException("Selected campaign not found."));
         }
-        throw new IllegalArgumentException(
-                "A campaign is required. Select an existing campaign or enter a new campaign code and name.");
+        return null;
+    }
+
+    private Long resolveStageId(String stageName, EsTopicSpace topicSpace, int lineNo) {
+        if (stageName == null) {
+            return null;
+        }
+        return stageDefinitionDao.findByNameInSpace(stageName, topicSpace.getEsTopicSpaceId())
+                .map(EsTopicStageDefinition::getEsTopicStageDefinitionId)
+                .orElseThrow(() -> new IllegalArgumentException("Stage '" + stageName + "' on line " + lineNo
+                        + " does not match any stage defined for Topic Space '" + topicSpace.getSpaceCode()
+                        + "'."));
+    }
+
+    private Long resolvePathId(String pathName, EsTopicSpace topicSpace, int lineNo) {
+        if (pathName == null) {
+            return null;
+        }
+        return pathDefinitionDao.findByNameInSpace(pathName, topicSpace.getEsTopicSpaceId())
+                .map(EsTopicPathDefinition::getEsTopicPathDefinitionId)
+                .orElseThrow(() -> new IllegalArgumentException("Path '" + pathName + "' on line " + lineNo
+                        + " does not match any path defined for Topic Space '" + topicSpace.getSpaceCode()
+                        + "'."));
+    }
+
+    private EsTopic.EsTopicStatus parseTopicStatus(String raw) {
+        if (raw != null) {
+            for (EsTopic.EsTopicStatus status : EsTopic.EsTopicStatus.values()) {
+                if (status.name().equalsIgnoreCase(raw)) {
+                    return status;
+                }
+            }
+        }
+        throw new IllegalArgumentException("Invalid status '" + (raw == null ? "" : raw)
+                + "'. Use ACTIVE, ARCHIVED, or RETIRED, or omit the field to leave it unchanged.");
+    }
+
+    private int readPriority(JSONObject json, String fieldName) {
+        return hasNonNull(json, fieldName) ? json.getInt(fieldName) : 0;
+    }
+
+    private String readLimitedString(JSONObject json, String fieldName, int maxLength) {
+        String value = readNullableTrimmedString(json, fieldName);
+        if (value != null && value.codePointCount(0, value.length()) > maxLength) {
+            throw new IllegalArgumentException("Field '" + fieldName + "' is "
+                    + value.codePointCount(0, value.length()) + " characters; the maximum is " + maxLength + ".");
+        }
+        return value;
+    }
+
+    private boolean hasNonNull(JSONObject json, String fieldName) {
+        return json.has(fieldName) && !json.isNull(fieldName);
     }
 
     private String readNullableTrimmedString(JSONObject json, String fieldName) {
@@ -425,6 +509,26 @@ public class EsTopicImportService {
     // ── Result DTO
     // ────────────────────────────────────────────────────────────────────────────────
 
+    /** Running counts for one import, captured into an {@link ImportResult}. */
+    private static class Tally {
+        private final String campaignCode;
+        private final String campaignName;
+        private final boolean campaignAssignmentsRebuilt;
+        private int linesProcessed;
+        private int topicsInserted;
+        private int topicsUpdated;
+        private int campaignTopicsInserted;
+        private int campaignTopicsUpdated;
+        private int duplicateTopicCodes;
+        private int campaignFieldsIgnored;
+
+        private Tally(EsCampaign campaign, boolean campaignAssignmentsRebuilt) {
+            this.campaignCode = campaign == null ? null : campaign.getCampaignCode();
+            this.campaignName = campaign == null ? null : campaign.getCampaignName();
+            this.campaignAssignmentsRebuilt = campaignAssignmentsRebuilt;
+        }
+    }
+
     public static class ImportResult {
 
         private final int linesProcessed;
@@ -433,41 +537,34 @@ public class EsTopicImportService {
         private final int campaignTopicsInserted;
         private final int campaignTopicsUpdated;
         private final int duplicateTopicCodes;
+        private final int campaignFieldsIgnored;
+        private final boolean campaignAssignmentsRebuilt;
         private final String campaignCode;
         private final String campaignName;
         private final String errorMessage;
         private final int errorLine;
 
-        private ImportResult(int linesProcessed, int topicsInserted, int topicsUpdated,
-                int campaignTopicsInserted, int campaignTopicsUpdated, int duplicateTopicCodes,
-                String campaignCode, String campaignName, String errorMessage, int errorLine) {
-            this.linesProcessed = linesProcessed;
-            this.topicsInserted = topicsInserted;
-            this.topicsUpdated = topicsUpdated;
-            this.campaignTopicsInserted = campaignTopicsInserted;
-            this.campaignTopicsUpdated = campaignTopicsUpdated;
-            this.duplicateTopicCodes = duplicateTopicCodes;
-            this.campaignCode = campaignCode;
-            this.campaignName = campaignName;
+        private ImportResult(Tally tally, String errorMessage, int errorLine) {
+            this.linesProcessed = tally.linesProcessed;
+            this.topicsInserted = tally.topicsInserted;
+            this.topicsUpdated = tally.topicsUpdated;
+            this.campaignTopicsInserted = tally.campaignTopicsInserted;
+            this.campaignTopicsUpdated = tally.campaignTopicsUpdated;
+            this.duplicateTopicCodes = tally.duplicateTopicCodes;
+            this.campaignFieldsIgnored = tally.campaignFieldsIgnored;
+            this.campaignAssignmentsRebuilt = tally.campaignAssignmentsRebuilt;
+            this.campaignCode = tally.campaignCode;
+            this.campaignName = tally.campaignName;
             this.errorMessage = errorMessage;
             this.errorLine = errorLine;
         }
 
-        public static ImportResult success(int linesProcessed, int topicsInserted, int topicsUpdated,
-                int campaignTopicsInserted, int campaignTopicsUpdated, int duplicateTopicCodes,
-                String campaignCode, String campaignName) {
-            return new ImportResult(linesProcessed, topicsInserted, topicsUpdated,
-                    campaignTopicsInserted, campaignTopicsUpdated, duplicateTopicCodes,
-                    campaignCode, campaignName, null, 0);
+        private static ImportResult success(Tally tally) {
+            return new ImportResult(tally, null, 0);
         }
 
-        public static ImportResult failure(int linesProcessed, int errorLine, String errorMessage,
-                int topicsInserted, int topicsUpdated, int campaignTopicsInserted,
-                int campaignTopicsUpdated, int duplicateTopicCodes,
-                String campaignCode, String campaignName) {
-            return new ImportResult(linesProcessed, topicsInserted, topicsUpdated,
-                    campaignTopicsInserted, campaignTopicsUpdated, duplicateTopicCodes,
-                    campaignCode, campaignName, errorMessage, errorLine);
+        private static ImportResult failure(Tally tally, int errorLine, String errorMessage) {
+            return new ImportResult(tally, errorMessage, errorLine);
         }
 
         public int getLinesProcessed() {
@@ -492,6 +589,20 @@ public class EsTopicImportService {
 
         public int getDuplicateTopicCodes() {
             return duplicateTopicCodes;
+        }
+
+        /** Lines that supplied {@code set} or {@code displayOrder} that were not applied. */
+        public int getCampaignFieldsIgnored() {
+            return campaignFieldsIgnored;
+        }
+
+        /** True when a DRAFT campaign was reset and its topic assignments rebuilt. */
+        public boolean isCampaignAssignmentsRebuilt() {
+            return campaignAssignmentsRebuilt;
+        }
+
+        public boolean hasCampaign() {
+            return campaignCode != null;
         }
 
         public String getCampaignCode() {

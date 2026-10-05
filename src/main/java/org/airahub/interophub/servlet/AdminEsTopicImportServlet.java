@@ -101,9 +101,11 @@ public class AdminEsTopicImportServlet extends HttpServlet {
 
                     out.println("            <form class=\"aira-form\" action=\"" + contextPath
                             + "/admin/es-topic-import\" method=\"post\">");
-                    out.println("              <h3 class=\"aira-subsection-title\">Campaign Assignment</h3>");
+                    out.println("              <h3 class=\"aira-subsection-title\">Campaign Assignment (optional)</h3>");
                     out.println(
-                            "              <p class=\"aira-meta\">Select an existing campaign, or enter a new campaign code and name to create one. If both are provided, the new campaign wins.</p>");
+                            "              <p class=\"aira-meta\">Leave these blank to import topics without touching any campaign. Otherwise select an existing campaign, or enter a new campaign code and name to create one. If both are provided, the new campaign wins.</p>");
+                    out.println(
+                            "              <div class=\"aira-alert aira-alert--warning\"><p><strong>Draft campaigns are reset:</strong> importing into a DRAFT campaign first deletes all of its interests, comments, subscriptions and topic assignments, then rebuilds assignments from <code>set</code> and <code>displayOrder</code>. Assignments for non-draft campaigns are left unchanged.</p></div>");
 
                     out.println("              <div class=\"aira-field\">");
                     out.println("                <label for=\"campaignId\">Existing Campaign</label>");
@@ -132,7 +134,7 @@ public class AdminEsTopicImportServlet extends HttpServlet {
                     out.println(
                             "                <input class=\"aira-input\" id=\"tablesPerSet\" name=\"tablesPerSet\" type=\"number\" min=\"1\" value=\"1\" style=\"width:6em\" />");
                     out.println(
-                            "                <p class=\"aira-field-help\">One <code>es_campaign_topic</code> row is created per table (1 through this number). Default 1.</p>");
+                            "                <p class=\"aira-field-help\">Only used with a campaign. One <code>es_campaign_topic</code> row is created per table (1 through this number). Default 1.</p>");
                     out.println("              </div>");
 
                     out.println("              <div class=\"aira-field\">");
@@ -151,7 +153,9 @@ public class AdminEsTopicImportServlet extends HttpServlet {
 
                     out.println("              <h3 class=\"aira-subsection-title\">JSON Lines</h3>");
                     out.println(
-                            "              <p class=\"aira-meta\">Required fields per line: <code>topicCode</code>, <code>topicName</code>. Optional: <code>description</code>, <code>neighborhood</code>, <code>priorityIis</code>, <code>priorityEhr</code>, <code>priorityCdc</code>, <code>stage</code>, <code>policyStatus</code>, <code>topicType</code>, <code>confluenceUrl</code>, <code>displayOrder</code>, <code>set</code>.</p>");
+                            "              <p class=\"aira-meta\">Required fields per line: <code>topicCode</code>, <code>topicName</code>. Optional: <code>topicSummary</code> (max 300 characters), <code>description</code>, <code>searchKeywords</code>, <code>topicEmoji</code>, <code>neighborhood</code>, <code>priorityIis</code>, <code>priorityEhr</code>, <code>priorityCdc</code>, <code>stage</code>, <code>path</code>, <code>status</code> (ACTIVE, ARCHIVED or RETIRED), <code>policyStatus</code>, <code>topicType</code>, <code>confluenceUrl</code>. Campaign only: <code>displayOrder</code>, <code>set</code>.</p>");
+                    out.println(
+                            "              <p class=\"aira-meta\">For existing topics, a field left out of the line is left unchanged. To clear a field, include it as <code>null</code> or <code>\"\"</code>.</p>");
                     out.println(
                             "              <p class=\"aira-meta\"><code>neighborhood</code> should contain one active neighborhood name or a comma-separated list of active neighborhood names in the selected Topic Space. The import updates the canonical topic-to-neighborhood mapping.</p>");
                     out.println("              <div class=\"aira-field\">");
@@ -189,15 +193,29 @@ public class AdminEsTopicImportServlet extends HttpServlet {
                                 "            <div class=\"aira-alert aira-alert--success\"><p>Import completed successfully.</p></div>");
                     }
 
-                    out.println("            <p>Campaign: <strong>" + escapeHtml(orEmpty(result.getCampaignCode()))
-                            + "</strong> &mdash; " + escapeHtml(orEmpty(result.getCampaignName())) + "</p>");
+                    if (result.hasCampaign()) {
+                        out.println("            <p>Campaign: <strong>" + escapeHtml(orEmpty(result.getCampaignCode()))
+                                + "</strong> &mdash; " + escapeHtml(orEmpty(result.getCampaignName())) + "</p>");
+                    } else {
+                        out.println("            <p>Campaign: <strong>(none)</strong> &mdash; topics only</p>");
+                    }
                     out.println("            <p>Lines processed: <strong>" + result.getLinesProcessed() + "</strong></p>");
                     out.println("            <p>Topics &mdash; inserted: <strong>" + result.getTopicsInserted()
                             + "</strong> | updated: <strong>" + result.getTopicsUpdated() + "</strong></p>");
-                    out.println(
-                            "            <p>Campaign topics &mdash; inserted: <strong>" + result.getCampaignTopicsInserted()
-                                    + "</strong> | updated: <strong>" + result.getCampaignTopicsUpdated()
-                                    + "</strong></p>");
+                    if (result.isCampaignAssignmentsRebuilt()) {
+                        out.println(
+                                "            <p>Campaign topics &mdash; inserted: <strong>"
+                                        + result.getCampaignTopicsInserted()
+                                        + "</strong> | updated: <strong>" + result.getCampaignTopicsUpdated()
+                                        + "</strong></p>");
+                    }
+                    if (result.getCampaignFieldsIgnored() > 0) {
+                        String reason = result.hasCampaign()
+                                ? "the campaign is not in DRAFT status, so its assignments were not changed"
+                                : "no campaign was selected";
+                        out.println("            <p>Lines with <code>set</code> or <code>displayOrder</code> ignored because "
+                                + reason + ": <strong>" + result.getCampaignFieldsIgnored() + "</strong></p>");
+                    }
                     if (result.getDuplicateTopicCodes() > 0) {
                         out.println("            <p>Duplicate topic codes in paste (last write wins): <strong>"
                                 + result.getDuplicateTopicCodes() + "</strong></p>");
