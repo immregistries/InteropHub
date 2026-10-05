@@ -134,6 +134,10 @@ public class WelcomeServlet extends HttpServlet {
         renderTopicSpaceGrid(out, contextPath, publicSpaces);
         out.println("          </section>");
 
+        out.println("          <section class=\"aira-panel\">");
+        WhyInteropHubTeaserRenderer.render(out, contextPath, "            ");
+        out.println("          </section>");
+
         SignInInfoRenderer.renderCapabilitiesSection(out);
         SignInInfoRenderer.renderDetailsSection(out);
 
@@ -170,7 +174,7 @@ public class WelcomeServlet extends HttpServlet {
         MeetingActionQueueRenderer.render(out, contextPath, meetingActions, LocalDateTime.now(ZoneOffset.UTC));
         renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
         renderApplicationsSection(out, contextPath, availableApps);
-        renderHowInteropHubSupportsSection(out);
+        renderHowInteropHubSupportsSection(out, contextPath);
 
         if (adminUser) {
             renderAdminSection(out, contextPath);
@@ -255,7 +259,7 @@ public class WelcomeServlet extends HttpServlet {
         out.println("          </section>");
     }
 
-    private void renderHowInteropHubSupportsSection(PrintWriter out) {
+    private void renderHowInteropHubSupportsSection(PrintWriter out, String contextPath) {
         out.println("          <section class=\"aira-panel\">");
         out.println("            <h2 class=\"aira-section-title\">One place to follow interoperability work</h2>");
         out.println("            <p class=\"aira-meta\">InteropHub connects the activities that move "
@@ -274,6 +278,7 @@ public class WelcomeServlet extends HttpServlet {
                 "Return to meeting notes, decisions, presentations, resources, and prior work without "
                         + "reconstructing the history from separate systems.");
         out.println("            </div>");
+        WhyInteropHubTeaserRenderer.render(out, contextPath, "            ");
         out.println("          </section>");
     }
 

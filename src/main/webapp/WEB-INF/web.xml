@@ -86,6 +86,16 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>WhyInteropHubServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.WhyInteropHubServlet</servlet-class>
+  </servlet>
+
+  <servlet-mapping>
+    <servlet-name>WhyInteropHubServlet</servlet-name>
+    <url-pattern>/why-interophub</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AppAccessServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AppAccessServlet</servlet-class>
   </servlet>
