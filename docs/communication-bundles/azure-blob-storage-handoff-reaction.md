@@ -1,5 +1,24 @@
 # Azure Blob Storage Handoff Reaction
 
+## October 2026 amendment: local first, shared storage
+
+This document records the original Blob-only reaction. Step 1 code is written, but production verification is blocked by Azure permissions. [Implementation task 1a](InteropHub_Communication_Bundles_Implementation_Plan.md) is now the governing plan for reusable storage; the original sections below remain historical Blob-specific guidance, with these overrides:
+
+- Add an optional durable local server folder configured by `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY`, outside the application deployment and readable/writable by Tomcat. No configured directory means no local support, not a temporary-directory fallback. Invalid configured storage is an explicit operational error.
+- Deploy local storage first on one server with coordinated file/database backups. Retain the existing Blob backend; local and Blob records can coexist. A missing SAS must not block local uploads or generate a misleading global "uploads disabled" notice.
+- Record each file's backend and locator explicitly. New uploads are local for task 1a; replacement follows the recorded backend. Do not automatically switch providers, dual-write, or migrate based on available credentials.
+- Use stable opaque InteropHub file URLs. Serve local bytes through a bounded streaming endpoint; redirect Blob-backed reads to the direct anonymous Blob URL without proxying Blob bytes or minting read SAS tokens. Revalidate the application response/redirect and the content after replacement or a backend move.
+- Match the existing anonymous-read-by-known-URL model for local storage. Do not list directories or expose server paths. Topic/bundle visibility does not revoke a disclosed URL or make files confidential.
+- Permit uploads only to isolated local development storage. Task 1a now independently disables Blob writes in development, even if a SAS is present, superseding step 1's SAS-only gate. Production database copies alone cannot render local files without an isolated matching file copy.
+- Accept PNG/JPEG/WebP/GIF, PDF, TXT, DOC/DOCX, and PPT/PPTX up to 25 MiB. Office/TXT files are downloads. No audio/video uploads, HTML/SVG, macro-enabled formats, executable files, or arbitrary archives. Apply shared server-side validation to both backends.
+- Replace the fixed-slot-only assumption with shared stored files referenced by reusable Topic Resources. The storage layer is also intended for future meeting presentations and promotion PNGs, without designing those workflows now.
+- The no-version-history rule still excludes automatic history, but deliberately preserved versions for Project Handoff are required by the [Conceptual Model](InteropHub_Communication_Bundles_Conceptual_Model.md). Each preserved file needs an independent identity/location.
+- Task 1a replacement retains the stable public file ID but publishes a new physical key on either backend, rather than overwriting bytes in place. Old local bytes are cleaned up after commit; old Blob objects require operator cleanup with the existing create/write-only SAS. This is not automatic application-visible history.
+
+This supersedes the blanket statements below that InteropHub must never serve files through Tomcat, that all development writes are disabled, and that all files must reside in the single Blob container. The production Blob credential and anonymous Blob-access requirements remain unchanged when that backend is enabled. Backend migration/routing policy is deferred; existing direct Blob URLs require a separate retention strategy if their objects are later removed.
+
+**Delivery-sequence follow-up:** [Task 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) now defines meeting agenda attachments as the first real feature consumer after task 1a's local Welcome-image proof. It precedes Topic Resources and bundle implementation, reuses the same file layer, and needs no Azure provisioning. The "future meeting presentations" statement above is superseded for this bounded workflow; promotional uploads remain deferred.
+
 ## Overall Reaction
 
 The Azure Blob Storage service described in the handoff provides most of the infrastructure needed for the InteropHub MVP. The Blob endpoint, production `artifacts` container, Java SDK dependency, environment-variable configuration, and server-side SAS authentication are all appropriate.

@@ -22,6 +22,8 @@ This document defines Communication Bundles conceptually before database or appl
 
 August 2026
 
+**Storage clarification, October 2026:** Communication Bundles motivated a reusable InteropHub document/image upload-and-serve mechanism, but meeting agenda attachments will be its first real feature consumer. Local server-folder storage will be deployed first while Azure permissions are resolved; Blob support remains available for later use. See [implementation tasks 1a and 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) for the storage proof and meeting attachment workflow. Neither is implemented by this clarification; promotional workflows remain deferred.
+
 ## Executive Summary
 
 InteropHub is intentionally not a general-purpose file server, document collaboration system, or free-form content management platform. Its role is to organize interoperability work so that people can understand a Topic, find relevant activity, use curated resources, and participate effectively. Communication Bundles extend that organizing model to rich media and other resources without losing the platform’s opinionated structure.
@@ -59,6 +61,18 @@ The conceptual hierarchy is:
 | Steward | A person with responsibility to curate a Topic and manage its Resources and Communication Bundles. |
 
 Resources belong conceptually to the Topic, not to a single bundle. A bundle selects and organizes Topic resources. A Resource can exist without appearing in any bundle, and the same Resource can appear in multiple bundles, potentially in different roles.
+
+### Shared stored files are infrastructure, not Topic Resources
+
+A Topic Resource is a domain object; a stored file is the underlying content and technical metadata it references. Keep those concepts separate. Meeting agenda attachments in task 1b reference shared files without requiring a dummy Topic, Resource, or bundle. Later promotional images can do the same. Each feature supplies its own ownership, upload authorization, and presentation rules.
+
+An agenda item may have zero or more attachment associations. This is not a Communication Bundle or a Resource collection slot: it is a separate meeting-domain relationship. Task 1b supplies selected-item upload/removal under Meeting Controls and shows images, document download links, then notes/outcomes in the agenda. Uploads are immediately presented under existing meeting/item visibility rules, with no bundle-style publishing workflow. Corrections use new files; removal detaches an association without overwriting bytes or revoking known URLs. Copy/postpone does not automatically transfer attachment associations.
+
+Each stored file has a stable, high-entropy public identity, an explicit backend (`LOCAL` or `BLOB`), and an opaque physical storage locator, separate from its original filename and descriptive metadata. Local roots are deployment configuration, not database paths. Blob location metadata must resolve the actual stored object rather than infer it from whichever backend is currently preferred for new uploads. External-link Resources do not require a stored-file record.
+
+The stable InteropHub file URL resolves the recorded backend: it streams local bytes or redirects to a direct Blob URL. Both are anonymously readable by anyone possessing the URL. Audience restrictions control where links are disclosed; they do not secure individual downloads. A backend move retains the public identity and does not require rewriting bundle placements or future meeting links.
+
+For task 1a, uploads are limited to the agreed document/image allowlist and 25 MiB per file. No audio/video uploads are enabled on either backend; local storage is not an audio/video backend. Conceptual audio/video Resource types below describe future possibilities or external links, not current upload capabilities.
 
 ## 3. Purposes and Opinionated Templates
 
@@ -156,6 +170,8 @@ Snapshot bundles create a special requirement: a snapshot must not silently chan
 
 **Important distinction Audit history is not file versioning. History records who changed metadata or bundle content and when. A Resource Version is a deliberately preserved file state that can be referenced later.**
 
+Current and deliberately preserved files need independent stored-file identities and backend locators. A preserved version may be local while the current file is in Blob, or vice versa. Replacing the current file must never overwrite the object referenced by a preserved version. Moving storage is a verified location change, not a new content version; it must preserve bytes and existing references. Actual migration tooling is deferred.
+
 
 
 ## 9. Bundle Lifecycle
@@ -243,6 +259,8 @@ Communication Bundles should not become a path toward general file-server or CMS
 - Personal or shared folder hierarchies.
 
 - Arbitrary file dumping without Topic context.
+
+  This restricts Communication Bundle authoring, not the shared storage mechanism. Other supported application features may own files in their own domain context.
 
 - Dropbox/Drive-style synchronization or backup.
 

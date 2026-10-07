@@ -83,6 +83,7 @@
     <mapping class="org.airahub.interophub.model.EsMeetingActionState"/>
     <mapping class="org.airahub.interophub.model.EsMeetingRsvp"/>
     <mapping class="org.airahub.interophub.model.EsArtifactDemo"/>
+    <mapping class="org.airahub.interophub.model.StoredFile"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncConfig"/>
     <mapping class="org.airahub.interophub.model.DandelionSyncQueueItem"/>
     <mapping class="org.airahub.interophub.model.EsSurvey"/>

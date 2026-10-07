@@ -21,7 +21,7 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
-import org.airahub.interophub.config.ArtifactStorageConfig;
+import org.airahub.interophub.service.StoredFileService;
 import org.immregistries.aira.web.AiraPage;
 
 public class WelcomeServlet extends HttpServlet {
@@ -62,7 +62,8 @@ public class WelcomeServlet extends HttpServlet {
         List<EsTopicSpace> spacePickerOrder = new ArrayList<>(publicSpaces);
         spacePickerOrder.addAll(privateSpaces);
 
-        EsArtifactDemo demoArtifact = artifactDemoDao.findBySlotKey(EsArtifactDemo.SLOT_WELCOME_DEMO).orElse(null);
+        EsArtifactDemo demoArtifact = artifactDemoDao.findBySlotKey(EsArtifactDemo.SLOT_WELCOME_DEMO)
+                .or(() -> artifactDemoDao.findBySlotKey(EsArtifactDemo.SLOT_LEGACY_BLOB)).orElse(null);
 
         if (user == null) {
             response.setContentType("text/html;charset=UTF-8");
@@ -127,7 +128,7 @@ public class WelcomeServlet extends HttpServlet {
 
         out.println("        <div class=\"aira-stack\">");
 
-        renderDemoArtifact(out, demoArtifact);
+        renderDemoArtifact(out, contextPath, demoArtifact);
 
         out.println("          <section class=\"aira-panel\">");
         out.println("            <h2 class=\"aira-section-title\">Public Topic Spaces</h2>");
@@ -170,7 +171,7 @@ public class WelcomeServlet extends HttpServlet {
 
         out.println("        <div class=\"aira-stack\">");
 
-        renderDemoArtifact(out, demoArtifact);
+        renderDemoArtifact(out, contextPath, demoArtifact);
         MeetingActionQueueRenderer.render(out, contextPath, meetingActions, LocalDateTime.now(ZoneOffset.UTC));
         renderTopicSpacesSection(out, contextPath, publicSpaces, privateSpaces);
         renderApplicationsSection(out, contextPath, availableApps);
@@ -184,17 +185,19 @@ public class WelcomeServlet extends HttpServlet {
         out.println("      </div>");
     }
 
-    // TEMPORARY - verifies anonymous Blob reads work signed in and signed out.
+    // TEMPORARY - verifies anonymous file reads work signed in and signed out.
     // Removed with the rest of the artifact storage spike (see
     // docs/communication-bundles/artifact-storage-deployment-handoff.md).
-    private void renderDemoArtifact(PrintWriter out, EsArtifactDemo demoArtifact) {
-        if (demoArtifact == null || demoArtifact.getObjectKey() == null) {
+    private void renderDemoArtifact(PrintWriter out, String contextPath, EsArtifactDemo demoArtifact) {
+        if (demoArtifact == null || demoArtifact.getStoredFile() == null
+                || !demoArtifact.getStoredFile().isImage()) {
             return;
         }
-        String readUrl = ArtifactStorageConfig.getReadUrl(demoArtifact.getObjectKey());
+        String readUrl = StoredFileService.readUrl(contextPath, demoArtifact.getStoredFile());
         out.println("          <section class=\"aira-panel\">");
         out.println("            <img src=\"" + escapeHtml(readUrl) + "\" alt=\""
-                + escapeHtml(demoArtifact.getOriginalFilename()) + "\" style=\"max-width:100%;height:auto;\" />");
+                + escapeHtml(demoArtifact.getStoredFile().getOriginalFilename())
+                + "\" style=\"max-width:100%;height:auto;\" />");
         out.println("          </section>");
     }
 

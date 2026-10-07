@@ -1,21 +1,99 @@
 # Artifact Storage Deployment Handoff
 
-Everything needed to deploy and verify **Communication Bundles step 1** — the
-Azure Blob storage proof described in
+Everything needed to deploy and verify **Communication Bundles task 1a** — shared
+local/Blob document and image storage described in
 `InteropHub_Communication_Bundles_Implementation_Plan.md` and
 `azure-blob-storage-handoff-reaction.md`.
 
-This step adds no user-facing feature. It uploads one image through an admin
-page and shows it on `/welcome`, to prove that server-side writes and anonymous
-direct browser reads both work in production before bundle features depend on
-them.
+This step adds no bundle or meeting feature. Its admin demonstration uploads
+a Welcome image and a separate document, proving server-side writes and anonymous
+stable file URLs before those features depend on storage.
 
 Audience: Nathan (local setup), Chris (production Tomcat + Azure checks), and
 whoever holds Azure access for the storage account.
 
+## October 2026 status: task 1a implemented
+
+**Task 1a now supplies shared local/Blob file metadata, local uploads, and anonymous stable InteropHub file URLs.** Production Blob verification remains blocked by provisioning permissions. The original Azure instructions below are historical step 1 instructions, not the current local deployment procedure.
+
+The demo is a consumer of shared file storage. `hub_stored_file` holds backend-aware records; `es_artifact_demo` now associates slots with those records. The migration explicitly maps old objects to `BLOB` and preserves the old image as `WELCOME_BLOB_DEMO`. New slots are `WELCOME_DEMO` (local Welcome image) and `DOCUMENT_DEMO` (local document proof). Welcome prefers the local image and otherwise uses the preserved Blob image. Step 2 removes temporary demo structures only after retaining shared records and references.
+
+Local setup uses `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY=C:\dev\immregistries\InteropHub-artifacts`. The directory must already exist. Restart the Tomcat service after setting/changing the environment variable; replacing the WAR alone cannot refresh the service's inherited environment.
+
+### Local-first deployment checklist
+
+- [ ] Provision one durable folder outside the WAR, exploded deployment, web root, and temporary directories; set the absolute path in `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY` in Tomcat's environment.
+- [ ] Give the Tomcat service account read/write rights, verify the root and temporary-upload area cannot escape through symlinks, and do not expose directory listing or a separate static web-root mapping.
+- [ ] Include the folder and database in coordinated backup/restore procedures, monitor free disk space, and verify files survive restart and WAR redeployment. Before adding nodes, arrange a shared durable root or transition to Blob.
+- [ ] Apply task 1a's schema update from `db/unapplied_updates.sql` according to the [database release practice](../database-release-practice.md). It is apply-once and requires the original step 1 table. Before production application, check the migration's historical Blob endpoint/container literals against the location actually used by the old demo. Do not reapply to an already-migrated database.
+- [ ] Deploy the task 1a WAR with new uploads explicitly local. No Azure credentials or account changes are required for local upload/read verification. Adding a SAS later must not silently change new-upload routing.
+- [ ] Verify the admin demo and signed-in/signed-out Welcome page use stable InteropHub file URLs. Exercise PDF and downloadable TXT/DOC/DOCX/PPT/PPTX through the separate document form. Existing Blob replacements remain production-only and require a matching write credential.
+- [ ] Verify the 25 MiB per-file cap, with bounded multipart overhead at Tomcat and any reverse proxy. A file of 26,214,401 bytes is rejected; audio/video and disallowed active formats are rejected. Local files stream with correct metadata, `nosniff`, and cache revalidation.
+- [ ] Replace a file and confirm the stable URL presents fresh content without exposing a partial upload. Simulate disk/permission failure and confirm an explicit failure and retention of the previous good content.
+- [ ] Check blank local configuration disables only local support; an invalid configured root reports an actionable error. Missing Blob SAS must not disable working local uploads. A recorded backend outage must not trigger silent fallback to a different object.
+- [ ] For development, configure a separate isolated local root and database/file copy; never mount the production folder writable. Verify Blob writes are rejected even with a SAS accidentally configured. Missing copied files are reported, not silently fetched from production.
+
+Anyone with an opaque file URL can read it on either backend. This does not make private/draft content confidential, revoke previously disclosed links, or remove the requirement to retain authoritative documents elsewhere.
+
+### Configuration semantics
+
+| Setting/state | Task 1a behavior |
+| --- | --- |
+| `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY` absent/blank | Local reads/writes disabled; Blob capability is independent |
+| Local directory explicitly invalid/unwritable | Explicit local configuration error; no alternate-path/provider fallback |
+| Valid local directory, no SAS | Local uploads enabled for authorized users; existing configured Blob reads still work |
+| Production with Blob SAS | Blob writes available for recorded Blob files; task 1a new uploads remain local |
+| Development with isolated local root | Local uploads allowed; all Blob writes rejected independently of SAS |
+| Neither backend writable | Uploads disabled with a clear explanation; available reads remain independent |
+
+Do not treat a valid directory as proof of operational readiness: backup/restore and persistence checks are deployment prerequisites. Selective or full migration, provider-selection UI, and future upload policy are deferred. A migration must verify bytes before changing the recorded locator and retain the stable public ID; direct Blob links already distributed outside InteropHub require separate handling.
+
+### Validation, replacement, and recovery
+
+- Uploads validate filenames, extension, declared MIME, content/container structure, and streamed size. Decoded PNG/JPEG/GIF images are capped at 40 million pixels. WebP uses RIFF/frame-header validation because the JDK has no WebP decoder; this is not full image decoding. Office ZIP expansion is bounded to 100 MiB, checks CRC and the expected package manifest, and rejects macro payloads; legacy Office macro markers are also rejected.
+- Validation is not antivirus scanning. PDF validation checks its header; accepted Office/PDF content can still be unsafe for recipients. Do not upload confidential content or execute/convert embedded content on the server.
+- Each successful replacement keeps the public URL but creates a new opaque physical key. Publication is atomic; optimistic metadata versions and the demo transaction prevent conflicting replacements from overwriting each other. GET/HEAD uses the new physical key as its ETag.
+- After successful local replacement, obsolete local bytes are removed. Cleanup failure is logged for operator action. Blob replacement leaves the old object for operator cleanup because the existing SAS does not authorize deletion.
+- A database registration failure can have an ambiguous commit outcome. Candidate bytes are deliberately retained and their key logged for reconciliation; never blindly delete files absent from a stale database snapshot. Inspect committed `hub_stored_file` references before cleanup. Stale upload staging files also require operator reconciliation after a process crash.
+- Back up the database and root together. A routine production-database refresh alone does not preserve local test records or copy their files; it can leave unreferenced test bytes. Production recovery and coordinated backup/restore drills remain required before production readiness is claimed.
+
+### Verification record
+
+Task 1a's full Maven test/package run passed 154 tests (including 20 storage tests). New POI and Log4j dependencies were scanned without known CVEs after pinning patched Log4j API 2.25.5. The local schema migration was applied after backing up the original empty demo table.
+
+Local Tomcat10 verification on October 7, 2026:
+
+- Nathan uploaded a PNG through the admin form and confirmed it works. Its recorded backend is `LOCAL`; it renders on signed-in Welcome, and anonymous Welcome includes the same stable image URL.
+- An actual legacy PowerPoint was uploaded through the document form. Anonymous download matched the original SHA-256, used the correct attachment filename/type/length, and conditional GET returned 304.
+- Anonymous image HEAD returned 200 with inline disposition, size/type, `nosniff`, and cache revalidation headers. Unregistered file IDs returned 404; unauthenticated admin upload redirected to sign-in without writing.
+- Both registered files remained readable after a hub-only WAR redeployment; the PowerPoint bytes remained unchanged. No Tomcat restart was required after the initial environment-setting restart.
+- Blank/invalid configuration, size boundaries, rejected formats, failed registration, replacement identity, and development Blob-write rejection have automated coverage.
+
+Production Blob access, production coordinated backup/restore, proxy request limits, disk monitoring, permission-failure drills, and a post-upload service-restart persistence check remain deployment checks, not claimed results. Automated tests and a local WAR redeployment do not establish production operational readiness.
+
+### Next milestone: task 1b meeting agenda attachments
+
+After task 1a proves a local image on the Welcome page, [task 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) delivers the first real document workflow, before Communication Bundle structures. This is planned work, not functionality in the existing WAR.
+
+The proof sequence is:
+
+1. An authorized Meeting Controls user selects an agenda item on `/es/meeting-workspace` and uploads a PPTX, with that item's title visible beside the upload control.
+2. On `/es/agenda`, the corresponding Agenda cell shows planned text/existing link, attached images, PDF/PowerPoint downloads, then notes/outcomes. Verify downloaded bytes and original filename.
+3. Add multiple attachments, including images uploaded after documents; images still appear first, with upload order retained within each group. Confirm an already-open agenda updates through its existing live refresh.
+4. Remove an attachment from the workspace; the agenda link disappears without deleting the shared file or overwriting earlier slides. Verify upload/removal does not discard unsaved notes.
+5. Verify unauthorized and cross-meeting writes fail, changes work after the session ends but not after `CLOSED`, and copy/postpone leaves new items without attachments.
+6. Check Confluence export contains absolute InteropHub attachment links (including image links), before notes/outcomes, without copying files into Confluence.
+
+Task 1b accepts raster images, PDF, and PPT/PPTX at the shared 25 MiB per-file cap, one file per upload and zero or more attachments per item. It does not need Topic Resources, bundles, or Azure rights. Shared storage may later serve Blob-backed attachments through the same URLs; verify Blob download disposition when infrastructure becomes available. Detached files remain stored pending a separately designed retention/cleanup policy, so disk monitoring remains important.
+
 ---
 
-## What was added
+## Historical Blob-only step 1 instructions
+
+The sections below preserve the original Azure handoff. Their fixed-key replacement,
+image-only UI, and temporary-table descriptions are superseded by task 1a above.
+
+### What was added in step 1
 
 | Piece | Location |
 |---|---|

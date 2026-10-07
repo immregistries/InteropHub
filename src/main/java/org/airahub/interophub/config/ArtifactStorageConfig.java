@@ -1,82 +1,85 @@
 package org.airahub.interophub.config;
 
-import java.util.logging.Level;
+import java.net.URI;
+import java.nio.file.Path;
 import java.util.logging.Logger;
 
-/**
- * Azure Blob Storage settings for Topic artifacts, read from the environment
- * (docs/communication-bundles/artifact-storage-deployment-handoff.md).
- *
- * <p>
- * Endpoint and container are public values and carry defaults. The write SAS
- * has no default and is never logged or sent to the browser. Writes are enabled
- * only where a SAS is configured, which in practice means production only -
- * reads work everywhere because the container allows anonymous read by exact
- * Blob URL.
- */
+/** Deployment settings, independent of the backend recorded on individual files. */
 public final class ArtifactStorageConfig {
-
     private static final Logger LOGGER = Logger.getLogger(ArtifactStorageConfig.class.getName());
+    private static final ArtifactStorageConfig INSTANCE = new ArtifactStorageConfig(
+            System.getenv("INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY"),
+            System.getenv("HUB_ARTIFACTS_BLOB_ENDPOINT"),
+            System.getenv("HUB_ARTIFACTS_CONTAINER"),
+            System.getenv("HUB_ARTIFACTS_SAS_TOKEN"));
 
-    private static final String DEFAULT_BLOB_ENDPOINT = "https://testsabbiastorage.blob.core.windows.net";
-    private static final String DEFAULT_CONTAINER = "artifacts";
+    private final String localDirectory;
+    private final String blobEndpoint;
+    private final String container;
+    private final String sasToken;
 
-    private static final String BLOB_ENDPOINT = resolve("HUB_ARTIFACTS_BLOB_ENDPOINT", DEFAULT_BLOB_ENDPOINT);
-    private static final String CONTAINER = resolve("HUB_ARTIFACTS_CONTAINER", DEFAULT_CONTAINER);
-    private static final String SAS_TOKEN = normalizeSasToken(System.getenv("HUB_ARTIFACTS_SAS_TOKEN"));
-
-    static {
-        if (SAS_TOKEN == null) {
-            LOGGER.log(Level.WARNING, "HUB_ARTIFACTS_SAS_TOKEN is not set - artifact uploads are disabled. "
-                    + "This is expected in local development and is a configuration error in production.");
+    public ArtifactStorageConfig(String localDirectory, String blobEndpoint, String container, String sasToken) {
+        this.localDirectory = trim(localDirectory);
+        this.blobEndpoint = trim(blobEndpoint) == null
+                ? "https://testsabbiastorage.blob.core.windows.net" : trim(blobEndpoint).replaceAll("/+$", "");
+        this.container = trim(container) == null ? "artifacts" : trim(container);
+        String token = trim(sasToken);
+        this.sasToken = token != null && token.startsWith("?") ? token.substring(1) : token;
+        if (this.localDirectory == null) {
+            LOGGER.info("INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY is not set; local file storage is disabled.");
         }
     }
 
-    private ArtifactStorageConfig() {
-    }
+    public static ArtifactStorageConfig current() { return INSTANCE; }
+    public boolean hasLocalDirectory() { return localDirectory != null; }
 
-    public static boolean isWriteEnabled() {
-        return SAS_TOKEN != null;
-    }
-
-    public static String getBlobEndpoint() {
-        return BLOB_ENDPOINT;
-    }
-
-    public static String getContainer() {
-        return CONTAINER;
-    }
-
-    /** Server-side Blob writes only. Never log this or send it to the browser. */
-    public static String getSasToken() {
-        return SAS_TOKEN;
-    }
-
-    /** The stable, anonymously readable URL for an object key. */
-    public static String getReadUrl(String objectKey) {
-        if (objectKey == null || objectKey.isBlank()) {
-            return null;
+    public Path localRoot() {
+        if (localDirectory == null) {
+            throw new IllegalStateException("Local storage is disabled. Set INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY.");
         }
-        return BLOB_ENDPOINT + "/" + CONTAINER + "/" + objectKey;
+        Path root = Path.of(localDirectory);
+        if (!root.isAbsolute()) {
+            throw new IllegalStateException("INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY must be an absolute directory.");
+        }
+        return root.normalize();
     }
 
-    private static String resolve(String name, String defaultValue) {
-        String value = System.getenv(name);
-        if (value == null || value.isBlank()) {
-            return defaultValue;
-        }
-        value = value.trim();
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
+    public String blobEndpoint() { return blobEndpoint; }
+    public String container() { return container; }
+    /** Server-only credential; never log or return to a browser. */
+    public String sasToken() { return sasToken; }
+    public boolean hasBlobCredential() { return sasToken != null && !sasToken.isBlank(); }
+
+    public static String blobReadUrl(String endpoint, String container, String key) {
+        validateBlobLocation(endpoint, container);
+        validateKey(key);
+        return endpoint.replaceAll("/+$", "") + "/" + container + "/" + key;
     }
 
-    private static String normalizeSasToken(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
+    public static void validateBlobLocation(String endpoint, String container) {
+        URI uri;
+        try {
+            uri = URI.create(endpoint == null ? "" : endpoint);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException("Invalid Blob endpoint.", ex);
         }
-        String token = value.trim();
-        return token.startsWith("?") ? token.substring(1) : token;
+        if (!"https".equals(uri.getScheme()) || uri.getHost() == null
+                || !uri.getHost().endsWith(".blob.core.windows.net")
+                || uri.getUserInfo() != null || uri.getPort() != -1
+                || uri.getQuery() != null || uri.getFragment() != null
+                || !(uri.getPath().isEmpty() || uri.getPath().equals("/"))
+                || container == null || !container.matches("[a-z0-9][a-z0-9-]{1,61}[a-z0-9]")) {
+            throw new IllegalStateException("Expected an HTTPS Azure Blob endpoint and valid container name.");
+        }
+    }
+
+    public static void validateKey(String key) {
+        if (key == null || !key.matches("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")) {
+            throw new IllegalArgumentException("Invalid opaque file identifier.");
+        }
+    }
+
+    private static String trim(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }
