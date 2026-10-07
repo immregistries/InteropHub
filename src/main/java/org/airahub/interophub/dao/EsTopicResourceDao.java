@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsTopicResource;
+import org.airahub.interophub.model.StoredFile;
 
 public class EsTopicResourceDao extends GenericDao<EsTopicResource, Long> {
     public EsTopicResourceDao() { super(EsTopicResource.class); }
@@ -27,6 +28,26 @@ public class EsTopicResourceDao extends GenericDao<EsTopicResource, Long> {
                     EsTopicResource.class)
                     .setParameter("storedFileId", storedFileId)
                     .uniqueResultOptional();
+        }
+    }
+
+    public StoredFile registerUpload(StoredFile file, EsTopicResource resource) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            var transaction = session.beginTransaction();
+            try {
+                session.persist(file);
+                resource.setStoredFileId(file.getStoredFileId());
+                session.persist(resource);
+                transaction.commit();
+                return file;
+            } catch (RuntimeException ex) {
+                try {
+                    transaction.rollback();
+                } catch (RuntimeException rollback) {
+                    ex.addSuppressed(rollback);
+                }
+                throw ex;
+            }
         }
     }
 }

@@ -211,7 +211,7 @@ public class EsTopicManageServlet extends HttpServlet {
             TopicManageNavRenderer.TopicManageCounts counts = TopicManageNavRenderer.computeCounts(topicId, viewer,
                     subscriptionDao, agendaItemDao, esMeetingDao, commentDao, relationshipDao, curationDao,
                     topicSupporterDao, topicSpaceAccessService);
-            renderRightRail(out, contextPath, topicId, view, isAdmin, topicMeetingSeries, recentlyViewedTopics,
+            renderRightRail(out, contextPath, topicId, view, isAdmin, isSpaceAdmin, topicMeetingSeries, recentlyViewedTopics,
                     manageableTopicIds, counts);
 
             out.println("      </div>"); // end aira-right-rail-layout
@@ -226,7 +226,7 @@ public class EsTopicManageServlet extends HttpServlet {
     // -------------------------------------------------------------------------
 
     private void renderRightRail(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
-            boolean isAdmin, EsTopicMeeting topicMeetingSeries,
+            boolean isAdmin, boolean isSpaceAdmin, EsTopicMeeting topicMeetingSeries,
             List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics,
             Set<Long> manageableTopicIds, TopicManageNavRenderer.TopicManageCounts counts) {
         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic management\">");
@@ -240,7 +240,8 @@ public class EsTopicManageServlet extends HttpServlet {
                         : contextPath + "/es/topic/" + otherTopicId);
 
         TopicManageNavRenderer.render(out, contextPath, topicId, activeView, isAdmin,
-                topicMeetingSeries != null ? topicMeetingSeries.getEsTopicMeetingId() : null, true, counts);
+                topicMeetingSeries != null ? topicMeetingSeries.getEsTopicMeetingId() : null, true, counts,
+                isSpaceAdmin);
 
         out.println("        </aside>");
     }

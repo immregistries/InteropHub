@@ -1,5 +1,7 @@
 package org.airahub.interophub.service;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
@@ -43,6 +45,14 @@ public class CommunicationBundleService {
     private final EsCommunicationBundleResourcePlacementDao placementDao;
     private final StoredFileDao storedFileDao;
     private final TopicSpaceAccessService access;
+    private final StoredFileService storage;
+
+    public record ResourceDetails(EsTopicResource resource, StoredFile file) { }
+
+    public record OrientationResources(EsCommunicationBundle bundle,
+            List<EsCommunicationBundleTemplateComponent> components,
+            List<EsCommunicationBundleResourcePlacement> placements,
+            List<ResourceDetails> resources) { }
 
     public CommunicationBundleService() {
         this(new EsTopicDao(), new EsTopicSpaceDao(), new EsTopicResourceDao(),
@@ -60,6 +70,17 @@ public class CommunicationBundleService {
             EsCommunicationBundleTemplateComponentDao componentDao,
             EsCommunicationBundleResourcePlacementDao placementDao, StoredFileDao storedFileDao,
             TopicSpaceAccessService access) {
+        this(topicDao, topicSpaceDao, resourceDao, purposeDao, bundleDao, componentValueDao, templateDao,
+                componentDao, placementDao, storedFileDao, access, new StoredFileService());
+    }
+
+    CommunicationBundleService(EsTopicDao topicDao, EsTopicSpaceDao topicSpaceDao,
+            EsTopicResourceDao resourceDao, EsCommunicationBundlePurposeDao purposeDao,
+            EsCommunicationBundleDao bundleDao, EsCommunicationBundleComponentValueDao componentValueDao,
+            EsCommunicationBundleTemplateDao templateDao,
+            EsCommunicationBundleTemplateComponentDao componentDao,
+            EsCommunicationBundleResourcePlacementDao placementDao, StoredFileDao storedFileDao,
+            TopicSpaceAccessService access, StoredFileService storage) {
         this.topicDao = topicDao;
         this.topicSpaceDao = topicSpaceDao;
         this.resourceDao = resourceDao;
@@ -71,6 +92,7 @@ public class CommunicationBundleService {
         this.placementDao = placementDao;
         this.storedFileDao = storedFileDao;
         this.access = access;
+        this.storage = storage;
     }
 
     public EsTopicResource registerStoredFileResource(User user, Long topicId, Long storedFileId,
@@ -114,6 +136,93 @@ public class CommunicationBundleService {
     public List<EsTopicResource> listResourcesForSteward(User user, Long topicId) {
         requireSteward(user, topicId);
         return resourceDao.findActiveByTopicId(topicId);
+    }
+
+    public StoredFileService storage() { return storage; }
+
+    public EsTopicResource uploadResource(User user, Long topicId, InputStream input, String filename,
+            String contentType, String title, String description, String attribution) throws IOException {
+        requireSteward(user, topicId);
+        EsTopicResource resource = new EsTopicResource();
+        resource.setEsTopicId(topicId);
+        resource.setTitle(required(title, "Resource title", 255));
+        resource.setDescription(optional(description, 20000));
+        resource.setAttribution(optional(attribution, 500));
+        resource.setCreatedByUserId(user.getUserId());
+        resource.setUpdatedByUserId(user.getUserId());
+        storage.upload(null, input, filename, contentType, user.getUserId(), file -> {
+            requireSteward(user, topicId);
+            resource.setResourceType(resourceTypeFor(file));
+            return resourceDao.registerUpload(file, resource);
+        });
+        return resource;
+    }
+
+    public EsTopicResource updateResourceMetadata(User user, Long topicId, Long resourceId,
+            String title, String description, String attribution, String externalUrl) {
+        requireSteward(user, topicId);
+        EsTopicResource resource = resourceDao.findById(resourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Topic Resource was not found."));
+        if (!topicId.equals(resource.getEsTopicId()) || resource.getStatus() != EsTopicResource.Status.ACTIVE) {
+            throw new IllegalArgumentException("Choose an active resource from this Topic.");
+        }
+        String validTitle = required(title, "Resource title", 255);
+        String validDescription = optional(description, 20000);
+        String validAttribution = optional(attribution, 500);
+        String validUrl = resource.getResourceType() == ResourceType.EXTERNAL_LINK
+                ? validateExternalUrl(externalUrl) : null;
+        resource.setTitle(validTitle);
+        resource.setDescription(validDescription);
+        resource.setAttribution(validAttribution);
+        resource.setExternalUrl(validUrl);
+        resource.setUpdatedByUserId(user.getUserId());
+        return resourceDao.save(resource);
+    }
+
+    public List<ResourceDetails> listResourceDetailsForSteward(User user, Long topicId) {
+        return listResourcesForSteward(user, topicId).stream().map(this::resourceDetails).toList();
+    }
+
+    public Optional<OrientationResources> findOrientationResourcesForViewer(User user, Long topicId) {
+        return findTopicOrientationForViewer(user, topicId).map(bundle -> {
+            List<EsCommunicationBundleResourcePlacement> placements =
+                    placementDao.findByBundleOrdered(bundle.getBundleId());
+            List<ResourceDetails> resources = placements.stream()
+                    .map(EsCommunicationBundleResourcePlacement::getTopicResourceId).distinct()
+                    .map(id -> resourceDao.findById(id)
+                            .orElseThrow(() -> new IllegalStateException("An Orientation resource is missing.")))
+                    .filter(resource -> resource.getStatus() == EsTopicResource.Status.ACTIVE)
+                    .map(this::resourceDetails).toList();
+            return new OrientationResources(bundle, componentDao.findByTemplateId(bundle.getTemplateId()),
+                    placements, resources);
+        });
+    }
+
+    private ResourceDetails resourceDetails(EsTopicResource resource) {
+        StoredFile file = resource.getStoredFileId() == null ? null
+                : storedFileDao.findById(resource.getStoredFileId())
+                        .orElseThrow(() -> new IllegalStateException("A Topic Resource file is missing."));
+        return new ResourceDetails(resource, file);
+    }
+
+    public void selectOrientationResource(User user, Long topicId, Long componentId, Long resourceId) {
+        EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
+        placementDao.selectResource(bundle.getBundleId(), componentId, resourceId, user.getUserId());
+    }
+
+    public void removeOrientationResource(User user, Long topicId, Long placementId) {
+        EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
+        placementDao.removeResource(bundle.getBundleId(), placementId, user.getUserId());
+    }
+
+    private EsCommunicationBundle requireDraftOrientation(User user, Long topicId) {
+        requireSteward(user, topicId);
+        EsCommunicationBundle bundle = findTopicOrientationForViewer(user, topicId)
+                .orElseThrow(() -> new IllegalStateException("Create an Orientation draft first."));
+        if (bundle.getStatus() != EsCommunicationBundle.Status.DRAFT) {
+            throw new IllegalStateException("Only a draft Orientation can be edited.");
+        }
+        return bundle;
     }
 
     public EsCommunicationBundle createTopicOrientationDraft(User user, Long topicId) {

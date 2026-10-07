@@ -33,6 +33,60 @@ import org.junit.jupiter.api.Test;
 class CommunicationBundleServiceTest {
 
     @Test
+    void resourceMetadataEditsAreScopedToAnActiveTopicResourceAndValidateExternalUrls() {
+        Fixture fixture = new Fixture();
+        var resource = fixture.service().registerExternalLinkResource(fixture.steward, 10L,
+                "https://example.org/old", "Old", null, null);
+        resource.setTopicResourceId(50L);
+        resource.setStatus(EsTopicResource.Status.ACTIVE);
+        fixture.service().updateResourceMetadata(fixture.steward, 10L, 50L, " New ", " Description ",
+                " Author ", "https://example.org/new");
+        assertEquals("New", resource.getTitle());
+        assertEquals("Description", resource.getDescription());
+        assertEquals("Author", resource.getAttribution());
+        assertEquals("https://example.org/new", resource.getExternalUrl());
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().updateResourceMetadata(
+                fixture.steward, 10L, 50L, "Bad", null, null, "javascript:alert(1)"));
+        assertEquals("New", resource.getTitle());
+        resource.setEsTopicId(11L);
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().updateResourceMetadata(
+                fixture.steward, 10L, 50L, "Bad", null, null, "https://example.org/"));
+        resource.setEsTopicId(10L);
+        resource.setStatus(EsTopicResource.Status.ARCHIVED);
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().updateResourceMetadata(
+                fixture.steward, 10L, 50L, "Bad", null, null, "https://example.org/"));
+        fixture.access.canEdit = false;
+        assertThrows(SecurityException.class, () -> fixture.service().updateResourceMetadata(
+                fixture.steward, 10L, 50L, "Bad", null, null, "https://example.org/"));
+    }
+
+    @Test
+    void orientationResourceDetailsDoNotReadDraftPlacementsForNonStewards() {
+        Fixture fixture = new Fixture();
+        var purpose = new EsCommunicationBundlePurpose();
+        purpose.setPurposeId(4L);
+        fixture.purposes.purpose = purpose;
+        var bundle = new EsCommunicationBundle();
+        bundle.setBundleId(30L);
+        bundle.setEsTopicId(10L);
+        bundle.setStatus(EsCommunicationBundle.Status.DRAFT);
+        fixture.bundles.bundle = bundle;
+        fixture.access.canEdit = false;
+        assertTrue(fixture.service().findOrientationResourcesForViewer(fixture.viewer, 10L).isEmpty());
+        assertThrows(SecurityException.class,
+                () -> fixture.service().selectOrientationResource(fixture.viewer, 10L, 40L, 50L));
+        assertThrows(SecurityException.class,
+                () -> fixture.service().removeOrientationResource(fixture.viewer, 10L, 60L));
+        fixture.access.canEdit = true;
+        bundle.setStatus(EsCommunicationBundle.Status.PUBLISHED);
+        bundle.setAudience(EsCommunicationBundlePurpose.Audience.PUBLIC);
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().selectOrientationResource(fixture.steward, 10L, 40L, 50L));
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().removeOrientationResource(fixture.steward, 10L, 60L));
+    }
+
+    @Test
     void registersStoredFilesWithTechnicalTypeAndEnforcesStewardship() {
         Fixture fixture = new Fixture();
         StoredFile file = new StoredFile();

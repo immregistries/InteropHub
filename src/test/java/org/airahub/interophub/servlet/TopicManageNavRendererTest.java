@@ -32,10 +32,22 @@ class TopicManageNavRendererTest {
         assertTrue(html.contains(">3<"));
     }
 
+    @Test
+    void resourceEditorLinkIsStewardOnlyNotChampionManagement() {
+        var counts = new TopicManageNavRenderer.TopicManageCounts(0, 0, 0, 0, 0, 0);
+        assertTrue(render(counts, true).contains("/es/topic-resources/42"));
+        assertTrue(render(counts, true).contains(">Orientation Resources</span>"));
+        assertFalse(render(counts, true).contains("Manage Orientation"));
+        assertFalse(render(counts, false).contains("/es/topic-resources/42"));
+        StringWriter writer = new StringWriter();
+        TopicManageNavRenderer.render(new PrintWriter(writer), "/hub", 42L, null, false, null, false, counts, true);
+        assertTrue(writer.toString().contains("/es/topic-resources/42"));
+    }
+
     private String render(TopicManageNavRenderer.TopicManageCounts counts, boolean isAdmin) {
         StringWriter writer = new StringWriter();
         PrintWriter out = new PrintWriter(writer);
-        TopicManageNavRenderer.render(out, "/hub", 42L, null, isAdmin, null, false, counts);
+        TopicManageNavRenderer.render(out, "/hub", 42L, null, isAdmin, null, false, counts, isAdmin);
         out.flush();
         return writer.toString();
     }

@@ -79,7 +79,8 @@ final class TopicManageNavRenderer {
     }
 
     static void render(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
-            boolean isAdmin, Long topicMeetingSeriesId, boolean includeViewTopicLink, TopicManageCounts counts) {
+            boolean isAdmin, Long topicMeetingSeriesId, boolean includeViewTopicLink, TopicManageCounts counts,
+            boolean canManageResources) {
         out.println("          <section class=\"aira-section-card\">");
         out.println(
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Manage This Topic</h2></div>");
@@ -113,6 +114,12 @@ final class TopicManageNavRenderer {
                 + topicId + "\">");
         out.println("                <span class=\"aira-recent-topic__title\">Edit Topic</span>");
         out.println("              </a>");
+        if (canManageResources) {
+            out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
+                    + "/es/topic-resources/" + topicId + "\">");
+            out.println("                <span class=\"aira-recent-topic__title\">Orientation Resources</span>");
+            out.println("              </a>");
+        }
         if (isAdmin && topicMeetingSeriesId != null) {
             out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
                     + "/admin/es/meeting-polls?esTopicMeetingId=" + topicMeetingSeriesId + "\">");

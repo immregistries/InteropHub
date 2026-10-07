@@ -21,6 +21,7 @@ import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.CommunicationBundleService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -318,6 +319,9 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 .build();
 
                 response.setContentType("text/html;charset=UTF-8");
+                if (topicSpaceAccessService.canEditTopic(viewer, topicEntity)) {
+                        response.setHeader("Cache-Control", "no-store");
+                }
                 try (PrintWriter out = response.getWriter()) {
                         page.writeStart(out);
                         out.println("    <div class=\"aira-container--wide aira-stack\">");
@@ -503,6 +507,10 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("            </div>");
                         out.println("          </section>");
 
+                        var orientation = topicSpaceAccessService.canEditTopic(viewer, topicEntity)
+                                        ? new CommunicationBundleService()
+                                                        .findOrientationResourcesForViewer(viewer, topicId).orElse(null)
+                                        : null;
                         out.println("          <section class=\"aira-section-card\" aria-labelledby=\"overview-title\">");
                         out.println(
                                         "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\" id=\"overview-title\">Overview</h2></div>");
@@ -515,19 +523,16 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("                  <p>" + escapeHtml(description) + "</p>");
                         }
                         out.println("                </div>");
+                        out.println("                <div class=\"aira-chip-list\">");
                         if (trimToNull(topic.getConfluenceUrl()) != null) {
-                                out.println("                <div class=\"aira-chip-list\">");
                                 out.println("                  <a class=\"aira-chip\" href=\""
                                                 + escapeHtml(topic.getConfluenceUrl())
                                                 + "\" target=\"_blank\" rel=\"noopener\">📄 Confluence</a>");
-                                out.println("                </div>");
                         }
+                        TopicOrientationResourceRenderer.supportingChips(out, contextPath, orientation);
+                        out.println("                </div>");
                         out.println("              </div>");
-                        out.println("              <div class=\"aira-alert aira-alert--info\" role=\"status\" aria-live=\"polite\">");
-                        out.println("                <p class=\"aira-alert__title\">Coming soon</p>");
-                        out.println(
-                                        "                <p>Support for source material, diagrams, and supporting notes is coming in a future update.</p>");
-                        out.println("              </div>");
+                        TopicOrientationResourceRenderer.overview(out, contextPath, orientation);
                         out.println("            </div>");
                         out.println("          </section>");
 
@@ -887,7 +892,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                                 topicSpaceAccessService);
                                 TopicManageNavRenderer.render(out, contextPath, topicId, null, isAdmin,
                                                 meeting != null ? meeting.getEsTopicMeetingId() : null, false,
-                                                manageCounts);
+                                                manageCounts, topicSpaceAccessService.canEditTopic(viewer, topicEntity));
                         }
                         out.println("        </aside>");
                         out.println("      </div>");
