@@ -37,6 +37,13 @@
     <mapping class="org.airahub.interophub.model.LegalTermAcceptance"/>
     <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
     <mapping class="org.airahub.interophub.model.EsTopic"/>
+    <mapping class="org.airahub.interophub.model.EsTopicResource"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundlePurpose"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundleTemplate"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundleTemplateComponent"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundle"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundleComponentValue"/>
+    <mapping class="org.airahub.interophub.model.EsCommunicationBundleResourcePlacement"/>
     <mapping class="org.airahub.interophub.model.EsTopicSpace"/>
     <mapping class="org.airahub.interophub.model.EsTopicSpaceMember"/>
     <mapping class="org.airahub.interophub.model.EsNeighborhood"/>

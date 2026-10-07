@@ -50,6 +50,16 @@ public class TopicSpaceAccessService {
         return findAdminSpaceIdsByUserId(user.getUserId()).contains(esTopicSpaceId);
     }
 
+    public boolean canParticipateInSpace(User user, Long esTopicSpaceId) {
+        if (user == null || user.getUserId() == null || esTopicSpaceId == null) {
+            return false;
+        }
+        if (authFlowService.isAdminUser(user)) {
+            return true;
+        }
+        return findMemberSpaceIdsByUserId(user.getUserId()).contains(esTopicSpaceId);
+    }
+
     public boolean canViewTopic(User user, EsTopic topic) {
         return topic != null && canViewSpaceId(user, topic.getEsTopicSpaceId());
     }

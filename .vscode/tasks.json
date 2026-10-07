@@ -1,0 +1,26 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Verify bundles and deploy to local Tomcat",
+			"type": "shell",
+			"command": "mvn",
+			"args": [
+				"package",
+				"-Plocal-tomcat-deploy",
+				"-Dtomcat.webapps.dir=C:\\Program Files\\Apache Software Foundation\\Tomcat 10.1\\webapps",
+				{
+					"value": "-Dtest=CommunicationBundleServiceTest,CommunicationBundlePersistenceTest,StoredFileServiceTest,StoredFileServletTest,MeetingAttachmentServiceTest",
+					"quoting": "strong"
+				},
+				{
+					"value": "-Dinterophub.localBundleIntegration=true",
+					"quoting": "strong"
+				}
+			],
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		}
+	]
+}

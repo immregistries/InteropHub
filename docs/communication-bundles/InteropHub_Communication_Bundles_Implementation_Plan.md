@@ -4,7 +4,9 @@
 
 Extend the operating InteropHub application with curated rich content around existing Topics. Communication Bundles combine purpose-specific narrative and selected Topic Resources so people can understand a Topic or receive a project handoff.
 
-Topics already exist, and the Topic page at `hub/es/topic/` is working. Step 1 provided the Blob image demonstration; production Blob verification remains blocked by Azure provisioning permissions. Task 1a provides shared local/Blob file metadata, local uploads, stable anonymous file URLs, and image/document demonstration slots. Task 1b now supplies meeting agenda attachments, the first real feature consumer. Local image display, PowerPoint/PDF downloads, live attachment addition/removal, and persistence across WAR redeployment have been verified. There is no Communication Bundle support yet; the next feature work is step 2. Production operational checks remain separate.
+Topics already exist, and the Topic page at `hub/es/topic/` is working. Step 1 provided the Blob image demonstration; production Blob verification remains blocked by Azure provisioning permissions. Task 1a provides shared local/Blob file metadata, local uploads, stable anonymous file URLs, and image/document demonstration slots. Task 1b now supplies meeting agenda attachments, the first real feature consumer. Local image display, PowerPoint/PDF downloads, live attachment addition/removal, and persistence across WAR redeployment have been verified. Phase 2 now has its initial domain and service foundation; the Topic Resource authoring UI and published Orientation workflow remain future work. Production operational checks remain separate.
+
+**Phase 2 status:** The initial Topic Resource, Purpose/Template, Bundle, component-value, and resource-placement persistence/service foundation is implemented and locally verified. Its database changes were applied locally from `db/unapplied_updates.sql`, and the WAR was deployed to local Tomcat on October 7, 2026. Hibernate schema validation, real-database persistence, focused regression tests, passwordless sign-in, Topic display, and existing local file delivery passed. Topic Space administrators are the interim Topic stewards, and bundle audiences are further constrained by the Topic's existing Topic Space visibility. Phase 2 does not add authoring pages, publication operations, or template administration. Production application of the SQL and deployment remain separate.
 
 Read this plan alongside the [Conceptual Model](InteropHub_Communication_Bundles_Conceptual_Model.md), [Blob Handoff Reaction](azure-blob-storage-handoff-reaction.md), and [Deployment Handoff](artifact-storage-deployment-handoff.md). The October 2026 revision adds task 1a (reusable local-folder and Blob storage) and task 1b (meeting agenda attachments), with local storage deployed first. Both are implemented and deployed to local Tomcat; production deployment verification is tracked in the handoff.
 
@@ -97,9 +99,15 @@ This is deliberately smaller than Communication Bundles: an agenda item owns zer
 
 ### 2. Establish Topic Resources and the minimum bundle structure
 
+**Status: persistence/service foundation implemented, SQL applied locally, and local deployment verified.**
+
 Map the conceptual model onto the existing database and application. Introduce the minimum structures needed for reusable Topic Resources, the Topic Orientation Purpose and template definition, a bundle instance, and resource placements. Establish Topic stewardship and audience rules.
 
 Resources belong to Topics independently of any bundle and reference task 1a's shared stored files or an external link. Keep technical resource type separate from the semantic role a resource fills in a bundle. Allow one resource to be selected in several bundles without duplicate uploads. Do not make the shared file layer depend on Topic ownership.
+
+For this initial implementation, existing Topic Space administrators serve as Topic stewards; this avoids a second permission system while retaining the current Topic Space visibility boundary. The seeded Topic Orientation template is versioned and uses stable component keys. Bundle draft access is steward-only; published audience scopes are constrained by the Topic's visibility. Revisit explicit per-Topic steward assignments only if the existing Topic Space administrator boundary proves too broad.
+
+**Local verification (October 7, 2026):** The build/deploy task in `.vscode/tasks.json` ran 37 focused tests with no failures or skips. `CommunicationBundlePersistenceTest` explicitly opts into the local database with `-Dinterophub.localBundleIntegration=true`; it validates the Hibernate mappings and seeded seven-component template, creates a temporary Topic and Orientation, persists/reloads narrative and resource placement, checks draft access and singleton behavior, then removes its test content. It is skipped in ordinary builds. The deployed WAR matched the built WAR by SHA-256. Browser verification completed passwordless sign-in, Welcome-image rendering, and existing Topic display; anonymous local file delivery also returned HTTP 200 after redeployment.
 
 **Result:** Early Orientation work uses the same underlying model that Project Handoff will extend.
 
@@ -143,7 +151,7 @@ Bundle visibility governs presentation within InteropHub, not file-level access 
 
 Keep bundle features focused on curated Topic communication, while allowing other application features to reuse the underlying file mechanism. General-purpose user file storage, folder hierarchies, Office collaboration, arbitrary page builders, and automatic version history remain outside scope. Task 1b adds only the specified meeting attachment workflow. Promotional workflows, migration tooling, future backend-selection policy, Implementation Bundles, media uploads, and browser-direct uploads remain deferred.
 
-The existing [agenda live-notes and Confluence design](../es-agenda-live-notes-and-confluence-export.md) describes planned agenda followed directly by Notes/Outcomes. Task 1b inserts attachments between them without changing the table or note/outcome semantics; implementation should update that meeting-specific documentation when the feature is built. This revision changes only the Communication Bundles Markdown documents.
+The existing [agenda live-notes and Confluence design](../es-agenda-live-notes-and-confluence-export.md) describes planned agenda followed directly by Notes/Outcomes. Task 1b inserts attachments between them without changing the table or note/outcome semantics; implementation should update that meeting-specific documentation when the feature is built.
 
 The older [Content Security and Storage Principles](../InteropHub_Content_Security_and_Storage_Principles.md) still describes fixed slots, no preserved versions, Blob-only reads, and browser-direct uploads. For this work, follow the updated bundle documents on those points; retain its content-safety and low-assurance confidentiality principles. Updating that document is outside this Markdown-only Communication Bundles revision.
 

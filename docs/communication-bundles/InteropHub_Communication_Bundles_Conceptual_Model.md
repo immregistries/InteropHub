@@ -200,7 +200,7 @@ Stewards: Only Topic stewards, designated support personnel, and administrators 
 
 Editing permission is separate from visibility. Communication Bundles and Topic Resources are curated by Topic stewards. Other participants consume the resulting communication; they do not receive bundle-authoring permissions merely because they can view the Topic.
 
-Steward should be modeled as a Topic-level responsibility. A steward can create and manage the Topic’s Resources and any supported type of Communication Bundle. InteropHub administrators retain broader administrative authority.
+Steward is conceptually a Topic-level responsibility. For Phase 2, existing Topic Space administrators serve as Topic stewards so the initial implementation reuses the current permission boundary rather than introducing a second membership system. Revisit explicit per-Topic steward assignments if Topic Space administration proves too broad. InteropHub administrators retain broader administrative authority.
 
 ### Content boundary
 
