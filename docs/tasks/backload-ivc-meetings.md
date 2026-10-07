@@ -51,6 +51,7 @@ SQL will be erased.
 Import:
 
 - Recurring IVC meetings from June 2023 through 13 May 2026.
+- The Spanish-language IVC meetings on 12 March, 9 April, and 23 July 2025.
 - The IVC vaccine-code training in Bordeaux on 8 May 2025.
 - The International Summit on Vaccine Coding & Standards in Bordeaux on
   9 May 2025.
@@ -69,6 +70,7 @@ Use these inventories for dates, versions, privacy, and delivery evidence:
 - `C:\dev\nuva\ivc-website\docs\content-inventory\events\meeting-archive-boundary.md`
 - `C:\dev\nuva\ivc-website\docs\content-inventory\events\bordeaux-2025-event.md`
 - `C:\dev\nuva\ivc-website\docs\content-inventory\events\bordeaux-2025-artifacts.md`
+- `C:\dev\nuva\ivc-website\docs\content-inventory\events\ivc-en-espanol-2025.md`
 - `C:\dev\nuva\ivc-website\docs\content-inventory\local-source-review.md`
 
 Legacy indexes may help reconcile public dates and titles:
@@ -109,6 +111,45 @@ placeholder notes.
 - The STCHealth footer does not exclude its deck; the organizer confirmed it is
   not sensitive for this use.
 - IVC already has permission to continue hosting the presentations.
+
+### IVC en español rules
+
+Create three occurrences in the existing IVC series under Emerging Standards;
+do not create a separate Spanish series or group. Recommended titles are:
+
+- 12 March 2025: `IVC en español — Introducción a los códigos de vacunas`
+- 9 April 2025: `IVC en español — IVC y NUVA`
+- 23 July 2025: `IVC en español — Resumen de la Cumbre de Burdeos`
+
+Use the detailed review for supported agenda items. Retain Spanish titles when
+the sources support them. Attach meeting-wide decks to `Welcome`; attach the
+March WHODrug PDF to its matching agenda item.
+
+Use the copy under
+`Emerging Standards\IVC\IVC en espanol` as the canonical source. The separate
+`C:\Users\NathanBunker\AIRA Dropbox\Nathan Bunker\IVC en espanol` folder is a
+duplicate and must not produce additional records or attachments.
+
+Select only:
+
+- March: `IVC en español 2025-03_meeting review version.pptx`
+- March: `2025_03_12_USA_AIRA_SPA_IVC en español_WHODrug Global.pdf`
+- April: `IVC en español 2025-04.pptx`
+- July: `International Vaccine Codes 2025.07.23 Esp.pptx`
+
+Do not select March conflicted copies or its duplicate PDF export. Do not
+select `International Vaccine Codes 2025.07.23 Esp extra.pptx`; it is a large
+source/compilation deck rather than the concise presentation to preserve.
+
+The July deck's title slide says 11 June 2025, while the filename and collection
+context support 23 July. Preserve the file unchanged, document the discrepancy,
+and stop for direction if database records or other authoritative evidence
+conflict with 23 July or indicate a separate June occurrence.
+
+These decks contain dated historical descriptions, roles, plans, and claims.
+Their inclusion as meeting artifacts does not make them current IVC guidance.
+Apply the standard private-material exclusions, including recordings, chat,
+attendance, registrations, contacts, invitations, images, and internal reports.
 
 ## Presentation selection and staging
 
