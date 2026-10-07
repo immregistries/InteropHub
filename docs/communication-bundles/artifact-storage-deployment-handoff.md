@@ -1,13 +1,14 @@
 # Artifact Storage Deployment Handoff
 
-Everything needed to deploy and verify **Communication Bundles task 1a** — shared
-local/Blob document and image storage described in
+Everything needed to deploy and verify **Communication Bundles tasks 1a and 1b** -
+shared local/Blob document and image storage and meeting agenda attachments described in
 `InteropHub_Communication_Bundles_Implementation_Plan.md` and
 `azure-blob-storage-handoff-reaction.md`.
 
-This step adds no bundle or meeting feature. Its admin demonstration uploads
+Task 1a adds no bundle or meeting feature. Its admin demonstration uploads
 a Welcome image and a separate document, proving server-side writes and anonymous
-stable file URLs before those features depend on storage.
+stable file URLs before those features depend on storage. Task 1b adds selected-item
+meeting attachments without introducing bundles or Topic Resources.
 
 Audience: Nathan (local setup), Chris (production Tomcat + Azure checks), and
 whoever holds Azure access for the storage account.
@@ -71,13 +72,13 @@ Local Tomcat10 verification on October 7, 2026:
 
 Production Blob access, production coordinated backup/restore, proxy request limits, disk monitoring, permission-failure drills, and a post-upload service-restart persistence check remain deployment checks, not claimed results. Automated tests and a local WAR redeployment do not establish production operational readiness.
 
-### Next milestone: task 1b meeting agenda attachments
+### Task 1b: implemented meeting agenda attachments
 
-After task 1a proves a local image on the Welcome page, [task 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) delivers the first real document workflow, before Communication Bundle structures. This is planned work, not functionality in the existing WAR.
+After task 1a's Welcome-image proof, [task 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) delivers the first real document workflow, before Communication Bundle structures. The code and local migration are implemented and deployed to Tomcat10.
 
 The proof sequence is:
 
-1. An authorized Meeting Controls user selects an agenda item on `/es/meeting-workspace` and uploads a PPTX, with that item's title visible beside the upload control.
+1. An authorized Meeting Controls user selects an agenda item on `/es/meeting-workspace` and uploads a PPTX. The workspace's existing selected-item heading identifies the upload target.
 2. On `/es/agenda`, the corresponding Agenda cell shows planned text/existing link, attached images, PDF/PowerPoint downloads, then notes/outcomes. Verify downloaded bytes and original filename.
 3. Add multiple attachments, including images uploaded after documents; images still appear first, with upload order retained within each group. Confirm an already-open agenda updates through its existing live refresh.
 4. Remove an attachment from the workspace; the agenda link disappears without deleting the shared file or overwriting earlier slides. Verify upload/removal does not discard unsaved notes.
@@ -85,6 +86,34 @@ The proof sequence is:
 6. Check Confluence export contains absolute InteropHub attachment links (including image links), before notes/outcomes, without copying files into Confluence.
 
 Task 1b accepts raster images, PDF, and PPT/PPTX at the shared 25 MiB per-file cap, one file per upload and zero or more attachments per item. It does not need Topic Resources, bundles, or Azure rights. Shared storage may later serve Blob-backed attachments through the same URLs; verify Blob download disposition when infrastructure becomes available. Detached files remain stored pending a separately designed retention/cleanup policy, so disk monitoring remains important.
+
+#### Task 1b deployment
+
+- Apply only the new block marked `Meeting agenda attachments, Communication Bundles task 1b.` in [unapplied_updates.sql](../../db/unapplied_updates.sql), following the database release practice. It adds `hub_stored_file.download_only` and `es_meeting_agenda_attachment`. This block is already applied locally; do not reapply either migration blindly. Do not hand-edit generated schema snapshots.
+- Deploy the matching WAR after applying the schema. No new environment variable or Azure permission is needed. Continue using `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY`; a WAR update alone needs no service restart.
+- The workspace servlet has a 26,214,400-byte per-file cap and a 27,262,976-byte request cap. Match reverse-proxy limits to allow multipart overhead while preserving the file cap. Reject multiple submitted file parts rather than silently selecting one.
+- Users need both meeting-view access and existing Meeting Controls permission. Accepted presenters anywhere in the meeting intentionally qualify. Closed/cancelled meetings and cancelled/postponed items reject changes.
+- Upload/removal uses a panel-only asynchronous request, preserving the selected item and active notes editor. The agenda's existing polling now updates attachments in every open meeting state, including completed meetings, and stops after closed/cancelled state.
+- Agenda attachments appear below the Meeting Controls buttons and above Roles. The compact panel does not repeat the workspace's selected-item title or the anonymous-file-access warning. Removing that warning from the panel does not change the anonymous-read or retained-file policy documented above.
+- Each file has a compact inline remove icon after its link, with a filename-specific accessible label and a "Remove from item" tooltip.
+- Registration commits shared metadata and the item association together, with lifecycle/ownership rechecked under locks. Detachment records actor/time, retains file metadata/bytes, and does not revoke disclosed URLs. Corrections upload new files; copy/postpone does not copy associations.
+- `download_only` is persisted before publication. Meeting PDFs download; normal PDF consumers retain existing inline behavior. Images remain inline, and PPT/PPTX remain downloads. Future Blob migration must preserve this policy and object headers.
+
+#### Task 1b local verification
+
+The final Maven package passed **167 tests**, with no failures/errors/skips; the dependency-free frontend suite passed **3 tests**. No dependencies changed for task 1b. Shared-storage tests cover exactly 26,214,400 bytes and rejection at 26,214,401 bytes.
+
+On October 7, 2026, meeting 65 (`ImmDS + HALO`), selected item 204, demonstrated:
+
+- PPTX, PDF, then PNG uploaded through Meeting Controls. Anonymous downloads matched fixture SHA-256 values and original filenames; PDF/PPTX used attachment disposition and PNG was inline. The generated PPTX proves package validation/byte transfer, not desktop PowerPoint rendering.
+- An already-open completed-meeting agenda received additions and removal via polling. Images appeared before documents, followed by existing notes/outcomes. Confluence exported absolute image/document links in that order, without embedding attachment images.
+- Upload/removal kept the same active editor DOM and selected item. The persisted note-document hash was unchanged; no real notes were edited for this test.
+- TXT and invalid PNG content, missing CSRF, anonymous upload, cross-meeting item IDs, cross-item removal, multiple submitted file parts, a file of 26,214,401 bytes, and a closed-meeting upload were rejected. Removal recorded its actor/time and left the detached PDF anonymously readable. Audit timestamps follow the existing DAO/JDBC convention and were checked against database UTC.
+- Registered URLs and bytes survived a hub-only redeployment. Nathan's task 1a Welcome image was not replaced.
+
+No private meeting is present in the local dataset; private-access denial has service-test coverage, not a local browser proof. Copy/postpone non-transfer was checked against the existing item-creation paths and separate attachment association model, without changing the real meeting lifecycle. Production backup/restore, proxy limits, restart persistence, disk monitoring, private-meeting deployment checks, and Blob-backed download/migration verification remain open. Task 1b.6 stays unchecked for these deployment checks, not missing implementation.
+
+The existing topic-note streaming endpoint logged a non-blocking `ServletOutputStream.isReady()` error during the workspace proof. That endpoint was not changed for task 1b; attachment operations passed and the stored note content remained unchanged. Treat live-note streaming as a separate follow-up, not a verified part of this milestone.
 
 ---
 

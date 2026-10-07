@@ -1,6 +1,4 @@
-// Participant-facing live updates for es/agenda: polls meeting state while a
-// session is in progress and patches the current-topic indicator plus each
-// agenda item's Notes/Outcomes blocks in place, without a full page reload.
+// Patch attachments and notes throughout an open meeting, without reloading the page.
 (function () {
   var configEl = document.getElementById('agenda-live-config');
   if (!configEl) {
@@ -12,7 +10,7 @@
   } catch (e) {
     return;
   }
-  if (!config || !config.stateUrl || config.meetingStatus !== 'IN_SESSION') {
+  if (!config || !config.stateUrl || config.meetingStatus === 'CLOSED' || config.meetingStatus === 'CANCELLED') {
     return;
   }
 
@@ -33,24 +31,24 @@
   }
 
   function applyState(data) {
-    if (!data || data.meetingStatus !== 'IN_SESSION') {
-      document.querySelectorAll('tr.agenda-row-current').forEach(function (row) {
-        row.classList.remove('agenda-row-current');
-      });
-      if (timer) {
-        clearInterval(timer);
-        timer = null;
-      }
+    if (!data) {
       return;
     }
     (data.items || []).forEach(function (item) {
       var row = document.querySelector('tr[data-agenda-item-id="' + item.agendaItemId + '"]');
       if (row) {
-        row.classList.toggle('agenda-row-current', !!item.isCurrent);
+        row.classList.toggle('agenda-row-current', data.meetingStatus === 'IN_SESSION' && !!item.isCurrent);
       }
+      applyBlock('agenda-attachments-' + item.agendaItemId, item.attachmentsHtml);
       applyBlock('agenda-notes-' + item.agendaItemId, item.notesHtml);
       applyBlock('agenda-outcomes-' + item.agendaItemId, item.outcomesHtml);
     });
+    if (data.meetingStatus === 'CLOSED' || data.meetingStatus === 'CANCELLED') {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    }
   }
 
   function poll() {

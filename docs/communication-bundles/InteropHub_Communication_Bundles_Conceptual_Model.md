@@ -22,7 +22,7 @@ This document defines Communication Bundles conceptually before database or appl
 
 August 2026
 
-**Storage clarification, October 2026:** Communication Bundles motivated a reusable InteropHub document/image upload-and-serve mechanism, but meeting agenda attachments will be its first real feature consumer. Local server-folder storage will be deployed first while Azure permissions are resolved; Blob support remains available for later use. See [implementation tasks 1a and 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) for the storage proof and meeting attachment workflow. Neither is implemented by this clarification; promotional workflows remain deferred.
+**Storage clarification, October 2026:** Communication Bundles motivated a reusable InteropHub document/image upload-and-serve mechanism; meeting agenda attachments are its first real feature consumer. [Implementation tasks 1a and 1b](InteropHub_Communication_Bundles_Implementation_Plan.md) are implemented and locally verified using server-folder storage. Production operational verification remains separate while Azure permissions are resolved; Blob support remains available for later use. Communication Bundles and promotional workflows remain deferred.
 
 ## Executive Summary
 

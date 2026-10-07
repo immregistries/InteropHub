@@ -161,6 +161,8 @@ class EsMeetingWorkspaceServletTest {
                 assertTrue(!html.contains("confirm('End meeting now?')"));
                 assertTrue(!html.contains("Anchor outcomes to specific bullets"));
                 assertTrue(!html.contains("Session can now be started."));
+                assertTrue(html.indexOf("Close meeting</button>") < html.indexOf("data-meeting-attachments"));
+                assertTrue(html.indexOf("data-meeting-attachments") < html.indexOf(">Roles</h4>"));
         }
 
         @Test

@@ -74,6 +74,21 @@ class StoredFileServletTest {
     }
 
     @Test
+    void meetingPdfHasAttachmentDispositionWhileImagesStayInline() throws IOException {
+        file.setDownloadOnly(true);
+        file.setContentType("application/pdf");
+        file.setOriginalFilename("slides.pdf");
+        Capture pdf = new Capture();
+        servlet.doGet(request("/" + file.getPublicId(), null), pdf.response);
+        assertTrue(pdf.headers.get("Content-Disposition").startsWith("attachment;"));
+        file.setContentType("image/png");
+        file.setOriginalFilename("image.png");
+        Capture image = new Capture();
+        servlet.doGet(request("/" + file.getPublicId(), null), image.response);
+        assertTrue(image.headers.get("Content-Disposition").startsWith("inline;"));
+    }
+
+    @Test
     void malformedConditionalDateDoesNotReportStorageOutage() throws IOException {
         HttpServletRequest request = (HttpServletRequest) Proxy.newProxyInstance(
                 HttpServletRequest.class.getClassLoader(), new Class<?>[] { HttpServletRequest.class },

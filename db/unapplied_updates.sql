@@ -59,3 +59,28 @@ ALTER TABLE es_artifact_demo
   DROP COLUMN uploaded_at,
   DROP COLUMN created_at,
   DROP COLUMN updated_at;
+
+-- Meeting agenda attachments, Communication Bundles task 1b.
+ALTER TABLE hub_stored_file
+  ADD COLUMN download_only BIT NOT NULL DEFAULT b'0';
+
+CREATE TABLE es_meeting_agenda_attachment (
+  attachment_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_meeting_agenda_item_id BIGINT NOT NULL,
+  stored_file_id BIGINT NOT NULL,
+  attached_by_user_id BIGINT NOT NULL,
+  attached_at DATETIME(6) NOT NULL,
+  removed_by_user_id BIGINT DEFAULT NULL,
+  removed_at DATETIME(6) DEFAULT NULL,
+  PRIMARY KEY (attachment_id),
+  UNIQUE KEY uq_meeting_attachment_file (stored_file_id),
+  KEY ix_meeting_attachment_item (es_meeting_agenda_item_id, removed_at, attached_at, attachment_id),
+  CONSTRAINT fk_meeting_attachment_item FOREIGN KEY (es_meeting_agenda_item_id)
+    REFERENCES es_meeting_agenda_item (es_meeting_agenda_item_id),
+  CONSTRAINT fk_meeting_attachment_file FOREIGN KEY (stored_file_id)
+    REFERENCES hub_stored_file (stored_file_id),
+  CONSTRAINT fk_meeting_attachment_uploader FOREIGN KEY (attached_by_user_id)
+    REFERENCES auth_user (user_id),
+  CONSTRAINT fk_meeting_attachment_remover FOREIGN KEY (removed_by_user_id)
+    REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

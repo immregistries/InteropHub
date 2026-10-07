@@ -59,6 +59,12 @@ public class StoredFileService {
     /** Registration can atomically persist feature ownership alongside shared file metadata. */
     public StoredFile upload(StoredFile existing, InputStream content, String filename, String declaredType,
             Long uploader, Function<StoredFile, StoredFile> register) throws IOException {
+        return upload(existing, content, filename, declaredType, uploader,
+                existing != null && existing.isDownloadOnly(), register);
+    }
+
+    public StoredFile upload(StoredFile existing, InputStream content, String filename, String declaredType,
+            Long uploader, boolean downloadOnly, Function<StoredFile, StoredFile> register) throws IOException {
         if (uploader == null) {
             throw new IllegalArgumentException("An authenticated uploader is required.");
         }
@@ -68,6 +74,7 @@ public class StoredFileService {
         }
         String name = StoredFileValidation.filename(filename);
         StoredFile candidate = existing == null ? new StoredFile() : new StoredFile(existing);
+        candidate.setDownloadOnly(downloadOnly);
         if (existing == null) {
             candidate.setPublicId(UUID.randomUUID().toString());
             candidate.setBackend(Backend.LOCAL);
@@ -134,7 +141,7 @@ public class StoredFileService {
     }
 
     public static boolean inline(StoredFile file) {
-        return file.isImage() || "application/pdf".equals(file.getContentType());
+        return file.isImage() || (!file.isDownloadOnly() && "application/pdf".equals(file.getContentType()));
     }
 
     public static String readUrl(String contextPath, StoredFile file) {

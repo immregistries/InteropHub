@@ -17,10 +17,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.Part;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
+import org.airahub.interophub.dao.EsMeetingAgendaAttachmentDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsMeetingDao;
@@ -43,6 +48,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AgendaActivityService;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
+import org.airahub.interophub.service.MeetingAttachmentService;
 import org.airahub.interophub.service.MeetingLifecycleService;
 import org.airahub.interophub.service.MeetingRoleService;
 import org.airahub.interophub.service.MeetingWindowRules;
@@ -52,6 +58,9 @@ import org.json.JSONObject;
 import org.immregistries.aira.web.AiraPage;
 
 public class EsMeetingWorkspaceServlet extends HttpServlet {
+    private static final Logger LOGGER = Logger.getLogger(EsMeetingWorkspaceServlet.class.getName());
+    private final MeetingAttachmentService attachmentService = new MeetingAttachmentService();
+    private final EsMeetingAgendaAttachmentDao attachmentDao = new EsMeetingAgendaAttachmentDao();
 
     public static final String WORKSPACE_PATH = "/es/meeting-workspace";
 
@@ -95,6 +104,11 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     }
 
     @Override
+    public void init() {
+        attachmentService.storage().local().setDeploymentPath(getServletContext().getRealPath("/"));
+    }
+
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         Long meetingId = parseId(request.getParameter("meetingId"));
         if (meetingId == null) {
@@ -128,6 +142,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         boolean canAssignLiveRoles = meeting.getStatus() == EsMeeting.MeetingStatus.IN_SESSION
                 && meetingAuthorizationService.canControlMeeting(user != null ? user.getUserId() : null, meeting);
         List<User> assignableUsers = canAssignLiveRoles ? userDao.findAllOrderByName() : List.of();
+        String attachmentPanel = view.selectedItem() == null ? "" : attachmentPanel(
+                request, meeting, user, view.selectedItem().agendaItemId(), view.selectedItem().title());
         EsTopicSpace meetingSpace = meeting.getEsTopicSpaceId() == null ? null
                 : topicSpaceDao.findById(meeting.getEsTopicSpaceId()).orElse(null);
         String meetingSpaceName = meetingSpace == null ? "Meeting Workspace" : meetingSpace.getSpaceName();
@@ -150,7 +166,9 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     .build();
 
             page.writeStart(out);
-            renderWorkspaceContent(out, request.getContextPath(), view, assignableUsers);
+            renderWorkspaceContent(out, request.getContextPath(), view, assignableUsers, attachmentPanel);
+            out.println("<script src=\"" + request.getContextPath()
+                    + "/js/meeting-workspace-attachments.js\"></script>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             page.writeEnd(out);
         }
@@ -158,6 +176,16 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        try {
+            handlePost(request, response);
+        } catch (IllegalStateException ex) {
+            LOGGER.log(Level.WARNING, "Workspace multipart request rejected", ex);
+            attachmentError(request, response, HttpServletResponse.SC_BAD_REQUEST,
+                    "Request rejected. Choose a file no larger than 25 MiB and reload before retrying.");
+        }
+    }
+
+    private void handlePost(HttpServletRequest request, HttpServletResponse response) throws IOException {
         request.setCharacterEncoding("UTF-8");
 
         Long meetingId = parseId(request.getParameter("meetingId"));
@@ -181,6 +209,10 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         String action = trimToNull(request.getParameter("action"));
         if (action == null) {
             redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, null);
+            return;
+        }
+        if ("uploadAttachment".equals(action) || "removeAttachment".equals(action)) {
+            handleAttachment(request, response, user, meeting, selectedItemId, action);
             return;
         }
 
@@ -246,6 +278,100 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         }
     }
 
+    private void handleAttachment(HttpServletRequest request, HttpServletResponse response, User user,
+            EsMeeting meeting, Long itemId, String action) throws IOException {
+        List<Part> uploadParts = List.of();
+        try {
+            if (!CsrfTokenSupport.isValid(request)) {
+                attachmentError(request, response, HttpServletResponse.SC_FORBIDDEN,
+                        "Invalid request token. Reload the workspace and try again.");
+                return;
+            }
+            if ("uploadAttachment".equals(action)) {
+                uploadParts = request.getParts().stream()
+                        .filter(candidate -> candidate.getSubmittedFileName() != null).toList();
+                if (uploadParts.size() != 1 || !"attachmentFile".equals(uploadParts.get(0).getName())) {
+                    throw new IllegalArgumentException("Upload exactly one image, PDF or PowerPoint at a time.");
+                }
+                Part part = uploadParts.get(0);
+                if (part.getSize() == 0) {
+                    throw new IllegalArgumentException("Choose a non-empty image, PDF or PowerPoint.");
+                }
+                try (var input = part.getInputStream()) {
+                    attachmentService.upload(user, meeting.getEsMeetingId(), itemId, input,
+                            part.getSubmittedFileName(), part.getContentType());
+                }
+            } else {
+                attachmentService.detach(user, meeting.getEsMeetingId(), itemId,
+                        parseId(request.getParameter("attachmentId")));
+            }
+            String message = "uploadAttachment".equals(action) ? "Attachment uploaded." : "Attachment removed from item.";
+            if (wantsAttachmentJson(request)) {
+                EsMeeting latestMeeting = meetingDao.findById(meeting.getEsMeetingId()).orElseThrow();
+                EsMeetingAgendaItem item = agendaItemDao.findById(itemId).orElseThrow();
+                String title = effectiveAgendaTitle(item, null);
+                response.setContentType("application/json;charset=UTF-8");
+                response.setHeader("Cache-Control", "no-store");
+                response.getWriter().print(new JSONObject().put("message", message)
+                        .put("html", attachmentPanel(request, latestMeeting, user, itemId, title)));
+            } else {
+                redirectWorkspace(response, request.getContextPath(), meeting.getEsMeetingId(), itemId,
+                        "attachmentSaved=1");
+            }
+        } catch (SecurityException ex) {
+            LOGGER.log(Level.WARNING, "Meeting attachment access denied", ex);
+            attachmentError(request, response, HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            LOGGER.log(Level.WARNING, "Meeting attachment rejected", ex);
+            attachmentError(request, response, HttpServletResponse.SC_BAD_REQUEST, ex.getMessage());
+        } catch (IOException | ServletException | RuntimeException ex) {
+            LOGGER.log(Level.SEVERE, "Meeting attachment operation failed", ex);
+            attachmentError(request, response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                    "Attachment operation failed. Check the file format, 25 MiB limit, storage permissions and server log.");
+        } finally {
+            for (Part part : uploadParts) {
+                try {
+                    part.delete();
+                } catch (IOException ex) {
+                    LOGGER.log(Level.WARNING, "Meeting multipart cleanup failed", ex);
+                }
+            }
+        }
+    }
+
+    private String attachmentPanel(HttpServletRequest request, EsMeeting meeting, User user, Long itemId,
+            String title) {
+        EsMeetingAgendaItem item = agendaItemDao.findById(itemId).orElse(null);
+        boolean canModify = user != null && topicSpaceAccessService.canViewMeeting(user, meeting)
+                && meetingAuthorizationService.canControlMeeting(user.getUserId(), meeting);
+        try {
+            MeetingAttachmentService.requireEditableTarget(meeting, item, meeting.getEsMeetingId(), itemId);
+        } catch (IllegalArgumentException | IllegalStateException ex) {
+            canModify = false;
+        }
+        return MeetingAttachmentRenderer.workspace(request.getContextPath(), meeting.getEsMeetingId(),
+                itemId, title, CsrfTokenSupport.getOrCreateToken(request),
+                attachmentDao.findActiveByMeetingId(meeting.getEsMeetingId()).getOrDefault(itemId, List.of()),
+                canModify, canModify ? attachmentService.storage().writeProblem(null) : null);
+    }
+
+    private static boolean wantsAttachmentJson(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        return accept != null && accept.contains("application/json");
+    }
+
+    private static void attachmentError(HttpServletRequest request, HttpServletResponse response, int status,
+            String message) throws IOException {
+        if (wantsAttachmentJson(request)) {
+            response.setStatus(status);
+            response.setContentType("application/json;charset=UTF-8");
+            response.setHeader("Cache-Control", "no-store");
+            response.getWriter().print(new JSONObject().put("error", message));
+        } else {
+            response.sendError(status, message);
+        }
+    }
+
     private static String buildWorkspaceIntro(WorkspaceView view) {
         String schedule = trimToNull(view.scheduleText());
         String status = trimToNull(view.meetingStatusLabel());
@@ -267,6 +393,11 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
 
     static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view,
             List<User> assignableUsers) {
+        renderWorkspaceContent(out, contextPath, view, assignableUsers, "");
+    }
+
+    static void renderWorkspaceContent(PrintWriter out, String contextPath, WorkspaceView view,
+            List<User> assignableUsers, String attachmentPanel) {
         out.println("    <div class=\"aira-container--wide aira-stack aira-stack--compact\">");
         if (view.feedbackMessage() != null && !"Session started.".equals(view.feedbackMessage())
                 && !"Meeting ended.".equals(view.feedbackMessage())) {
@@ -455,6 +586,8 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
                     + ">Close meeting</button>");
             out.println("                </form>");
             out.println("              </div>");
+            out.println("              <section data-meeting-attachments class=\"aira-stack aira-stack--compact\">"
+                    + attachmentPanel + "</section>");
             out.println("              <div class=\"aira-stack aira-stack--compact\" style=\"margin-top: 1rem;\">");
             out.println("                <h4 class=\"aira-section-title\">Roles</h4>");
             out.println("                <table class=\"aira-table\">");

@@ -39,6 +39,8 @@ public class StoredFile {
     @Version
     @Column(name = "revision", nullable = false)
     private long revision;
+    @Column(name = "download_only", nullable = false)
+    private boolean downloadOnly;
 
     public StoredFile() { }
 
@@ -56,6 +58,7 @@ public class StoredFile {
         uploadedAt = source.uploadedAt;
         createdAt = source.createdAt;
         revision = source.revision;
+        downloadOnly = source.downloadOnly;
     }
 
     public Long getStoredFileId() { return storedFileId; }
@@ -84,6 +87,8 @@ public class StoredFile {
     public void setCreatedAt(LocalDateTime value) { createdAt = value; }
     public long getRevision() { return revision; }
     public void setRevision(long value) { revision = value; }
+    public boolean isDownloadOnly() { return downloadOnly; }
+    public void setDownloadOnly(boolean value) { downloadOnly = value; }
 
     public boolean isImage() {
         return java.util.Set.of("image/png", "image/jpeg", "image/webp", "image/gif").contains(contentType);

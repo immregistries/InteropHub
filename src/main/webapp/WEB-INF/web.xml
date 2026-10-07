@@ -872,6 +872,11 @@
   <servlet>
     <servlet-name>EsMeetingWorkspaceServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsMeetingWorkspaceServlet</servlet-class>
+    <multipart-config>
+      <max-file-size>26214400</max-file-size>
+      <max-request-size>27262976</max-request-size>
+      <file-size-threshold>262144</file-size-threshold>
+    </multipart-config>
   </servlet>
 
   <servlet-mapping>

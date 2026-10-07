@@ -47,6 +47,22 @@ class StoredFileServiceTest {
     }
 
     @Test
+    void meetingPdfDownloadPolicyIsPersistedWithoutChangingOtherPdfConsumers() throws IOException {
+        StoredFile meetingFile = service.upload(null, input("%PDF-1.7\nproof"),
+                "slides.pdf", "application/pdf", 7L, true, file -> new StoredFile(file));
+        assertTrue(meetingFile.isDownloadOnly());
+        assertFalse(StoredFileService.inline(meetingFile));
+        StoredFile normalFile = service.upload(null, input("%PDF-1.7\nproof"),
+                "preview.pdf", "application/pdf", 7L);
+        assertFalse(normalFile.isDownloadOnly());
+        assertTrue(StoredFileService.inline(normalFile));
+        StoredFile replacement = service.upload(meetingFile, input("%PDF-1.7\nnew"),
+                "slides.pdf", "application/pdf", 7L);
+        assertTrue(replacement.isDownloadOnly());
+        assertFalse(StoredFileService.inline(replacement));
+    }
+
+    @Test
     void localUploadAndReplacementKeepPublicIdentityButPublishNewBytes() throws IOException {
         StoredFile first = upload("old.txt", "old");
         String oldKey = first.getStorageKey();

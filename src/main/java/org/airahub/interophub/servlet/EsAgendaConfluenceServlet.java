@@ -95,6 +95,10 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
             response.sendError(HttpServletResponse.SC_NOT_FOUND, "Meeting not found.");
             return;
         }
+        if (!new org.airahub.interophub.service.TopicSpaceAccessService().canViewMeeting(user, meeting)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Meeting access required.");
+            return;
+        }
 
         List<EsMeetingAgendaItem> items = agendaItemDao.findByMeetingIdOrdered(meetingId);
 
@@ -152,6 +156,9 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
             EsMeeting nextMeeting) throws IOException {
 
         response.setContentType("text/html;charset=UTF-8");
+        var attachmentsByItem = new org.airahub.interophub.dao.EsMeetingAgendaAttachmentDao()
+                .findActiveByMeetingId(meeting.getEsMeetingId());
+        String attachmentBaseUrl = new org.airahub.interophub.service.PublicUrlService().resolveExternalBaseUrl();
         PrintWriter out = response.getWriter();
 
         ZoneId meetingZone = safeZoneId(meeting.getTimezoneId(), "America/New_York");
@@ -253,7 +260,7 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
         LocalDateTime cursor = meeting.getScheduledStart();
 
         for (EsMeetingAgendaItem item : items) {
-            if (item.getStatus() == AgendaItemStatus.POSTPONED) {
+            if (item.getStatus() == AgendaItemStatus.POSTPONED || item.getStatus() == AgendaItemStatus.CANCELLED) {
                 continue;
             }
 
@@ -301,6 +308,8 @@ public class EsAgendaConfluenceServlet extends HttpServlet {
             List<EsRecordedOutcome> itemOutcomes = itemNote != null
                     ? recordedOutcomeDao.findByNoteIdOrdered(itemNote.getEsTopicNoteId())
                     : List.of();
+            agendaCellContent += MeetingAttachmentRenderer.confluence(attachmentBaseUrl,
+                    attachmentsByItem.getOrDefault(item.getEsMeetingAgendaItemId(), List.of()));
             agendaCellContent += renderConfluenceNotesBlock(itemNote);
             agendaCellContent += renderConfluenceOutcomesBlock(itemOutcomes);
 

@@ -203,7 +203,7 @@ public class EsAgendaServlet extends HttpServlet {
         boolean canEdit = canEdit(user, meeting, editOverride, isEditor);
 
         if ("state".equals(trimToNull(request.getParameter("action")))) {
-            renderLiveStateJson(response, meeting, items, isEditor);
+            renderLiveStateJson(response, request.getContextPath(), meeting, items, isEditor);
             return;
         }
 
@@ -1599,9 +1599,12 @@ public class EsAgendaServlet extends HttpServlet {
     private static final String AGENDA_NOTES_HEADING_HTML = "<div class=\"agenda-notes-heading\">Notes</div>";
     private static final String AGENDA_OUTCOMES_HEADING_HTML = "<div class=\"agenda-outcomes-heading\">Outcomes</div>";
 
-    private void renderLiveStateJson(HttpServletResponse response, EsMeeting meeting,
+    private void renderLiveStateJson(HttpServletResponse response, String contextPath, EsMeeting meeting,
             List<EsMeetingAgendaItem> items, boolean isEditor) throws IOException {
         response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store");
+        var attachmentsByItem = new org.airahub.interophub.dao.EsMeetingAgendaAttachmentDao()
+                .findActiveByMeetingId(meeting.getEsMeetingId());
         boolean meetingInSession = meeting.getStatus() == MeetingStatus.IN_SESSION;
         Long currentAgendaItemId = meeting.getCurrentAgendaItemId();
 
@@ -1623,6 +1626,8 @@ public class EsAgendaServlet extends HttpServlet {
             JSONObject itemJson = new JSONObject();
             itemJson.put("agendaItemId", item.getEsMeetingAgendaItemId());
             itemJson.put("isCurrent", isCurrent);
+            itemJson.put("attachmentsHtml", MeetingAttachmentRenderer.agenda(contextPath,
+                    attachmentsByItem.getOrDefault(item.getEsMeetingAgendaItemId(), List.of())));
             itemJson.put("notesHtml", buildNotesInnerHtml(note, isCurrent));
             itemJson.put("outcomesHtml", buildOutcomesInnerHtml(outcomes));
             itemsJson.put(itemJson);
@@ -1675,6 +1680,8 @@ public class EsAgendaServlet extends HttpServlet {
             Map<Long, TopicEngagementSummary> engagementByTopicId,
             boolean rsvpOpen, MeetingRsvpResponse currentRsvp) throws IOException {
         response.setContentType("text/html;charset=UTF-8");
+        var attachmentsByItem = new org.airahub.interophub.dao.EsMeetingAgendaAttachmentDao()
+                .findActiveByMeetingId(meeting.getEsMeetingId());
 
         String effectiveTz = resolveEffectiveTz(user, meeting);
         ZoneId meetingZone = safeZoneId(meeting.getTimezoneId(), effectiveTz);
@@ -2887,6 +2894,9 @@ public class EsAgendaServlet extends HttpServlet {
                     }
                     renderAgendaItemLink(out, item);
                 }
+                out.println("                  <div id=\"agenda-attachments-" + item.getEsMeetingAgendaItemId()
+                        + "\">" + MeetingAttachmentRenderer.agenda(contextPath,
+                                attachmentsByItem.getOrDefault(item.getEsMeetingAgendaItemId(), List.of())) + "</div>");
                 out.println("                  <div class=\"agenda-notes\" id=\"agenda-notes-"
                         + item.getEsMeetingAgendaItemId() + "\">"
                         + buildNotesInnerHtml(itemNote, isCurrentItem) + "</div>");
