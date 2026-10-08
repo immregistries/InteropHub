@@ -2,7 +2,11 @@ package org.airahub.interophub.servlet;
 
 import java.io.PrintWriter;
 import java.util.List;
+import java.util.Locale;
+import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import org.airahub.interophub.model.EsCommunicationBundle;
+import org.airahub.interophub.model.EsCommunicationBundlePurpose.Audience;
 import org.airahub.interophub.model.EsCommunicationBundleResourcePlacement;
 import org.airahub.interophub.model.EsCommunicationBundleTemplateComponent;
 import org.airahub.interophub.model.EsTopicResource;
@@ -18,13 +22,13 @@ final class TopicOrientationResourceRenderer {
         ResourceDetails infographic = infographic(orientation, selected);
 
         out.println("<div class=\"aira-stack aira-stack--compact\">");
-        if (!selected.isEmpty() && orientation.bundle().getStatus() == EsCommunicationBundle.Status.DRAFT) {
+        if (orientation != null && orientation.bundle().getStatus() == EsCommunicationBundle.Status.DRAFT) {
             out.println("<p class=\"aira-meta\">Draft preview - visible only to Topic stewards.</p>");
         }
         if (infographic == null) {
             out.println("<div class=\"aira-alert aira-alert--info\" role=\"status\">"
-                    + "<p class=\"aira-alert__title\">Coming soon</p>"
-                    + "<p>Support for source material, diagrams, and supporting notes is coming in a future update.</p>"
+                    + "<p class=\"aira-alert__title\">No infographic selected</p>"
+                    + "<p>The Topic Orientation does not currently include a primary infographic.</p>"
                     + "</div>");
         } else {
             String url = escape(StoredFileService.readUrl(context, infographic.file()));
@@ -34,7 +38,16 @@ final class TopicOrientationResourceRenderer {
                     + " in a new tab\"><img src=\"" + url + "\" alt=\"" + title
                     + "\" style=\"display:block;max-width:100%;height:auto;\" /></a></figure>");
         }
+        String date = communicationDate(orientation);
+        if (date != null) {
+            out.println("<p class=\"aira-meta\">" + (orientation.bundle().getStatus() == EsCommunicationBundle.Status.DRAFT
+                    ? "Draft dated " : "Current as of ") + escape(date) + "</p>");
+        }
         out.println("</div>");
+    }
+
+    static void narrative(PrintWriter out, OrientationResources orientation) {
+        CommunicationBundleComponentRenderer.narrative(out, orientation);
     }
 
     private static List<ResourceDetails> selectedResources(OrientationResources orientation) {
@@ -85,21 +98,44 @@ final class TopicOrientationResourceRenderer {
     }
 
     static void editor(PrintWriter out, String context, Long topicId, String csrf,
-            OrientationResources orientation, List<ResourceDetails> resources, String uploadProblem) {
-        out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
-                + "<h2 class=\"aira-section-card__title\">Orientation roles</h2></div>"
-                + "<div class=\"aira-section-card__body aira-stack\">");
+            OrientationResources orientation, List<ResourceDetails> resources,
+            StoredFileService storage, String uploadProblem) {
         if (orientation == null) {
+            out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
+                    + "<h2 class=\"aira-section-card__title\">Topic Orientation</h2></div>"
+                    + "<div class=\"aira-section-card__body aira-stack\">");
             out.println("<p>Create the draft to select resources for named Orientation roles.</p>");
             formStart(out, context, topicId, csrf, "createDraft", false);
             button(out, "Create Orientation draft");
-            out.println("</form>");
-        } else if (orientation.bundle().getStatus() != EsCommunicationBundle.Status.DRAFT) {
-            out.println("<p>This Orientation is not a draft and cannot be edited here.</p>");
-        } else {
+            out.println("</form></div></section>");
+        } else if (orientation.bundle().getStatus() == EsCommunicationBundle.Status.DRAFT) {
+            renderEditableOrientation(out, context, topicId, csrf, orientation);
+        } else if (orientation.bundle().getStatus() == EsCommunicationBundle.Status.PUBLISHED) {
+            out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
+                    + "<h2 class=\"aira-section-card__title\">Published Topic Orientation</h2></div>"
+                    + "<div class=\"aira-section-card__body aira-stack\"><p>Audience: "
+                    + escape(audienceLabel(orientation.bundle().getAudience())) + "; "
+                    + (communicationDate(orientation) == null ? "no Month/Year set."
+                            : "dated " + escape(communicationDate(orientation)) + ".")
+                    + "</p><p>This is a living Orientation. Each save updates the published Topic page immediately "
+                    + "and is recorded in the change history. Retire it only when it is no longer in use.</p>");
+            formStart(out, context, topicId, csrf, "retire", false);
+            out.println("<button type=\"submit\" class=\"aira-button aira-button--tertiary\""
+                    + " onclick=\"return confirm('Retire this published Orientation? It will no longer appear on the Topic page.');\">"
+                    + "Retire Orientation</button></form></div></section>");
+            renderEditableOrientation(out, context, topicId, csrf, orientation);
+        }
+
+        out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
+                + "<h2 class=\"aira-section-card__title\">Orientation roles</h2></div>"
+                + "<div class=\"aira-section-card__body aira-stack\">");
+        if (orientation != null) {
+            boolean editable = orientation.bundle().getStatus() == EsCommunicationBundle.Status.DRAFT
+                    || orientation.bundle().getStatus() == EsCommunicationBundle.Status.PUBLISHED;
             for (var component : resourceComponents(orientation)) {
                 out.println("<section class=\"aira-stack aira-stack--compact\"><h3>"
-                        + escape(component.getDisplayName()) + "</h3><p class=\"aira-meta\">"
+                        + escape(component.getDisplayName()) + (component.isRequired() ? " (required)" : " (recommended)")
+                        + "</h3><p class=\"aira-meta\">"
                         + escape(component.getAuthoringPrompt()) + "</p>");
                 var selected = placements(orientation, component);
                 for (var placement : selected) {
@@ -108,16 +144,45 @@ final class TopicOrientationResourceRenderer {
                             .findFirst().orElseThrow(() -> new IllegalStateException("Selected resource is unavailable."));
                     out.println("<div class=\"aira-cluster\"><span>" + escape(resource.resource().getTitle())
                             + "</span>");
-                    formStart(out, context, topicId, csrf, "remove", false);
-                    hidden(out, "placementId", placement.getPlacementId().toString());
-                    out.println("<button class=\"aira-button aira-button--tertiary aira-button--small\""
-                            + " aria-label=\"Remove " + escape(resource.resource().getTitle()) + " from "
-                            + escape(component.getDisplayName()) + "\">Remove</button></form></div>");
+                    if (editable) {
+                        formStart(out, context, topicId, csrf, "remove", false);
+                        hidden(out, "placementId", placement.getPlacementId().toString());
+                        out.println("<button class=\"aira-button aira-button--tertiary aira-button--small\""
+                                + " aria-label=\"Remove " + escape(resource.resource().getTitle()) + " from "
+                                + escape(component.getDisplayName()) + "\">Remove</button></form>");
+                    }
+                    out.println("</div>");
+                    if (editable) {
+                        if (component.getKind() == EsCommunicationBundleTemplateComponent.Kind.RESOURCE_COLLECTION) {
+                            int index = selected.indexOf(placement);
+                            if (index > 0) {
+                                formStart(out, context, topicId, csrf, "moveUp", false);
+                                hidden(out, "placementId", placement.getPlacementId().toString());
+                                button(out, "Move " + resource.resource().getTitle() + " up");
+                                out.println("</form>");
+                            }
+                            if (index < selected.size() - 1) {
+                                formStart(out, context, topicId, csrf, "moveDown", false);
+                                hidden(out, "placementId", placement.getPlacementId().toString());
+                                button(out, "Move " + resource.resource().getTitle() + " down");
+                                out.println("</form>");
+                            }
+                        }
+                        formStart(out, context, topicId, csrf, "context", false);
+                        hidden(out, "placementId", placement.getPlacementId().toString());
+                        out.println("<label class=\"aira-label\" for=\"context-" + placement.getPlacementId()
+                                + "\">Context for " + escape(resource.resource().getTitle()) + "</label>"
+                                + "<textarea class=\"aira-textarea\" id=\"context-" + placement.getPlacementId()
+                                + "\" name=\"contextNote\" rows=\"2\" maxlength=\"20000\">"
+                                + escape(placement.getContextNote()) + "</textarea>");
+                        button(out, "Save resource context");
+                        out.println("</form>");
+                    }
                 }
                 if (selected.isEmpty()) {
                     out.println("<p class=\"aira-meta\">No resource selected.</p>");
                 }
-                if (!resources.isEmpty()) {
+                if (editable && !resources.isEmpty()) {
                     formStart(out, context, topicId, csrf, "select", false);
                     hidden(out, "componentId", component.getComponentId().toString());
                     out.println("<label class=\"aira-label\" for=\"role-" + component.getComponentId()
@@ -136,8 +201,23 @@ final class TopicOrientationResourceRenderer {
                 }
                 out.println("</section>");
             }
+        } else {
+            out.println("<p>Create a draft before selecting resources for named Orientation roles.</p>");
         }
         out.println("</div></section>");
+
+        if (orientation != null && !orientation.auditEntries().isEmpty()) {
+            out.println("<details class=\"aira-section-card\"><summary>Recent Orientation changes</summary>"
+                    + "<ul class=\"aira-section-card__body aira-stack\">");
+            for (var entry : orientation.auditEntries()) {
+                out.println("<li><strong>" + escape(entry.getEventType()) + "</strong>: "
+                        + escape(entry.getDetails()) + " <span class=\"aira-meta\">User #"
+                        + entry.getChangedByUserId() + ", "
+                        + escape(entry.getChangedAt() == null ? "" : entry.getChangedAt().toString())
+                        + " UTC</span></li>");
+            }
+            out.println("</ul></details>");
+        }
 
         out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
                 + "<h2 class=\"aira-section-card__title\">Add a Topic Resource</h2></div>"
@@ -177,6 +257,24 @@ final class TopicOrientationResourceRenderer {
             out.println("<details><summary>" + escape(resource.resource().getTitle()) + " ("
                     + resource.resource().getResourceType().name() + ")</summary>");
             renderResource(out, context, resource, false);
+            if (resource.file() != null) {
+                String replacementProblem = storage.writeProblem(resource.file());
+                if (replacementProblem == null) {
+                    formStart(out, context, topicId, csrf, "replaceResourceFile", true);
+                    hidden(out, "resourceId", resource.resource().getTopicResourceId().toString());
+                    out.println("<label class=\"aira-label\" for=\"replace-file-"
+                            + resource.resource().getTopicResourceId() + "\">Replace current file (25 MiB maximum)</label>"
+                            + "<input class=\"aira-input\" id=\"replace-file-" + resource.resource().getTopicResourceId()
+                            + "\" type=\"file\" name=\"replacementFile\" required"
+                            + " accept=\".png,.jpg,.jpeg,.webp,.gif,.pdf,.txt,.doc,.docx,.ppt,.pptx\" />");
+                    button(out, "Replace current file");
+                    out.println("</form><p class=\"aira-meta\">The Topic Resource, placements, and stable file URL remain; "
+                            + "previous local bytes are not retained as a version.</p>");
+                } else {
+                    out.println("<p class=\"aira-alert aira-alert--warning\">File replacement unavailable: "
+                            + escape(replacementProblem) + "</p>");
+                }
+            }
             formStart(out, context, topicId, csrf, "metadata", false);
             hidden(out, "resourceId", resource.resource().getTopicResourceId().toString());
             String prefix = "resource-" + resource.resource().getTopicResourceId();
@@ -187,6 +285,48 @@ final class TopicOrientationResourceRenderer {
             }
             button(out, "Save resource metadata");
             out.println("</form></details>");
+        }
+        out.println("</div></section>");
+    }
+
+    private static void renderEditableOrientation(PrintWriter out, String context, Long topicId, String csrf,
+            OrientationResources orientation) {
+        boolean published = orientation.bundle().getStatus() == EsCommunicationBundle.Status.PUBLISHED;
+        out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
+                + "<h2 class=\"aira-section-card__title\">Orientation narrative</h2></div>"
+                + "<div class=\"aira-section-card__body aira-stack\">");
+        CommunicationBundleComponentRenderer.valueEditor(out, context + "/es/topic-resources/" + topicId, csrf, orientation);
+        out.println("</div></section>");
+
+        out.println("<section class=\"aira-section-card\"><div class=\"aira-section-card__header\">"
+                + "<h2 class=\"aira-section-card__title\">Audience and communication date</h2></div>"
+                + "<div class=\"aira-section-card__body aira-stack\">");
+        formStart(out, context, topicId, csrf, "settings", false);
+        out.println("<label class=\"aira-label\" for=\"orientation-audience\">Audience</label>"
+                + "<select class=\"aira-select\" id=\"orientation-audience\" name=\"audience\" required>");
+        for (Audience audience : orientation.allowedAudiences()) {
+            out.println("<option value=\"" + audience.name() + "\""
+                    + (audience == orientation.bundle().getAudience() ? " selected" : "") + ">"
+                    + escape(audienceLabel(audience)) + "</option>");
+        }
+        out.println("</select><label class=\"aira-label\" for=\"orientation-month\">Month</label>"
+                + "<input class=\"aira-input\" id=\"orientation-month\" name=\"communicationMonth\" type=\"number\""
+                + " min=\"1\" max=\"12\"" + (published ? " required" : "") + " value=\""
+                + (orientation.bundle().getCommunicationMonth() == null ? ""
+                        : orientation.bundle().getCommunicationMonth()) + "\" />"
+                + "<label class=\"aira-label\" for=\"orientation-year\">Year</label>"
+                + "<input class=\"aira-input\" id=\"orientation-year\" name=\"communicationYear\" type=\"number\""
+                + " min=\"1\" max=\"9999\"" + (published ? " required" : "") + " value=\""
+                + (orientation.bundle().getCommunicationYear() == null ? ""
+                        : orientation.bundle().getCommunicationYear()) + "\" />");
+        button(out, "Save audience and date");
+        out.println("</form><p class=\"aira-meta\">Month and Year describe the communication, not its publication timestamp. "
+                + "Both are required for a published Orientation. Update them for a meaningful refresh, "
+                + "not a minor editorial correction.</p>");
+        if (!published) {
+            formStart(out, context, topicId, csrf, "publish", false);
+            button(out, "Publish Orientation");
+            out.println("</form>");
         }
         out.println("</div></section>");
     }
@@ -224,6 +364,24 @@ final class TopicOrientationResourceRenderer {
             EsCommunicationBundleTemplateComponent component) {
         return orientation.placements().stream().filter(p -> p.getComponentId().equals(component.getComponentId()))
                 .toList();
+    }
+
+    private static String communicationDate(OrientationResources orientation) {
+        if (orientation == null || orientation.bundle().getCommunicationMonth() == null
+                || orientation.bundle().getCommunicationYear() == null) {
+            return null;
+        }
+        return YearMonth.of(orientation.bundle().getCommunicationYear(),
+                orientation.bundle().getCommunicationMonth())
+                .format(DateTimeFormatter.ofPattern("MMMM uuuu", Locale.ENGLISH));
+    }
+
+    private static String audienceLabel(Audience audience) {
+        return switch (audience) {
+            case PUBLIC -> "Anyone who can view the Topic";
+            case PARTICIPANTS -> "Topic Space participants";
+            case STEWARDS -> "Topic stewards";
+        };
     }
 
     private static void metadataFields(PrintWriter out, String prefix, EsTopicResource resource) {

@@ -522,6 +522,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                         } else {
                                 out.println("                  <p>" + escapeHtml(description) + "</p>");
                         }
+                        TopicOrientationResourceRenderer.narrative(out, orientation);
                         out.println("                </div>");
                         out.println("                <div class=\"aira-chip-list\">");
                         if (trimToNull(topic.getConfluenceUrl()) != null) {

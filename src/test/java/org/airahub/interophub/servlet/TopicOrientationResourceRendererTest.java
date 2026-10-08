@@ -7,9 +7,74 @@ import java.util.List;
 import org.airahub.interophub.model.*;
 import org.airahub.interophub.service.CommunicationBundleService.OrientationResources;
 import org.airahub.interophub.service.CommunicationBundleService.ResourceDetails;
+import org.airahub.interophub.service.StoredFileService;
 import org.junit.jupiter.api.Test;
 
 class TopicOrientationResourceRendererTest {
+    @Test
+    void collectionOrderingAndContextControlsOnlyAppearInEditableResourceRoles() {
+        var first = resource(1L, "First", null, null);
+        var second = resource(2L, "Second", null, null);
+        var content = orientation(List.of(first, second));
+        content.placements().get(0).setContextNote("<b>Start here</b>");
+        String html = editor(content, content.resources(), "Uploads disabled for this test");
+        assertTrue(html.contains("Move First down"));
+        assertTrue(html.contains("Move Second up"));
+        assertFalse(html.contains("Move First up"));
+        assertFalse(html.contains("Move Second down"));
+        assertTrue(html.contains("name=\"action\" value=\"context\""));
+        assertTrue(html.contains("&lt;b&gt;Start here&lt;/b&gt;"));
+        assertFalse(preview(content).contains("Save resource context"));
+        content.bundle().setStatus(EsCommunicationBundle.Status.RETIRED);
+        html = editor(content, content.resources(), "Uploads disabled for this test");
+        assertFalse(html.contains("name=\"action\" value=\"moveUp\""));
+        assertFalse(html.contains("name=\"action\" value=\"context\""));
+    }
+
+    @Test
+    void communicationDateAppearsBelowInfographicForPublishedAndDraftOrientations() {
+        var orientation = orientation(List.of(resource(1L, "Infographic", "image/png", "visual.png")));
+        orientation.bundle().setCommunicationMonth(10);
+        orientation.bundle().setCommunicationYear(2026);
+        orientation.bundle().setStatus(EsCommunicationBundle.Status.PUBLISHED);
+        String published = preview(orientation);
+        assertTrue(published.contains("Current as of October 2026"));
+        assertTrue(published.indexOf("Current as of October 2026") > published.indexOf("</figure>"));
+        orientation.bundle().setStatus(EsCommunicationBundle.Status.DRAFT);
+        String draft = preview(orientation);
+        assertTrue(draft.contains("Draft dated October 2026"));
+        assertTrue(draft.indexOf("Draft dated October 2026") > draft.indexOf("</figure>"));
+    }
+
+    @Test
+    void optionalNarrativePromptsRemainEditableWithoutRequiredAttributesAndBlankContentIsOmitted() {
+        var original = orientation(List.of());
+        var prompts = List.of("What this Topic is", "Why it matters", "How to get involved");
+        var components = java.util.stream.IntStream.range(0, prompts.size()).mapToObj(index -> {
+            var component = new EsCommunicationBundleTemplateComponent();
+            component.setComponentId(30L + index);
+            component.setDisplayName(prompts.get(index));
+            component.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+            component.setRequired(false);
+            return component;
+        }).toList();
+        var orientation = new OrientationResources(original.bundle(), components, List.of(), List.of());
+        String html = editor(orientation, List.of(), null);
+        for (String prompt : prompts) {
+            assertTrue(html.contains(prompt));
+            assertFalse(html.contains(prompt + " (required)"));
+        }
+        for (var component : components) {
+            var textarea = java.util.regex.Pattern.compile("<textarea[^>]*id=\"component-"
+                    + component.getComponentId() + "\"[^>]*>").matcher(html);
+            assertTrue(textarea.find());
+            assertFalse(textarea.group().contains(" required"));
+        }
+        StringWriter writer = new StringWriter();
+        TopicOrientationResourceRenderer.narrative(new PrintWriter(writer), orientation);
+        assertEquals("", writer.toString());
+    }
+
     @Test
     void overviewUsesOnlyThePrimaryInfographicAndNamedChipsForOtherResources() {
         var image = resource(1L, "An infographic", "image/png", "visual.png");
@@ -55,8 +120,8 @@ class TopicOrientationResourceRendererTest {
     @Test
     void emptyOptionalRolesAreOmittedAndDraftIsClearlyEmpty() {
         String html = preview(orientation(List.of()));
-        assertTrue(html.contains("Coming soon"));
-        assertFalse(html.contains("Draft preview"));
+        assertTrue(html.contains("No infographic selected"));
+        assertTrue(html.contains("Draft preview - visible only to Topic stewards"));
         assertFalse(html.contains("<h3"));
     }
 
@@ -66,11 +131,11 @@ class TopicOrientationResourceRendererTest {
         var orientation = orientation(List.of(image));
         orientation.components().get(1).setSemanticKey("additional_resources");
         String html = preview(orientation);
-        assertTrue(html.contains("Coming soon"));
+        assertTrue(html.contains("No infographic selected"));
         assertFalse(html.contains("<img "));
         assertTrue(html.contains("Supporting diagram (IMG) - opens in a new tab"));
         assertTrue(html.contains("</svg> Supporting diagram</a>"));
-        assertTrue(preview(null).contains("Coming soon"));
+        assertTrue(preview(null).contains("No infographic selected"));
     }
 
     @Test
@@ -111,6 +176,32 @@ class TopicOrientationResourceRendererTest {
         assertTrue(html.contains("Draft visibility does not protect file URLs"));
     }
 
+    @Test
+    void publishedOrientationRendersLiveEditingControlsButNotPublishAction() {
+        var resource = resource(1L, "Link", null, null);
+        var orientation = orientation(List.of(resource));
+        orientation.bundle().setStatus(EsCommunicationBundle.Status.PUBLISHED);
+        orientation.bundle().setAudience(EsCommunicationBundlePurpose.Audience.PUBLIC);
+        var narrative = new EsCommunicationBundleTemplateComponent();
+        narrative.setComponentId(30L);
+        narrative.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+        narrative.setDisplayName("What this Topic is");
+        orientation = new OrientationResources(orientation.bundle(),
+                List.of(orientation.components().get(0), orientation.components().get(1), narrative),
+                orientation.placements(), orientation.resources());
+        String html = editor(orientation, List.of(resource), null);
+        assertTrue(html.contains("Published Topic Orientation"));
+        assertTrue(html.contains("name=\"action\" value=\"select\""));
+        assertTrue(html.contains("name=\"action\" value=\"remove\""));
+        assertTrue(html.contains("name=\"action\" value=\"settings\""));
+        assertTrue(html.contains("name=\"action\" value=\"text\""));
+        assertTrue(html.contains("min=\"1\" max=\"12\" required"));
+        assertTrue(html.contains("min=\"1\" max=\"9999\" required"));
+        assertTrue(html.contains("Each save updates the published Topic page immediately"));
+        assertFalse(html.contains("name=\"action\" value=\"publish\""));
+        assertTrue(html.contains("name=\"action\" value=\"retire\""));
+    }
+
     private static String preview(OrientationResources orientation) {
         StringWriter writer = new StringWriter();
         TopicOrientationResourceRenderer.overview(new PrintWriter(writer), "/hub", orientation);
@@ -122,7 +213,7 @@ class TopicOrientationResourceRendererTest {
     private static String editor(OrientationResources orientation, List<ResourceDetails> resources, String problem) {
         StringWriter writer = new StringWriter();
         TopicOrientationResourceRenderer.editor(new PrintWriter(writer), "/hub", 10L, "test-token",
-                orientation, resources, problem);
+                orientation, resources, new StoredFileService(), problem);
         return writer.toString();
     }
 

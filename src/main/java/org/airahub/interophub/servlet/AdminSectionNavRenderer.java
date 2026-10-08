@@ -64,7 +64,8 @@ final class AdminSectionNavRenderer {
                                         new NavItem("Emails", "/admin/emails"),
                                         new NavItem("Workspaces", "/admin/workspaces"))));
                         case CONTENT -> List.of(new NavGroup(null, List.of(
-                                        new NavItem("IG Topics", "/admin/topics"))));
+                                        new NavItem("IG Topics", "/admin/topics"),
+                                        new NavItem("Communication Bundle Templates", "/admin/content/bundle-templates"))));
                         case TOPIC_SPACES -> List.of(
                                         new NavGroup("Structure & Taxonomy", List.of(
                                                         new NavItem("Topic Spaces", "/admin/es/topic-spaces"),

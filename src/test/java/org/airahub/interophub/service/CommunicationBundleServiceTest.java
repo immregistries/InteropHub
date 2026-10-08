@@ -2,6 +2,7 @@ package org.airahub.interophub.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -225,6 +226,7 @@ class CommunicationBundleServiceTest {
         bundle.setPurposeId(4L);
         bundle.setStatus(EsCommunicationBundle.Status.PUBLISHED);
         fixture.bundles.bundle = bundle;
+        fixture.access.canEdit = false;
 
         bundle.setAudience(EsCommunicationBundlePurpose.Audience.PUBLIC);
         assertTrue(fixture.service().findTopicOrientationForViewer(fixture.viewer, 10L).isPresent());
@@ -244,7 +246,153 @@ class CommunicationBundleServiceTest {
     }
 
     @Test
-    void storesNarrativeOnlyInDraftTextComponents() {
+    void publishingRequiresMonthYearAndEveryRequiredComponent() {
+        Fixture fixture = new Fixture();
+        EsCommunicationBundlePurpose purpose = Fixture.orientationPurpose();
+        fixture.purposes.purpose = purpose;
+        EsCommunicationBundle bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        fixture.bundles.bundle = bundle;
+        var requiredNarrative = new EsCommunicationBundleTemplateComponent();
+        requiredNarrative.setComponentId(40L);
+        requiredNarrative.setTemplateId(5L);
+        requiredNarrative.setSemanticKey("introduction");
+        requiredNarrative.setDisplayName("Introduction");
+        requiredNarrative.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+        requiredNarrative.setRequired(true);
+        fixture.components.byTemplate = List.of(requiredNarrative);
+
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().publishOrientation(fixture.steward, 10L));
+        bundle.setCommunicationMonth(4);
+        bundle.setCommunicationYear(2026);
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().publishOrientation(fixture.steward, 10L));
+
+        EsCommunicationBundleComponentValue value = new EsCommunicationBundleComponentValue();
+        value.setComponentId(40L);
+        value.setContentText("A clear introduction.");
+        fixture.componentValues.saved = value;
+        assertEquals(EsCommunicationBundle.Status.PUBLISHED,
+                fixture.service().publishOrientation(fixture.steward, 10L).getStatus());
+    }
+
+    @Test
+    void publishingAllowsAllThreeOptionalNarrativesToBeBlank() {
+        Fixture fixture = new Fixture();
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        var bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        bundle.setCommunicationMonth(10);
+        bundle.setCommunicationYear(2026);
+        fixture.bundles.bundle = bundle;
+        fixture.components.byTemplate = List.of("introduction", "why_it_matters", "how_to_get_involved")
+                .stream().map(key -> {
+                    var component = new EsCommunicationBundleTemplateComponent();
+                    component.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+                    component.setSemanticKey(key);
+                    component.setRequired(false);
+                    return component;
+                }).toList();
+
+        assertEquals(EsCommunicationBundle.Status.PUBLISHED,
+                fixture.service().publishOrientation(fixture.steward, 10L).getStatus());
+    }
+
+    @Test
+    void publishedOrientationCanBeRetiredAndReplacedByANewDraft() {
+        Fixture fixture = new Fixture();
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        EsCommunicationBundle oldBundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.PUBLISHED);
+        oldBundle.setSingleInstanceGuard(1);
+        fixture.bundles.bundle = oldBundle;
+        EsCommunicationBundleTemplate template = new EsCommunicationBundleTemplate();
+        template.setTemplateId(5L);
+        template.setPurposeId(4L);
+        template.setStatus(EsCommunicationBundleTemplate.Status.ACTIVE);
+        fixture.templates.template = template;
+
+        assertEquals(EsCommunicationBundle.Status.RETIRED,
+                fixture.service().retireOrientation(fixture.steward, 10L).getStatus());
+        assertEquals(null, oldBundle.getSingleInstanceGuard());
+        EsCommunicationBundle replacement = fixture.service().createTopicOrientationDraft(fixture.steward, 10L);
+        assertEquals(EsCommunicationBundle.Status.DRAFT, replacement.getStatus());
+        assertTrue(replacement != oldBundle);
+    }
+
+    @Test
+    void audienceSettingsCannotBroadenPrivateTopicVisibility() {
+        Fixture fixture = new Fixture();
+        fixture.spaces.space.setVisibility(EsTopicSpace.Visibility.PRIVATE);
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        fixture.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().saveOrientationSettings(
+                fixture.steward, 10L, EsCommunicationBundlePurpose.Audience.PUBLIC, null, null));
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().saveOrientationSettings(
+                fixture.steward, 10L, EsCommunicationBundlePurpose.Audience.PARTICIPANTS, 4, null));
+        assertEquals(EsCommunicationBundlePurpose.Audience.PARTICIPANTS,
+                fixture.service().saveOrientationSettings(fixture.steward, 10L,
+                        EsCommunicationBundlePurpose.Audience.PARTICIPANTS, null, null).getAudience());
+    }
+
+    @Test
+    void publishedLivingOrientationCanUpdateSettingsAndRolesWithoutRepublishing() {
+        Fixture fixture = new Fixture();
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        var bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.PUBLISHED);
+        bundle.setPublishedAt(java.time.LocalDateTime.of(2026, 9, 1, 12, 0));
+        fixture.bundles.bundle = bundle;
+
+        var updated = fixture.service().saveOrientationSettings(fixture.steward, 10L,
+                EsCommunicationBundlePurpose.Audience.PARTICIPANTS, 10, 2026);
+        assertEquals(EsCommunicationBundle.Status.PUBLISHED, updated.getStatus());
+        assertEquals(30L, updated.getBundleId());
+        assertEquals(java.time.LocalDateTime.of(2026, 9, 1, 12, 0), updated.getPublishedAt());
+        assertEquals(10, updated.getCommunicationMonth());
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().saveOrientationSettings(
+                fixture.steward, 10L, EsCommunicationBundlePurpose.Audience.PUBLIC, null, null));
+        fixture.service().selectOrientationResource(fixture.steward, 10L, 40L, 50L);
+        fixture.service().removeOrientationResource(fixture.steward, 10L, 60L);
+        assertEquals(50L, fixture.placements.selectedResourceId);
+        assertEquals(60L, fixture.placements.removedPlacementId);
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().publishOrientation(fixture.steward, 10L));
+
+        fixture.access.canEdit = false;
+        assertThrows(SecurityException.class, () -> fixture.service().saveOrientationSettings(
+                fixture.viewer, 10L, EsCommunicationBundlePurpose.Audience.PUBLIC, 10, 2026));
+        assertThrows(SecurityException.class,
+                () -> fixture.service().selectOrientationResource(fixture.viewer, 10L, 40L, 50L));
+        fixture.access.canEdit = true;
+        fixture.purposes.purpose.setMode(EsCommunicationBundlePurpose.Mode.SNAPSHOT);
+        assertThrows(IllegalStateException.class, () -> fixture.service().saveOrientationSettings(
+                fixture.steward, 10L, EsCommunicationBundlePurpose.Audience.PUBLIC, 10, 2026));
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().removeOrientationResource(fixture.steward, 10L, 60L));
+    }
+
+    @Test
+    void structuredListValuesUseJsonAndMustBelongToTheTopicAndTemplate() {
+        Fixture fixture = new Fixture();
+        fixture.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        var component = new EsCommunicationBundleTemplateComponent();
+        component.setComponentId(40L);
+        component.setTemplateId(5L);
+        component.setKind(EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST);
+        fixture.components.component = component;
+        var value = fixture.service().setStructuredListComponentValue(fixture.steward, 10L, 30L, 40L, "First\n\nSecond");
+        assertNull(value.getContentText());
+        assertEquals(List.of("First", "Second"), CommunicationBundleStructuredList.items(value.getContentJson()));
+        assertThrows(IllegalArgumentException.class, () -> fixture.service()
+                .setStructuredListComponentValue(fixture.steward, 11L, 30L, 40L, "Wrong Topic"));
+        assertThrows(IllegalArgumentException.class, () -> fixture.service()
+                .setTextComponentValue(fixture.steward, 30L, 40L, "Wrong kind"));
+        fixture.access.canEdit = false;
+        assertThrows(SecurityException.class, () -> fixture.service()
+                .setStructuredListComponentValue(fixture.viewer, 10L, 30L, 40L, "Not a steward"));
+    }
+
+    @Test
+    void storesNarrativeInDraftAndPublishedLivingTextComponentsButNotSnapshotsOrRetiredBundles() {
         Fixture fixture = new Fixture();
         EsCommunicationBundle bundle = new EsCommunicationBundle();
         bundle.setBundleId(30L);
@@ -266,9 +414,21 @@ class CommunicationBundleServiceTest {
         assertEquals(40L, value.getComponentId());
         assertThrows(IllegalArgumentException.class,
                 () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 41L, "Not in template"));
+        bundle.setPurposeId(4L);
+        fixture.purposes.purpose = Fixture.orientationPurpose();
         bundle.setStatus(EsCommunicationBundle.Status.PUBLISHED);
+        assertEquals("Updated while published", fixture.service()
+                .setTextComponentValue(fixture.steward, 30L, 40L, "Updated while published").getContentText());
+        component.setRequired(true);
         assertThrows(IllegalStateException.class,
-                () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, "No longer draft"));
+                () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, ""));
+        fixture.purposes.purpose.setMode(EsCommunicationBundlePurpose.Mode.SNAPSHOT);
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, "Snapshot"));
+        fixture.purposes.purpose.setMode(EsCommunicationBundlePurpose.Mode.LIVING);
+        bundle.setStatus(EsCommunicationBundle.Status.RETIRED);
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, "Retired"));
     }
 
     private static final class Fixture {
@@ -296,6 +456,28 @@ class CommunicationBundleServiceTest {
             return new CommunicationBundleService(topics, spaces, resources, purposes, bundles,
                     componentValues, templates, components, placements, files, access);
         }
+
+            private static EsCommunicationBundlePurpose orientationPurpose() {
+                EsCommunicationBundlePurpose purpose = new EsCommunicationBundlePurpose();
+                purpose.setPurposeId(4L);
+                purpose.setPurposeKey(CommunicationBundleService.TOPIC_ORIENTATION_KEY);
+                purpose.setMode(EsCommunicationBundlePurpose.Mode.LIVING);
+                purpose.setActiveTemplateId(5L);
+                purpose.setInstancePolicy(EsCommunicationBundlePurpose.InstancePolicy.SINGLE);
+                purpose.setDefaultAudience(EsCommunicationBundlePurpose.Audience.STEWARDS);
+                return purpose;
+            }
+
+            private static EsCommunicationBundle orientationBundle(Long id, EsCommunicationBundle.Status status) {
+                EsCommunicationBundle bundle = new EsCommunicationBundle();
+                bundle.setBundleId(id);
+                bundle.setEsTopicId(10L);
+                bundle.setPurposeId(4L);
+                bundle.setTemplateId(5L);
+                bundle.setStatus(status);
+                bundle.setAudience(EsCommunicationBundlePurpose.Audience.PUBLIC);
+                return bundle;
+            }
 
         private static EsTopic topic(Long id, Long spaceId) {
             EsTopic topic = new EsTopic();
@@ -342,12 +524,19 @@ class CommunicationBundleServiceTest {
     private static final class Resources extends EsTopicResourceDao {
         private EsTopicResource resource;
         @Override public EsTopicResource save(EsTopicResource value) { resource = value; return value; }
+        @Override public EsTopicResource updateMetadataWithAudit(EsTopicResource value, Long userId) {
+            resource = value;
+            return value;
+        }
         @Override public Optional<EsTopicResource> findByStoredFileId(Long id) { return Optional.empty(); }
         @Override public Optional<EsTopicResource> findById(Long id) { return Optional.ofNullable(resource); }
     }
 
     private static final class Purposes extends EsCommunicationBundlePurposeDao {
         private EsCommunicationBundlePurpose purpose;
+        @Override public Optional<EsCommunicationBundlePurpose> findById(Long id) {
+            return purpose != null && purpose.getPurposeId().equals(id) ? Optional.of(purpose) : Optional.empty();
+        }
         @Override public Optional<EsCommunicationBundlePurpose> findActiveByKey(String key) {
             return Optional.ofNullable(purpose);
         }
@@ -361,12 +550,39 @@ class CommunicationBundleServiceTest {
         private EsCommunicationBundle bundle;
         private EsCommunicationBundle saved;
         @Override public Optional<EsCommunicationBundle> findByTopicAndPurpose(Long topicId, Long purposeId) {
-            return Optional.ofNullable(existing != null ? existing : bundle);
+            EsCommunicationBundle result = existing != null ? existing : bundle;
+            return result != null && result.getStatus() != EsCommunicationBundle.Status.RETIRED
+                    ? Optional.of(result) : Optional.empty();
         }
         @Override public Optional<EsCommunicationBundle> findById(Long id) {
             return Optional.ofNullable(bundle != null ? bundle : saved);
         }
         @Override public EsCommunicationBundle save(EsCommunicationBundle value) { saved = value; return value; }
+        @Override public EsCommunicationBundle saveDraftWithAudit(EsCommunicationBundle value, Long userId) {
+            value.setBundleId(31L);
+            saved = value;
+            bundle = value;
+            return value;
+        }
+        @Override public List<org.airahub.interophub.model.EsCommunicationBundleAudit> findAuditEntries(Long id) {
+            return List.of();
+        }
+        @Override public EsCommunicationBundle updateEditableSettings(Long id,
+                EsCommunicationBundlePurpose.Audience audience, Integer month, Integer year, Long userId) {
+            bundle.setAudience(audience);
+            bundle.setCommunicationMonth(month);
+            bundle.setCommunicationYear(year);
+            return bundle;
+        }
+        @Override public EsCommunicationBundle publishDraft(Long id, Long userId) {
+            bundle.setStatus(EsCommunicationBundle.Status.PUBLISHED);
+            return bundle;
+        }
+        @Override public EsCommunicationBundle retirePublished(Long id, Long userId) {
+            bundle.setStatus(EsCommunicationBundle.Status.RETIRED);
+            bundle.setSingleInstanceGuard(null);
+            return bundle;
+        }
     }
 
     private static final class Templates extends EsCommunicationBundleTemplateDao {
@@ -382,22 +598,49 @@ class CommunicationBundleServiceTest {
         @Override public EsCommunicationBundleComponentValue save(EsCommunicationBundleComponentValue value) {
             return value;
         }
+        @Override public EsCommunicationBundleComponentValue saveEditableValue(
+                EsCommunicationBundleComponentValue value, String semanticKey) {
+            saved = value;
+            return value;
+        }
+        @Override public List<EsCommunicationBundleComponentValue> findByBundleId(Long bundleId) {
+            return saved == null ? List.of() : List.of(saved);
+        }
+        private EsCommunicationBundleComponentValue saved;
     }
 
     private static final class Components extends EsCommunicationBundleTemplateComponentDao {
         private EsCommunicationBundleTemplateComponent component;
+        private List<EsCommunicationBundleTemplateComponent> byTemplate = List.of();
         @Override public Optional<EsCommunicationBundleTemplateComponent> findById(Long id) {
             return component != null && component.getComponentId().equals(id)
                     ? Optional.of(component) : Optional.empty();
+        }
+        @Override public List<EsCommunicationBundleTemplateComponent> findByTemplateId(Long templateId) {
+            return byTemplate;
         }
     }
 
     private static final class Placements extends EsCommunicationBundleResourcePlacementDao {
         private List<EsCommunicationBundleResourcePlacement> existing = List.of();
+        private List<EsCommunicationBundleResourcePlacement> ordered = List.of();
         @Override public List<EsCommunicationBundleResourcePlacement> findByBundleAndComponent(
                 Long bundleId, Long componentId) { return existing; }
+        @Override public List<EsCommunicationBundleResourcePlacement> findByBundleOrdered(Long bundleId) {
+            return ordered;
+        }
         @Override public EsCommunicationBundleResourcePlacement save(
                 EsCommunicationBundleResourcePlacement value) { return value; }
+        @Override public EsCommunicationBundleResourcePlacement saveEditablePlacementWithAudit(
+                EsCommunicationBundleResourcePlacement value, Long userId) { return value; }
+        @Override public void selectResource(Long bundleId, Long componentId, Long resourceId, Long userId) {
+            selectedResourceId = resourceId;
+        }
+        @Override public void removeResource(Long bundleId, Long placementId, Long userId) {
+            removedPlacementId = placementId;
+        }
+        private Long selectedResourceId;
+        private Long removedPlacementId;
     }
 
     private static final class Files extends StoredFileDao {

@@ -1,6 +1,8 @@
 package org.airahub.interophub.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -86,6 +88,8 @@ class CommunicationBundlePersistenceTest {
             assertEquals(EsCommunicationBundle.Status.DRAFT,
                     new EsCommunicationBundleDao().findById(bundle.getBundleId()).orElseThrow().getStatus());
             assertEquals(EsCommunicationBundlePurpose.Audience.PUBLIC, bundle.getAudience());
+            assertEquals(null, service.saveOrientationSettings(steward, topicId,
+                    EsCommunicationBundlePurpose.Audience.PUBLIC, null, null).getCommunicationMonth());
             var components = new EsCommunicationBundleTemplateComponentDao()
                     .findByTemplateId(bundle.getTemplateId());
             assertEquals(7, components.size());
@@ -123,6 +127,19 @@ class CommunicationBundlePersistenceTest {
             assertTrue(uploaded.getStoredFileId() != null && uploaded.getTopicResourceId() != null);
             var file = new StoredFileDao().findById(uploaded.getStoredFileId()).orElseThrow();
             assertTrue(java.nio.file.Files.exists(fileRoot.resolve(file.getStorageKey())));
+            String originalPublicId = file.getPublicId();
+            String originalStorageKey = file.getStorageKey();
+            service.replaceResourceFile(steward, topicId, uploaded.getTopicResourceId(),
+                    new ByteArrayInputStream("%PDF-1.7\n%Replacement resource\n".getBytes(StandardCharsets.US_ASCII)),
+                    "bundle-test-replacement.pdf", "application/pdf");
+            var replacedResource = new EsTopicResourceDao().findById(uploaded.getTopicResourceId()).orElseThrow();
+            var replacedFile = new StoredFileDao().findById(uploaded.getStoredFileId()).orElseThrow();
+            assertEquals(uploaded.getTopicResourceId(), replacedResource.getTopicResourceId());
+            assertEquals(uploaded.getStoredFileId(), replacedResource.getStoredFileId());
+            assertEquals(originalPublicId, replacedFile.getPublicId());
+            assertNotEquals(originalStorageKey, replacedFile.getStorageKey());
+            assertFalse(java.nio.file.Files.exists(fileRoot.resolve(originalStorageKey)));
+            assertTrue(java.nio.file.Files.exists(fileRoot.resolve(replacedFile.getStorageKey())));
             service.updateResourceMetadata(steward, topicId, uploaded.getTopicResourceId(),
                     "Updated PDF", "Updated description", "Updated author", null);
             assertEquals("Updated PDF", new EsTopicResourceDao()
@@ -135,6 +152,10 @@ class CommunicationBundlePersistenceTest {
                     .findByBundleAndComponent(bundle.getBundleId(), onePager.getComponentId());
             assertEquals(1, selected.size());
             assertEquals(resource.getTopicResourceId(), selected.get(0).getTopicResourceId());
+            service.updateOrientationResourceContext(steward, topicId, selected.get(0).getPlacementId(), "Keep this context.");
+            service.selectOrientationResource(steward, topicId, onePager.getComponentId(), resource.getTopicResourceId());
+            assertEquals("Keep this context.", new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), onePager.getComponentId()).get(0).getContextNote());
             service.selectOrientationResource(steward, topicId, sources.getComponentId(), uploaded.getTopicResourceId());
             assertThrows(IllegalArgumentException.class, () -> service.selectOrientationResource(
                     steward, topicId, sources.getComponentId(), uploaded.getTopicResourceId()));
@@ -145,6 +166,17 @@ class CommunicationBundlePersistenceTest {
             assertEquals(2, details.resources().size());
             assertEquals(2, service.listResourceDetailsForSteward(steward, topicId).size());
             assertTrue(service.findOrientationResourcesForViewer(null, topicId).isEmpty());
+            var collection = new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), sources.getComponentId());
+            service.moveOrientationResource(steward, topicId, collection.get(0).getPlacementId(), false);
+            var reordered = new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), sources.getComponentId());
+            assertEquals(collection.get(1).getTopicResourceId(), reordered.get(0).getTopicResourceId());
+            assertThrows(IllegalArgumentException.class, () -> service.moveOrientationResource(
+                    steward, topicId, reordered.get(0).getPlacementId(), true));
+            service.updateOrientationResourceContext(steward, topicId, reordered.get(0).getPlacementId(), "Read this first.");
+            assertEquals("Read this first.", new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), sources.getComponentId()).get(0).getContextNote());
             assertThrows(IllegalArgumentException.class, () -> service.removeOrientationResource(
                     steward, topicId, Long.MAX_VALUE));
             service.removeOrientationResource(steward, topicId, selected.get(0).getPlacementId());
@@ -152,9 +184,56 @@ class CommunicationBundlePersistenceTest {
             assertTrue(new EsTopicResourceDao().findById(resource.getTopicResourceId()).isPresent());
             assertThrows(IllegalArgumentException.class, () -> service.updateResourceMetadata(
                     steward, 1L, uploaded.getTopicResourceId(), "Wrong Topic", null, null, null));
+
+            service.setTextComponentValue(steward, bundle.getBundleId(), introduction.getComponentId(),
+                    "Introduction before publication.");
+            service.saveOrientationSettings(steward, topicId,
+                    EsCommunicationBundlePurpose.Audience.PUBLIC, 9, 2026);
+            service.publishOrientation(steward, topicId);
+            var bundleDao = new EsCommunicationBundleDao();
+            var publicationTime = bundleDao.findById(bundle.getBundleId()).orElseThrow().getPublishedAt();
+            int auditCount = bundleDao.findAuditEntries(bundle.getBundleId()).size();
+            service.setTextComponentValue(steward, bundle.getBundleId(), introduction.getComponentId(),
+                    "Live updated introduction.");
+            assertEquals(9, bundleDao.findById(bundle.getBundleId()).orElseThrow().getCommunicationMonth());
+            service.saveOrientationSettings(steward, topicId,
+                    EsCommunicationBundlePurpose.Audience.PUBLIC, 10, 2026);
+            service.selectOrientationResource(steward, topicId, onePager.getComponentId(), uploaded.getTopicResourceId());
+            var livePlacement = new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), onePager.getComponentId()).get(0);
+            service.removeOrientationResource(steward, topicId, livePlacement.getPlacementId());
+            service.addResourcePlacement(steward, bundle.getBundleId(), onePager.getComponentId(),
+                    resource.getTopicResourceId(), 0, null);
+            var live = service.findOrientationResourcesForViewer(null, topicId).orElseThrow();
+            assertEquals(bundle.getBundleId(), live.bundle().getBundleId());
+            assertEquals(EsCommunicationBundle.Status.PUBLISHED, live.bundle().getStatus());
+            assertEquals(publicationTime, live.bundle().getPublishedAt());
+            assertEquals(10, live.bundle().getCommunicationMonth());
+            assertTrue(live.componentValues().stream()
+                    .anyMatch(value -> "Live updated introduction.".equals(value.getContentText())));
+            assertEquals(resource.getTopicResourceId(), new EsCommunicationBundleResourcePlacementDao()
+                    .findByBundleAndComponent(bundle.getBundleId(), onePager.getComponentId()).get(0).getTopicResourceId());
+            assertEquals(auditCount + 5, bundleDao.findAuditEntries(bundle.getBundleId()).size());
+            assertTrue(bundleDao.findAuditEntries(bundle.getBundleId()).stream().limit(5)
+                    .allMatch(entry -> steward.getUserId().equals(entry.getChangedByUserId())));
+            assertThrows(IllegalArgumentException.class, () -> service.saveOrientationSettings(steward, topicId,
+                    EsCommunicationBundlePurpose.Audience.PUBLIC, null, null));
+            assertThrows(IllegalStateException.class, () -> bundleDao.updateEditableSettings(bundle.getBundleId(),
+                    EsCommunicationBundlePurpose.Audience.PUBLIC, null, null, steward.getUserId()));
+            assertEquals(10, bundleDao.findById(bundle.getBundleId()).orElseThrow().getCommunicationMonth());
+            assertEquals(auditCount + 5, bundleDao.findAuditEntries(bundle.getBundleId()).size());
+            service.retireOrientation(steward, topicId);
+            assertThrows(IllegalStateException.class, () -> service.setTextComponentValue(
+                    steward, bundle.getBundleId(), introduction.getComponentId(), "Cannot edit retired"));
         } finally {
             try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
                 var transaction = session.beginTransaction();
+                session.createNativeMutationQuery(
+                        "DELETE FROM es_communication_bundle_audit WHERE bundle_id IN"
+                                + " (SELECT bundle_id FROM es_communication_bundle WHERE es_topic_id = :topicId)"
+                                + " OR topic_resource_id IN"
+                                + " (SELECT topic_resource_id FROM es_topic_resource WHERE es_topic_id = :topicId)")
+                        .setParameter("topicId", topicId).executeUpdate();
                 session.createNativeMutationQuery(
                         "DELETE v FROM es_communication_bundle_component_value v"
                                 + " JOIN es_communication_bundle b ON b.bundle_id = v.bundle_id"

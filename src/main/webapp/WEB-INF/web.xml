@@ -474,6 +474,15 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>AdminCommunicationBundleTemplateServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.AdminCommunicationBundleTemplateServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>AdminCommunicationBundleTemplateServlet</servlet-name>
+    <url-pattern>/admin/content/bundle-templates</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>TopicSpaceRouteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.TopicSpaceRouteServlet</servlet-class>
   </servlet>

@@ -11,6 +11,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
 import org.airahub.interophub.dao.EsTopicDao;
+import org.airahub.interophub.dao.EsTopicSpaceDao;
+import org.airahub.interophub.model.EsCommunicationBundlePurpose;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
@@ -83,6 +85,18 @@ public class EsTopicResourceServlet extends HttpServlet {
                             request.getParameter("attribution"));
                 }
                 message = "Resource uploaded. Select it for an Orientation role below.";
+            } else if ("replaceResourceFile".equals(action)) {
+                var files = parts.stream().filter(p -> p.getSubmittedFileName() != null).toList();
+                if (files.size() != 1 || !"replacementFile".equals(files.get(0).getName())
+                        || files.get(0).getSize() == 0) {
+                    throw new IllegalArgumentException("Choose exactly one non-empty replacement file.");
+                }
+                Part file = files.get(0);
+                try (var input = file.getInputStream()) {
+                    bundles.replaceResourceFile(user, topicId, id(request.getParameter("resourceId")),
+                            input, file.getSubmittedFileName(), file.getContentType());
+                }
+                message = "Current resource file replaced. Existing Orientation placements now use the replacement.";
             } else if ("link".equals(action)) {
                 bundles.registerExternalLinkResource(user, topicId, request.getParameter("externalUrl"),
                         request.getParameter("title"), request.getParameter("description"),
@@ -96,6 +110,31 @@ public class EsTopicResourceServlet extends HttpServlet {
             } else if ("createDraft".equals(action)) {
                 bundles.createTopicOrientationDraft(user, topicId);
                 message = "Orientation draft created.";
+            } else if ("text".equals(action)) {
+                bundles.setTextComponentValue(user, topicId, id(request.getParameter("bundleId")),
+                        id(request.getParameter("componentId")), request.getParameter("content"));
+                message = "Orientation narrative saved.";
+            } else if ("list".equals(action)) {
+                bundles.setStructuredListComponentValue(user, topicId, id(request.getParameter("bundleId")),
+                        id(request.getParameter("componentId")), request.getParameter("content"));
+                message = "Orientation list saved.";
+            } else if ("settings".equals(action)) {
+                EsCommunicationBundlePurpose.Audience audience;
+                try {
+                    audience = EsCommunicationBundlePurpose.Audience.valueOf(request.getParameter("audience"));
+                } catch (IllegalArgumentException | NullPointerException ex) {
+                    throw new IllegalArgumentException("Choose a valid Orientation audience.", ex);
+                }
+                bundles.saveOrientationSettings(user, topicId, audience,
+                        optionalInteger(request.getParameter("communicationMonth")),
+                        optionalInteger(request.getParameter("communicationYear")));
+                message = "Orientation audience and Month/Year saved.";
+            } else if ("publish".equals(action)) {
+                bundles.publishOrientation(user, topicId);
+                message = "Orientation published for its selected audience.";
+            } else if ("retire".equals(action)) {
+                bundles.retireOrientation(user, topicId);
+                message = "Orientation retired. Its history is retained; create a new draft to replace it.";
             } else if ("select".equals(action)) {
                 bundles.selectOrientationResource(user, topicId, id(request.getParameter("componentId")),
                         id(request.getParameter("resourceId")));
@@ -103,6 +142,13 @@ public class EsTopicResourceServlet extends HttpServlet {
             } else if ("remove".equals(action)) {
                 bundles.removeOrientationResource(user, topicId, id(request.getParameter("placementId")));
                 message = "Resource removed from the role. It remains in this Topic's library.";
+            } else if ("moveUp".equals(action) || "moveDown".equals(action)) {
+                bundles.moveOrientationResource(user, topicId, id(request.getParameter("placementId")), "moveUp".equals(action));
+                message = "Resource collection order saved.";
+            } else if ("context".equals(action)) {
+                bundles.updateOrientationResourceContext(user, topicId, id(request.getParameter("placementId")),
+                        request.getParameter("contextNote"));
+                message = "Resource context note saved.";
             } else {
                 throw new IllegalArgumentException("Unknown resource operation.");
             }
@@ -165,8 +211,14 @@ public class EsTopicResourceServlet extends HttpServlet {
                 request.getSession(false).removeAttribute(flashKey(topic.getEsTopicId()));
             }
         }
+        var topicSpace = new EsTopicSpaceDao().findById(topic.getEsTopicSpaceId())
+                .orElseThrow(() -> new IllegalStateException("The Topic's Topic Space was not found."));
         var page = InteropAiraPageFactory.base(request, "Topic Resources - InteropHub")
-                .applicationSubtitle("Orientation resource management").mainClass("aira-main").build();
+                .applicationSubtitle("Orientation resource management")
+                .mainClass("aira-main")
+                .context(InteropAiraPageFactory.topicsMeetingsContext(
+                        topicSpace.getSpaceName(), topicSpace.getSpaceCode(), true, false))
+                .build();
         response.setContentType("text/html;charset=UTF-8");
         response.setHeader("Cache-Control", "no-store");
         try (PrintWriter out = response.getWriter()) {
@@ -175,8 +227,8 @@ public class EsTopicResourceServlet extends HttpServlet {
                     + TopicOrientationResourceRenderer.escape(topic.getTopicName()) + "</h1>"
                     + "<p><a class=\"aira-inline-link\" href=\"" + request.getContextPath() + "/es/topic/"
                     + topic.getEsTopicId() + "\">View Topic page and draft preview</a></p></header>"
-                    + "<p class=\"aira-alert aira-alert--info\">Only Topic stewards can use this editor and view Orientation drafts."
-                    + " Publication and narrative editing follow in a later phase.</p>");
+                    + "<p class=\"aira-alert aira-alert--info\">Only Topic stewards can edit Orientation content."
+                    + " Published content is shown according to its audience and the Topic's visibility.</p>");
             if (error != null) {
                 out.println("<p class=\"aira-alert aira-alert--error\" role=\"alert\">" + TopicOrientationResourceRenderer.escape(error) + "</p>");
             }
@@ -185,7 +237,13 @@ public class EsTopicResourceServlet extends HttpServlet {
             }
             TopicOrientationResourceRenderer.editor(out, request.getContextPath(), topic.getEsTopicId(),
                     CsrfTokenSupport.getOrCreateToken(request), orientation, resources,
-                    bundles.storage().writeProblem(null));
+                    bundles.storage(), bundles.storage().writeProblem(null));
+            if (orientation != null) {
+                out.println("<details class=\"aira-section-card\"><summary>Generic bundle preview</summary>"
+                        + "<div class=\"aira-section-card__body aira-stack\">");
+                CommunicationBundleComponentRenderer.render(out, request.getContextPath(), orientation);
+                out.println("</div></details>");
+            }
             out.println("</div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             page.writeEnd(out);
@@ -206,5 +264,16 @@ public class EsTopicResourceServlet extends HttpServlet {
             throw new IllegalArgumentException("A valid resource, role or Topic identifier is required.", ex);
         }
         throw new IllegalArgumentException("A positive identifier is required.");
+    }
+
+    private static Integer optionalInteger(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("Month and Year must be whole numbers.", ex);
+        }
     }
 }

@@ -302,7 +302,7 @@ JOIN es_communication_bundle_purpose purpose ON purpose.purpose_id = template.pu
 CROSS JOIN (
   SELECT 'introduction' AS semantic_key, 'What this Topic is' AS display_name,
     'Explain what the Topic is and what this Orientation is for.' AS authoring_prompt,
-    'TEXT' AS component_kind, b'1' AS is_required, 'SINGLE' AS cardinality, 10 AS display_order
+    'TEXT' AS component_kind, b'0' AS is_required, 'SINGLE' AS cardinality, 10 AS display_order
   UNION ALL SELECT 'why_it_matters', 'Why it matters',
     'Explain the need or opportunity this Topic addresses.', 'TEXT', b'0', 'SINGLE', 20
   UNION ALL SELECT 'primary_infographic', 'Infographic',
@@ -752,3 +752,35 @@ DROP PROCEDURE backload_ivc_historical_meetings;
 DROP TEMPORARY TABLE tmp_ivc_hist_meeting;
 DROP TEMPORARY TABLE tmp_ivc_hist_item;
 DROP TEMPORARY TABLE tmp_ivc_hist_file;
+
+-- Communication Bundles Phase 4: steward-visible audit history.
+CREATE TABLE es_communication_bundle_audit (
+  audit_id BIGINT NOT NULL AUTO_INCREMENT,
+  bundle_id BIGINT DEFAULT NULL,
+  topic_resource_id BIGINT DEFAULT NULL,
+  event_type VARCHAR(40) NOT NULL,
+  details VARCHAR(1000) DEFAULT NULL,
+  changed_by_user_id BIGINT NOT NULL,
+  changed_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (audit_id),
+  KEY ix_bundle_audit_bundle (bundle_id, changed_at, audit_id),
+  KEY ix_bundle_audit_resource (topic_resource_id, changed_at, audit_id),
+  CONSTRAINT fk_bundle_audit_bundle FOREIGN KEY (bundle_id)
+    REFERENCES es_communication_bundle (bundle_id),
+  CONSTRAINT fk_bundle_audit_resource FOREIGN KEY (topic_resource_id)
+    REFERENCES es_topic_resource (topic_resource_id),
+  CONSTRAINT fk_bundle_audit_user FOREIGN KEY (changed_by_user_id)
+    REFERENCES auth_user (user_id),
+  CONSTRAINT chk_bundle_audit_subject CHECK (
+    bundle_id IS NOT NULL OR topic_resource_id IS NOT NULL
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Also relax existing Orientation templates if their seed data was already applied.
+UPDATE es_communication_bundle_template_component component
+JOIN es_communication_bundle_template template ON template.template_id = component.template_id
+JOIN es_communication_bundle_purpose purpose ON purpose.purpose_id = template.purpose_id
+SET component.is_required = b'0'
+WHERE purpose.purpose_key = 'TOPIC_ORIENTATION'
+  AND component.semantic_key IN ('introduction', 'why_it_matters', 'how_to_get_involved')
+  AND component.component_kind = 'TEXT';

@@ -6,6 +6,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EsCommunicationBundleDao;
 import org.airahub.interophub.dao.EsCommunicationBundleComponentValueDao;
 import org.airahub.interophub.dao.EsCommunicationBundlePurposeDao;
@@ -17,6 +19,7 @@ import org.airahub.interophub.dao.EsTopicResourceDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.dao.StoredFileDao;
 import org.airahub.interophub.model.EsCommunicationBundle;
+import org.airahub.interophub.model.EsCommunicationBundleAudit;
 import org.airahub.interophub.model.EsCommunicationBundleComponentValue;
 import org.airahub.interophub.model.EsCommunicationBundlePurpose;
 import org.airahub.interophub.model.EsCommunicationBundlePurpose.Audience;
@@ -52,7 +55,18 @@ public class CommunicationBundleService {
     public record OrientationResources(EsCommunicationBundle bundle,
             List<EsCommunicationBundleTemplateComponent> components,
             List<EsCommunicationBundleResourcePlacement> placements,
-            List<ResourceDetails> resources) { }
+            List<ResourceDetails> resources,
+            List<EsCommunicationBundleComponentValue> componentValues,
+            List<EsCommunicationBundleAudit> auditEntries,
+            List<Audience> allowedAudiences) {
+        public OrientationResources(EsCommunicationBundle bundle,
+                List<EsCommunicationBundleTemplateComponent> components,
+                List<EsCommunicationBundleResourcePlacement> placements,
+                List<ResourceDetails> resources) {
+            this(bundle, components, placements, resources, List.of(), List.of(),
+                    List.of(Audience.PUBLIC, Audience.PARTICIPANTS, Audience.STEWARDS));
+        }
+    }
 
     public CommunicationBundleService() {
         this(new EsTopicDao(), new EsTopicSpaceDao(), new EsTopicResourceDao(),
@@ -176,7 +190,28 @@ public class CommunicationBundleService {
         resource.setAttribution(validAttribution);
         resource.setExternalUrl(validUrl);
         resource.setUpdatedByUserId(user.getUserId());
-        return resourceDao.save(resource);
+        return resourceDao.updateMetadataWithAudit(resource, user.getUserId());
+    }
+
+    public EsTopicResource replaceResourceFile(User user, Long topicId, Long resourceId, InputStream input,
+            String filename, String contentType) throws IOException {
+        requireSteward(user, topicId);
+        EsTopicResource resource = resourceDao.findById(resourceId)
+                .orElseThrow(() -> new IllegalArgumentException("Topic Resource was not found."));
+        if (!topicId.equals(resource.getEsTopicId()) || resource.getStatus() != EsTopicResource.Status.ACTIVE
+                || resource.getStoredFileId() == null) {
+            throw new IllegalArgumentException("Choose an active file-backed resource from this Topic.");
+        }
+        StoredFile existing = storedFileDao.findById(resource.getStoredFileId())
+                .orElseThrow(() -> new IllegalStateException("The Topic Resource file was not found."));
+        storage.upload(existing, input, filename, contentType, user.getUserId(), file -> {
+            resource.setResourceType(resourceTypeFor(file));
+            resource.setUpdatedByUserId(user.getUserId());
+            resourceDao.replaceUpload(file, resource, user.getUserId());
+            return file;
+        });
+        return resourceDao.findById(resourceId)
+                .orElseThrow(() -> new IllegalStateException("The replaced Topic Resource was not found."));
     }
 
     public List<ResourceDetails> listResourceDetailsForSteward(User user, Long topicId) {
@@ -193,8 +228,16 @@ public class CommunicationBundleService {
                             .orElseThrow(() -> new IllegalStateException("An Orientation resource is missing.")))
                     .filter(resource -> resource.getStatus() == EsTopicResource.Status.ACTIVE)
                     .map(this::resourceDetails).toList();
+            List<Long> activeResourceIds = resources.stream()
+                    .map(details -> details.resource().getTopicResourceId()).toList();
+            List<EsCommunicationBundleResourcePlacement> visiblePlacements = placements.stream()
+                    .filter(placement -> activeResourceIds.contains(placement.getTopicResourceId())).toList();
+            List<EsCommunicationBundleAudit> auditEntries = access.canEditTopic(user,
+                    topicDao.findById(topicId).orElseThrow())
+                    ? bundleDao.findAuditEntries(bundle.getBundleId()) : List.of();
             return new OrientationResources(bundle, componentDao.findByTemplateId(bundle.getTemplateId()),
-                    placements, resources);
+                    visiblePlacements, resources, componentValueDao.findByBundleId(bundle.getBundleId()),
+                    auditEntries, allowedAudiences(topicId));
         });
     }
 
@@ -206,13 +249,23 @@ public class CommunicationBundleService {
     }
 
     public void selectOrientationResource(User user, Long topicId, Long componentId, Long resourceId) {
-        EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
         placementDao.selectResource(bundle.getBundleId(), componentId, resourceId, user.getUserId());
     }
 
     public void removeOrientationResource(User user, Long topicId, Long placementId) {
-        EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
         placementDao.removeResource(bundle.getBundleId(), placementId, user.getUserId());
+    }
+
+    public void moveOrientationResource(User user, Long topicId, Long placementId, boolean up) {
+        var bundle = requireEditableOrientation(user, topicId);
+        placementDao.moveResource(bundle.getBundleId(), placementId, up, user.getUserId());
+    }
+
+    public void updateOrientationResourceContext(User user, Long topicId, Long placementId, String note) {
+        var bundle = requireEditableOrientation(user, topicId);
+        placementDao.updateContextNote(bundle.getBundleId(), placementId, optional(note, 20000), user.getUserId());
     }
 
     private EsCommunicationBundle requireDraftOrientation(User user, Long topicId) {
@@ -223,6 +276,26 @@ public class CommunicationBundleService {
             throw new IllegalStateException("Only a draft Orientation can be edited.");
         }
         return bundle;
+    }
+
+    private EsCommunicationBundle requireEditableOrientation(User user, Long topicId) {
+        requireSteward(user, topicId);
+        EsCommunicationBundle bundle = findTopicOrientationForViewer(user, topicId)
+                .orElseThrow(() -> new IllegalStateException("Create an Orientation draft first."));
+        requireEditableBundle(bundle);
+        return bundle;
+    }
+
+    private void requireEditableBundle(EsCommunicationBundle bundle) {
+        if (bundle.getStatus() == EsCommunicationBundle.Status.DRAFT) {
+            return;
+        }
+        EsCommunicationBundlePurpose purpose = purposeDao.findById(bundle.getPurposeId())
+                .orElseThrow(() -> new IllegalStateException("The bundle purpose was not found."));
+        if (bundle.getStatus() != EsCommunicationBundle.Status.PUBLISHED
+                || purpose.getMode() != EsCommunicationBundlePurpose.Mode.LIVING) {
+            throw new IllegalStateException("Only drafts and published living bundles can be edited.");
+        }
     }
 
     public EsCommunicationBundle createTopicOrientationDraft(User user, Long topicId) {
@@ -251,7 +324,7 @@ public class CommunicationBundleService {
         bundle.setAudience(defaultAudience(topic, purpose));
         bundle.setCreatedByUserId(user.getUserId());
         bundle.setUpdatedByUserId(user.getUserId());
-        return bundleDao.save(bundle);
+        return bundleDao.saveDraftWithAudit(bundle, user.getUserId());
     }
 
     public Optional<EsCommunicationBundle> findTopicOrientationForViewer(User user, Long topicId) {
@@ -277,9 +350,7 @@ public class CommunicationBundleService {
         EsCommunicationBundle bundle = bundleDao.findById(bundleId)
                 .orElseThrow(() -> new IllegalArgumentException("Communication Bundle was not found."));
         EsTopic topic = requireSteward(user, bundle.getEsTopicId());
-        if (bundle.getStatus() != EsCommunicationBundle.Status.DRAFT) {
-            throw new IllegalStateException("Resources can only be placed in a draft bundle.");
-        }
+        requireEditableBundle(bundle);
         if (displayOrder < 0) {
             throw new IllegalArgumentException("Display order cannot be negative.");
         }
@@ -316,34 +387,124 @@ public class CommunicationBundleService {
         placement.setDisplayOrder(displayOrder);
         placement.setContextNote(optional(contextNote, 20000));
         placement.setCreatedByUserId(user.getUserId());
-        return placementDao.save(placement);
+        return placementDao.saveEditablePlacementWithAudit(placement, user.getUserId());
     }
 
     public EsCommunicationBundleComponentValue setTextComponentValue(
             User user, Long bundleId, Long componentId, String content) {
+        return setNarrativeComponentValue(user, bundleId, componentId, content,
+                EsCommunicationBundleTemplateComponent.Kind.TEXT);
+    }
+
+    public EsCommunicationBundleComponentValue setStructuredListComponentValue(
+            User user, Long topicId, Long bundleId, Long componentId, String content) {
+        var bundle = bundleDao.findById(bundleId)
+                .orElseThrow(() -> new IllegalArgumentException("Communication Bundle was not found."));
+        if (!topicId.equals(bundle.getEsTopicId())) {
+            throw new IllegalArgumentException("The bundle does not belong to this Topic.");
+        }
+        return setNarrativeComponentValue(user, bundleId, componentId, content,
+                EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST);
+    }
+
+    private EsCommunicationBundleComponentValue setNarrativeComponentValue(
+            User user, Long bundleId, Long componentId, String content, EsCommunicationBundleTemplateComponent.Kind kind) {
         EsCommunicationBundle bundle = bundleDao.findById(bundleId)
                 .orElseThrow(() -> new IllegalArgumentException("Communication Bundle was not found."));
         requireSteward(user, bundle.getEsTopicId());
-        if (bundle.getStatus() != EsCommunicationBundle.Status.DRAFT) {
-            throw new IllegalStateException("Only a draft bundle can be edited.");
-        }
+        requireEditableBundle(bundle);
         EsCommunicationBundleTemplateComponent component = componentDao.findById(componentId)
                 .orElseThrow(() -> new IllegalArgumentException("Template component was not found."));
         if (!bundle.getTemplateId().equals(component.getTemplateId())
-                || component.getKind() != EsCommunicationBundleTemplateComponent.Kind.TEXT) {
-            throw new IllegalArgumentException("The component is not a text field in this bundle's template.");
+                || component.getKind() != kind) {
+            throw new IllegalArgumentException("The component is not the requested field kind in this bundle's template.");
         }
         String text = optional(content, 50000);
+        if (bundle.getStatus() == EsCommunicationBundle.Status.PUBLISHED
+                && component.isRequired() && text == null) {
+            throw new IllegalStateException(component.getDisplayName() + " is required for a published bundle.");
+        }
         EsCommunicationBundleComponentValue value = componentValueDao
                 .findByBundleAndComponent(bundleId, componentId)
                 .orElseGet(EsCommunicationBundleComponentValue::new);
         value.setBundleId(bundle.getBundleId());
         value.setTemplateId(bundle.getTemplateId());
         value.setComponentId(component.getComponentId());
-        value.setContentText(text);
-        value.setContentJson(null);
+        value.setContentText(kind == EsCommunicationBundleTemplateComponent.Kind.TEXT ? text : null);
+        value.setContentJson(kind == EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST
+                ? CommunicationBundleStructuredList.fromLines(text) : null);
         value.setUpdatedByUserId(user.getUserId());
-        return componentValueDao.save(value);
+        return componentValueDao.saveEditableValue(value, component.getSemanticKey());
+    }
+
+    public EsCommunicationBundleComponentValue setTextComponentValue(
+            User user, Long topicId, Long bundleId, Long componentId, String content) {
+        EsCommunicationBundle bundle = bundleDao.findById(bundleId)
+                .orElseThrow(() -> new IllegalArgumentException("Communication Bundle was not found."));
+        if (!topicId.equals(bundle.getEsTopicId())) {
+            throw new IllegalArgumentException("The Orientation does not belong to this Topic.");
+        }
+        return setTextComponentValue(user, bundleId, componentId, content);
+    }
+
+    public EsCommunicationBundle saveOrientationSettings(User user, Long topicId, Audience audience,
+            Integer month, Integer year) {
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        if (audience == null || !allowedAudiences(topicId).contains(audience)) {
+            throw new IllegalArgumentException("Choose an audience no broader than this Topic's visibility.");
+        }
+        if ((month == null) != (year == null)
+                || (month != null && (month < 1 || month > 12 || year < 1 || year > 9999))) {
+            throw new IllegalArgumentException("Enter both a Month from 1 to 12 and a Year from 1 to 9999, or leave both blank.");
+        }
+        if (bundle.getStatus() == EsCommunicationBundle.Status.PUBLISHED && month == null) {
+            throw new IllegalArgumentException("A published Orientation must retain its communication Month and Year.");
+        }
+        return bundleDao.updateEditableSettings(bundle.getBundleId(), audience, month, year, user.getUserId());
+    }
+
+    public EsCommunicationBundle publishOrientation(User user, Long topicId) {
+        EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
+        if (bundle.getCommunicationMonth() == null || bundle.getCommunicationYear() == null) {
+            throw new IllegalStateException("Set the communication Month and Year before publishing.");
+        }
+        if (!allowedAudiences(topicId).contains(bundle.getAudience())) {
+            throw new IllegalStateException("The selected audience is broader than this Topic's visibility.");
+        }
+        List<EsCommunicationBundleTemplateComponent> components =
+                componentDao.findByTemplateId(bundle.getTemplateId());
+        Map<Long, EsCommunicationBundleComponentValue> values = componentValueDao
+                .findByBundleId(bundle.getBundleId()).stream()
+                .collect(Collectors.toMap(EsCommunicationBundleComponentValue::getComponentId, value -> value));
+        List<EsCommunicationBundleResourcePlacement> placements =
+                placementDao.findByBundleOrdered(bundle.getBundleId());
+        for (EsCommunicationBundleTemplateComponent component : components) {
+            if (!component.isRequired()) {
+                continue;
+            }
+            boolean complete = switch (component.getKind()) {
+                case TEXT -> values.containsKey(component.getComponentId())
+                        && trimToNull(values.get(component.getComponentId()).getContentText()) != null;
+                case STRUCTURED_LIST -> values.containsKey(component.getComponentId())
+                        && !CommunicationBundleStructuredList.items(values.get(component.getComponentId()).getContentJson()).isEmpty();
+                case RESOURCE, RESOURCE_COLLECTION -> placements.stream()
+                        .anyMatch(p -> p.getComponentId().equals(component.getComponentId()));
+            };
+            if (!complete) {
+                throw new IllegalStateException(component.getDisplayName() + " is required before publishing.");
+            }
+        }
+        return bundleDao.publishDraft(bundle.getBundleId(), user.getUserId());
+    }
+
+    public EsCommunicationBundle retireOrientation(User user, Long topicId) {
+        requireSteward(user, topicId);
+        EsCommunicationBundle bundle = findTopicOrientationForViewer(user, topicId)
+                .orElseThrow(() -> new IllegalStateException("There is no current Orientation to retire."));
+        if (bundle.getStatus() != EsCommunicationBundle.Status.PUBLISHED) {
+            throw new IllegalStateException("Only a published Orientation can be retired.");
+        }
+        return bundleDao.retirePublished(bundle.getBundleId(), user.getUserId());
     }
 
     public List<EsCommunicationBundleResourcePlacement> listResourcePlacementsForViewer(
@@ -365,6 +526,9 @@ public class CommunicationBundleService {
         }
         if (!access.canViewTopic(user, topic)) {
             return false;
+        }
+        if (access.canEditTopic(user, topic)) {
+            return true;
         }
         Long spaceId = topic.getEsTopicSpaceId();
         return switch (bundle.getAudience()) {
@@ -394,6 +558,24 @@ public class CommunicationBundleService {
                 .map(space -> space.getVisibility() == EsTopicSpace.Visibility.PUBLIC
                         ? Audience.PUBLIC : Audience.PARTICIPANTS)
                 .orElse(purpose.getDefaultAudience());
+    }
+
+    private List<Audience> allowedAudiences(Long topicId) {
+        EsTopic topic = topicDao.findById(topicId)
+                .orElseThrow(() -> new IllegalArgumentException("Topic was not found."));
+        boolean publicTopic = topic.getEsTopicSpaceId() != null
+                && topicSpaceDao.findById(topic.getEsTopicSpaceId())
+                        .map(space -> space.getVisibility() == EsTopicSpace.Visibility.PUBLIC)
+                        .orElse(false);
+        return publicTopic ? List.of(Audience.PUBLIC, Audience.PARTICIPANTS, Audience.STEWARDS)
+                : List.of(Audience.PARTICIPANTS, Audience.STEWARDS);
+    }
+
+    private static String trimToNull(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
     }
 
     private static ResourceType resourceTypeFor(StoredFile file) {

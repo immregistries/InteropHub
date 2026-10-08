@@ -2,9 +2,9 @@
 
 ## Goal and current state
 
-Extend the operating InteropHub application with curated rich content around existing Topics. Communication Bundles combine purpose-specific narrative and selected Topic Resources so people can understand a Topic or receive a project handoff.
+Extend the operating InteropHub application with curated rich content around existing Topics. Communication Bundles combine purpose-specific narrative and selected Topic Resources so people can understand a Topic or start a new project with a Starter Packet.
 
-Topics already exist, and the Topic page at `hub/es/topic/` is working. Step 1 provided the Blob image demonstration; production Blob verification remains blocked by Azure provisioning permissions. Task 1a provides shared local/Blob file metadata, local uploads, stable anonymous file URLs, and image/document demonstration slots. Task 1b now supplies meeting agenda attachments, the first real feature consumer. Local image display, PowerPoint/PDF downloads, live attachment addition/removal, and persistence across WAR redeployment have been verified. Phase 2 provides the domain and service foundation. Phase 3 adds Topic Resource authoring and a steward-only Orientation resource preview on the existing Topic page; publication and narrative authoring remain Phase 4 work. Production operational checks remain separate.
+Topics already exist, and the Topic page at `hub/es/topic/` is working. Step 1 provided the Blob image demonstration; production Blob verification remains blocked by Azure provisioning permissions. Task 1a provides shared local/Blob file metadata, local uploads, stable anonymous file URLs, and image/document demonstration slots. Task 1b now supplies meeting agenda attachments, the first real feature consumer. Local image display, PowerPoint/PDF downloads, live attachment addition/removal, and persistence across WAR redeployment have been verified. Phase 2 provides the domain and service foundation. Phase 3 adds Topic Resource authoring and Orientation resource presentation on the existing Topic page. Phase 4 now completes Orientation narrative authoring, audience/date settings, publication/retirement, audit history, and stable-URL file replacement. Production operational checks remain separate.
 
 **Phase 2 status:** The initial Topic Resource, Purpose/Template, Bundle, component-value, and resource-placement persistence/service foundation is implemented and locally verified. Its database changes were applied locally from `db/unapplied_updates.sql`, and the WAR was deployed to local Tomcat on October 7, 2026. Hibernate schema validation, real-database persistence, focused regression tests, passwordless sign-in, Topic display, and existing local file delivery passed. Topic Space administrators are the interim Topic stewards, and bundle audiences are further constrained by the Topic's existing Topic Space visibility. Phase 2 does not add authoring pages, publication operations, or template administration. Production application of the SQL and deployment remain separate.
 
@@ -20,11 +20,11 @@ Provide the canonical, living introduction to a Topic, with at most one Orientat
 
 The existing Topic page controls the display layout. It will pull selected content from named bundle components using stable semantic keys. A template-driven display is not needed for this early implementation, although the content still has a defined structure. That structure can initially be seeded or supplied in code.
 
-### Project Handoff
+### Starter Packet
 
-Provide a dated snapshot that transfers project context, accumulated work, and next actions. A Topic can have multiple handoffs, each representing a Month and Year.
+Provide a dated snapshot of project context, available resources, suggested starting points, and next actions to help people start a new project. A Starter Packet does not imply that our team's work is complete or that responsibility is being transferred. A Topic can have multiple Starter Packets, each representing a Month and Year.
 
-This is the second implementation target. Its display has not yet been designed and will use the template-driven authoring and generic rendering framework. It also requires explicit resource preservation so replacing a shared current file does not silently change an earlier handoff.
+This is the second implementation target. Its display has not yet been designed and will use the template-driven authoring and generic rendering framework. It also requires explicit resource preservation so replacing a shared current file does not silently change an earlier Starter Packet.
 
 ## Implementation order
 
@@ -109,7 +109,7 @@ For this initial implementation, existing Topic Space administrators serve as To
 
 **Local verification (October 7, 2026):** The build/deploy task in `.vscode/tasks.json` ran 37 focused tests with no failures or skips. `CommunicationBundlePersistenceTest` explicitly opts into the local database with `-Dinterophub.localBundleIntegration=true`; it validates the Hibernate mappings and seeded seven-component template, creates a temporary Topic and Orientation, persists/reloads narrative and resource placement, checks draft access and singleton behavior, then removes its test content. It is skipped in ordinary builds. The deployed WAR matched the built WAR by SHA-256. Browser verification completed passwordless sign-in, Welcome-image rendering, and existing Topic display; anonymous local file delivery also returned HTTP 200 after redeployment.
 
-**Result:** Early Orientation work uses the same underlying model that Project Handoff will extend.
+**Result:** Early Orientation work uses the same underlying model that Starter Packet will extend.
 
 ### 3. Enrich the existing Topic page
 
@@ -123,7 +123,7 @@ The resource editor uses the Orientation's retained template version to show Inf
 
 **Topic-page presentation:** Integrate resources into the existing Overview area, not a separate "Orientation resources" card. The image selected for the Infographic role replaces the right-hand "Coming soon" placeholder and scales within that column; clicking it opens the full image in a new tab. Other selected resources appear as named `aira-chip` links beside Confluence in the left-hand Overview column, with small type icons (IMG, PDF, DOC, PPT, LINK), tooltips, and accessible labels. Viewable files and external links open in a new tab; downloadable files retain their download behavior. Resource descriptions, filenames, attribution, and role headings remain in the editor rather than expanding the Topic page. Supporting images do not become additional full-size previews.
 
-**Interim visibility:** By explicit agreement, Phase 3 shows these resources on the Topic page only to stewards, with a clear draft-preview label. Anonymous viewers and other Topic participants do not see draft content or resource-editing navigation. The editor rejects non-stewards and requires CSRF tokens for mutations. Publication, narrative editing, audience display, dates, audit records, and current-file replacement remain Phase 4 work. File URLs retain the shared storage layer's anonymous-read policy; the editor warns that draft visibility does not make uploaded bytes confidential.
+**Interim visibility:** By explicit agreement, Phase 3 showed draft resources on the Topic page only to stewards, with a clear draft-preview label. Phase 4 now shows a published Orientation only to viewers allowed by both the Topic and its selected audience; draft and retired content remain hidden from non-stewards. The editor rejects non-stewards and requires CSRF tokens for mutations. File URLs retain the shared storage layer's anonymous-read policy; the editor warns that draft visibility does not make uploaded bytes confidential.
 
 **Local verification (October 7, 2026):** All 51 focused tests passed, including the opt-in real-database test, resource rendering/escaping, editor authorization/CSRF, navigation, and existing storage/meeting regressions. The real-database test now verifies atomic file/resource registration, metadata changes, single-role replacement, ordered collection selection, invalid/duplicate selection rejection, draft isolation, and removal without deleting library resources. Browser checks on a temporary Topic verified image/PDF/PowerPoint uploads, an external link, all four role selections, metadata updates, image rendering and document delivery, single-role replacement, and selection removal. Anonymous requests confirmed draft resources were absent from the Topic page and the editor returned HTTP 403. Temporary test content was removed. The deployed and built WARs matched by SHA-256.
 
@@ -133,35 +133,53 @@ The resource editor uses the Orientation's retained template version to show Inf
 
 **Result:** Documents and images appear on demonstration Topic pages early, without waiting for template administration or a generic renderer.
 
-### 4. Complete the Orientation publishing workflow
+### 4. Complete the Orientation publishing workflow — complete
 
 Add draft editing, preview, publication, retirement, Month/Year dating, and audit records. Constrain bundle visibility by the enclosing Topic and keep editing permission separate from viewing permission. Verify resource replacement behavior and avoid exposing unpublished bundle content through Topic pages.
 
+**Implemented:** Stewards can edit draft narrative, assign named Topic Resources, and set an allowed audience and optional Month/Year; Month/Year and all required template components are validated before publication. Published Orientations render with narrative and dates only to viewers allowed by both Topic visibility and bundle audience. As living bundles, published Orientations also allow immediate, audited updates to narrative, audience/date, and resource roles without retirement or republication. These edits retain bundle identity and the original publication timestamp; published Month/Year cannot be cleared. Retirement is for withdrawing an Orientation, not routine maintenance. Bundle edits, resource placements, resource metadata updates, and file replacement are audited. Replacing a current file retains its Topic Resource, stored-file identity, and public URL while updating the current content. Published snapshots and retired bundles do not gain live-edit permissions.
+
+**Verification (October 8, 2026):** The full Maven suite passed (193 tests, 0 failures, 0 errors); the opt-in local-database persistence test was skipped because it requires the Phase 4 SQL migration to be applied locally. Focused tests cover lifecycle validation, audience constraints, retirement/recreation, draft-only controls, and servlet behavior. The persistence test now checks stable public identity and prior-file cleanup during local replacement, and removes audit rows during cleanup.
+
 **Result:** Stewards can populate and maintain real Topic Orientations while the remaining framework is developed.
 
-### 5. Build template administration and generic bundle authoring
+**Presentation refinement (October 8, 2026):** The communication date appears below the infographic. "What this Topic is", "Why it matters", and "How to get involved" remain available authoring prompts but are all optional; blank narratives are omitted from the Topic page and do not block publication. Month/Year remains required for publication. The pending SQL seeds optional narratives and includes a targeted update for existing Orientation templates.
+
+**Living maintenance refinement (October 8, 2026):** Each save on a published Orientation updates the live page immediately and records an audit event. Update Month/Year explicitly for a meaningful refresh, not a minor correction. The editor explains this behavior, retains retirement, and does not offer republication. Persistence guards check the purpose's `LIVING` mode under the bundle mutation lock; required components remain enforced for published content. This uses existing purpose mode and audit tables and needs no additional schema migration.
+
+**Living maintenance verification:** All 61 focused tests passed, including the opt-in local-database test. Live narrative, settings, and resource-role changes persist with actor audit entries while retaining identity, publication timestamp, and published visibility. Tests also verify that minor narrative edits do not automatically advance Month/Year, published dates cannot be cleared, unauthorized edits are rejected, and snapshot/retired bundles stay protected. The updated WAR was deployed to local Tomcat with matching SHA-256 hashes.
+
+### 5. Build template administration and generic bundle authoring — implemented, verification pending
 
 Provide administrator tools to define, preview, version, and activate templates for supported product-defined Purposes. Existing bundles retain their original template version. Activating a template and publishing a bundle are separate operations.
 
 Build a template-driven editor and generic renderer supporting narrative, structured items, individual resources, and ordered resource collections. Distinguish required from recommended content and omit empty optional components from the display. Use Orientation experience to inform this work.
 
-**Result:** The framework can support Project Handoff without a bespoke page for each handoff.
+**Administration and navigation:** Global administrators enter through **Admin → Content → Communication Bundle Templates** (`/admin/content/bundle-templates`). Topic Space stewardship alone does not grant access. Administrators can copy a released template into a new numbered draft, edit component labels/prompts, kinds, requirement flags, cardinalities and display order, preview the template, and activate it. Purposes remain product-defined; this is not an arbitrary-purpose/page-builder interface. Semantic keys are independent of display wording. Orientation's named resource roles must retain their keys and kinds so the specialized Topic layout keeps working.
 
-### 6. Implement Project Handoff
+**Version lifecycle:** Draft component edits and activation are transactional. Released or already-used templates cannot be changed. Activation retires the previous active version and changes the Purpose's active-template pointer for new bundles only; existing bundles keep their original version and component definitions. Template activation does not publish content. Explicit bundle migration is not part of this phase.
 
-Define the initial Handoff template and complete its authoring, preview, publication, and display workflow. Support multiple dated handoffs under each Topic. Add intentional preservation of resource versions and bind historically stable handoff resources to those versions before publication. Each preserved file has its own identity and backend locator; replacing the current file must not overwrite preserved bytes, regardless of backend.
+**Topic authoring:** Actual content remains under the Topic and is authored by its stewards, not in Admin. Orientation now exercises the shared component value editor and generic preview alongside its specialized infographic/Topic presentation. Text fields use plain text. Structured lists are ordered text items authored one per line and stored as a JSON string array; richer structured schemas remain a future extension. Resource collections support explicit up/down ordering, and placements support context notes. Required versus recommended content is indicated during authoring; empty optional components do not render. Existing audience, draft/publication, living-edit, audit, and file-access boundaries remain in force.
 
-**Result:** A steward can publish a coherent handoff whose preserved files remain stable when current Topic Resources change.
+**Verification status:** Focused unit and opt-in local-database tests were added for template validation, admin authorization, Content navigation, copy/activation/version isolation, structured content, generic rendering and resource reordering. Static validation covers editor diagnostics, servlet XML and duplicate-route checks, and diff whitespace checks. Maven execution, local redeployment and browser verification of the new Admin route remain pending at the user's request. Phase 6 still owns the Starter Packet Purpose/template and end-to-end packet lifecycle.
+
+**Result:** The framework can support Starter Packets without a bespoke page for each packet.
+
+### 6. Implement Starter Packet
+
+Define the initial Starter Packet template around project context, available resources, suggested starting points, and next actions, rather than completed-work transfer. Complete its authoring, preview, publication, and display workflow. Support multiple dated Starter Packets under each Topic, with retirement when a packet is no longer applicable. Add intentional preservation of resource versions and bind historically stable Starter Packet resources to those versions before publication. Each preserved file has its own identity and backend locator; replacing the current file must not overwrite preserved bytes, regardless of backend.
+
+**Result:** A steward can publish a coherent Starter Packet that helps people begin a project and whose preserved files remain stable when current Topic Resources change.
 
 ### 7. Pilot and refine both workflows
 
-Exercise Orientation and Handoff with real content and stewards. Refine Topic-page presentation, bundle discovery, authoring guidance, and incomplete or failed operations. Verify that newer template versions leave older bundles valid and that resource reuse works across both purposes.
+Exercise Orientation and Starter Packet with real content and stewards. Refine Topic-page presentation, bundle discovery, authoring guidance, and incomplete or failed operations. Verify that newer template versions leave older bundles valid and that resource reuse works across both purposes.
 
 **Result:** Both initial use cases work from upload through audience presentation.
 
 ## Design boundaries and document alignment
 
-Retain the Blob handoff's production-only server-side Blob writes, direct Blob reads, opaque keys, and no automatic retention of every replacement. Task 1a supersedes Blob-only storage and development-wide read-only assumptions: local writes are permitted in isolated development, and local reads pass through InteropHub. Stable application URLs serve local files or redirect to Blob. The handoff's fixed-slot assumptions are replaced by reusable Topic Resources over a shared file layer. Its exclusion of preserved versions is superseded by the conceptual model's explicit preservation requirement for handoffs.
+Retain the Blob handoff's production-only server-side Blob writes, direct Blob reads, opaque keys, and no automatic retention of every replacement. Task 1a supersedes Blob-only storage and development-wide read-only assumptions: local writes are permitted in isolated development, and local reads pass through InteropHub. Stable application URLs serve local files or redirect to Blob. The handoff's fixed-slot assumptions are replaced by reusable Topic Resources over a shared file layer. Its exclusion of preserved versions is superseded by the conceptual model's explicit preservation requirement for Starter Packets.
 
 Bundle visibility governs presentation within InteropHub, not file-level access controls, on either backend.
 
@@ -196,4 +214,4 @@ The older [Content Security and Storage Principles](../InteropHub_Content_Securi
 
 **First real file workflow (1b):** A meeting controller uploads a PowerPoint to a selected agenda item, and participants download it from that item's agenda cell. Images, PDF downloads, live refresh, and Confluence links complete this milestone before bundle work begins.
 
-**First bundle workflow (2-4):** A Topic steward uploads/selects resources into a Topic Orientation, previews the existing Topic page, and publishes the enriched page for its audience. Reach this milestone before completing template administration and Project Handoff.
+**First bundle workflow (2-4):** A Topic steward uploads/selects resources into a Topic Orientation, previews the existing Topic page, and publishes the enriched page for its audience. Reach this milestone before completing template administration and Starter Packet.
