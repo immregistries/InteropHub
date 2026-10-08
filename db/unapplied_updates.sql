@@ -784,3 +784,67 @@ SET component.is_required = b'0'
 WHERE purpose.purpose_key = 'TOPIC_ORIENTATION'
   AND component.semantic_key IN ('introduction', 'why_it_matters', 'how_to_get_involved')
   AND component.component_kind = 'TEXT';
+
+-- Phase 6: intentionally preserved resource metadata and independent stored-file identities.
+CREATE TABLE es_topic_resource_version (
+  resource_version_id BIGINT NOT NULL AUTO_INCREMENT,
+  topic_resource_id BIGINT NOT NULL,
+  es_topic_id BIGINT NOT NULL,
+  stored_file_id BIGINT DEFAULT NULL,
+  resource_type VARCHAR(24) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  description TEXT DEFAULT NULL,
+  attribution VARCHAR(500) DEFAULT NULL,
+  external_url VARCHAR(2000) DEFAULT NULL,
+  preserved_by_user_id BIGINT NOT NULL,
+  preserved_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (resource_version_id),
+  UNIQUE KEY uq_resource_version_subject (resource_version_id, topic_resource_id, es_topic_id),
+  CONSTRAINT fk_resource_version_resource FOREIGN KEY (topic_resource_id, es_topic_id)
+    REFERENCES es_topic_resource (topic_resource_id, es_topic_id),
+  CONSTRAINT fk_resource_version_file FOREIGN KEY (stored_file_id)
+    REFERENCES hub_stored_file (stored_file_id),
+  CONSTRAINT fk_resource_version_user FOREIGN KEY (preserved_by_user_id)
+    REFERENCES auth_user (user_id),
+  CONSTRAINT chk_resource_version_source CHECK (
+    (stored_file_id IS NOT NULL AND external_url IS NULL AND resource_type <> 'EXTERNAL_LINK')
+    OR (stored_file_id IS NULL AND external_url IS NOT NULL AND resource_type = 'EXTERNAL_LINK')
+  )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+ALTER TABLE es_communication_bundle_resource_placement
+  ADD COLUMN resource_version_id BIGINT DEFAULT NULL,
+  ADD CONSTRAINT fk_bundle_placement_version FOREIGN KEY (resource_version_id, topic_resource_id, es_topic_id)
+    REFERENCES es_topic_resource_version (resource_version_id, topic_resource_id, es_topic_id);
+
+INSERT INTO es_communication_bundle_purpose (
+  purpose_key, display_name, description, mode, instance_policy, default_audience
+) VALUES (
+  'STARTER_PACKET', 'Starter Packet',
+  'A dated starting point for a new project, available to this Topic''s champions/support contacts and global admins.',
+  'SNAPSHOT', 'MULTIPLE', 'STEWARDS'
+);
+INSERT INTO es_communication_bundle_template (purpose_id, version_no, status, created_at)
+SELECT purpose_id, 1, 'ACTIVE', UTC_TIMESTAMP(6)
+FROM es_communication_bundle_purpose WHERE purpose_key = 'STARTER_PACKET';
+UPDATE es_communication_bundle_purpose p
+JOIN es_communication_bundle_template t ON t.purpose_id = p.purpose_id AND t.version_no = 1
+SET p.active_template_id = t.template_id WHERE p.purpose_key = 'STARTER_PACKET';
+
+INSERT INTO es_communication_bundle_template_component (
+  template_id, semantic_key, display_name, authoring_prompt, component_kind, is_required, cardinality, display_order
+)
+SELECT t.template_id, c.semantic_key, c.display_name, c.prompt, c.kind, c.required, c.cardinality, c.display_order
+FROM es_communication_bundle_template t
+JOIN es_communication_bundle_purpose p ON p.purpose_id = t.purpose_id
+CROSS JOIN (
+  SELECT 'title' semantic_key, 'Packet title' display_name, 'Name this project starting point.' prompt,
+    'TEXT' kind, b'1' required, 'SINGLE' cardinality, 10 display_order
+  UNION ALL SELECT 'teaser_summary', 'Teaser summary', 'A short invitation shown on the Topic page.', 'TEXT', b'0', 'SINGLE', 20
+  UNION ALL SELECT 'teaser_image', 'Teaser image', 'Choose an image for the Topic-page teaser and packet.', 'RESOURCE', b'0', 'SINGLE', 30
+  UNION ALL SELECT 'explanation', 'Project context', 'Explain the project and what this packet helps people begin.', 'TEXT', b'0', 'SINGLE', 40
+  UNION ALL SELECT 'starting_points', 'Suggested starting points', 'One starting point per line.', 'STRUCTURED_LIST', b'0', 'REPEATING', 50
+  UNION ALL SELECT 'next_actions', 'Next actions', 'One next action per line.', 'STRUCTURED_LIST', b'0', 'REPEATING', 60
+  UNION ALL SELECT 'supporting_resources', 'Supporting resources', 'Select resources in the order they should be explored.', 'RESOURCE_COLLECTION', b'0', 'REPEATING', 70
+) c
+WHERE p.purpose_key = 'STARTER_PACKET' AND t.version_no = 1;

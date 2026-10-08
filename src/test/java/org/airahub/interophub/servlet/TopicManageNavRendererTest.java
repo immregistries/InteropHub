@@ -8,6 +8,18 @@ import java.io.StringWriter;
 import org.junit.jupiter.api.Test;
 
 class TopicManageNavRendererTest {
+    @Test
+    void starterPacketLinkHasItsOwnChampionSupportAccessFlag() {
+        var counts = new TopicManageNavRenderer.TopicManageCounts(0, 0, 0, 0, 0, 0);
+        var writer = new StringWriter();
+        TopicManageNavRenderer.render(new PrintWriter(writer), "/hub", 42L, null, false, null, false, counts, false, true);
+        assertTrue(writer.toString().contains("/es/starter-packets/42"));
+        assertTrue(writer.toString().contains(">Starter Packet</span>"));
+        assertFalse(writer.toString().contains("/es/topic-resources/42"));
+        writer = new StringWriter();
+        TopicManageNavRenderer.render(new PrintWriter(writer), "/hub", 42L, null, false, null, false, counts, true, false);
+        assertFalse(writer.toString().contains("/es/starter-packets/42"));
+    }
 
     @Test
     void supportersLinkOnlyRenderedForAdmins() {

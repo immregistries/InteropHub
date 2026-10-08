@@ -51,12 +51,25 @@ final class CommunicationBundleComponentRenderer {
                 out.println("<section class=\"aira-stack\"><h3>" + escape(component.getDisplayName()) + "</h3>");
                 for (var placement : placements) {
                     var resource = content.resources().stream()
-                            .filter(r -> r.resource().getTopicResourceId().equals(placement.getTopicResourceId())).findFirst()
+                            .filter(r -> r.resource().getTopicResourceId().equals(placement.getTopicResourceId())
+                                    && java.util.Objects.equals(r.preservedVersionId(), placement.getResourceVersionId())).findFirst()
                             .orElseThrow(() -> new IllegalStateException("Selected resource is unavailable."));
                     String url = resource.file() == null ? resource.resource().getExternalUrl()
                             : StoredFileService.readUrl(context, resource.file());
                     out.println("<p><a class=\"aira-inline-link\" href=\"" + escape(url)
                             + "\" target=\"_blank\" rel=\"noopener noreferrer\">" + escape(resource.resource().getTitle()) + "</a></p>");
+                    if (component.getKind() == EsCommunicationBundleTemplateComponent.Kind.RESOURCE
+                            && resource.file() != null && resource.file().isImage()) {
+                        out.println("<a href=\"" + escape(url) + "\"><img src=\"" + escape(url)
+                                + "\" alt=\"" + escape(resource.resource().getTitle())
+                                + "\" loading=\"lazy\" style=\"max-width:100%;height:auto;\"></a>");
+                    }
+                    if (resource.resource().getDescription() != null && !resource.resource().getDescription().isBlank()) {
+                        out.println("<p style=\"white-space:pre-wrap;\">" + escape(resource.resource().getDescription()) + "</p>");
+                    }
+                    if (resource.resource().getAttribution() != null && !resource.resource().getAttribution().isBlank()) {
+                        out.println("<p class=\"aira-meta\">Attribution: " + escape(resource.resource().getAttribution()) + "</p>");
+                    }
                     if (placement.getContextNote() != null && !placement.getContextNote().isBlank()) {
                         out.println("<p style=\"white-space:pre-wrap;\">" + escape(placement.getContextNote()) + "</p>");
                     }

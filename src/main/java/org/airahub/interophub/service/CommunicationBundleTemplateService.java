@@ -119,5 +119,18 @@ public class CommunicationBundleTemplateService {
                 }
             }
         }
+        if (StarterPacketService.PURPOSE_KEY.equals(purposeKey)) {
+            Map<String, Kind> fixed = Map.of("title", Kind.TEXT, "teaser_summary", Kind.TEXT,
+                    "teaser_image", Kind.RESOURCE, "explanation", Kind.TEXT, "starting_points", Kind.STRUCTURED_LIST,
+                    "next_actions", Kind.STRUCTURED_LIST, "supporting_resources", Kind.RESOURCE_COLLECTION);
+            for (var entry : fixed.entrySet()) {
+                if (components.stream().noneMatch(c -> entry.getKey().equals(c.getSemanticKey()) && entry.getValue() == c.getKind())) {
+                    throw new IllegalArgumentException("Starter Packet must retain the " + entry.getKey() + " component and its kind.");
+                }
+            }
+            if (components.stream().noneMatch(c -> "title".equals(c.getSemanticKey()) && c.isRequired())) {
+                throw new IllegalArgumentException("Starter Packet title must remain required.");
+            }
+        }
     }
 }

@@ -319,7 +319,11 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 .build();
 
                 response.setContentType("text/html;charset=UTF-8");
-                if (topicSpaceAccessService.canEditTopic(viewer, topicEntity)) {
+                var starterPackets = new org.airahub.interophub.service.StarterPacketService();
+                boolean canAccessStarterPackets = starterPackets.canAccess(viewer, topicEntity);
+                var publishedStarterPackets = canAccessStarterPackets ? starterPackets.list(viewer, topicId, true) : List
+                        .<org.airahub.interophub.service.CommunicationBundleService.OrientationResources>of();
+                if (canAccessStarterPackets || topicSpaceAccessService.canEditTopic(viewer, topicEntity)) {
                         response.setHeader("Cache-Control", "no-store");
                 }
                 try (PrintWriter out = response.getWriter()) {
@@ -860,6 +864,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("          </section>");
                         }
 
+                        StarterPacketRenderer.teasers(out, contextPath, publishedStarterPackets);
                         out.println("          <div class=\"aira-topic-details-strip\" aria-label=\"Topic details\">");
                         out.println("            <span><strong>Topic ID:</strong> " + topicId + "</span>");
                         out.println("            <div class=\"aira-topic-details-strip__end\">");
@@ -893,7 +898,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                                                                 topicSpaceAccessService);
                                 TopicManageNavRenderer.render(out, contextPath, topicId, null, isAdmin,
                                                 meeting != null ? meeting.getEsTopicMeetingId() : null, false,
-                                                manageCounts, topicSpaceAccessService.canEditTopic(viewer, topicEntity));
+                                                manageCounts, topicSpaceAccessService.canEditTopic(viewer, topicEntity),
+                                                canAccessStarterPackets);
                         }
                         out.println("        </aside>");
                         out.println("      </div>");

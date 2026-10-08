@@ -70,6 +70,7 @@ class CommunicationBundleServiceTest {
         var bundle = new EsCommunicationBundle();
         bundle.setBundleId(30L);
         bundle.setEsTopicId(10L);
+        bundle.setPurposeId(4L);
         bundle.setStatus(EsCommunicationBundle.Status.DRAFT);
         fixture.bundles.bundle = bundle;
         fixture.access.canEdit = false;
@@ -159,6 +160,7 @@ class CommunicationBundleServiceTest {
         EsCommunicationBundle bundle = new EsCommunicationBundle();
         bundle.setBundleId(30L);
         bundle.setEsTopicId(10L);
+        bundle.setPurposeId(4L);
         bundle.setTemplateId(5L);
         bundle.setStatus(EsCommunicationBundle.Status.DRAFT);
         fixture.bundles.bundle = bundle;
@@ -397,6 +399,7 @@ class CommunicationBundleServiceTest {
         EsCommunicationBundle bundle = new EsCommunicationBundle();
         bundle.setBundleId(30L);
         bundle.setEsTopicId(10L);
+        bundle.setPurposeId(4L);
         bundle.setTemplateId(5L);
         bundle.setStatus(EsCommunicationBundle.Status.DRAFT);
         fixture.bundles.bundle = bundle;
@@ -450,6 +453,7 @@ class CommunicationBundleServiceTest {
         private Fixture() {
             topics.topic = topic;
             spaces.space = space(100L, EsTopicSpace.Visibility.PUBLIC);
+            purposes.purpose = orientationPurpose();
         }
 
         private CommunicationBundleService service() {
@@ -643,8 +647,27 @@ class CommunicationBundleServiceTest {
         private Long removedPlacementId;
     }
 
+    @Test
+    void packetWritesCannotBypassTopicSpecificAuthoringAndPreservedFilesCannotBecomeCurrentResources() {
+        Fixture fixture = new Fixture();
+        fixture.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        fixture.purposes.purpose.setPurposeKey(StarterPacketService.PURPOSE_KEY);
+        assertThrows(SecurityException.class, () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, "Bypass"));
+        assertThrows(SecurityException.class, () -> fixture.service().setStructuredListComponentValue(fixture.steward, 10L, 30L, 40L, "Bypass"));
+        assertThrows(SecurityException.class, () -> fixture.service().addResourcePlacement(fixture.steward, 30L, 40L, 50L, 0, null));
+        var file = new StoredFile();
+        file.setStoredFileId(21L);
+        file.setContentType("application/pdf");
+        fixture.files.file = file;
+        fixture.files.preserved = true;
+        assertThrows(IllegalArgumentException.class, () -> fixture.service().registerStoredFileResource(
+                fixture.steward, 10L, 21L, "Cannot edit snapshot bytes", null, null));
+    }
+
     private static final class Files extends StoredFileDao {
         private StoredFile file;
+        private boolean preserved;
         @Override public Optional<StoredFile> findById(Long id) { return Optional.ofNullable(file); }
+        @Override public boolean isPreserved(Long id) { return preserved; }
     }
 }

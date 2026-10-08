@@ -16,7 +16,7 @@ This document defines Communication Bundles conceptually before database or appl
 
 - Topic Orientation — the canonical, living introduction to a Topic.
 
-- Project Handoff — a dated snapshot used to transfer accumulated work and context to a new team.
+- Starter Packet — a dated snapshot of context and resources that helps people begin a project.
 
 - Implementation Bundle — an anticipated deeper technical orientation for implementers; useful to design for, but not required for the first implementation.
 
@@ -32,7 +32,7 @@ A Communication Bundle combines predefined narrative fields and named resource r
 
 Resources are associated with the Topic and may be reused across bundles. Resource type is fixed and bounded by the application, while resource role is defined by the bundle template. This allows one PowerPoint, image, audio recording, or document to be used in different ways without duplicating the underlying resource merely because it appears in more than one communication experience.
 
-The model distinguishes living bundles from snapshot bundles. Living bundles are maintained as the current representation of a purpose, such as Topic Orientation. Snapshot bundles, such as Project Handoffs, represent what was communicated for a particular month and year and are not expected to remain current. File versioning is explicit rather than automatic: InteropHub does not retain every replaced upload. A preserved resource version is created only when a steward intentionally chooses to preserve one, including when a snapshot bundle needs a stable historical resource.
+The model distinguishes living bundles from snapshot bundles. Living bundles are maintained as the current representation of a purpose, such as Topic Orientation. Snapshot bundles, such as Starter Packets, represent what was communicated for a particular month and year and are not expected to remain current. File versioning is explicit rather than automatic: InteropHub does not retain every replaced upload. A preserved resource version is created only when an authorized author intentionally chooses to preserve one, including when a snapshot bundle needs a stable historical resource.
 
 ## 1. Why Communication Bundles Exist
 
@@ -54,7 +54,7 @@ The conceptual hierarchy is:
 | --- | --- |
 | Topic | The durable center of interoperability work. It owns the long-running subject, community context, resources, meetings, outcomes, and related activity. |
 | Resource | A durable content object associated with a Topic, such as an image, presentation, document, audio file, video, or external link. |
-| Communication Bundle Purpose | A product-defined communication use case, such as Topic Orientation or Project Handoff. |
+| Communication Bundle Purpose | A product-defined communication use case, such as Topic Orientation or Starter Packet. |
 | Template Version | A versioned definition of the fields, prompts, named resource roles, cardinalities, ordering behavior, and defaults used for new bundles of a Purpose. |
 | Communication Bundle | An instance of a Purpose for one Topic, containing the actual narrative and selected resources. |
 | Bundle Placement | The relationship between a bundle slot and a Resource, including role-specific guidance and display order. |
@@ -143,14 +143,14 @@ Different communication purposes have different expectations about time. This be
 | Purpose | Instances per Topic | Mode | Expected behavior |
 | --- | --- | --- | --- |
 | Topic Orientation | 0..1 | Living | Maintained as the current canonical introduction to the Topic. |
-| Project Handoff | 0..\* | Snapshot | Represents what was handed off for a specific month/year; later handoffs create new bundles. |
+| Starter Packet | 0..\* | Snapshot | Represents a project starting point for a specific month/year; revisions create new bundles. |
 | Implementation Bundle | 0..1 | Living | Maintained as the current deeper orientation for implementers. |
 
-A published snapshot is historically meaningful but does not need to be technically immutable. Corrections may be made and audited. A substantive later communication should be represented as a new snapshot bundle rather than silently rewriting what an earlier handoff meant.
+A published Starter Packet is locked against editing. Corrections and substantive revisions copy into a new draft, retaining the source's template and preserved resources until the author explicitly changes draft selections. Publication and retirement are separate actions; several published packets can coexist.
 
 ## 7. Bundle Dating and Publication Time
 
-The domain date for a Communication Bundle is Month + Year, not a precise calendar day. The useful statement is “Project Handoff — August 2026” or “Topic Orientation — August 2026,” not “August 10, 2026.” Bundle preparation may span weeks, and day-level precision suggests meaning that is not actually present.
+The domain date for a Communication Bundle is Month + Year, not a precise calendar day. The useful statement is “Starter Packet — August 2026” or “Topic Orientation — August 2026,” not “August 10, 2026.” Bundle preparation may span weeks, and day-level precision suggests meaning that is not actually present.
 
 The system should separately maintain exact timestamps for creation, update, publication, and audit history. Those timestamps are system provenance. The Month/Year value is communication meaning.
 
@@ -224,9 +224,9 @@ Purpose: Provide the canonical, current introduction to a Topic for someone who 
 
 - Bespoke presentation: the main Topic page may promote selected named components into fixed locations while still using the same underlying Communication Bundle.
 
-### 11.2 Project Handoff
+### 11.2 Starter Packet
 
-Purpose: Transfer accumulated context and work from one project phase or team to another without requiring the recipient to reconstruct the history or reopen substantially settled decisions.
+Purpose: Help people begin a project with coherent context, suggested starting points, next actions, and curated resources. It does not imply completed work or transfer of responsibility.
 
 - Instances per Topic: 0..\*.
 
@@ -234,11 +234,13 @@ Purpose: Transfer accumulated context and work from one project phase or team to
 
 - Bundle date: Month + Year.
 
-- Likely visibility: Participants or Stewards, depending on the Topic and handoff audience.
+- Access: Global administrators and this Topic's active CHAMPION/SUPPORT contacts, subject to normal Topic visibility. Space stewardship or ordinary participation alone does not grant access. Apply this rule to direct bundle URLs and mutations as well as navigation.
 
-- Likely components: what this handoff is for, current state, suggested ways to start, primary handoff document, primary presentation, technical foundation, visual explanations, audio/video orientation, working documents, what is being handed off, continuing coordination, and next actions.
+- Initial components: required title; optional separate teaser summary and image, full project explanation, ordered starting-points list, ordered next-actions list, and ordered supporting resources. Month/Year is required at publication.
 
-- Historical behavior: a later substantive handoff becomes a new dated bundle rather than an update to the old handoff.
+- Presentation: Manage This Topic has a Starter Packet entry. A restricted section before the Topic ID strip shows all published, non-retired packet teasers, newest first, linked to a full bundle page with Back to Topic navigation. Drafts and retired packets remain available in management, not the teasers.
+
+- Historical behavior: published packets are read-only. Explicit preservation confirmation is required at publication for all selected uploaded files. Each preserved file has an independent identity and locator; resource metadata, context, and external-link URLs are retained with the snapshot. Later current-resource replacement cannot change the packet. Remote linked content and file-level confidentiality remain outside this guarantee.
 
 ### 11.3 Implementation Bundle (anticipated)
 
@@ -354,7 +356,7 @@ The following questions can be used to compare the current database and applicat
 
 ## Conclusion
 
-Communication Bundles give InteropHub a single model for rich topic communication without turning the platform into a file repository. Topic Orientation, Project Handoff, and potentially Implementation Orientation are different communication purposes built on the same underlying concepts: opinionated templates, stable semantic slots, reusable Topic resources, explicit roles, audience-aware visibility, and a small lifecycle.
+Communication Bundles give InteropHub a single model for rich topic communication without turning the platform into a file repository. Topic Orientation, Starter Packet, and potentially Implementation Orientation are different communication purposes built on the same underlying concepts: opinionated templates, stable semantic slots, reusable Topic resources, explicit roles, audience-aware visibility, and a small lifecycle.
 
 The model is intentionally constrained. InteropHub decides which communication purposes it supports and what each purpose normally contains. Stewards fill in that structure and select the best resources. The result is a communication experience that can be rendered generically or presented through a purpose-specific interface while remaining coherent under the covers.
 

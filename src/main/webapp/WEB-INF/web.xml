@@ -483,6 +483,28 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>StarterPacketServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.StarterPacketServlet</servlet-class>
+    <multipart-config>
+      <max-file-size>26214400</max-file-size>
+      <max-request-size>27262976</max-request-size>
+      <file-size-threshold>262144</file-size-threshold>
+    </multipart-config>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>StarterPacketServlet</servlet-name>
+    <url-pattern>/es/starter-packets/*</url-pattern>
+  </servlet-mapping>
+  <servlet>
+    <servlet-name>CommunicationBundleServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.CommunicationBundleServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>CommunicationBundleServlet</servlet-name>
+    <url-pattern>/es/bundle/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>TopicSpaceRouteServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.TopicSpaceRouteServlet</servlet-class>
   </servlet>

@@ -38,6 +38,7 @@
     <mapping class="org.airahub.interophub.model.MagicLinkSendEvent"/>
     <mapping class="org.airahub.interophub.model.EsTopic"/>
     <mapping class="org.airahub.interophub.model.EsTopicResource"/>
+    <mapping class="org.airahub.interophub.model.EsTopicResourceVersion"/>
     <mapping class="org.airahub.interophub.model.EsCommunicationBundlePurpose"/>
     <mapping class="org.airahub.interophub.model.EsCommunicationBundleTemplate"/>
     <mapping class="org.airahub.interophub.model.EsCommunicationBundleTemplateComponent"/>

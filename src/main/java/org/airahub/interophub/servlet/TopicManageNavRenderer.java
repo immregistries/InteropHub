@@ -81,6 +81,13 @@ final class TopicManageNavRenderer {
     static void render(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
             boolean isAdmin, Long topicMeetingSeriesId, boolean includeViewTopicLink, TopicManageCounts counts,
             boolean canManageResources) {
+        render(out, contextPath, topicId, activeView, isAdmin, topicMeetingSeriesId, includeViewTopicLink,
+                counts, canManageResources, isAdmin);
+    }
+
+    static void render(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
+            boolean isAdmin, Long topicMeetingSeriesId, boolean includeViewTopicLink, TopicManageCounts counts,
+            boolean canManageResources, boolean canManageStarterPackets) {
         out.println("          <section class=\"aira-section-card\">");
         out.println(
                 "            <div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">Manage This Topic</h2></div>");
@@ -118,6 +125,12 @@ final class TopicManageNavRenderer {
             out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
                     + "/es/topic-resources/" + topicId + "\">");
             out.println("                <span class=\"aira-recent-topic__title\">Orientation Resources</span>");
+            out.println("              </a>");
+        }
+        if (canManageStarterPackets) {
+            out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
+                    + "/es/starter-packets/" + topicId + "\">");
+            out.println("                <span class=\"aira-recent-topic__title\">Starter Packet</span>");
             out.println("              </a>");
         }
         if (isAdmin && topicMeetingSeriesId != null) {

@@ -28,6 +28,11 @@ class StoredFileServiceTest {
         config = new ArtifactStorageConfig(root.toString(), null, null, null);
         service = new StoredFileService(config, () -> true, new StoredFileDao() {
             @Override
+            public boolean isPreserved(Long storedFileId) {
+                return false;
+            }
+
+            @Override
             public StoredFile save(StoredFile file) {
                 saved = new StoredFile(file);
                 saved.setStoredFileId(1L);

@@ -6,6 +6,7 @@ import com.azure.storage.blob.BlobClientBuilder;
 import com.azure.storage.blob.models.BlobHttpHeaders;
 import com.azure.storage.blob.models.BlobStorageException;
 import com.azure.storage.blob.options.BlobParallelUploadOptions;
+import java.io.IOException;
 import java.io.InputStream;
 import org.airahub.interophub.config.ArtifactStorageConfig;
 import java.util.function.BooleanSupplier;
@@ -37,6 +38,23 @@ public class ArtifactBlobStorageService {
 
     public boolean isWriteEnabled() {
         return config.hasBlobCredential() && !developmentMode.getAsBoolean();
+    }
+
+    /** Anonymous reads use only the validated location recorded on the source file. */
+    public InputStream open(String endpoint, String container, String objectKey) throws IOException {
+        ArtifactStorageConfig.validateBlobLocation(endpoint, container);
+        ArtifactStorageConfig.validateKey(objectKey);
+        BlobClient client = new BlobClientBuilder()
+                .endpoint(endpoint)
+                .containerName(container)
+                .blobName(objectKey)
+                .buildClient();
+        try {
+            return client.openInputStream();
+        } catch (BlobStorageException ex) {
+            throw new IOException("Blob read failed (HTTP " + ex.getStatusCode()
+                    + ", " + ex.getErrorCode() + "). Check the recorded public Blob location.");
+        }
     }
 
     /**

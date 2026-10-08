@@ -2,6 +2,7 @@ package org.airahub.interophub.service;
 
 import java.io.*;
 import java.net.URLEncoder;
+import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.*;
@@ -56,6 +57,96 @@ public class StoredFileService {
         return upload(existing, content, filename, declaredType, uploader, files::save);
     }
 
+    /**
+     * Explicitly preserves already validated bytes with independent metadata and identity.
+     * The callback may persist inside a caller-owned transaction; an outer rollback must
+     * reconcile the logged destination against committed references before removing bytes.
+     * Neither callback failure nor an ambiguous commit deletes the preservation or source.
+     */
+    public StoredFile preserve(StoredFile source, Long userId,
+            Function<StoredFile, StoredFile> register) throws IOException {
+        if (source == null || register == null) {
+            throw new IllegalArgumentException("A source file and registration callback are required.");
+        }
+        if (userId == null) {
+            throw new IllegalArgumentException("An authenticated uploader is required.");
+        }
+        String problem = writeProblem(source);
+        if (problem != null) {
+            throw new IllegalStateException(problem);
+        }
+        if (source.getSizeBytes() < 0 || source.getSizeBytes() > StoredFileValidation.MAX_BYTES) {
+            throw new IOException("Recorded source size is outside the 25 MiB limit.");
+        }
+        StoredFile candidate = new StoredFile(source);
+        candidate.setStoredFileId(null);
+        candidate.setRevision(0);
+        candidate.setPublicId(UUID.randomUUID().toString());
+        candidate.setStorageKey(UUID.randomUUID().toString());
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        candidate.setCreatedAt(now);
+        candidate.setUploadedAt(now);
+        candidate.setUploadedByUserId(userId);
+        String destination = candidate.getBackend() + " publicId=" + candidate.getPublicId()
+                + " storageKey=" + candidate.getStorageKey()
+                + (candidate.getBackend() == Backend.BLOB
+                        ? " endpoint=" + candidate.getBlobEndpoint() + " container=" + candidate.getBlobContainer()
+                        : "");
+        Path staged = null;
+        boolean publicationAttempted = false;
+        boolean registered = false;
+        try {
+            byte[] blobBytes = null;
+            try (InputStream input = source.getBackend() == Backend.LOCAL
+                    ? Channels.newInputStream(local.open(source.getStorageKey()))
+                    : blob.open(source.getBlobEndpoint(), source.getBlobContainer(), source.getStorageKey())) {
+                long copied;
+                if (candidate.getBackend() == Backend.LOCAL) {
+                    staged = local.stage(input);
+                    copied = Files.size(staged);
+                } else {
+                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                    copied = LocalFileStorageService.copyBounded(input, output);
+                    blobBytes = output.toByteArray();
+                }
+                if (copied != source.getSizeBytes()) {
+                    throw new IOException("Stored source bytes do not match the recorded size.");
+                }
+            }
+            // Log before registration so callers can reconcile later outer-transaction failures.
+            LOGGER.info("Explicit file preservation destination; reconcile committed references after "
+                    + "any transaction failure: " + destination);
+            publicationAttempted = true;
+            if (candidate.getBackend() == Backend.LOCAL) {
+                local.publish(staged, candidate.getStorageKey());
+            } else {
+                try (InputStream input = new ByteArrayInputStream(blobBytes)) {
+                    blob.store(candidate.getBlobEndpoint(), candidate.getBlobContainer(), candidate.getStorageKey(),
+                            input, candidate.getContentType(), candidate.getOriginalFilename(), inline(candidate));
+                }
+            }
+            StoredFile result = register.apply(candidate);
+            if (result == null) {
+                throw new IllegalStateException("Preservation registration returned no stored file.");
+            }
+            registered = true;
+            return result;
+        } finally {
+            if (staged != null) {
+                try {
+                    Files.deleteIfExists(staged);
+                } catch (IOException ex) {
+                    LOGGER.log(Level.WARNING, "Preservation staging file requires cleanup: " + staged, ex);
+                }
+            }
+            if (publicationAttempted && !registered) {
+                LOGGER.severe("File preservation publication or registration failed; outcome may be ambiguous. "
+                        + "Reconcile committed references before cleanup; preserved bytes were not deleted: "
+                        + destination);
+            }
+        }
+    }
+
     /** Registration can atomically persist feature ownership alongside shared file metadata. */
     public StoredFile upload(StoredFile existing, InputStream content, String filename, String declaredType,
             Long uploader, Function<StoredFile, StoredFile> register) throws IOException {
@@ -67,6 +158,9 @@ public class StoredFileService {
             Long uploader, boolean downloadOnly, Function<StoredFile, StoredFile> register) throws IOException {
         if (uploader == null) {
             throw new IllegalArgumentException("An authenticated uploader is required.");
+        }
+        if (existing != null && files.isPreserved(existing.getStoredFileId())) {
+            throw new IllegalStateException("Preserved file identities cannot be replaced.");
         }
         String problem = writeProblem(existing);
         if (problem != null) {

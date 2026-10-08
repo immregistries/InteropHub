@@ -33,6 +33,9 @@ public class EsCommunicationBundleResourcePlacement {
     @Column(name = "topic_resource_id", nullable = false)
     private Long topicResourceId;
 
+    @Column(name = "resource_version_id")
+    private Long resourceVersionId;
+
     @Column(name = "display_order", nullable = false)
     private int displayOrder;
 
@@ -64,6 +67,8 @@ public class EsCommunicationBundleResourcePlacement {
     public void setComponentId(Long value) { componentId = value; }
     public Long getTopicResourceId() { return topicResourceId; }
     public void setTopicResourceId(Long value) { topicResourceId = value; }
+    public Long getResourceVersionId() { return resourceVersionId; }
+    public void setResourceVersionId(Long value) { resourceVersionId = value; }
     public int getDisplayOrder() { return displayOrder; }
     public void setDisplayOrder(int value) { displayOrder = value; }
     public String getContextNote() { return contextNote; }

@@ -50,7 +50,11 @@ public class CommunicationBundleService {
     private final TopicSpaceAccessService access;
     private final StoredFileService storage;
 
-    public record ResourceDetails(EsTopicResource resource, StoredFile file) { }
+    public record ResourceDetails(EsTopicResource resource, StoredFile file, Long preservedVersionId) {
+        public ResourceDetails(EsTopicResource resource, StoredFile file) {
+            this(resource, file, null);
+        }
+    }
 
     public record OrientationResources(EsCommunicationBundle bundle,
             List<EsCommunicationBundleTemplateComponent> components,
@@ -114,6 +118,9 @@ public class CommunicationBundleService {
         EsTopic topic = requireSteward(user, topicId);
         StoredFile file = storedFileDao.findById(storedFileId)
                 .orElseThrow(() -> new IllegalArgumentException("Stored file was not found."));
+        if (storedFileDao.isPreserved(storedFileId)) {
+            throw new IllegalArgumentException("Preserved packet files cannot become current Topic Resources.");
+        }
         if (resourceDao.findByStoredFileId(storedFileId).isPresent()) {
             throw new IllegalArgumentException("This stored file is already registered as a Topic Resource.");
         }
@@ -287,11 +294,14 @@ public class CommunicationBundleService {
     }
 
     private void requireEditableBundle(EsCommunicationBundle bundle) {
+        EsCommunicationBundlePurpose purpose = purposeDao.findById(bundle.getPurposeId())
+                .orElseThrow(() -> new IllegalStateException("The bundle purpose was not found."));
+        if (StarterPacketService.PURPOSE_KEY.equals(purpose.getPurposeKey())) {
+            throw new SecurityException("Use Starter Packet management for this bundle.");
+        }
         if (bundle.getStatus() == EsCommunicationBundle.Status.DRAFT) {
             return;
         }
-        EsCommunicationBundlePurpose purpose = purposeDao.findById(bundle.getPurposeId())
-                .orElseThrow(() -> new IllegalStateException("The bundle purpose was not found."));
         if (bundle.getStatus() != EsCommunicationBundle.Status.PUBLISHED
                 || purpose.getMode() != EsCommunicationBundlePurpose.Mode.LIVING) {
             throw new IllegalStateException("Only drafts and published living bundles can be edited.");
@@ -520,6 +530,12 @@ public class CommunicationBundleService {
     }
 
     private boolean canViewBundle(User user, EsTopic topic, EsCommunicationBundle bundle) {
+        var purpose = purposeDao.findById(bundle.getPurposeId())
+                .orElseThrow(() -> new IllegalStateException("The bundle Purpose was not found."));
+        if (StarterPacketService.PURPOSE_KEY.equals(purpose.getPurposeKey())) {
+            return new StarterPacketService().canAccess(user, topic);
+        }
+
         if (bundle.getStatus() == EsCommunicationBundle.Status.DRAFT
                 || bundle.getStatus() == EsCommunicationBundle.Status.RETIRED) {
             return access.canEditTopic(user, topic);
@@ -578,7 +594,7 @@ public class CommunicationBundleService {
         return value.trim();
     }
 
-    private static ResourceType resourceTypeFor(StoredFile file) {
+    static ResourceType resourceTypeFor(StoredFile file) {
         String contentType = file.getContentType();
         if (file.isImage()) {
             return ResourceType.IMAGE;
@@ -595,7 +611,7 @@ public class CommunicationBundleService {
         };
     }
 
-    private static String validateExternalUrl(String value) {
+    static String validateExternalUrl(String value) {
         String url = required(value, "External URL", 2000);
         try {
             URI uri = new URI(url);

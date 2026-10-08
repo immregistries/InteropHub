@@ -212,7 +212,7 @@ public class EsTopicManageServlet extends HttpServlet {
                     subscriptionDao, agendaItemDao, esMeetingDao, commentDao, relationshipDao, curationDao,
                     topicSupporterDao, topicSpaceAccessService);
             renderRightRail(out, contextPath, topicId, view, isAdmin, isSpaceAdmin, topicMeetingSeries, recentlyViewedTopics,
-                    manageableTopicIds, counts);
+                    manageableTopicIds, counts, isAdmin || isChampionOrSupport);
 
             out.println("      </div>"); // end aira-right-rail-layout
             out.println("    </div>"); // end aira-container--wide aira-stack
@@ -228,7 +228,7 @@ public class EsTopicManageServlet extends HttpServlet {
     private void renderRightRail(PrintWriter out, String contextPath, Long topicId, TopicManageView activeView,
             boolean isAdmin, boolean isSpaceAdmin, EsTopicMeeting topicMeetingSeries,
             List<EsTopicViewHistoryService.RecentlyViewedTopic> recentlyViewedTopics,
-            Set<Long> manageableTopicIds, TopicManageNavRenderer.TopicManageCounts counts) {
+            Set<Long> manageableTopicIds, TopicManageNavRenderer.TopicManageCounts counts, boolean canManageStarterPackets) {
         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic management\">");
 
         // Keep managers inside the manage flow, on the same view, when jumping
@@ -241,7 +241,7 @@ public class EsTopicManageServlet extends HttpServlet {
 
         TopicManageNavRenderer.render(out, contextPath, topicId, activeView, isAdmin,
                 topicMeetingSeries != null ? topicMeetingSeries.getEsTopicMeetingId() : null, true, counts,
-                isSpaceAdmin);
+                isSpaceAdmin, canManageStarterPackets);
 
         out.println("        </aside>");
     }
