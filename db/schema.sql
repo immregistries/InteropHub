@@ -97,7 +97,7 @@ CREATE TABLE `app_login_event` (
   `user_id` bigint NOT NULL,
   `user_ip` varchar(45) DEFAULT NULL,
   PRIMARY KEY (`event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=213 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=214 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -117,7 +117,7 @@ CREATE TABLE `app_redirect_allowlist` (
   UNIQUE KEY `uq_app_base` (`app_id`,`base_url`),
   KEY `ix_allow_enabled` (`app_id`,`is_enabled`),
   CONSTRAINT `fk_allow_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=9 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -141,7 +141,7 @@ CREATE TABLE `app_registry` (
   PRIMARY KEY (`app_id`),
   UNIQUE KEY `uq_app_code` (`app_code`),
   KEY `ix_app_enabled` (`is_enabled`,`kill_switch`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -194,7 +194,7 @@ CREATE TABLE `auth_login_code` (
   KEY `ix_login_code_user` (`user_id`,`issued_at`),
   KEY `ix_login_code_expires` (`expires_at`),
   CONSTRAINT `fk_login_code_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=244 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=245 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -380,7 +380,7 @@ CREATE TABLE `dandelion_sync_queue` (
   PRIMARY KEY (`sync_queue_id`),
   KEY `ix_dd_sync_queue_space_status` (`es_topic_space_id`,`status`,`entity_type`,`created_at`),
   CONSTRAINT `fk_dd_sync_queue_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1348 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1349 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -419,7 +419,7 @@ CREATE TABLE `email_send_log` (
   `subject` varchar(500) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`email_log_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=873 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=874 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -696,7 +696,7 @@ CREATE TABLE `es_communication_bundle_purpose` (
   UNIQUE KEY `uq_bundle_purpose_key` (`purpose_key`),
   KEY `fk_bundle_purpose_active_template` (`active_template_id`),
   CONSTRAINT `fk_bundle_purpose_active_template` FOREIGN KEY (`active_template_id`) REFERENCES `es_communication_bundle_template` (`template_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -717,6 +717,7 @@ CREATE TABLE `es_communication_bundle_resource_placement` (
   `context_note` text,
   `created_by_user_id` bigint NOT NULL,
   `created_at` datetime(6) NOT NULL,
+  `resource_version_id` bigint DEFAULT NULL,
   PRIMARY KEY (`placement_id`),
   UNIQUE KEY `uq_bundle_component_order` (`bundle_id`,`component_id`,`display_order`),
   KEY `ix_bundle_placement_resource` (`topic_resource_id`),
@@ -724,10 +725,12 @@ CREATE TABLE `es_communication_bundle_resource_placement` (
   KEY `fk_bundle_placement_component` (`component_id`,`template_id`),
   KEY `fk_bundle_placement_resource` (`topic_resource_id`,`es_topic_id`),
   KEY `fk_bundle_placement_creator` (`created_by_user_id`),
+  KEY `fk_bundle_placement_version` (`resource_version_id`,`topic_resource_id`,`es_topic_id`),
   CONSTRAINT `fk_bundle_placement_bundle` FOREIGN KEY (`bundle_id`, `es_topic_id`, `template_id`) REFERENCES `es_communication_bundle` (`bundle_id`, `es_topic_id`, `template_id`),
   CONSTRAINT `fk_bundle_placement_component` FOREIGN KEY (`component_id`, `template_id`) REFERENCES `es_communication_bundle_template_component` (`component_id`, `template_id`),
   CONSTRAINT `fk_bundle_placement_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
-  CONSTRAINT `fk_bundle_placement_resource` FOREIGN KEY (`topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource` (`topic_resource_id`, `es_topic_id`)
+  CONSTRAINT `fk_bundle_placement_resource` FOREIGN KEY (`topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource` (`topic_resource_id`, `es_topic_id`),
+  CONSTRAINT `fk_bundle_placement_version` FOREIGN KEY (`resource_version_id`, `topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource_version` (`resource_version_id`, `topic_resource_id`, `es_topic_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -752,7 +755,7 @@ CREATE TABLE `es_communication_bundle_template` (
   CONSTRAINT `fk_bundle_template_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_bundle_template_purpose` FOREIGN KEY (`purpose_id`) REFERENCES `es_communication_bundle_purpose` (`purpose_id`),
   CONSTRAINT `chk_bundle_template_status` CHECK ((`status` in (_utf8mb4'DRAFT',_utf8mb4'ACTIVE',_utf8mb4'RETIRED')))
-) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -779,7 +782,7 @@ CREATE TABLE `es_communication_bundle_template_component` (
   CONSTRAINT `fk_bundle_component_template` FOREIGN KEY (`template_id`) REFERENCES `es_communication_bundle_template` (`template_id`),
   CONSTRAINT `chk_bundle_component_cardinality` CHECK ((`cardinality` in (_utf8mb4'SINGLE',_utf8mb4'REPEATING'))),
   CONSTRAINT `chk_bundle_component_kind` CHECK ((`component_kind` in (_utf8mb4'TEXT',_utf8mb4'STRUCTURED_LIST',_utf8mb4'RESOURCE',_utf8mb4'RESOURCE_COLLECTION')))
-) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1044,7 +1047,7 @@ CREATE TABLE `es_meeting_agenda_item` (
   `title` varchar(200) NOT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_agenda_item_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=483 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=484 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1214,7 +1217,7 @@ CREATE TABLE `es_meeting_status_history` (
   KEY `fk_es_msh_changed_by` (`changed_by_user_id`),
   CONSTRAINT `fk_es_msh_changed_by` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_msh_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=58 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=59 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1238,7 +1241,7 @@ CREATE TABLE `es_meeting_user_view` (
   KEY `ix_es_meeting_user_view_meeting_recent` (`es_meeting_id`,`last_viewed_at`),
   CONSTRAINT `fk_es_meeting_user_view_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_meeting_user_view_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=131 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=133 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1897,6 +1900,37 @@ CREATE TABLE `es_topic_resource` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `es_topic_resource_version`
+--
+
+DROP TABLE IF EXISTS `es_topic_resource_version`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_resource_version` (
+  `resource_version_id` bigint NOT NULL AUTO_INCREMENT,
+  `topic_resource_id` bigint NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `stored_file_id` bigint DEFAULT NULL,
+  `resource_type` varchar(24) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `description` text,
+  `attribution` varchar(500) DEFAULT NULL,
+  `external_url` varchar(2000) DEFAULT NULL,
+  `preserved_by_user_id` bigint NOT NULL,
+  `preserved_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`resource_version_id`),
+  UNIQUE KEY `uq_resource_version_subject` (`resource_version_id`,`topic_resource_id`,`es_topic_id`),
+  KEY `fk_resource_version_resource` (`topic_resource_id`,`es_topic_id`),
+  KEY `fk_resource_version_file` (`stored_file_id`),
+  KEY `fk_resource_version_user` (`preserved_by_user_id`),
+  CONSTRAINT `fk_resource_version_file` FOREIGN KEY (`stored_file_id`) REFERENCES `hub_stored_file` (`stored_file_id`),
+  CONSTRAINT `fk_resource_version_resource` FOREIGN KEY (`topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource` (`topic_resource_id`, `es_topic_id`),
+  CONSTRAINT `fk_resource_version_user` FOREIGN KEY (`preserved_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `chk_resource_version_source` CHECK ((((`stored_file_id` is not null) and (`external_url` is null) and (`resource_type` <> _utf8mb4'EXTERNAL_LINK')) or ((`stored_file_id` is null) and (`external_url` is not null) and (`resource_type` = _utf8mb4'EXTERNAL_LINK'))))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `es_topic_review`
 --
 
@@ -1963,7 +1997,7 @@ CREATE TABLE `es_topic_space_member` (
   KEY `ix_es_topic_space_member_space_role` (`es_topic_space_id`,`role`),
   CONSTRAINT `fk_es_topic_space_member_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`),
   CONSTRAINT `fk_es_topic_space_member_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2439,7 +2473,7 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-08 11:01:37
+-- Dump completed on 2026-10-09  6:30:24
 -- ============================================================
 -- AUTO-GENERATED FILE — DO NOT HAND-EDIT
 -- Generated by T:\scripts\python\refresh_interophub_db.py /
