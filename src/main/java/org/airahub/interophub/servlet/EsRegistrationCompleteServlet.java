@@ -28,6 +28,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.PublicFormGuard;
 
 public class EsRegistrationCompleteServlet extends HttpServlet {
 
@@ -70,6 +71,7 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
         }
 
         HttpSession session = request.getSession(true);
+        PublicFormGuard.shared().markRendered(session, formGuardKey(campaignCode));
         Identity identity = loadIdentity(session);
         int requestedCount = parseIntOrZero(request.getParameter("requestedCount"));
         boolean identitySaved = "1".equals(request.getParameter("identitySaved"));
@@ -150,6 +152,19 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
         if (!identity.complete()) {
             renderHub(response, request.getContextPath(), campaign, identity,
                     "Please provide your first name, last name, and email before requesting meetings.", null);
+            return;
+        }
+
+        PublicFormGuard.Verdict verdict = PublicFormGuard.shared().check(request,
+                formGuardKey(campaign.getCampaignCode()), identity.emailNormalized());
+        if (verdict == PublicFormGuard.Verdict.HONEYPOT) {
+            response.sendRedirect(request.getContextPath() + "/register/complete/"
+                    + URLEncoder.encode(campaign.getCampaignCode(), StandardCharsets.UTF_8));
+            return;
+        }
+        if (verdict != PublicFormGuard.Verdict.OK) {
+            renderHub(response, request.getContextPath(), campaign, identity, PublicFormGuard.userMessage(verdict),
+                    null);
             return;
         }
 
@@ -310,6 +325,7 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
             out.println("        <form id=\"es-meeting-request-form\" method=\"post\" action=\"" + contextPath
                     + "/register/complete/" + encodedCampaignCode + "\">");
             out.println("          <input type=\"hidden\" name=\"action\" value=\"requestMeetings\" />");
+            out.println("          " + PublicFormGuard.honeypotHtml());
             out.println(
                     "          <input type=\"hidden\" id=\"es-selected-meeting-ids\" name=\"selectedMeetingIds\" value=\"\" />");
             out.println("          <div class=\"es-topic-list\">");
@@ -487,6 +503,10 @@ public class EsRegistrationCompleteServlet extends HttpServlet {
             return;
         }
         session.setAttribute(attributeName, value);
+    }
+
+    private String formGuardKey(String campaignCode) {
+        return "registerComplete:" + campaignCode;
     }
 
     private String parseCampaignCode(HttpServletRequest request) {

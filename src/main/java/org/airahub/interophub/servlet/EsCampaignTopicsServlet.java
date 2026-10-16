@@ -30,6 +30,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.PublicFormGuard;
 import org.airahub.interophub.service.TopicSpaceAccessService;
 
 public class EsCampaignTopicsServlet extends HttpServlet {
@@ -77,6 +78,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
         }
 
         HttpSession session = request.getSession(true);
+        PublicFormGuard.shared().markRendered(session, formGuardKey(campaignCode));
         String search = trimToNull(request.getParameter("q"));
         Integer subscribedCount = parseIntOrNull(request.getParameter("subscribedCount"));
         boolean generalSubscribedNow = "1".equals(request.getParameter("generalSubscribed"));
@@ -160,6 +162,22 @@ public class EsCampaignTopicsServlet extends HttpServlet {
             renderBrowsePage(response, request.getContextPath(), campaign, search, browseState.rows,
                     selectedTopicIds, browseState.subscribedTopicIds, true,
                     "Email is required to save followed topics.", null, false,
+                    effectiveFirstName, effectiveLastName, effectiveEmail, effectiveEmailNormalized,
+                    browseState.generalAlreadySubscribed);
+            return;
+        }
+
+        PublicFormGuard.Verdict verdict = PublicFormGuard.shared().check(request,
+                formGuardKey(campaign.getCampaignCode()), effectiveEmailNormalized);
+        if (verdict == PublicFormGuard.Verdict.HONEYPOT) {
+            response.sendRedirect(buildBrowseRedirect(request.getContextPath(), campaign.getCampaignCode(), search,
+                    selectedTopicIds.size(), false));
+            return;
+        }
+        if (verdict != PublicFormGuard.Verdict.OK) {
+            renderBrowsePage(response, request.getContextPath(), campaign, search, browseState.rows,
+                    selectedTopicIds, browseState.subscribedTopicIds, true,
+                    PublicFormGuard.userMessage(verdict), null, false,
                     effectiveFirstName, effectiveLastName, effectiveEmail, effectiveEmailNormalized,
                     browseState.generalAlreadySubscribed);
             return;
@@ -390,6 +408,7 @@ public class EsCampaignTopicsServlet extends HttpServlet {
                 out.println("        <label for=\"confirmEmail\">Email</label>");
                 out.println("        <input id=\"confirmEmail\" name=\"confirmEmail\" type=\"email\" required value=\""
                         + escapeHtml(orEmpty(email)) + "\" />");
+                out.println("        " + PublicFormGuard.honeypotHtml());
 
                 if (canOfferGeneral) {
                     out.println("        <label class=\"es-checkbox-row\">\n"
@@ -808,6 +827,10 @@ public class EsCampaignTopicsServlet extends HttpServlet {
 
     private String selectionSessionKey(String campaignCode) {
         return ATTR_SELECTION_PREFIX + campaignCode;
+    }
+
+    private String formGuardKey(String campaignCode) {
+        return "topics:" + campaignCode;
     }
 
     private Set<Long> parseTopicIdsCsv(String csv) {

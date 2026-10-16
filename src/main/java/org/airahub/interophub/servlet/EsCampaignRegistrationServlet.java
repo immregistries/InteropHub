@@ -18,6 +18,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EsInterestService;
 import org.airahub.interophub.service.EsNormalizer;
+import org.airahub.interophub.service.PublicFormGuard;
 
 public class EsCampaignRegistrationServlet extends HttpServlet {
 
@@ -55,6 +56,7 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
             return;
         }
 
+        PublicFormGuard.shared().markRendered(request.getSession(true), formGuardKey(campaignCode));
         renderForm(response, request.getContextPath(), campaign.get(), null, null, null, null, false);
     }
 
@@ -83,6 +85,19 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
         if (firstName == null) {
             renderForm(response, request.getContextPath(), campaign.get(), "First name is required.", null,
                     lastName, email, generalUpdatesOptIn);
+            return;
+        }
+
+        PublicFormGuard.Verdict verdict = PublicFormGuard.shared().check(request, formGuardKey(campaignCode),
+                emailNormalized);
+        if (verdict == PublicFormGuard.Verdict.HONEYPOT) {
+            response.sendRedirect(request.getContextPath() + "/register/complete/"
+                    + URLEncoder.encode(campaignCode, StandardCharsets.UTF_8));
+            return;
+        }
+        if (verdict != PublicFormGuard.Verdict.OK) {
+            renderForm(response, request.getContextPath(), campaign.get(), PublicFormGuard.userMessage(verdict),
+                    firstName, lastName, email, generalUpdatesOptIn);
             return;
         }
 
@@ -174,6 +189,7 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
                     + checkboxChecked + checkboxDisabled + " />");
             out.println("        Subscribe for general Emerging Standards updates");
             out.println("      </label>");
+            out.println("      " + PublicFormGuard.honeypotHtml());
 
             out.println("      <button type=\"submit\">Submit Registration</button>");
             out.println("    </form>");
@@ -224,6 +240,10 @@ public class EsCampaignRegistrationServlet extends HttpServlet {
             out.println("</body>");
             out.println("</html>");
         }
+    }
+
+    private String formGuardKey(String campaignCode) {
+        return "register:" + campaignCode;
     }
 
     private String parseCampaignCode(HttpServletRequest request) {
