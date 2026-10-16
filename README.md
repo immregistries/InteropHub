@@ -40,6 +40,8 @@ That guide covers:
 
 ## Minimal Run/Build Notes
 
+Setting up a new development machine (tools, `aira-web`, MySQL, environment variables, loading the production backup, signing in): see `docs/local-dev-environment-setup.md`.
+
 - Build: `mvn clean package`
 - WAR output: `target/hub.war`
 - Typical local URL after deployment: `http://localhost:8080/hub/`

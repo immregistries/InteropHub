@@ -28,3 +28,6 @@ replay_pid*
 .classpath
 .project
 .settings/
+
+# Local settings for db/scripts/refresh_local_db.py (contains secrets)
+db/scripts/refresh_local_db.env
