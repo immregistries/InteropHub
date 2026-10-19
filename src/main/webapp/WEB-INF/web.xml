@@ -1082,4 +1082,8 @@
     <listener-class>org.airahub.interophub.config.DailyDigestSchedulerListener</listener-class>
   </listener>
 
+  <listener>
+    <listener-class>org.airahub.interophub.config.ArtifactStorageHealthListener</listener-class>
+  </listener>
+
 </web-app>

@@ -39,7 +39,7 @@ class StoredFileServletTest {
                 lookupCalled = true;
                 return id.equals(file.getPublicId()) ? Optional.of(new StoredFile(file)) : Optional.empty();
             }
-        }, new LocalFileStorageService(new ArtifactStorageConfig(root.toString(), null, null, null)));
+        }, new LocalFileStorageService(new ArtifactStorageConfig(root.toString(), null, null)));
     }
 
     @AfterEach

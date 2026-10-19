@@ -28,7 +28,7 @@ class StarterPacketPersistenceTest {
                     Long.class).setMaxResults(1).getSingleResult();
         }
         Path root = Files.createTempDirectory(Path.of("target").toAbsolutePath(), "starter-packet-test-");
-        var storage = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null, null),
+        var storage = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null),
                 () -> true, new StoredFileDao());
         var service = new StarterPacketService(new EsTopicDao(), new EsSubscriptionDao(),
                 new TopicSpaceAccessService(), storage);
@@ -67,7 +67,7 @@ class StarterPacketPersistenceTest {
             service.selectResource(admin, topicId, packetId, supportingId, link.getTopicResourceId());
             assertThrows(IllegalArgumentException.class, () -> service.publish(admin, topicId, packetId, false));
             assertEquals(EsCommunicationBundle.Status.DRAFT, service.get(admin, packetId).bundle().getStatus());
-            var failingStorage = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null, null),
+            var failingStorage = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null),
                     () -> true, new StoredFileDao()) {
                 @Override public StoredFile preserve(StoredFile source, Long userId,
                         java.util.function.Function<StoredFile, StoredFile> register) throws java.io.IOException {

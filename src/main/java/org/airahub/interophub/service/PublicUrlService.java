@@ -8,10 +8,28 @@ public class PublicUrlService {
 
     private static final String DEFAULT_EXTERNAL_BASE_URL = "http://localhost:8080/hub";
 
+    /**
+     * Cached environment determination.
+     *
+     * <p>The value is a deployment property rather than request state: it
+     * changes only when an administrator edits {@code hub_settings}, and a
+     * restart is already required for the other deployment settings. Reading it
+     * per request added a database query to every page render and to every
+     * upload check.
+     *
+     * <p>A failed lookup is never cached, so a transient database error cannot
+     * permanently pin the application into development mode.
+     */
+    private static volatile Boolean cachedLocalhostMode;
+
     private final HubSettingDao hubSettingDao;
 
     public PublicUrlService() {
-        this.hubSettingDao = new HubSettingDao();
+        this(new HubSettingDao());
+    }
+
+    PublicUrlService(HubSettingDao hubSettingDao) {
+        this.hubSettingDao = hubSettingDao;
     }
 
     public String resolveExternalUrl(String internalPath) {
@@ -72,6 +90,16 @@ public class PublicUrlService {
     }
 
     public boolean isLocalhostMode() {
+        Boolean cached = cachedLocalhostMode;
+        if (cached != null) {
+            return cached;
+        }
+        boolean resolved = resolveLocalhostMode();
+        cachedLocalhostMode = resolved;
+        return resolved;
+    }
+
+    private boolean resolveLocalhostMode() {
         String url = resolveExternalBaseUrl();
         try {
             URI uri = URI.create(url);
@@ -80,5 +108,13 @@ public class PublicUrlService {
         } catch (IllegalArgumentException e) {
             return false;
         }
+    }
+
+    /**
+     * Discards the cached environment determination. Only tests should call
+     * this; the cached value is otherwise stable for the life of the process.
+     */
+    static void clearLocalhostModeCache() {
+        cachedLocalhostMode = null;
     }
 }

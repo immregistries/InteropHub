@@ -25,7 +25,7 @@ class StoredFileServiceTest {
     @BeforeEach
     void setup() throws IOException {
         root = Files.createTempDirectory(Path.of("target").toAbsolutePath(), "artifact-test-");
-        config = new ArtifactStorageConfig(root.toString(), null, null, null);
+        config = new ArtifactStorageConfig(root.toString(), null, null);
         service = new StoredFileService(config, () -> true, new StoredFileDao() {
             @Override
             public boolean isPreserved(Long storedFileId) {
@@ -177,11 +177,11 @@ class StoredFileServiceTest {
 
     @Test
     void missingRelativeAndNonexistentRootsHaveExplicitProblems() {
-        assertNotNull(new LocalFileStorageService(new ArtifactStorageConfig(null, null, null, null)).writeProblem());
-        assertNotNull(new LocalFileStorageService(new ArtifactStorageConfig("relative", null, null, null))
+        assertNotNull(new LocalFileStorageService(new ArtifactStorageConfig(null, null, null)).writeProblem());
+        assertNotNull(new LocalFileStorageService(new ArtifactStorageConfig("relative", null, null))
                 .writeProblem());
         assertNotNull(new LocalFileStorageService(
-                new ArtifactStorageConfig(root.resolve("missing").toString(), null, null, null)).writeProblem());
+                new ArtifactStorageConfig(root.resolve("missing").toString(), null, null)).writeProblem());
         assertFalse(Files.exists(root.resolve("missing")));
         service.local().setDeploymentPath(root.getParent().toString());
         assertNotNull(service.writeProblem(null));
@@ -204,21 +204,70 @@ class StoredFileServiceTest {
     }
 
     @Test
-    void blobWritesNeverRunInDevelopmentEvenWithCredentialAndNeverFallbackToLocal() {
+    void blobWritesRequireProductionModeAndAnAvailableIdentity() {
         AtomicBoolean development = new AtomicBoolean(true);
-        ArtifactStorageConfig sasConfig = new ArtifactStorageConfig(root.toString(), null, null, "test-not-a-secret");
-        ArtifactBlobStorageService blob = new ArtifactBlobStorageService(sasConfig, development::get);
+        ArtifactStorageConfig config =
+                new ArtifactStorageConfig(root.toString(), null, null);
+        ArtifactBlobStorageService blob =
+                new ArtifactBlobStorageService(config, development::get, () -> true);
         assertFalse(blob.isWriteEnabled());
         assertThrows(IllegalStateException.class, () -> blob.store(UUID.randomUUID().toString(),
                 input("content"), "text/plain", "file.txt"));
         development.set(false);
         assertTrue(blob.isWriteEnabled());
+        ArtifactBlobStorageService noIdentity =
+                new ArtifactBlobStorageService(config, development::get, () -> false);
+        assertFalse(noIdentity.isWriteEnabled());
+        assertThrows(IllegalStateException.class, () -> noIdentity.store(UUID.randomUUID().toString(),
+                input("content"), "text/plain", "file.txt"));
         StoredFile file = new StoredFile();
         file.setBackend(StoredFile.Backend.BLOB);
-        file.setBlobEndpoint(sasConfig.blobEndpoint());
-        file.setBlobContainer(sasConfig.container());
+        file.setBlobEndpoint(config.blobEndpoint());
+        file.setBlobContainer(config.container());
         assertNotNull(service.writeProblem(file));
         assertNull(service.writeProblem(null));
+    }
+
+    @Test
+    void anUndeterminableEnvironmentIsReportedSeparatelyFromDevelopmentMode() {
+        ArtifactStorageConfig config = new ArtifactStorageConfig(root.toString(), null, null);
+        ArtifactBlobStorageService blob = new ArtifactBlobStorageService(config,
+                () -> { throw new IllegalStateException("database unavailable"); }, () -> true);
+
+        assertEquals(ArtifactBlobStorageService.Environment.UNKNOWN, blob.environment());
+        assertTrue(blob.isDevelopmentMode(), "an undeterminable environment must fail closed");
+        assertFalse(blob.isWriteEnabled());
+    }
+
+    @Test
+    void newUploadsDefaultToLocalUnlessBlobIsConfigured() {
+        assertEquals(StoredFile.Backend.LOCAL,
+                new ArtifactStorageConfig(root.toString(), null, null).defaultBackend());
+        assertEquals(StoredFile.Backend.BLOB,
+                new ArtifactStorageConfig(root.toString(), null, null, StoredFile.Backend.BLOB)
+                        .defaultBackend());
+    }
+
+    @Test
+    void blobDefaultUploadsAreRejectedInDevelopmentWithoutTouchingTheNetwork() {
+        StoredFileService blobDefault = new StoredFileService(
+                new ArtifactStorageConfig(root.toString(), null, null, StoredFile.Backend.BLOB),
+                () -> true, new StoredFileDao() {
+                    @Override
+                    public boolean isPreserved(Long storedFileId) {
+                        return false;
+                    }
+
+                    @Override
+                    public StoredFile save(StoredFile file) {
+                        return new StoredFile(file);
+                    }
+                });
+        assertEquals("Blob uploads are disabled in development mode.", blobDefault.writeProblem(null));
+        IllegalStateException rejected = assertThrows(IllegalStateException.class, () ->
+                blobDefault.upload(null, input("content"), "file.txt", "text/plain", 7L,
+                        file -> new StoredFile(file)));
+        assertEquals("Blob uploads are disabled in development mode.", rejected.getMessage());
     }
 
     @Test

@@ -72,7 +72,7 @@ class CommunicationBundlePersistenceTest {
         topic = new EsTopicDao().save(topic);
         Long topicId = topic.getEsTopicId();
         try {
-            var storage = new StoredFileService(new ArtifactStorageConfig(fileRoot.toString(), null, null, null),
+            var storage = new StoredFileService(new ArtifactStorageConfig(fileRoot.toString(), null, null),
                     () -> true, new StoredFileDao());
             CommunicationBundleService service = new CommunicationBundleService(new EsTopicDao(),
                     new EsTopicSpaceDao(), new EsTopicResourceDao(), new EsCommunicationBundlePurposeDao(),

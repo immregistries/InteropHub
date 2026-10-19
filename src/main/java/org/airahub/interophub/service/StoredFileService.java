@@ -34,15 +34,32 @@ public class StoredFileService {
 
     public LocalFileStorageService local() { return local; }
 
+    private String blobWriteProblemForNew() {
+        if (!blob.isWriteEnabled()) {
+            if (blob.isDevelopmentMode()) {
+                return "Blob uploads are disabled in development mode.";
+            }
+            return "Blob uploads require production mode and an available managed identity.";
+        }
+        return null;
+    }
+
     public String writeProblem(StoredFile existing) {
-        if (existing == null || existing.getBackend() == Backend.LOCAL) {
+        if (existing == null) {
+            return config.defaultBackend() == Backend.BLOB ? blobWriteProblemForNew() : local.writeProblem();
+        }
+        if (existing.getBackend() == Backend.LOCAL) {
             return local.writeProblem();
         }
         if (existing.getBackend() != Backend.BLOB) {
             return "File storage backend is invalid.";
         }
         if (!blob.isWriteEnabled()) {
-            return "Blob replacement requires production mode and HUB_ARTIFACTS_SAS_TOKEN. "
+            if (blob.isDevelopmentMode()) {
+                return "Blob uploads are disabled in development mode. "
+                        + "Local uploads remain independent.";
+            }
+            return "Blob replacement requires production mode and an available managed identity. "
                     + "Local uploads remain independent.";
         }
         if (!config.blobEndpoint().equals(existing.getBlobEndpoint())
@@ -171,7 +188,11 @@ public class StoredFileService {
         candidate.setDownloadOnly(downloadOnly);
         if (existing == null) {
             candidate.setPublicId(UUID.randomUUID().toString());
-            candidate.setBackend(Backend.LOCAL);
+            candidate.setBackend(config.defaultBackend());
+            if (candidate.getBackend() == Backend.BLOB) {
+                candidate.setBlobEndpoint(config.blobEndpoint());
+                candidate.setBlobContainer(config.container());
+            }
             candidate.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         }
         candidate.setStorageKey(UUID.randomUUID().toString());

@@ -1,5 +1,17 @@
 # Azure Blob Storage Handoff Reaction
 
+## October 2026 amendment: managed identity replaces the write SAS
+
+Server-side Blob writes now authenticate with the production VM's
+system-assigned managed identity (`Storage Blob Data Contributor` on the
+`artifacts` container, granted and live-verified 2026-10-14). All SAS guidance
+below — generation, rotation, expiry, the `HUB_ARTIFACTS_SAS_TOKEN` environment
+variable, the missing-SAS warning, and the "SAS must remain a server-side
+production secret" rule — is superseded. There is no application secret to
+hold, rotate, or leak. The remaining credential-related follow-up is
+infrastructure-only: set `allowSharedKeyAccess: false` and rotate the account
+keys (see `artifact-storage-managed-identity-migration.md`).
+
 ## October 2026 amendment: local first, shared storage
 
 This document records the original Blob-only reaction. Step 1 code is written, but production verification is blocked by Azure permissions. [Implementation task 1a](InteropHub_Communication_Bundles_Implementation_Plan.md) is now the governing plan for reusable storage; the original sections below remain historical Blob-specific guidance, with these overrides:

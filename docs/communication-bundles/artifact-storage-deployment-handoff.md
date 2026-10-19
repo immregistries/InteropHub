@@ -17,6 +17,43 @@ whoever holds Azure access for the storage account.
 
 **Task 1a now supplies shared local/Blob file metadata, local uploads, and anonymous stable InteropHub file URLs.** Production Blob verification remains blocked by provisioning permissions. The original Azure instructions below are historical step 1 instructions, not the current local deployment procedure.
 
+### October 2026 status: managed identity replaces the write SAS
+
+Server-side Blob writes no longer use a SAS. On 2026-10-14 the production VM
+`testSabbia` system-assigned identity
+(`7eb7d453-8f61-4d39-90cf-f1e9b8b54dda`) was granted **Storage Blob Data
+Contributor** on the `artifacts` container (assignment `a2482ee2-46aa-46ad-9447-420c5e93ba5c`),
+and a live PUT (`201`) / DELETE (`202`) from the VM proved it. The application
+now authenticates with `ManagedIdentityCredential` (`com.azure:azure-identity`
+alongside `azure-storage-blob`); `HUB_ARTIFACTS_SAS_TOKEN` is removed from the
+code and must be removed from the Tomcat environment, not regenerated.
+
+What this changes for deployment:
+
+- No Blob secret in `setenv.sh`. Only `HUB_ARTIFACTS_BLOB_ENDPOINT` and
+  `HUB_ARTIFACTS_CONTAINER` exist, and both have correct defaults.
+- Writes are enabled when the host is not in development mode **and** the
+  managed identity can mint Storage tokens. Development machines have no IMDS
+  endpoint, so their writes stay off without any configuration.
+- The Tomcat boot log reports `artifact write path: enabled` or
+  `artifact write path: disabled (reason)` via `ArtifactStorageHealthListener`.
+  Confirm `enabled` on production; `disabled (managed identity unavailable)`
+  means the identity or its role assignment is missing, and
+  `disabled (environment check failed)` means the deployment environment could
+  not be determined at startup — a different fault, and not a development host.
+- New uploads follow `INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND` (`local` by
+  default, `blob` to route them to Blob). The environment determination that
+  gates Blob writes is cached for the life of the process, so changing
+  `hub_settings.external_base_url` requires a Tomcat restart, as the other
+  deployment settings do.
+- If `testSabbia` is ever rebuilt or replaced, its system-assigned principal
+  changes and the container grant above must be recreated before uploads work.
+
+The SAS-based sections under "Historical Blob-only step 1 instructions" below
+must not be followed. `allowSharedKeyAccess` stays `true` for now as a
+deferred hardening follow-up; the exposed validation-era SAS tokens remain
+technically valid until it is disabled or the account keys are rotated.
+
 The demo is a consumer of shared file storage. `hub_stored_file` holds backend-aware records; `es_artifact_demo` now associates slots with those records. The migration explicitly maps old objects to `BLOB` and preserves the old image as `WELCOME_BLOB_DEMO`. New slots are `WELCOME_DEMO` (local Welcome image) and `DOCUMENT_DEMO` (local document proof). Welcome prefers the local image and otherwise uses the preserved Blob image. Step 2 removes temporary demo structures only after retaining shared records and references.
 
 Local setup uses `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY=C:\dev\immregistries\InteropHub-artifacts`. The directory must already exist. Restart the Tomcat service after setting/changing the environment variable; replacing the WAR alone cannot refresh the service's inherited environment.
@@ -24,15 +61,17 @@ Local setup uses `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY=C:\dev\immregistries\Inte
 ### Local-first deployment checklist
 
 - [ ] Provision one durable folder outside the WAR, exploded deployment, web root, and temporary directories; set the absolute path in `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY` in Tomcat's environment.
-- [ ] Give the Tomcat service account read/write rights, verify the root and temporary-upload area cannot escape through symlinks, and do not expose directory listing or a separate static web-root mapping.
+- [ ] Give the Tomcat service account read/write rights, verify the root and temporary-upload area cannot escape through symlinks, and do not expose directory listing or a separate static web-root mapping. File permissions alone are not sufficient: if the Tomcat unit sets `ProtectSystem=strict`, the service sees the whole filesystem as read-only except the paths in `ReadWritePaths`, and a directory that looks writable from a shell is not writable from the service. Check with `nsenter -t <tomcat-pid> -m -- test -w <dir>`, and add the directory to `ReadWritePaths` if it is not already listed.
 - [ ] Include the folder and database in coordinated backup/restore procedures, monitor free disk space, and verify files survive restart and WAR redeployment. Before adding nodes, arrange a shared durable root or transition to Blob.
 - [ ] Apply task 1a's schema update from `db/unapplied_updates.sql` according to the [database release practice](../database-release-practice.md). It is apply-once and requires the original step 1 table. Before production application, check the migration's historical Blob endpoint/container literals against the location actually used by the old demo. Do not reapply to an already-migrated database.
 - [ ] Deploy the task 1a WAR with new uploads explicitly local. No Azure credentials or account changes are required for local upload/read verification. Adding a SAS later must not silently change new-upload routing.
 - [ ] Verify the admin demo and signed-in/signed-out Welcome page use stable InteropHub file URLs. Exercise PDF and downloadable TXT/DOC/DOCX/PPT/PPTX through the separate document form. Existing Blob replacements remain production-only and require a matching write credential.
 - [ ] Verify the 25 MiB per-file cap, with bounded multipart overhead at Tomcat and any reverse proxy. A file of 26,214,401 bytes is rejected; audio/video and disallowed active formats are rejected. Local files stream with correct metadata, `nosniff`, and cache revalidation.
 - [ ] Replace a file and confirm the stable URL presents fresh content without exposing a partial upload. Simulate disk/permission failure and confirm an explicit failure and retention of the previous good content.
-- [ ] Check blank local configuration disables only local support; an invalid configured root reports an actionable error. Missing Blob SAS must not disable working local uploads. A recorded backend outage must not trigger silent fallback to a different object.
+ - [ ] Check blank local configuration disables only local support; an invalid configured root reports an actionable error. A missing managed identity must not disable working local uploads. A recorded backend outage must not trigger silent fallback to a different object.
 - [ ] For development, configure a separate isolated local root and database/file copy; never mount the production folder writable. Verify Blob writes are rejected even with a SAS accidentally configured. Missing copied files are reported, not silently fetched from production.
+- [x] Before routing new uploads to Blob or migrating stored files into it, prove that a stored Blob object is anonymously readable: upload one object with the managed identity, then `GET` the same URL with no `Authorization` header and expect `200`. The Blob read model is a redirect to the object's own URL, so an object that is not anonymously readable is not readable through InteropHub. A `404` means the object is missing; a `403` means the container is not public. **Confirmed 2026-10-19:** an object written with the managed identity was anonymously readable (`GET` → `200`), and the account accepts writes with an account key. The container was left empty after the October 2026 verification, and the `WELCOME_BLOB_DEMO` object the v0.8 migration points at returns `404`, so that image needs re-uploading.
+- [ ] Hand-written Blob requests must send an `x-ms-version` header. Without it the service falls back to a version that predates OAuth support and answers a managed-identity request with `403` and *"Authentication scheme Bearer is not supported in this version"*, which reads as a permissions problem but is not. The application is unaffected: the Azure SDK always sends it. `docs/tasks/migrate_ivc_archive_to_blob.sh` and `docs/tasks/diagnose_blob_write_access.sh` send it.
 
 Anyone with an opaque file URL can read it on either backend. This does not make private/draft content confidential, revoke previously disclosed links, or remove the requirement to retain authoritative documents elsewhere.
 
@@ -43,9 +82,37 @@ Anyone with an opaque file URL can read it on either backend. This does not make
 | `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY` absent/blank | Local reads/writes disabled; Blob capability is independent |
 | Local directory explicitly invalid/unwritable | Explicit local configuration error; no alternate-path/provider fallback |
 | Valid local directory, no SAS | Local uploads enabled for authorized users; existing configured Blob reads still work |
-| Production with Blob SAS | Blob writes available for recorded Blob files; task 1a new uploads remain local |
-| Development with isolated local root | Local uploads allowed; all Blob writes rejected independently of SAS |
+| Production with managed identity grant | Blob writes available for recorded Blob files; new uploads follow `INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND` |
+| Development with isolated local root | Local uploads allowed; all Blob writes rejected independently of configuration |
 | Neither backend writable | Uploads disabled with a clear explanation; available reads remain independent |
+
+### Switching new uploads to Blob storage
+
+New uploads default to `LOCAL`. To route them to Blob, set in the Tomcat
+environment (normally `bin/setenv.sh`):
+
+```sh
+export INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND="blob"
+```
+
+then restart Tomcat. Replacements always follow the already-recorded backend,
+so existing local files stay local; only new uploads change destination. There
+is no automatic migration of existing bytes.
+
+To move existing local files to Blob, migrate them explicitly. The IVC
+historical-meeting archive has a script that does this against the shared
+managed identity, verifying each file against the recorded SHA-256 and
+reading each object back anonymously before deleting the local copy:
+`docs/tasks/migrate_ivc_archive_to_blob.sh`. It also emits the
+`hub_stored_file` UPDATE statements, which leave `public_id` alone so the
+stable URLs do not change.
+
+Production prerequisites for Blob uploads: the managed-identity WAR deployed,
+the container grant in place (see the managed-identity status section above),
+no Blob secret required, and the boot log reporting
+`artifact write path: enabled`. Development machines stay safe by default:
+with no IMDS endpoint their Blob writes are rejected even if this variable is
+set to `blob`.
 
 Do not treat a valid directory as proof of operational readiness: backup/restore and persistence checks are deployment prerequisites. Selective or full migration, provider-selection UI, and future upload policy are deferred. A migration must verify bytes before changing the recorded locator and retain the stable public ID; direct Blob links already distributed outside InteropHub require separate handling.
 
@@ -54,7 +121,7 @@ Do not treat a valid directory as proof of operational readiness: backup/restore
 - Uploads validate filenames, extension, declared MIME, content/container structure, and streamed size. Decoded PNG/JPEG/GIF images are capped at 40 million pixels. WebP uses RIFF/frame-header validation because the JDK has no WebP decoder; this is not full image decoding. Office ZIP expansion is bounded to 100 MiB, checks CRC and the expected package manifest, and rejects macro payloads; legacy Office macro markers are also rejected.
 - Validation is not antivirus scanning. PDF validation checks its header; accepted Office/PDF content can still be unsafe for recipients. Do not upload confidential content or execute/convert embedded content on the server.
 - Each successful replacement keeps the public URL but creates a new opaque physical key. Publication is atomic; optimistic metadata versions and the demo transaction prevent conflicting replacements from overwriting each other. GET/HEAD uses the new physical key as its ETag.
-- After successful local replacement, obsolete local bytes are removed. Cleanup failure is logged for operator action. Blob replacement leaves the old object for operator cleanup because the existing SAS does not authorize deletion.
+ - After successful local replacement, obsolete local bytes are removed. Cleanup failure is logged for operator action. Blob replacement leaves the old object for operator cleanup because the Storage Blob Data Contributor role does not include deletion.
 - A database registration failure can have an ambiguous commit outcome. Candidate bytes are deliberately retained and their key logged for reconciliation; never blindly delete files absent from a stale database snapshot. Inspect committed `hub_stored_file` references before cleanup. Stale upload staging files also require operator reconciliation after a process crash.
 - Back up the database and root together. A routine production-database refresh alone does not preserve local test records or copy their files; it can leave unreferenced test bytes. Production recovery and coordinated backup/restore drills remain required before production readiness is claimed.
 
@@ -121,6 +188,10 @@ The existing topic-note streaming endpoint logged a non-blocking `ServletOutputS
 
 The sections below preserve the original Azure handoff. Their fixed-key replacement,
 image-only UI, and temporary-table descriptions are superseded by task 1a above.
+Their SAS credential model — generation, rotation, expiry, the
+`HUB_ARTIFACTS_SAS_TOKEN` environment variable, and the missing-SAS warning — is
+additionally superseded by the October 2026 managed-identity migration above.
+Do not generate, configure, or rotate a SAS from these sections.
 
 ### What was added in step 1
 

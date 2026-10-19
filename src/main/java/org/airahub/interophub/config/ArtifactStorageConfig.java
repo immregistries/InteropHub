@@ -3,6 +3,7 @@ package org.airahub.interophub.config;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.logging.Logger;
+import org.airahub.interophub.model.StoredFile;
 
 /** Deployment settings, independent of the backend recorded on individual files. */
 public final class ArtifactStorageConfig {
@@ -10,24 +11,40 @@ public final class ArtifactStorageConfig {
     private static final ArtifactStorageConfig INSTANCE = new ArtifactStorageConfig(
             System.getenv("INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY"),
             System.getenv("HUB_ARTIFACTS_BLOB_ENDPOINT"),
-            System.getenv("HUB_ARTIFACTS_CONTAINER"),
-            System.getenv("HUB_ARTIFACTS_SAS_TOKEN"));
+            System.getenv("HUB_ARTIFACTS_CONTAINER"));
 
     private final String localDirectory;
     private final String blobEndpoint;
     private final String container;
-    private final String sasToken;
+    private final StoredFile.Backend defaultBackend;
 
-    public ArtifactStorageConfig(String localDirectory, String blobEndpoint, String container, String sasToken) {
+    public ArtifactStorageConfig(String localDirectory, String blobEndpoint, String container) {
+        this(localDirectory, blobEndpoint, container, parseDefaultBackend(System.getenv(
+                "INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND")));
+    }
+
+    /**
+     * Explicit default backend for tests and special deployments. A null
+     * backend falls back to {@code LOCAL}; production selects Blob with
+     * {@code INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND=blob}.
+     */
+    public ArtifactStorageConfig(String localDirectory, String blobEndpoint, String container,
+            StoredFile.Backend defaultBackend) {
         this.localDirectory = trim(localDirectory);
         this.blobEndpoint = trim(blobEndpoint) == null
                 ? "https://testsabbiastorage.blob.core.windows.net" : trim(blobEndpoint).replaceAll("/+$", "");
         this.container = trim(container) == null ? "artifacts" : trim(container);
-        String token = trim(sasToken);
-        this.sasToken = token != null && token.startsWith("?") ? token.substring(1) : token;
+        this.defaultBackend = defaultBackend == null ? StoredFile.Backend.LOCAL : defaultBackend;
         if (this.localDirectory == null) {
             LOGGER.info("INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY is not set; local file storage is disabled.");
         }
+    }
+
+    /** Backend assigned to new uploads. Replacements always follow the recorded backend. */
+    public StoredFile.Backend defaultBackend() { return defaultBackend; }
+
+    private static StoredFile.Backend parseDefaultBackend(String value) {
+        return "blob".equalsIgnoreCase(trim(value)) ? StoredFile.Backend.BLOB : StoredFile.Backend.LOCAL;
     }
 
     public static ArtifactStorageConfig current() { return INSTANCE; }
@@ -46,9 +63,6 @@ public final class ArtifactStorageConfig {
 
     public String blobEndpoint() { return blobEndpoint; }
     public String container() { return container; }
-    /** Server-only credential; never log or return to a browser. */
-    public String sasToken() { return sasToken; }
-    public boolean hasBlobCredential() { return sasToken != null && !sasToken.isBlank(); }
 
     public static String blobReadUrl(String endpoint, String container, String key) {
         validateBlobLocation(endpoint, container);

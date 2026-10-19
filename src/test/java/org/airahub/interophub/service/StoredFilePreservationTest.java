@@ -41,7 +41,7 @@ class StoredFilePreservationTest {
     void setup() throws IOException {
         Path target = Files.createDirectories(Path.of("target").toAbsolutePath());
         root = Files.createTempDirectory(target, "preservation-test-");
-        service = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null, null),
+        service = new StoredFileService(new ArtifactStorageConfig(root.toString(), null, null),
                 () -> true, new StoredFileDao() {
                     @Override
                     public boolean isPreserved(Long storedFileId) {
@@ -226,7 +226,7 @@ class StoredFilePreservationTest {
         source.setBlobEndpoint("https://testsabbiastorage.blob.core.windows.net");
         source.setBlobContainer("artifacts");
         ArtifactStorageConfig config = new ArtifactStorageConfig(root.toString(),
-                source.getBlobEndpoint(), source.getBlobContainer(), "unused-test-token");
+                source.getBlobEndpoint(), source.getBlobContainer());
         StoredFileService development = new StoredFileService(config, () -> true, null);
         assertThrows(IllegalStateException.class, () -> development.preserve(source, 9L, candidate -> {
             fail("Development must not perform Blob preservation");

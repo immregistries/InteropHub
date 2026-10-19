@@ -480,7 +480,79 @@ changes.
 - **Don't duplicate:** the website should not duplicate agendas or the deck
   archive.
 
-## 10. Changed files
+## 10. Moving the archive off the local file system
+
+The 57 files were staged on the production server as local files, because
+they predate the move to managed-identity Blob writes. They can be migrated
+to Blob with `docs/tasks/migrate_ivc_archive_to_blob.sh`, which uses the same
+managed identity as the application: no SAS and no account key.
+
+```
+./migrate_ivc_archive_to_blob.sh \
+    --manifest docs/tasks/ivc-historical-meetings-files.tsv \
+    --local-dir /opt/interophub-artifacts
+```
+
+The script, per file: checks the staged file's size and SHA-256 against
+`ivc-historical-meetings-files.tsv`; uploads it to the `artifacts` container
+under the existing `storage_key` (already a UUID, and the Blob object name the
+application will redirect to); reads the object back **anonymously** and
+re-hashes it; and only then removes the local copy. Nothing is deleted that
+has not been proven readable from Blob, and no row is flipped unless every
+file migrated. A failure leaves the local file in place and the run exits
+non-zero, so it can be fixed and re-run; already-migrated files are simply
+re-uploaded.
+
+The script sets the three Blob properties the application would set on
+upload, because a Blob-hosted file is served by redirecting the browser to the
+object and the object must carry the metadata itself:
+`x-ms-blob-content-type`, `x-ms-blob-content-disposition` (the
+`attachment; filename="..."; filename*=UTF-8''...` form the application
+produces, so the 3 Spanish filenames download correctly), and
+`x-ms-blob-cache-control: no-cache`. It then writes the `hub_stored_file`
+UPDATE statements, which change `storage_backend`, `storage_key`,
+`blob_endpoint` and `blob_container` and leave `public_id` alone, so the
+stable `/hub/files/<id>` URLs do not change. Pass `--apply-sql` to run them
+through the `mysql` client, or review and run them yourself.
+
+The local files are kept until the row update has been applied, and are
+removed only after it succeeds. An interrupted run therefore never leaves a
+row claiming `LOCAL` while its file is gone. The attachment rows reference
+`stored_file_id`, which the update does not change, so the meeting-to-file
+links are preserved.
+
+**Every hand-written Blob request needs an `x-ms-version` header.** Without
+it the service falls back to a version that predates OAuth support and
+answers a managed-identity request with `403` and *"Authentication scheme
+Bearer is not supported in this version"*, which looks exactly like a
+permissions problem but is not. The application is unaffected — the Azure SDK
+always sends the header — but the script and the diagnostic are hand-written
+and must send it.
+
+The two decks above the 25 MiB application upload cap (2025-06-11 at
+57.3 MB and 2025-07-09 at 25.5 MB) are uploaded directly and are not subject
+to that cap, which is why they were approved as exceptions in the first
+place.
+
+**Prerequisite:** prove that a stored object is anonymously readable before
+migrating. The Blob read model is a redirect to the object's own URL, so an
+object that is not publicly readable is not readable through InteropHub. The
+container was left empty after the October 2026 managed-identity verification
+and the `WELCOME_BLOB_DEMO` object returns `404`, so this was not yet
+demonstrated in production. It is now: on 2026-10-19 an object written to
+the container was confirmed anonymously readable (`GET` → `200`), and the
+account accepts writes with an account key. The script checks both again
+before it uploads anything.
+
+**Before running this, note that the row UPDATE is a production data
+change.** `db/unapplied_updates.sql` currently holds the v0.9 payload, which
+has already been applied to production; it is frozen and emptied by Nathan as
+part of the v0.9 release. The migration statements belong in the repository
+so they survive Nathan's daily local database refresh, which rebuilds from a
+production snapshot and re-applies `unapplied_updates.sql` — a change made
+only on the production server would be discarded there without notice.
+
+## 11. Changed files
 
 **Repository files changed:**
 - `db/unapplied_updates.sql`: the appended backload block.
