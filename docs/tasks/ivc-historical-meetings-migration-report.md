@@ -482,10 +482,11 @@ changes.
 
 ## 10. Moving the archive off the local file system
 
-The 57 files were staged on the production server as local files, because
-they predate the move to managed-identity Blob writes. They can be migrated
-to Blob with `docs/tasks/migrate_ivc_archive_to_blob.sh`, which uses the same
-managed identity as the application: no SAS and no account key.
+**Done on 2026-10-19.** The 57 files were staged on the production server as
+local files, because they predate the move to managed-identity Blob writes.
+They were migrated to Blob with `docs/tasks/migrate_ivc_archive_to_blob.sh`,
+which uses the same managed identity as the application: no SAS and no account
+key.
 
 ```
 ./migrate_ivc_archive_to_blob.sh \
@@ -497,11 +498,15 @@ The script, per file: checks the staged file's size and SHA-256 against
 `ivc-historical-meetings-files.tsv`; uploads it to the `artifacts` container
 under the existing `storage_key` (already a UUID, and the Blob object name the
 application will redirect to); reads the object back **anonymously** and
-re-hashes it; and only then removes the local copy. Nothing is deleted that
-has not been proven readable from Blob, and no row is flipped unless every
-file migrated. A failure leaves the local file in place and the run exits
-non-zero, so it can be fixed and re-run; already-migrated files are simply
-re-uploaded.
+re-hashes it. Nothing is deleted that has not been proven readable from Blob,
+and no row is flipped unless every file migrated. A failure leaves the local
+file in place and the run exits non-zero, so it can be fixed and re-run;
+already-migrated files are simply re-uploaded.
+
+The local copies are removed only after the row update has been applied, so an
+interrupted run never leaves a row claiming `LOCAL` while its file is gone.
+The attachment rows reference `stored_file_id`, which the update does not
+change, so the meeting-to-file links are preserved.
 
 The script sets the three Blob properties the application would set on
 upload, because a Blob-hosted file is served by redirecting the browser to the
@@ -544,13 +549,28 @@ the container was confirmed anonymously readable (`GET` → `200`), and the
 account accepts writes with an account key. The script checks both again
 before it uploads anything.
 
-**Before running this, note that the row UPDATE is a production data
-change.** `db/unapplied_updates.sql` currently holds the v0.9 payload, which
-has already been applied to production; it is frozen and emptied by Nathan as
-part of the v0.9 release. The migration statements belong in the repository
-so they survive Nathan's daily local database refresh, which rebuilds from a
-production snapshot and re-applies `unapplied_updates.sql` — a change made
-only on the production server would be discarded there without notice.
+**The row update is a production data change, and it is recorded in the
+repository.** `db/unapplied_updates.sql` now holds the statement that moves
+the 57 rows to Blob, as the next payload after the v0.9 freeze. It was
+applied to production directly during the migration, and it is in the
+repository so it survives Nathan's daily local database refresh, which
+rebuilds from a production snapshot and re-applies `unapplied_updates.sql` —
+a change made only on the production server would be discarded there without
+notice.
+
+The statement is guarded on `storage_backend = 'LOCAL'` and lists the 57
+`public_id` values explicitly, so it is a no-op for rows already on Blob and
+can be re-run safely. It does not change `storage_key`: the Blob object was
+uploaded under the key the file already had locally.
+
+**Still outstanding:** the local directory on the server is not yet retired.
+`INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY` is still set and
+`/opt/interophub-artifacts` still holds the staged copies. Removing them
+means unsetting the variable, restarting Tomcat, and dropping the directory
+from the backup set — the release checklist's "back up the artifact
+directory together with the database" requirement goes away with it. The
+`WELCOME_BLOB_DEMO` row and the local demonstration slots remain the other
+`LOCAL` rows to consider before the directory can go.
 
 ## 11. Changed files
 
