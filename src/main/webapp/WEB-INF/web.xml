@@ -440,6 +440,16 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsInitiativeServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsInitiativeServlet</servlet-class>
+    <multipart-config>
+      <max-file-size>10485760</max-file-size>
+      <max-request-size>11534336</max-request-size>
+      <file-size-threshold>262144</file-size-threshold>
+    </multipart-config>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicsServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicsServlet</servlet-class>
   </servlet>
@@ -797,6 +807,16 @@
   <servlet-mapping>
     <servlet-name>EsSupportersServlet</servlet-name>
     <url-pattern>/es/supporters</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsInitiativeServlet</servlet-name>
+    <url-pattern>/es/initiatives</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsInitiativeServlet</servlet-name>
+    <url-pattern>/es/initiatives/*</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>

@@ -12,7 +12,10 @@ import org.airahub.interophub.dao.EsTopicSpaceDao;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.MeetingAction;
 import org.airahub.interophub.model.User;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.InitiativeService;
 import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.PublicUrlService;
 import org.airahub.interophub.service.TopicSpaceAccessService;
@@ -44,6 +47,9 @@ final class InteropAiraPageFactory {
     private static final int MAX_WELCOME_SPACE_ITEMS = 5;
     private static final String EMERGING_STANDARDS_SPACE_CODE = "emerging-standards";
 
+    private static final Logger LOGGER = Logger.getLogger(InteropAiraPageFactory.class.getName());
+    private static final String INITIATIVES_NAV_ACTIVE = "initiativesNavActive";
+    private static final ThreadLocal<HttpServletRequest> PAGE_REQUEST = new ThreadLocal<>();
     private static final AuthFlowService AUTH_FLOW_SERVICE = new AuthFlowService();
     private static final PublicUrlService PUBLIC_URL_SERVICE = new PublicUrlService();
     private static final EsTopicSpaceDao TOPIC_SPACE_DAO = new EsTopicSpaceDao();
@@ -60,6 +66,7 @@ final class InteropAiraPageFactory {
 
     static AiraPage.Builder base(HttpServletRequest request, String documentTitle, Optional<User> authenticatedUser,
             boolean localhostMode) {
+        PAGE_REQUEST.set(request);
         AiraPage.Builder builder = AiraPage.builder()
                 .applicationName(APPLICATION_NAME)
                 .applicationVersion(InteropVersionResolver.getApplicationVersion())
@@ -141,7 +148,26 @@ final class InteropAiraPageFactory {
         if (EMERGING_STANDARDS_SPACE_CODE.equalsIgnoreCase(normalizedSpaceCode)) {
             items.add(new AiraNavigationItem("Supporters", "/es/supporters", supportersActive));
         }
+        HttpServletRequest request = PAGE_REQUEST.get();
+        if (request != null && showInitiativesNav(request)) {
+            boolean initiativesActive = Boolean.TRUE.equals(request.getAttribute(INITIATIVES_NAV_ACTIVE));
+            items.add(new AiraNavigationItem("Initiatives", "/es/initiatives", initiativesActive));
+        }
         return new AiraContextConfig(label, items);
+    }
+
+    static void markInitiativesNavActive(HttpServletRequest request) {
+        request.setAttribute(INITIATIVES_NAV_ACTIVE, Boolean.TRUE);
+    }
+
+    private static boolean showInitiativesNav(HttpServletRequest request) {
+        try {
+            User user = AUTH_FLOW_SERVICE.findAuthenticatedUser(request).orElse(null);
+            return new InitiativeService().canSeeNavigation(user);
+        } catch (RuntimeException ex) {
+            LOGGER.log(Level.WARNING, "Could not decide whether to show Initiatives in the navigation", ex);
+            return false;
+        }
     }
 
     /**
