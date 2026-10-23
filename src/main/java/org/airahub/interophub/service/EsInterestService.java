@@ -9,6 +9,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.List;
 import org.airahub.interophub.dao.EsCommentDao;
+import org.airahub.interophub.dao.EsInitiativeMemberDao;
 import org.airahub.interophub.dao.EsInterestDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
@@ -38,6 +39,7 @@ public class EsInterestService {
     private final EsSubscriptionDao subscriptionDao;
     private final EsTopicMeetingMemberDao topicMeetingMemberDao;
     private final EsMeetingAttendanceDao meetingAttendanceDao;
+    private final EsInitiativeMemberDao initiativeMemberDao;
     private final UserDao userDao;
 
     public EsInterestService() {
@@ -46,6 +48,7 @@ public class EsInterestService {
         this.subscriptionDao = new EsSubscriptionDao();
         this.topicMeetingMemberDao = new EsTopicMeetingMemberDao();
         this.meetingAttendanceDao = new EsMeetingAttendanceDao();
+        this.initiativeMemberDao = new EsInitiativeMemberDao();
         this.userDao = new UserDao();
     }
 
@@ -150,8 +153,8 @@ public class EsInterestService {
     // -------------------------------------------------------------------------
 
     /**
-     * Backfills user_id on any anonymous es_subscription and
-     * es_topic_meeting_member rows whose email_normalized matches the given value
+     * Backfills user_id on any anonymous es_subscription, es_topic_meeting_member,
+     * and es_initiative_member rows whose email_normalized matches the given value
      * and whose user_id is currently NULL. Safe to call on every login or
      * welcome-page visit — the WHERE clause makes it fully idempotent.
      *
@@ -166,6 +169,7 @@ public class EsInterestService {
         topicMeetingMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
         commentDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
         meetingAttendanceDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+        initiativeMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
     }
 
     /**

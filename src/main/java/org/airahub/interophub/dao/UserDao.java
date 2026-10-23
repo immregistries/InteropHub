@@ -1,5 +1,6 @@
 package org.airahub.interophub.dao;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
@@ -125,6 +126,17 @@ public class UserDao extends GenericDao<User, Long> {
             return session.createQuery(
                     "from User u order by lower(coalesce(u.firstName, '')), lower(coalesce(u.lastName, '')), lower(u.email)",
                     User.class)
+                    .getResultList();
+        }
+    }
+
+    public List<User> findByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("from User u where u.userId in :ids", User.class)
+                    .setParameter("ids", ids)
                     .getResultList();
         }
     }
