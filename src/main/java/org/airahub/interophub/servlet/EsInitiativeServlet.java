@@ -61,7 +61,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 renderMissing(request, response);
                 return;
             }
-            renderCreate(request, response, null);
+            renderCreate(request, response, FormInput.none());
             return;
         }
         EsInitiative initiative = initiatives.findByCode(parts[0]).orElse(null);
@@ -70,31 +70,11 @@ public class EsInitiativeServlet extends HttpServlet {
             renderMissing(request, response);
             return;
         }
-        String section = parts.length > 1 ? parts[1] : "overview";
-        if ("organization-suggest".equals(section)) {
+        if (parts.length > 1 && "organization-suggest".equals(parts[1])) {
             suggest(request, response, initiative, level);
             return;
         }
-        switch (section) {
-            case "overview" -> renderOverview(request, response, user, initiative, level);
-            case "organizations" -> renderOrganizations(request, response, user, initiative, level);
-            case "people" -> renderPeople(request, response, user, initiative, level);
-            case "settings" -> {
-                if (!InitiativeAccess.canManageSettings(level)) {
-                    redirect(response, request, initiative, "");
-                    return;
-                }
-                renderSettings(request, response, initiative);
-            }
-            case "import" -> {
-                if (!InitiativeAccess.canEditRoster(level)) {
-                    redirect(response, request, initiative, "/people");
-                    return;
-                }
-                renderImport(request, response, user, initiative);
-            }
-            default -> renderMissing(request, response);
-        }
+        renderCurrent(request, response, user, initiative, level, parts, FormInput.none());
     }
 
     @Override
@@ -148,16 +128,21 @@ public class EsInitiativeServlet extends HttpServlet {
             } else if (!"commit".equals(action)) {
                 flash(request, "success", "Preview updated. Import only after you have checked it.");
             }
-            redirect(response, request, initiative, redirectAfter(section, action));
+            redirect(response, request, initiative, redirectAfter(parts, action));
         } catch (IllegalArgumentException ex) {
-            flash(request, "danger", ex.getMessage());
-            String target = parts.length == 0 ? request.getContextPath() + "/es/initiatives"
-                    : request.getContextPath() + "/es/initiatives/" + (parts.length > 0 ? parts[0] : "")
-                            + (parts.length > 1 ? "/" + parts[1] : "");
             if (parts.length == 1 && "new".equals(parts[0])) {
-                target = request.getContextPath() + "/es/initiatives/new";
+                renderCreate(request, response, FormInput.replay(request, "create", ex.getMessage(), null));
+                return;
             }
-            response.sendRedirect(target);
+            EsInitiative initiative = parts.length == 0 ? null : initiatives.findByCode(parts[0]).orElse(null);
+            InitiativeAccess.Level level = initiatives.access(user, initiative);
+            if (initiative == null || !InitiativeAccess.canView(level)) {
+                renderMissing(request, response);
+                return;
+            }
+            String action = param(request, "action");
+            renderCurrent(request, response, user, initiative, level, parts,
+                    FormInput.replay(request, action == null ? "" : action, ex.getMessage(), dialogFor(parts, action)));
         } catch (RuntimeException ex) {
             LOGGER.log(Level.SEVERE, "Initiative update failed", ex);
             flash(request, "danger", "Could not save that change.");
@@ -282,52 +267,113 @@ public class EsInitiativeServlet extends HttpServlet {
             initiatives.findTopic(initiative.getPrimaryEsTopicId())
                     .ifPresent(topic -> topicNames.put(topic.getEsTopicId(), topic.getTopicName()));
         }
-        page(request, response, "Initiatives - InteropHub", null, null, false, out -> {
+        page(request, response, "Initiatives - InteropHub", null, null, FormInput.none(), out -> {
             InitiativePageRenderer.list(out, request.getContextPath(), visible, topicNames,
                     authFlowService.isAdminUser(user));
         });
     }
 
-    private void renderCreate(HttpServletRequest request, HttpServletResponse response, String error) throws IOException {
-        page(request, response, "New initiative - InteropHub", null, null, false, out -> {
-            InitiativePageRenderer.createForm(out, request.getContextPath(), initiatives.activeTopics(), error);
+    private void renderCurrent(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, InitiativeAccess.Level level, String[] parts, FormInput input) throws IOException {
+        String section = parts.length > 1 ? parts[1] : "overview";
+        switch (section) {
+            case "overview" -> renderOverview(request, response, user, initiative, level, input);
+            case "organizations" -> {
+                if (parts.length == 2) {
+                    renderOrganizations(request, response, initiative, level, input);
+                } else if (parts.length == 3) {
+                    renderOrganization(request, response, user, initiative, level, parts[2], input);
+                } else {
+                    renderMissing(request, response);
+                }
+            }
+            case "people" -> {
+                if (parts.length == 2) {
+                    renderPeople(request, response, initiative, level, input);
+                } else if (parts.length == 3) {
+                    renderPerson(request, response, user, initiative, level, parts[2], input);
+                } else {
+                    renderMissing(request, response);
+                }
+            }
+            case "settings" -> {
+                if (!InitiativeAccess.canManageSettings(level)) {
+                    redirect(response, request, initiative, "");
+                    return;
+                }
+                renderSettings(request, response, initiative, input);
+            }
+            case "import" -> {
+                if (!InitiativeAccess.canEditRoster(level)) {
+                    redirect(response, request, initiative, "/people");
+                    return;
+                }
+                renderImport(request, response, user, initiative, input);
+            }
+            default -> renderMissing(request, response);
+        }
+    }
+
+    private void renderCreate(HttpServletRequest request, HttpServletResponse response, FormInput input) throws IOException {
+        page(request, response, "New initiative - InteropHub", null, null, input, out -> {
+            InitiativePageRenderer.createForm(out, request.getContextPath(), initiatives.activeTopics(), input);
         });
     }
 
     private void renderOverview(HttpServletRequest request, HttpServletResponse response, User user,
-            EsInitiative initiative, InitiativeAccess.Level level) throws IOException {
+            EsInitiative initiative, InitiativeAccess.Level level, FormInput input) throws IOException {
         EsTopic topic = initiatives.findTopic(initiative.getPrimaryEsTopicId()).orElse(null);
-        page(request, response, initiative.getInitiativeName() + " - InteropHub", initiative, "overview",
-                InitiativeAccess.canEditRoster(level), out -> InitiativePageRenderer.overview(out, request.getContextPath(),
-                        initiative, topic, initiatives.links(initiative.getEsInitiativeId()),
-                        representation(initiative),
-                        initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.INITIATIVE, initiative.getEsInitiativeId()),
-                        names(initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.INITIATIVE,
-                                initiative.getEsInitiativeId())),
-                        user, InitiativeAccess.canComment(level)));
+        List<EsInitiativeTimelineEntry> timeline = initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.INITIATIVE,
+                initiative.getEsInitiativeId());
+        page(request, response, initiative.getInitiativeName() + " - InteropHub", initiative, "overview", input,
+                out -> InitiativePageRenderer.overview(out, request.getContextPath(), initiative, topic,
+                        initiatives.links(initiative.getEsInitiativeId()), representation(initiative), timeline,
+                        names(timeline), user, InitiativeAccess.canComment(level), input));
     }
 
-    private void renderOrganizations(HttpServletRequest request, HttpServletResponse response, User user,
-            EsInitiative initiative, InitiativeAccess.Level level) throws IOException {
+    private void renderOrganizations(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
+            InitiativeAccess.Level level, FormInput input) throws IOException {
         List<EsInitiativeOrganization> participations = initiatives.organizations(initiative.getEsInitiativeId());
-        List<EsInitiativeMember> members = initiatives.members(initiative.getEsInitiativeId());
-        Map<Long, Organization> organizations = indexOrganizations(participations);
-        List<EsInitiativeTimelineEntry> timeline = initiatives.timelineForInitiative(initiative.getEsInitiativeId(),
-                EsInitiativeTimelineEntry.SubjectType.ORGANIZATION);
         page(request, response, initiative.getInitiativeName() + " organizations - InteropHub", initiative,
-                "organizations", true, out -> InitiativePageRenderer.organizations(out, request.getContextPath(),
-                        initiative, participations, organizations, members, timeline, names(timeline), user,
-                        representation(initiative), InitiativeAccess.canEditRoster(level)));
+                "organizations", input, out -> InitiativePageRenderer.organizations(out, request.getContextPath(),
+                        initiative, participations, indexOrganizations(participations),
+                        initiatives.members(initiative.getEsInitiativeId()), representation(initiative),
+                        InitiativeAccess.canEditRoster(level), param(request, "status"), param(request, "type"), input));
     }
 
-    private void renderPeople(HttpServletRequest request, HttpServletResponse response, User user,
-            EsInitiative initiative, InitiativeAccess.Level level) throws IOException {
+    private void renderOrganization(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, InitiativeAccess.Level level, String rawId, FormInput input) throws IOException {
+        Long id = pathId(rawId);
+        EsInitiativeOrganization participation = id == null ? null : findParticipation(initiative, id);
+        if (participation == null) {
+            renderMissing(request, response);
+            return;
+        }
+        Organization organization = initiatives.organizationsByIds(Set.of(participation.getOrganizationId())).stream()
+                .findFirst().orElse(null);
+        List<EsInitiativeMember> contacts = new ArrayList<>();
+        for (EsInitiativeMember member : initiatives.members(initiative.getEsInitiativeId())) {
+            if (participation.getEsInitiativeOrganizationId().equals(member.getEsInitiativeOrganizationId())) {
+                contacts.add(member);
+            }
+        }
+        List<EsInitiativeTimelineEntry> timeline = initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.ORGANIZATION,
+                participation.getEsInitiativeOrganizationId());
+        String name = organization == null ? "Organization" : organization.getOrganizationName();
+        page(request, response, name + " - " + initiative.getInitiativeName() + " - InteropHub", initiative,
+                "organizations", input, out -> InitiativePageRenderer.organizationDetail(out, request.getContextPath(),
+                        initiative, participation, organization, contacts, timeline, names(timeline), user,
+                        InitiativeAccess.canEditRoster(level), input));
+    }
+
+    private void renderPeople(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
+            InitiativeAccess.Level level, FormInput input) throws IOException {
         List<EsInitiativeOrganization> participations = initiatives.organizations(initiative.getEsInitiativeId());
         Map<Long, Organization> organizations = indexOrganizations(participations);
         String statusFilter = param(request, "status");
         String organizationFilter = param(request, "organization");
         String typeFilter = param(request, "type");
-        Long organizationId = longParam(request, "organization");
+        Long organizationId = organizationFilter == null || organizationFilter.isBlank() ? null : pathId(organizationFilter);
         List<EsInitiativeMember> visible = new ArrayList<>();
         for (EsInitiativeMember member : initiatives.members(initiative.getEsInitiativeId())) {
             Organization organization = organizationFor(member, participations, organizations);
@@ -344,16 +390,41 @@ public class EsInitiativeServlet extends HttpServlet {
                 missing.add(member.getEsInitiativeMemberId());
             }
         }
-        List<EsInitiativeTimelineEntry> timeline = initiatives.timelineForInitiative(initiative.getEsInitiativeId(),
-                EsInitiativeTimelineEntry.SubjectType.MEMBER);
-        page(request, response, initiative.getInitiativeName() + " people - InteropHub", initiative, "people", true,
+        page(request, response, initiative.getInitiativeName() + " people - InteropHub", initiative, "people", input,
                 out -> InitiativePageRenderer.people(out, request.getContextPath(), initiative, visible, participations,
-                        organizations, timeline, names(timeline), user, missing, statusFilter, organizationFilter,
-                        typeFilter, InitiativeAccess.canEditRoster(level)));
+                        organizations, missing, statusFilter, organizationFilter, typeFilter,
+                        InitiativeAccess.canEditRoster(level), input));
     }
 
-    private void renderSettings(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative)
-            throws IOException {
+    private void renderPerson(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, InitiativeAccess.Level level, String rawId, FormInput input) throws IOException {
+        Long id = pathId(rawId);
+        EsInitiativeMember member = null;
+        if (id != null) {
+            for (EsInitiativeMember candidate : initiatives.members(initiative.getEsInitiativeId())) {
+                if (id.equals(candidate.getEsInitiativeMemberId())) {
+                    member = candidate;
+                }
+            }
+        }
+        if (member == null) {
+            renderMissing(request, response);
+            return;
+        }
+        List<EsInitiativeOrganization> participations = initiatives.organizations(initiative.getEsInitiativeId());
+        List<EsSubscription> follows = initiatives.activePrimaryTopicFollows(initiative);
+        boolean missingFollow = !initiatives.followsPrimaryTopic(initiative, member, follows);
+        List<EsInitiativeTimelineEntry> timeline = initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.MEMBER,
+                member.getEsInitiativeMemberId());
+        EsInitiativeMember shown = member;
+        page(request, response, member.displayName() + " - " + initiative.getInitiativeName() + " - InteropHub",
+                initiative, "people", input, out -> InitiativePageRenderer.personDetail(out, request.getContextPath(),
+                        initiative, shown, participations, indexOrganizations(participations), timeline, names(timeline),
+                        user, missingFollow, InitiativeAccess.canEditRoster(level), input));
+    }
+
+    private void renderSettings(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
+            FormInput input) throws IOException {
         List<EsInitiativeManager> managers = initiatives.managers(initiative.getEsInitiativeId());
         Set<Long> userIds = new HashSet<>();
         for (EsInitiativeManager manager : managers) {
@@ -364,18 +435,18 @@ public class EsInitiativeServlet extends HttpServlet {
             users.put(manager.getUserId(), manager);
         }
         EsInitiative current = initiatives.findByCode(initiative.getInitiativeCode()).orElse(initiative);
-        page(request, response, current.getInitiativeName() + " settings - InteropHub", current, "settings", false,
+        page(request, response, current.getInitiativeName() + " settings - InteropHub", current, "settings", input,
                 out -> InitiativePageRenderer.settings(out, request.getContextPath(), current, initiatives.activeTopics(),
-                        managers, users, initiatives.links(current.getEsInitiativeId())));
+                        managers, users, initiatives.links(current.getEsInitiativeId()), input));
     }
 
     private void renderImport(HttpServletRequest request, HttpServletResponse response, User user,
-            EsInitiative initiative) throws IOException {
+            EsInitiative initiative, FormInput input) throws IOException {
         HeldImport held = held(request, user, initiative);
-        page(request, response, initiative.getInitiativeName() + " import - InteropHub", initiative, "import", true,
+        page(request, response, initiative.getInitiativeName() + " import - InteropHub", initiative, "import", input,
                 out -> InitiativePageRenderer.importPage(out, request.getContextPath(), initiative,
                         held == null ? null : held.headers, held == null ? null : held.mapping,
-                        held == null ? null : held.preview));
+                        held == null ? null : held.preview, input));
     }
 
     private void suggest(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
@@ -454,7 +525,7 @@ public class EsInitiativeServlet extends HttpServlet {
     }
 
     private void page(HttpServletRequest request, HttpServletResponse response, String title, EsInitiative initiative,
-            String section, boolean typeahead, PageBody body) throws IOException {
+            String section, FormInput input, PageBody body) throws IOException {
         InteropAiraPageFactory.markInitiativesNavActive(request);
         response.setContentType("text/html;charset=UTF-8");
         AiraPage page = InteropAiraPageFactory.base(request, title)
@@ -463,8 +534,12 @@ public class EsInitiativeServlet extends HttpServlet {
                 .addLocalStylesheet("/css/initiative-org.css")
                 .context(InteropAiraPageFactory.topicsMeetingsContext("InteropHub", null, false, false))
                 .build();
-        String kind = (String) request.getSession().getAttribute(FLASH_KIND);
-        String message = (String) request.getSession().getAttribute(FLASH);
+        String kind = null;
+        String message = null;
+        if (input.error() == null) {
+            kind = (String) request.getSession().getAttribute(FLASH_KIND);
+            message = (String) request.getSession().getAttribute(FLASH);
+        }
         request.getSession().removeAttribute(FLASH_KIND);
         request.getSession().removeAttribute(FLASH);
         try (PrintWriter out = response.getWriter()) {
@@ -480,17 +555,17 @@ public class EsInitiativeServlet extends HttpServlet {
             body.write(out);
             out.println("    </div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
-            if (typeahead) {
-                out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
-                        + "/js/initiative-org-typeahead.js\"></script>");
-            }
+            out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
+                    + "/js/initiative-dialogs.js\"></script>");
+            out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
+                    + "/js/initiative-org-typeahead.js\"></script>");
             page.writeEnd(out);
         }
     }
 
     private void renderMissing(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-        page(request, response, "Initiative - InteropHub", null, null, false, out -> {
+        page(request, response, "Initiative - InteropHub", null, null, FormInput.none(), out -> {
             out.println("      <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">That initiative is not available.</p></div>");
         });
     }
@@ -560,7 +635,13 @@ public class EsInitiativeServlet extends HttpServlet {
     private void redirect(HttpServletResponse response, HttpServletRequest request, EsInitiative initiative, String suffix)
             throws IOException {
         EsInitiative current = initiatives.findByCode(initiative.getInitiativeCode()).orElse(initiative);
-        response.sendRedirect(request.getContextPath() + "/es/initiatives/" + current.getInitiativeCode() + suffix);
+        String target = request.getContextPath() + "/es/initiatives/" + current.getInitiativeCode() + suffix;
+        String query = request.getQueryString();
+        if (query != null && !query.isBlank() && query.indexOf('\r') < 0 && query.indexOf('\n') < 0
+                && !"commit".equals(param(request, "action"))) {
+            target += "?" + query;
+        }
+        response.sendRedirect(target);
     }
 
     private boolean requiresSettings(String action) {
@@ -568,14 +649,52 @@ public class EsInitiativeServlet extends HttpServlet {
                 || "remove-manager".equals(action) || "add-link".equals(action) || "delete-link".equals(action);
     }
 
-    private String redirectAfter(String section, String action) {
+    private String redirectAfter(String[] parts, String action) {
         if ("commit".equals(action)) {
             return "/people";
         }
-        if ("overview".equals(section)) {
+        if (parts.length <= 1 || "overview".equals(parts[1])) {
             return "";
         }
-        return "/" + section;
+        String suffix = "/" + parts[1];
+        if (parts.length > 2 && ("organizations".equals(parts[1]) || "people".equals(parts[1]))) {
+            suffix += "/" + parts[2];
+        }
+        return suffix;
+    }
+
+    private String dialogFor(String[] parts, String action) {
+        boolean organizationList = parts.length == 2 && "organizations".equals(parts[1]);
+        boolean peopleList = parts.length == 2 && "people".equals(parts[1]);
+        return switch (action == null ? "" : action) {
+            case "add-organization" -> "add-organization";
+            case "org-status" -> organizationList ? "change-org-status" : null;
+            case "add-member" -> "add-person";
+            case "member-status" -> peopleList ? "change-member-status" : null;
+            case "add-manager" -> "add-manager";
+            case "add-link" -> "add-link";
+            default -> null;
+        };
+    }
+
+    private Long pathId(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(raw);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private EsInitiativeOrganization findParticipation(EsInitiative initiative, Long id) {
+        for (EsInitiativeOrganization participation : initiatives.organizations(initiative.getEsInitiativeId())) {
+            if (id.equals(participation.getEsInitiativeOrganizationId())) {
+                return participation;
+            }
+        }
+        return null;
     }
 
     private String[] parts(HttpServletRequest request) {

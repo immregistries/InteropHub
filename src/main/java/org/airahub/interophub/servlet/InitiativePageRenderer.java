@@ -1,7 +1,10 @@
 package org.airahub.interophub.servlet;
 
 import java.io.PrintWriter;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,7 +20,6 @@ import org.airahub.interophub.model.EsInitiativeTimelineEntry;
 import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.Organization;
 import org.airahub.interophub.model.User;
-import org.airahub.interophub.service.InitiativeAccess;
 import org.airahub.interophub.service.InitiativeImport;
 import org.airahub.interophub.service.InitiativeRosterRules;
 import org.airahub.interophub.service.OrganizationDirectory;
@@ -77,39 +79,41 @@ final class InitiativePageRenderer {
             out.println("        <p>An administrator can create one and add managers.</p></div>");
             return;
         }
-        out.println("      <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
-        out.println("        <thead><tr><th>Initiative</th><th>Status</th><th>Primary topic</th><th>Visibility</th></tr></thead><tbody>");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("        <caption class=\"aira-visually-hidden\">Initiatives</caption>");
+        out.println("        <thead><tr><th scope=\"col\" class=\"aira-table__cell--primary\">Initiative</th><th scope=\"col\">Status</th><th scope=\"col\">Primary topic</th><th scope=\"col\">Visibility</th></tr></thead><tbody>");
         for (EsInitiative initiative : initiatives) {
-            out.println("          <tr><td class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
+            out.println("          <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
                     + InitiativeHtml.esc(contextPath + "/es/initiatives/" + initiative.getInitiativeCode()) + "\">"
-                    + InitiativeHtml.esc(initiative.getInitiativeName()) + "</a></td>");
-            out.println("            <td>" + InitiativeHtml.esc(initiative.getStatus().getLabel()) + "</td>");
+                    + InitiativeHtml.esc(initiative.getInitiativeName()) + "</a></th>");
+            out.println("            <td>" + badge(initiative.getStatus().name(), initiative.getStatus().getLabel()) + "</td>");
             out.println("            <td>" + InitiativeHtml.esc(topicNames.getOrDefault(initiative.getPrimaryEsTopicId(), ""))
                     + "</td>");
             out.println("            <td>" + InitiativeHtml.esc(initiative.getVisibility().getLabel()) + "</td></tr>");
         }
-        out.println("        </tbody></table></div>");
+        out.println("        </tbody></table></div></section>");
     }
 
-    static void createForm(PrintWriter out, String contextPath, List<EsTopic> topics, String error) {
+    static void createForm(PrintWriter out, String contextPath, List<EsTopic> topics, FormInput input) {
         out.println("      <div class=\"aira-page-header\"><div>");
         out.println("        <h1 class=\"aira-page-title\">New initiative</h1>");
         out.println("        <p class=\"aira-meta\"><a class=\"aira-inline-link\" href=\""
                 + InitiativeHtml.esc(contextPath + "/es/initiatives") + "\">All initiatives</a></p>");
         out.println("      </div></div>");
-        flash(out, "danger", error);
-        out.println("      <form class=\"aira-form\" method=\"post\" action=\""
+        out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
                 + InitiativeHtml.esc(contextPath + "/es/initiatives/new") + "\">");
-        fields(out, null, topics, true);
+        formError(out, input, "create");
+        fields(out, input, "create", null, topics, true);
         out.println("        <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Create initiative</button></div>");
         out.println("      </form>");
     }
 
     static void overview(PrintWriter out, String contextPath, EsInitiative initiative, EsTopic topic,
             List<EsInitiativeLink> links, InitiativeRosterRules.Representation representation,
-            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean canComment) {
+            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean canComment,
+            FormInput input) {
         header(out, initiative);
-        out.println("      <section class=\"aira-panel aira-stack\">");
+        out.println("      <section class=\"aira-panel aira-stack aira-form--narrow\">");
         if (initiative.getSummary() != null) {
             out.println("        <p>" + InitiativeHtml.esc(initiative.getSummary()) + "</p>");
         }
@@ -129,7 +133,7 @@ final class InitiativePageRenderer {
         }
         out.println("      </section>");
         representationBlock(out, representation);
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Links</h2>");
+        out.println("      <section class=\"aira-panel aira-form--narrow\"><h2 class=\"aira-section-title\">Links</h2>");
         if (links.isEmpty()) {
             out.println("        <p class=\"aira-meta\">No links yet. Add the Smartsheet, Slack channel, or document folder from Settings.</p>");
         } else {
@@ -141,45 +145,72 @@ final class InitiativePageRenderer {
             out.println("        </ul>");
         }
         out.println("      </section>");
-        timeline(out, contextPath + "/es/initiatives/" + initiative.getInitiativeCode(), timeline, userNames, viewer,
-                canComment, EsInitiativeTimelineEntry.SubjectType.INITIATIVE, initiative.getEsInitiativeId());
+        String postUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode();
+        out.println("      <section class=\"aira-stack\">");
+        out.println("        <h2 class=\"aira-section-title\">History</h2>");
+        timeline(out, postUrl, timeline, userNames, viewer, canComment, EsInitiativeTimelineEntry.SubjectType.INITIATIVE,
+                initiative.getEsInitiativeId(), input);
+        out.println("      </section>");
     }
 
     static void organizations(PrintWriter out, String contextPath, EsInitiative initiative,
             List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations,
-            List<EsInitiativeMember> members, List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames,
-            User viewer, InitiativeRosterRules.Representation representation, boolean canEdit) {
+            List<EsInitiativeMember> members, InitiativeRosterRules.Representation representation, boolean canEdit,
+            String statusFilter, String typeFilter, FormInput input) {
         header(out, initiative);
         representationBlock(out, representation);
-        String postUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/organizations";
-        if (canEdit) {
-            out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Add organization</h2>");
-            out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-            out.println("          <input type=\"hidden\" name=\"action\" value=\"add-organization\" />");
-            organizationField(out, contextPath, initiative.getInitiativeCode(), "", null);
-            out.println("          <div class=\"aira-field\"><label for=\"participationStatus\">Status</label>");
-            out.println("            <select class=\"aira-select\" id=\"participationStatus\" name=\"participationStatus\">");
-            statusOptions(out, EsInitiativeOrganization.ParticipationStatus.values(),
-                    EsInitiativeOrganization.ParticipationStatus.PROSPECT.name(), EsInitiativeOrganization.ParticipationStatus::getLabel);
-            out.println("            </select></div>");
-            out.println("          <div class=\"aira-field\"><label for=\"orgNote\">Note</label>");
-            out.println("            <input class=\"aira-input\" id=\"orgNote\" name=\"note\" type=\"text\" /></div>");
-            out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Add organization</button>");
-            out.println("        </form></section>");
-        }
-        if (participations.isEmpty()) {
-            out.println("      <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No organizations yet.</p></div>");
-            return;
-        }
-        Map<Long, List<EsInitiativeMember>> byOrg = new LinkedHashMap<>();
-        for (EsInitiativeMember member : members) {
-            if (member.getEsInitiativeOrganizationId() != null) {
-                byOrg.computeIfAbsent(member.getEsInitiativeOrganizationId(), id -> new ArrayList<>()).add(member);
+        String pageUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/organizations";
+        String postUrl = pageUrl + filterQuery("status", statusFilter, "type", typeFilter);
+        out.println("      <form class=\"aira-form aira-form--inline\" method=\"get\" action=\""
+                + InitiativeHtml.esc(pageUrl) + "\">");
+        out.println("        <div class=\"aira-field\"><label for=\"orgFilterStatus\">Status</label>");
+        out.println("          <select class=\"aira-select\" id=\"orgFilterStatus\" name=\"status\">");
+        out.println("            <option value=\"\">Any</option>");
+        statusOptions(out, EsInitiativeOrganization.ParticipationStatus.values(), statusFilter,
+                EsInitiativeOrganization.ParticipationStatus::getLabel);
+        out.println("          </select></div>");
+        out.println("        <div class=\"aira-field\"><label for=\"orgFilterType\">Type</label>");
+        out.println("          <select class=\"aira-select\" id=\"orgFilterType\" name=\"type\">");
+        out.println("            <option value=\"\">Any</option>");
+        typeOptions(out, typeFilter);
+        out.println("          </select></div>");
+        out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Filter</button>");
+        out.println("      </form>");
+
+        Map<Long, List<EsInitiativeMember>> byOrg = groupMembers(members);
+        List<EsInitiativeOrganization> visible = new ArrayList<>();
+        for (EsInitiativeOrganization participation : participations) {
+            if (orgVisible(participation, organizations.get(participation.getOrganizationId()), statusFilter, typeFilter)) {
+                visible.add(participation);
             }
         }
-        Map<Long, List<EsInitiativeTimelineEntry>> history = groupTimeline(timeline);
-        out.println("      <div class=\"aira-stack\">");
-        for (EsInitiativeOrganization participation : participations) {
+        out.println("      <section class=\"aira-table-panel\">");
+        out.println("        <div class=\"aira-table-panel__header\"><div>");
+        out.println("          <h2 class=\"aira-table-panel__title\">Organizations</h2>");
+        out.println("          <p class=\"aira-table-panel__description\">" + visible.size()
+                + (visible.size() == participations.size() ? "" : " of " + participations.size()) + "</p>");
+        out.println("        </div>");
+        if (canEdit) {
+            out.println("          <div class=\"aira-table-panel__actions\">");
+            out.println("            <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-organization\">Add organization</button>");
+            out.println("          </div>");
+        }
+        out.println("        </div>");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("          <caption class=\"aira-visually-hidden\">Organizations</caption><thead><tr>");
+        out.println("            <th scope=\"col\" class=\"aira-table__cell--primary\">Organization</th>");
+        out.println("            <th scope=\"col\">Type</th><th scope=\"col\">Status</th>");
+        out.println("            <th scope=\"col\" class=\"aira-table__cell--numeric\">Contacts</th>");
+        out.println("            <th scope=\"col\">Needs a contact</th>");
+        out.println("            <th scope=\"col\" class=\"aira-table__cell--date\">Last update</th>");
+        if (canEdit) {
+            out.println("            <th scope=\"col\" class=\"aira-table__cell--actions\"><span class=\"aira-visually-hidden\">Actions</span></th>");
+        }
+        out.println("          </tr></thead><tbody>");
+        if (visible.isEmpty()) {
+            out.println("            <tr><td colspan=\"" + (canEdit ? 7 : 6) + "\">No organizations match this filter.</td></tr>");
+        }
+        for (EsInitiativeOrganization participation : visible) {
             Organization organization = organizations.get(participation.getOrganizationId());
             String name = organization == null ? "Organization" : organization.getOrganizationName();
             String type = organization == null ? "" : organization.getOrganizationType();
@@ -188,306 +219,626 @@ final class InitiativePageRenderer {
             for (EsInitiativeMember contact : contacts) {
                 statuses.add(contact.getMemberStatus().name());
             }
-            boolean needsContact = InitiativeRosterRules.needsContact(statuses);
-            out.println("        <section class=\"aira-section-card\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">"
-                    + InitiativeHtml.esc(name) + "</h2></div>");
-            out.println("          <div class=\"aira-section-card__body aira-stack\">");
-            out.println("            <div class=\"aira-cluster\">");
-            out.println("              <span class=\"aira-badge aira-badge--subtle\">"
-                    + InitiativeHtml.esc(OrganizationDirectory.label(type)) + "</span>");
-            out.println("              <span class=\"aira-badge aira-badge--info\">"
-                    + InitiativeHtml.esc(participation.getParticipationStatus().getLabel()) + "</span>");
-            if (needsContact) {
-                out.println("              <span class=\"aira-badge aira-badge--warning\">Needs a contact</span>");
-            }
-            out.println("            </div>");
-            if (contacts.isEmpty()) {
-                out.println("            <p class=\"aira-meta\">No contacts yet.</p>");
-            } else {
-                out.println("            <ul>");
-                for (EsInitiativeMember contact : contacts) {
-                    out.println("              <li>" + InitiativeHtml.esc(contact.displayName()) + " <span class=\"aira-meta\">"
-                            + InitiativeHtml.esc(contact.getMemberStatus().getLabel()) + "</span></li>");
-                }
-                out.println("            </ul>");
-            }
+            String detailUrl = pageUrl + "/" + participation.getEsInitiativeOrganizationId();
+            out.println("            <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
+                    + InitiativeHtml.esc(detailUrl) + "\">" + InitiativeHtml.esc(name) + "</a></th>");
+            out.println("              <td>" + InitiativeHtml.esc(OrganizationDirectory.label(type)) + "</td>");
+            out.println("              <td>" + badge(participation.getParticipationStatus().name(),
+                    participation.getParticipationStatus().getLabel()) + "</td>");
+            out.println("              <td class=\"aira-table__cell--numeric\">" + contacts.size() + "</td>");
+            out.println("              <td>" + (InitiativeRosterRules.needsContact(statuses)
+                    ? "<span class=\"aira-badge aira-badge--warning\">Needs a contact</span>" : "") + "</td>");
+            out.println("              <td class=\"aira-table__cell--date\">" + when(participation.getUpdatedAt()) + "</td>");
             if (canEdit) {
-                out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-                out.println("              <input type=\"hidden\" name=\"action\" value=\"org-status\" />");
-                out.println("              <input type=\"hidden\" name=\"participationId\" value=\""
-                        + participation.getEsInitiativeOrganizationId() + "\" />");
-                out.println("              <div class=\"aira-field\"><label>Status</label><select class=\"aira-select\" name=\"participationStatus\">");
-                statusOptions(out, EsInitiativeOrganization.ParticipationStatus.values(),
-                        participation.getParticipationStatus().name(), EsInitiativeOrganization.ParticipationStatus::getLabel);
-                out.println("              </select></div>");
-                out.println("              <div class=\"aira-field\"><label>Note</label><input class=\"aira-input\" name=\"note\" type=\"text\" /></div>");
-                out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update status</button>");
-                out.println("            </form>");
-                out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-                out.println("              <input type=\"hidden\" name=\"action\" value=\"org-type\" />");
-                out.println("              <input type=\"hidden\" name=\"participationId\" value=\""
-                        + participation.getEsInitiativeOrganizationId() + "\" />");
-                out.println("              <div class=\"aira-field\"><label>Type</label><select class=\"aira-select\" name=\"organizationType\">");
-                for (OrganizationDirectory.OrganizationType organizationType : OrganizationDirectory.TYPES) {
-                    String selected = organizationType.code().equals(type) ? " selected" : "";
-                    out.println("                <option value=\"" + organizationType.code() + "\"" + selected + ">"
-                            + InitiativeHtml.esc(organizationType.label()) + "</option>");
-                }
-                out.println("              </select></div>");
-                out.println("              <p class=\"aira-meta\">Type is shared by every initiative that uses this organization.</p>");
-                out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update type</button>");
-                out.println("            </form>");
+                out.println("              <td class=\"aira-table__cell--actions\"><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"change-org-status\" data-record-id=\""
+                        + participation.getEsInitiativeOrganizationId() + "\" data-status=\""
+                        + participation.getParticipationStatus().name() + "\" data-dialog-title=\""
+                        + InitiativeHtml.esc("Change status for " + name) + "\">Change status</button></td>");
             }
-            timeline(out, postUrl, history.getOrDefault(participation.getEsInitiativeOrganizationId(), List.of()),
-                    userNames, viewer, canEdit, EsInitiativeTimelineEntry.SubjectType.ORGANIZATION,
-                    participation.getEsInitiativeOrganizationId());
-            out.println("          </div></section>");
+            out.println("            </tr>");
         }
-        out.println("      </div>");
+        out.println("          </tbody></table></div></section>");
+        if (!canEdit) {
+            return;
+        }
+        dialogStart(out, "add-organization", "Add organization", input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"add-organization-title\">Add organization</h3>");
+        formError(out, input, "add-organization");
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"add-organization\" />");
+        organizationField(out, contextPath, initiative.getInitiativeCode(), "add-org", input, "add-organization", "", null);
+        out.println("          <div class=\"aira-field\"><label for=\"participationStatus\">Status</label>");
+        out.println("            <select class=\"aira-select\" id=\"participationStatus\" name=\"participationStatus\" required>");
+        statusOptions(out, EsInitiativeOrganization.ParticipationStatus.values(),
+                input.value("add-organization", "participationStatus",
+                        EsInitiativeOrganization.ParticipationStatus.PROSPECT.name()),
+                EsInitiativeOrganization.ParticipationStatus::getLabel);
+        out.println("            </select></div>");
+        out.println("          <div class=\"aira-field\"><label for=\"orgNote\">Note</label>");
+        out.println("            <input class=\"aira-input\" id=\"orgNote\" name=\"note\" type=\"text\" value=\""
+                + InitiativeHtml.esc(input.value("add-organization", "note", "")) + "\" /></div>");
+        dialogActions(out, "add-organization", "Add organization");
+        out.println("        </form></dialog>");
+        statusDialog(out, "change-org-status", postUrl, "org-status", "participationId", "participationStatus",
+                input, EsInitiativeOrganization.ParticipationStatus.values(),
+                EsInitiativeOrganization.ParticipationStatus::getLabel, participations, organizations);
     }
 
-    static void people(PrintWriter out, String contextPath, EsInitiative initiative,
-            List<EsInitiativeMember> members, List<EsInitiativeOrganization> participations,
-            Map<Long, Organization> organizations, List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames,
-            User viewer, java.util.Set<Long> missingFollow, String statusFilter, String organizationFilter,
-            String typeFilter, boolean canEdit) {
+    static void organizationDetail(PrintWriter out, String contextPath, EsInitiative initiative,
+            EsInitiativeOrganization participation, Organization organization, List<EsInitiativeMember> contacts,
+            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean canEdit,
+            FormInput input) {
+        String listUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/organizations";
+        String postUrl = listUrl + "/" + participation.getEsInitiativeOrganizationId();
+        String name = organization == null ? "Organization" : organization.getOrganizationName();
+        String type = organization == null ? "" : organization.getOrganizationType();
+        out.println("      <div class=\"aira-page-header\"><div>");
+        out.println("        <p class=\"aira-meta\"><a class=\"aira-inline-link\" href=\"" + InitiativeHtml.esc(listUrl)
+                + "\">Organizations</a></p>");
+        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(name) + "</h1>");
+        out.println("      </div></div>");
+        if (canEdit) {
+            out.println("      <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            formError(out, input, "org-status");
+            out.println("        <input type=\"hidden\" name=\"action\" value=\"org-status\" />");
+            out.println("        <input type=\"hidden\" name=\"participationId\" value=\""
+                    + participation.getEsInitiativeOrganizationId() + "\" />");
+            out.println("        <div class=\"aira-field\"><label for=\"detailOrgStatus\">Status</label>");
+            out.println("          <select class=\"aira-select\" id=\"detailOrgStatus\" name=\"participationStatus\" required>");
+            statusOptions(out, EsInitiativeOrganization.ParticipationStatus.values(),
+                    input.value("org-status", "participationStatus", participation.getParticipationStatus().name()),
+                    EsInitiativeOrganization.ParticipationStatus::getLabel);
+            out.println("          </select></div>");
+            out.println("        <div class=\"aira-field aira-field--grow\"><label for=\"detailOrgNote\">Note</label>");
+            out.println("          <input class=\"aira-input\" id=\"detailOrgNote\" name=\"note\" type=\"text\" value=\""
+                    + InitiativeHtml.esc(input.value("org-status", "note", "")) + "\" /></div>");
+            out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update status</button>");
+            out.println("      </form>");
+            out.println("      <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            formError(out, input, "org-type");
+            out.println("        <input type=\"hidden\" name=\"action\" value=\"org-type\" />");
+            out.println("        <input type=\"hidden\" name=\"participationId\" value=\""
+                    + participation.getEsInitiativeOrganizationId() + "\" />");
+            out.println("        <div class=\"aira-field\"><label for=\"detailOrgType\">Type</label>");
+            out.println("          <select class=\"aira-select\" id=\"detailOrgType\" name=\"organizationType\" required>");
+            typeOptions(out, input.value("org-type", "organizationType", type));
+            out.println("          </select></div>");
+            out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update type</button>");
+            out.println("      </form>");
+            out.println("      <p class=\"aira-meta\">Type is shared by every initiative that uses this organization.</p>");
+        } else {
+            out.println("      <div class=\"aira-cluster\">");
+            out.println("        <span class=\"aira-badge aira-badge--subtle\">"
+                    + InitiativeHtml.esc(OrganizationDirectory.label(type)) + "</span>");
+            out.println("        " + badge(participation.getParticipationStatus().name(),
+                    participation.getParticipationStatus().getLabel()));
+            out.println("      </div>");
+        }
+        out.println("      <section class=\"aira-table-panel\">");
+        out.println("        <div class=\"aira-table-panel__header\"><div>");
+        out.println("          <h2 class=\"aira-table-panel__title\">Contacts</h2>");
+        out.println("        </div>");
+        if (canEdit) {
+            out.println("          <div class=\"aira-table-panel__actions\">");
+            out.println("            <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-person\">Add person</button>");
+            out.println("          </div>");
+        }
+        out.println("        </div><div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("          <caption class=\"aira-visually-hidden\">Contacts</caption>");
+        out.println("          <thead><tr><th scope=\"col\" class=\"aira-table__cell--primary\">Name</th><th scope=\"col\">Status</th><th scope=\"col\">Role</th></tr></thead><tbody>");
+        if (contacts.isEmpty()) {
+            out.println("            <tr><td colspan=\"3\">No contacts yet.</td></tr>");
+        }
+        String peopleUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people/";
+        for (EsInitiativeMember contact : contacts) {
+            out.println("            <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
+                    + InitiativeHtml.esc(peopleUrl + contact.getEsInitiativeMemberId()) + "\">"
+                    + InitiativeHtml.esc(contact.displayName()) + "</a></th>");
+            out.println("              <td>" + badge(contact.getMemberStatus().name(), contact.getMemberStatus().getLabel())
+                    + "</td>");
+            out.println("              <td>" + InitiativeHtml.esc(contact.getInitiativeRole()) + "</td></tr>");
+        }
+        out.println("          </tbody></table></div></section>");
+        if (canEdit && organization != null) {
+            dialogStart(out, "add-person", "Add person", input);
+            out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            out.println("          <h3 class=\"aira-dialog__title\" id=\"add-person-title\">Add person</h3>");
+            formError(out, input, "add-member");
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"add-member\" />");
+            personIdentity(out, input, "add-member", "contact");
+            out.println("          <div class=\"aira-field\"><span class=\"aira-label\">Organization</span>");
+            out.println("            <p>" + InitiativeHtml.esc(name) + "</p>");
+            out.println("            <input type=\"hidden\" name=\"organizationId\" value=\""
+                    + organization.getOrganizationId() + "\" /></div>");
+            personRoleStatus(out, input, "add-member", "contact", EsInitiativeMember.MemberStatus.PROSPECT.name());
+            dialogActions(out, "add-person", "Add person");
+            out.println("        </form></dialog>");
+        }
+        out.println("      <section class=\"aira-stack\">");
+        out.println("        <h2 class=\"aira-section-title\">History</h2>");
+        timeline(out, postUrl, timeline, userNames, viewer, canEdit, EsInitiativeTimelineEntry.SubjectType.ORGANIZATION,
+                participation.getEsInitiativeOrganizationId(), input);
+        out.println("      </section>");
+    }
+
+    static void people(PrintWriter out, String contextPath, EsInitiative initiative, List<EsInitiativeMember> members,
+            List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations,
+            java.util.Set<Long> missingFollow, String statusFilter, String organizationFilter, String typeFilter,
+            boolean canEdit, FormInput input) {
         header(out, initiative);
         String pageUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people";
-        out.println("      <form class=\"aira-form\" method=\"get\" action=\"" + InitiativeHtml.esc(pageUrl) + "\">");
-        out.println("        <div class=\"aira-cluster\">");
-        out.println("          <div class=\"aira-field\"><label for=\"filterStatus\">Status</label><select class=\"aira-select\" id=\"filterStatus\" name=\"status\">");
+        String postUrl = pageUrl + filterQuery("status", statusFilter, "organization", organizationFilter, "type", typeFilter);
+        out.println("      <form class=\"aira-form aira-form--inline\" method=\"get\" action=\""
+                + InitiativeHtml.esc(pageUrl) + "\">");
+        out.println("        <div class=\"aira-field\"><label for=\"filterStatus\">Status</label>");
+        out.println("          <select class=\"aira-select\" id=\"filterStatus\" name=\"status\">");
         out.println("            <option value=\"\">Any</option>");
         statusOptions(out, EsInitiativeMember.MemberStatus.values(), statusFilter, EsInitiativeMember.MemberStatus::getLabel);
         out.println("          </select></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"filterOrg\">Organization</label><select class=\"aira-select\" id=\"filterOrg\" name=\"organization\">");
+        out.println("        <div class=\"aira-field aira-field--grow\"><label for=\"filterOrg\">Organization</label>");
+        out.println("          <select class=\"aira-select\" id=\"filterOrg\" name=\"organization\">");
         out.println("            <option value=\"\">Any</option>");
         for (EsInitiativeOrganization participation : participations) {
             Organization organization = organizations.get(participation.getOrganizationId());
-            String selected = String.valueOf(participation.getEsInitiativeOrganizationId()).equals(organizationFilter) ? " selected" : "";
+            String selected = String.valueOf(participation.getEsInitiativeOrganizationId()).equals(organizationFilter)
+                    ? " selected" : "";
             out.println("            <option value=\"" + participation.getEsInitiativeOrganizationId() + "\"" + selected + ">"
-                    + InitiativeHtml.esc(organization == null ? "Organization" : organization.getOrganizationName()) + "</option>");
+                    + InitiativeHtml.esc(organization == null ? "Organization" : organization.getOrganizationName())
+                    + "</option>");
         }
         out.println("          </select></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"filterType\">Organization type</label><select class=\"aira-select\" id=\"filterType\" name=\"type\">");
+        out.println("        <div class=\"aira-field\"><label for=\"filterType\">Organization type</label>");
+        out.println("          <select class=\"aira-select\" id=\"filterType\" name=\"type\">");
         out.println("            <option value=\"\">Any</option>");
-        for (OrganizationDirectory.OrganizationType organizationType : OrganizationDirectory.TYPES) {
-            String selected = organizationType.code().equals(typeFilter) ? " selected" : "";
-            out.println("            <option value=\"" + organizationType.code() + "\"" + selected + ">"
-                    + InitiativeHtml.esc(organizationType.label()) + "</option>");
-        }
+        typeOptions(out, typeFilter);
         out.println("          </select></div>");
-        out.println("          <button class=\"aira-button aira-button--secondary\" type=\"submit\">Filter</button>");
-        out.println("        </div></form>");
+        out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Filter</button>");
+        out.println("      </form>");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\"><div>");
+        out.println("        <h2 class=\"aira-table-panel__title\">People</h2>");
+        out.println("        <p class=\"aira-table-panel__description\">" + members.size() + "</p></div>");
         if (canEdit) {
-            out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Add person</h2>");
-            out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(pageUrl) + "\">");
-            out.println("          <input type=\"hidden\" name=\"action\" value=\"add-member\" />");
-            out.println("          <div class=\"aira-field\"><label for=\"personName\">Name</label>");
-            out.println("            <input class=\"aira-input\" id=\"personName\" name=\"name\" type=\"text\" /></div>");
-            out.println("          <div class=\"aira-field\"><label for=\"personEmail\">Email</label>");
-            out.println("            <input class=\"aira-input\" id=\"personEmail\" name=\"email\" type=\"email\" /></div>");
-            organizationField(out, contextPath, initiative.getInitiativeCode(), "", null);
-            out.println("          <div class=\"aira-field\"><label for=\"personRole\">Role in the initiative</label>");
-            out.println("            <input class=\"aira-input\" id=\"personRole\" name=\"initiativeRole\" type=\"text\" /></div>");
-            out.println("          <div class=\"aira-field\"><label for=\"personStatus\">Status</label><select class=\"aira-select\" id=\"personStatus\" name=\"memberStatus\">");
-            statusOptions(out, EsInitiativeMember.MemberStatus.values(), EsInitiativeMember.MemberStatus.PROSPECT.name(),
-                    EsInitiativeMember.MemberStatus::getLabel);
-            out.println("          </select></div>");
-            out.println("          <div class=\"aira-field\"><label for=\"personNote\">Note</label>");
-            out.println("            <input class=\"aira-input\" id=\"personNote\" name=\"note\" type=\"text\" /></div>");
-            out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Add person</button>");
-            out.println("        </form></section>");
+            out.println("        <div class=\"aira-table-panel__actions\">");
+            out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-person\">Add person</button>");
+            out.println("        </div>");
         }
-        Map<Long, List<EsInitiativeTimelineEntry>> history = groupTimeline(timeline);
+        out.println("      </div><div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("        <caption class=\"aira-visually-hidden\">People</caption><thead><tr>");
+        out.println("          <th scope=\"col\" class=\"aira-table__cell--primary\">Name</th>");
+        out.println("          <th scope=\"col\">Organization</th><th scope=\"col\">Type</th><th scope=\"col\">Status</th>");
+        out.println("          <th scope=\"col\">Role</th><th scope=\"col\">Primary topic</th>");
+        if (canEdit) {
+            out.println("          <th scope=\"col\" class=\"aira-table__cell--actions\"><span class=\"aira-visually-hidden\">Actions</span></th>");
+        }
+        out.println("        </tr></thead><tbody>");
         if (members.isEmpty()) {
-            out.println("      <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No people match this filter.</p></div>");
-            return;
+            out.println("          <tr><td colspan=\"" + (canEdit ? 7 : 6) + "\">No people match this filter.</td></tr>");
         }
-        out.println("      <div class=\"aira-stack\">");
         for (EsInitiativeMember member : members) {
             Organization organization = organizationFor(member, participations, organizations);
+            EsInitiativeOrganization participation = participationFor(member, participations);
             String type = organization == null ? "" : OrganizationDirectory.label(organization.getOrganizationType());
-            out.println("        <section class=\"aira-section-card\"><div class=\"aira-section-card__header\"><h2 class=\"aira-section-card__title\">"
-                    + InitiativeHtml.esc(member.displayName()) + "</h2></div>");
-            out.println("          <div class=\"aira-section-card__body aira-stack\">");
-            out.println("            <div class=\"aira-cluster\">");
-            out.println("              <span class=\"aira-badge aira-badge--info\">"
-                    + InitiativeHtml.esc(member.getMemberStatus().getLabel()) + "</span>");
-            if (member.getEmail() != null) {
-                out.println("              <span class=\"aira-meta\">" + InitiativeHtml.esc(member.getEmail()) + "</span>");
+            out.println("          <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
+                    + InitiativeHtml.esc(pageUrl + "/" + member.getEsInitiativeMemberId()) + "\">"
+                    + InitiativeHtml.esc(member.displayName()) + "</a></th>");
+            if (organization != null && participation != null) {
+                out.println("            <td><a class=\"aira-inline-link\" href=\""
+                        + InitiativeHtml.esc(contextPath + "/es/initiatives/" + initiative.getInitiativeCode()
+                                + "/organizations/" + participation.getEsInitiativeOrganizationId())
+                        + "\">" + InitiativeHtml.esc(organization.getOrganizationName()) + "</a></td>");
+            } else {
+                out.println("            <td></td>");
             }
-            if (organization != null) {
-                out.println("              <span class=\"aira-meta\">" + InitiativeHtml.esc(organization.getOrganizationName())
-                        + (type.isBlank() ? "" : " · " + InitiativeHtml.esc(type)) + "</span>");
-            }
-            if (member.getInitiativeRole() != null) {
-                out.println("              <span class=\"aira-meta\">" + InitiativeHtml.esc(member.getInitiativeRole()) + "</span>");
-            }
-            if (missingFollow.contains(member.getEsInitiativeMemberId())) {
-                out.println("              <span class=\"aira-badge aira-badge--warning\">Joined, but no longer follows the primary topic</span>");
-            }
-            out.println("            </div>");
+            out.println("            <td>" + InitiativeHtml.esc(type) + "</td>");
+            out.println("            <td>" + badge(member.getMemberStatus().name(), member.getMemberStatus().getLabel())
+                    + "</td>");
+            out.println("            <td class=\"aira-table__cell--wrap\">" + InitiativeHtml.esc(member.getInitiativeRole())
+                    + "</td>");
+            out.println("            <td>" + (missingFollow.contains(member.getEsInitiativeMemberId())
+                    ? "<span class=\"aira-badge aira-badge--warning\">Not following</span>" : "") + "</td>");
             if (canEdit) {
-                out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(pageUrl) + "\">");
-                out.println("              <input type=\"hidden\" name=\"action\" value=\"member-status\" />");
-                out.println("              <input type=\"hidden\" name=\"memberId\" value=\"" + member.getEsInitiativeMemberId() + "\" />");
-                out.println("              <div class=\"aira-field\"><label>Status</label><select class=\"aira-select\" name=\"memberStatus\">");
-                statusOptions(out, EsInitiativeMember.MemberStatus.values(), member.getMemberStatus().name(),
-                        EsInitiativeMember.MemberStatus::getLabel);
-                out.println("              </select></div>");
-                out.println("              <div class=\"aira-field\"><label>Note</label><input class=\"aira-input\" name=\"note\" type=\"text\" /></div>");
-                out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update status</button>");
-                out.println("            </form>");
-                String currentName = ((member.getContactFirstName() == null ? "" : member.getContactFirstName()) + " "
-                        + (member.getContactLastName() == null ? "" : member.getContactLastName())).trim();
-                out.println("            <details><summary>Edit person</summary>");
-                out.println("              <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(pageUrl) + "\">");
-                out.println("                <input type=\"hidden\" name=\"action\" value=\"edit-member\" />");
-                out.println("                <input type=\"hidden\" name=\"memberId\" value=\"" + member.getEsInitiativeMemberId() + "\" />");
-                out.println("                <div class=\"aira-field\"><label>Name</label><input class=\"aira-input\" name=\"name\" type=\"text\" value=\""
-                        + InitiativeHtml.esc(currentName) + "\" /></div>");
-                out.println("                <div class=\"aira-field\"><label>Email</label><input class=\"aira-input\" name=\"email\" type=\"email\" value=\""
-                        + InitiativeHtml.esc(member.getEmail()) + "\" /></div>");
-                organizationField(out, contextPath, initiative.getInitiativeCode(),
-                        organization == null ? "" : organization.getOrganizationName(),
-                        organization == null ? null : organization.getOrganizationId());
-                out.println("                <div class=\"aira-field\"><label>Role</label><input class=\"aira-input\" name=\"initiativeRole\" type=\"text\" value=\""
-                        + InitiativeHtml.esc(member.getInitiativeRole()) + "\" /></div>");
-                out.println("                <button class=\"aira-button aira-button--secondary\" type=\"submit\">Save person</button>");
-                out.println("              </form></details>");
+                out.println("            <td class=\"aira-table__cell--actions\"><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"change-member-status\" data-record-id=\""
+                        + member.getEsInitiativeMemberId() + "\" data-status=\"" + member.getMemberStatus().name()
+                        + "\" data-dialog-title=\"" + InitiativeHtml.esc("Change status for " + member.displayName())
+                        + "\">Change status</button></td>");
             }
-            timeline(out, pageUrl, history.getOrDefault(member.getEsInitiativeMemberId(), List.of()), userNames, viewer,
-                    canEdit, EsInitiativeTimelineEntry.SubjectType.MEMBER, member.getEsInitiativeMemberId());
-            out.println("          </div></section>");
+            out.println("          </tr>");
+        }
+        out.println("        </tbody></table></div></section>");
+        if (!canEdit) {
+            return;
+        }
+        dialogStart(out, "add-person", "Add person", input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"add-person-title\">Add person</h3>");
+        formError(out, input, "add-member");
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"add-member\" />");
+        personIdentity(out, input, "add-member", "person");
+        organizationField(out, contextPath, initiative.getInitiativeCode(), "add-person", input, "add-member", "", null);
+        personRoleStatus(out, input, "add-member", "person", EsInitiativeMember.MemberStatus.PROSPECT.name());
+        dialogActions(out, "add-person", "Add person");
+        out.println("        </form></dialog>");
+        memberStatusDialog(out, postUrl, input);
+    }
+
+    static void personDetail(PrintWriter out, String contextPath, EsInitiative initiative, EsInitiativeMember member,
+            List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations,
+            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean missingFollow,
+            boolean canEdit, FormInput input) {
+        String listUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people";
+        String postUrl = listUrl + "/" + member.getEsInitiativeMemberId();
+        Organization organization = organizationFor(member, participations, organizations);
+        out.println("      <div class=\"aira-page-header\"><div>");
+        out.println("        <p class=\"aira-meta\"><a class=\"aira-inline-link\" href=\"" + InitiativeHtml.esc(listUrl)
+                + "\">People</a></p>");
+        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(member.displayName()) + "</h1>");
+        out.println("      </div></div>");
+        out.println("      <div class=\"aira-cluster\">");
+        out.println("        " + badge(member.getMemberStatus().name(), member.getMemberStatus().getLabel()));
+        if (member.getEmail() != null) {
+            out.println("        <span class=\"aira-meta\">" + InitiativeHtml.esc(member.getEmail()) + "</span>");
+        }
+        if (missingFollow) {
+            out.println("        <span class=\"aira-badge aira-badge--warning\">Joined, but no longer follows the primary topic</span>");
         }
         out.println("      </div>");
+        if (canEdit) {
+            String currentName = ((member.getContactFirstName() == null ? "" : member.getContactFirstName()) + " "
+                    + (member.getContactLastName() == null ? "" : member.getContactLastName())).trim();
+            out.println("      <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            formError(out, input, "member-status");
+            out.println("        <input type=\"hidden\" name=\"action\" value=\"member-status\" />");
+            out.println("        <input type=\"hidden\" name=\"memberId\" value=\"" + member.getEsInitiativeMemberId()
+                    + "\" />");
+            out.println("        <div class=\"aira-field\"><label for=\"detailPersonStatus\">Status</label>");
+            out.println("          <select class=\"aira-select\" id=\"detailPersonStatus\" name=\"memberStatus\" required>");
+            statusOptions(out, EsInitiativeMember.MemberStatus.values(),
+                    input.value("member-status", "memberStatus", member.getMemberStatus().name()),
+                    EsInitiativeMember.MemberStatus::getLabel);
+            out.println("          </select></div>");
+            out.println("        <div class=\"aira-field aira-field--grow\"><label for=\"detailPersonNote\">Note</label>");
+            out.println("          <input class=\"aira-input\" id=\"detailPersonNote\" name=\"note\" type=\"text\" value=\""
+                    + InitiativeHtml.esc(input.value("member-status", "note", "")) + "\" /></div>");
+            out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update status</button>");
+            out.println("      </form>");
+            out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            formError(out, input, "edit-member");
+            out.println("        <input type=\"hidden\" name=\"action\" value=\"edit-member\" />");
+            out.println("        <input type=\"hidden\" name=\"memberId\" value=\"" + member.getEsInitiativeMemberId()
+                    + "\" />");
+            out.println("        <div class=\"aira-field-row\">");
+            out.println("          <div class=\"aira-field\"><label for=\"editPersonName\">Name</label>");
+            out.println("            <input class=\"aira-input\" id=\"editPersonName\" name=\"name\" type=\"text\" maxlength=\"200\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-member", "name", currentName)) + "\" /></div>");
+            out.println("          <div class=\"aira-field\"><label for=\"editPersonEmail\">Email</label>");
+            out.println("            <input class=\"aira-input\" id=\"editPersonEmail\" name=\"email\" type=\"email\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-member", "email", member.getEmail())) + "\" /></div>");
+            out.println("        </div>");
+            out.println("        <div class=\"aira-field\"><label for=\"editPersonRole\">Role in the initiative</label>");
+            out.println("          <input class=\"aira-input\" id=\"editPersonRole\" name=\"initiativeRole\" type=\"text\" maxlength=\"200\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-member", "initiativeRole", member.getInitiativeRole()))
+                    + "\" /></div>");
+            organizationField(out, contextPath, initiative.getInitiativeCode(), "edit-person", input, "edit-member",
+                    organization == null ? "" : organization.getOrganizationName(),
+                    organization == null ? null : organization.getOrganizationId());
+            out.println("        <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Save person</button></div>");
+            out.println("      </form>");
+        }
+        out.println("      <section class=\"aira-stack\">");
+        out.println("        <h2 class=\"aira-section-title\">History</h2>");
+        timeline(out, postUrl, timeline, userNames, viewer, canEdit, EsInitiativeTimelineEntry.SubjectType.MEMBER,
+                member.getEsInitiativeMemberId(), input);
+        out.println("      </section>");
     }
 
     static void settings(PrintWriter out, String contextPath, EsInitiative initiative, List<EsTopic> topics,
-            List<EsInitiativeManager> managers, Map<Long, User> users, List<EsInitiativeLink> links) {
+            List<EsInitiativeManager> managers, Map<Long, User> users, List<EsInitiativeLink> links, FormInput input) {
         header(out, initiative);
         String postUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/settings";
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Initiative</h2>");
-        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"save-settings\" />");
-        fields(out, initiative, topics, false);
-        out.println("          <p class=\"aira-meta\">Changing the primary topic does not change follows that are already in place. Joined members who do not follow the new topic are flagged on the people roster.</p>");
-        out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Save settings</button>");
-        out.println("        </form></section>");
+        out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        formError(out, input, "save-settings");
+        out.println("        <input type=\"hidden\" name=\"action\" value=\"save-settings\" />");
+        fields(out, input, "save-settings", initiative, topics, false);
+        out.println("        <p class=\"aira-meta\">Changing the primary topic does not change follows that are already in place. Joined members who do not follow the new topic are flagged on the people roster.</p>");
+        out.println("        <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Save settings</button></div>");
+        out.println("      </form>");
 
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Managers</h2>");
-        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr><th>Person</th><th>Role</th><th></th></tr></thead><tbody>");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\"><div>");
+        out.println("        <h2 class=\"aira-table-panel__title\">Managers</h2></div>");
+        out.println("        <div class=\"aira-table-panel__actions\">");
+        out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-manager\">Add manager</button>");
+        out.println("        </div></div>");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("          <caption class=\"aira-visually-hidden\">Managers</caption>");
+        out.println("          <thead><tr><th scope=\"col\" class=\"aira-table__cell--primary\">Person</th><th scope=\"col\">Role</th><th scope=\"col\" class=\"aira-table__cell--actions\"><span class=\"aira-visually-hidden\">Actions</span></th></tr></thead><tbody>");
+        if (managers.isEmpty()) {
+            out.println("            <tr><td colspan=\"3\">No managers yet.</td></tr>");
+        }
         for (EsInitiativeManager manager : managers) {
             User user = users.get(manager.getUserId());
-            String label = user == null ? "User " + manager.getUserId() : user.getFullName();
-            out.println("          <tr><td>" + InitiativeHtml.esc(label) + "</td><td>");
-            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-            out.println("              <input type=\"hidden\" name=\"action\" value=\"manager-role\" />");
-            out.println("              <input type=\"hidden\" name=\"managerId\" value=\"" + manager.getEsInitiativeManagerId() + "\" />");
-            out.println("              <select class=\"aira-select\" name=\"managerRole\">");
+            String label = user == null ? "User " + manager.getUserId()
+                    : (user.getEmail() == null ? user.getFullName() : user.getFullName() + " · " + user.getEmail());
+            out.println("            <tr><th scope=\"row\" class=\"aira-table__cell--primary\">" + InitiativeHtml.esc(label)
+                    + "</th><td>");
+            out.println("              <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            out.println("                <input type=\"hidden\" name=\"action\" value=\"manager-role\" />");
+            out.println("                <input type=\"hidden\" name=\"managerId\" value=\""
+                    + manager.getEsInitiativeManagerId() + "\" />");
+            out.println("                <div class=\"aira-field\"><label class=\"aira-visually-hidden\" for=\"role-"
+                    + manager.getEsInitiativeManagerId() + "\">Role for " + InitiativeHtml.esc(label) + "</label>");
+            out.println("                  <select class=\"aira-select\" id=\"role-" + manager.getEsInitiativeManagerId()
+                    + "\" name=\"managerRole\">");
             for (EsInitiativeManager.ManagerRole role : EsInitiativeManager.ManagerRole.values()) {
                 String selected = role == manager.getManagerRole() ? " selected" : "";
-                out.println("                <option value=\"" + role.name() + "\"" + selected + ">"
+                out.println("                    <option value=\"" + role.name() + "\"" + selected + ">"
                         + InitiativeHtml.esc(role.getLabel()) + "</option>");
             }
-            out.println("              </select>");
-            out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update</button>");
-            out.println("            </form></td><td>");
-            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-            out.println("              <input type=\"hidden\" name=\"action\" value=\"remove-manager\" />");
-            out.println("              <input type=\"hidden\" name=\"managerId\" value=\"" + manager.getEsInitiativeManagerId() + "\" />");
-            out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Remove</button>");
-            out.println("            </form></td></tr>");
+            out.println("                  </select></div>");
+            out.println("                <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Update</button>");
+            out.println("              </form></td><td class=\"aira-table__cell--actions\">");
+            out.println("              <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+            out.println("                <input type=\"hidden\" name=\"action\" value=\"remove-manager\" />");
+            out.println("                <input type=\"hidden\" name=\"managerId\" value=\""
+                    + manager.getEsInitiativeManagerId() + "\" />");
+            out.println("                <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"submit\">Remove</button>");
+            out.println("              </form></td></tr>");
         }
-        out.println("        </tbody></table></div>");
-        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          </tbody></table></div></section>");
+        dialogStart(out, "add-manager", "Add manager", input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"add-manager-title\">Add manager</h3>");
+        formError(out, input, "add-manager");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"add-manager\" />");
         out.println("          <div class=\"aira-field\"><label for=\"managerEmail\">Email of an InteropHub account</label>");
-        out.println("            <input class=\"aira-input\" id=\"managerEmail\" name=\"managerEmail\" type=\"email\" required /></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"managerRole\">Role</label><select class=\"aira-select\" id=\"managerRole\" name=\"managerRole\">");
+        out.println("            <input class=\"aira-input\" id=\"managerEmail\" name=\"managerEmail\" type=\"email\" required value=\""
+                + InitiativeHtml.esc(input.value("add-manager", "managerEmail", "")) + "\" /></div>");
+        out.println("          <div class=\"aira-field\"><label for=\"managerRole\">Role</label>");
+        out.println("            <select class=\"aira-select\" id=\"managerRole\" name=\"managerRole\" required>");
         for (EsInitiativeManager.ManagerRole role : EsInitiativeManager.ManagerRole.values()) {
-            out.println("            <option value=\"" + role.name() + "\">" + InitiativeHtml.esc(role.getLabel()) + "</option>");
+            String selected = role.name().equals(input.value("add-manager", "managerRole",
+                    EsInitiativeManager.ManagerRole.EDITOR.name())) ? " selected" : "";
+            out.println("              <option value=\"" + role.name() + "\"" + selected + ">"
+                    + InitiativeHtml.esc(role.getLabel()) + "</option>");
         }
-        out.println("          </select></div>");
-        out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Add manager</button>");
-        out.println("        </form></section>");
+        out.println("            </select></div>");
+        dialogActions(out, "add-manager", "Add manager");
+        out.println("        </form></dialog>");
 
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Links</h2>");
-        if (!links.isEmpty()) {
-            out.println("        <ul>");
-            for (EsInitiativeLink link : links) {
-                out.println("          <li>" + InitiativeHtml.esc(link.getLinkLabel()) + " — <a class=\"aira-inline-link\" href=\""
-                        + InitiativeHtml.esc(link.getLinkUrl()) + "\">" + InitiativeHtml.esc(link.getLinkUrl()) + "</a>");
-                out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-                out.println("              <input type=\"hidden\" name=\"action\" value=\"delete-link\" />");
-                out.println("              <input type=\"hidden\" name=\"linkId\" value=\"" + link.getEsInitiativeLinkId() + "\" />");
-                out.println("              <button class=\"aira-button aira-button--secondary\" type=\"submit\">Remove</button>");
-                out.println("            </form></li>");
-            }
-            out.println("        </ul>");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\"><div>");
+        out.println("        <h2 class=\"aira-table-panel__title\">Links</h2></div>");
+        out.println("        <div class=\"aira-table-panel__actions\">");
+        out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-link\">Add link</button>");
+        out.println("        </div></div>");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("          <caption class=\"aira-visually-hidden\">Links</caption>");
+        out.println("          <thead><tr><th scope=\"col\" class=\"aira-table__cell--primary\">Label</th><th scope=\"col\">URL</th><th scope=\"col\" class=\"aira-table__cell--actions\"><span class=\"aira-visually-hidden\">Actions</span></th></tr></thead><tbody>");
+        if (links.isEmpty()) {
+            out.println("            <tr><td colspan=\"3\">No links yet.</td></tr>");
         }
-        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+        for (EsInitiativeLink link : links) {
+            out.println("            <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
+                    + InitiativeHtml.esc(link.getLinkUrl()) + "\" target=\"_blank\" rel=\"noopener\">"
+                    + InitiativeHtml.esc(link.getLinkLabel()) + "</a></th>");
+            out.println("              <td class=\"aira-table__cell--wrap\">" + InitiativeHtml.esc(link.getLinkUrl())
+                    + "</td><td class=\"aira-table__cell--actions\">");
+            out.println("              <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+            out.println("                <input type=\"hidden\" name=\"action\" value=\"delete-link\" />");
+            out.println("                <input type=\"hidden\" name=\"linkId\" value=\"" + link.getEsInitiativeLinkId()
+                    + "\" />");
+            out.println("                <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"submit\">Remove</button>");
+            out.println("              </form></td></tr>");
+        }
+        out.println("          </tbody></table></div></section>");
+        dialogStart(out, "add-link", "Add link", input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"add-link-title\">Add link</h3>");
+        formError(out, input, "add-link");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"add-link\" />");
         out.println("          <div class=\"aira-field\"><label for=\"linkLabel\">Label</label>");
-        out.println("            <input class=\"aira-input\" id=\"linkLabel\" name=\"linkLabel\" type=\"text\" required /></div>");
+        out.println("            <input class=\"aira-input\" id=\"linkLabel\" name=\"linkLabel\" type=\"text\" required maxlength=\"200\" value=\""
+                + InitiativeHtml.esc(input.value("add-link", "linkLabel", "")) + "\" /></div>");
         out.println("          <div class=\"aira-field\"><label for=\"linkUrl\">URL</label>");
-        out.println("            <input class=\"aira-input\" id=\"linkUrl\" name=\"linkUrl\" type=\"url\" required /></div>");
-        out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Add link</button>");
-        out.println("        </form></section>");
+        out.println("            <input class=\"aira-input\" id=\"linkUrl\" name=\"linkUrl\" type=\"url\" required maxlength=\"1000\" pattern=\"https?://.+\" title=\"Start with http:// or https://\" value=\""
+                + InitiativeHtml.esc(input.value("add-link", "linkUrl", "")) + "\" /></div>");
+        dialogActions(out, "add-link", "Add link");
+        out.println("        </form></dialog>");
     }
 
     static void importPage(PrintWriter out, String contextPath, EsInitiative initiative, List<String> headers,
-            InitiativeImport.ColumnMapping mapping, InitiativeImport.Preview preview) {
+            InitiativeImport.ColumnMapping mapping, InitiativeImport.Preview preview, FormInput input) {
         header(out, initiative);
         String postUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/import";
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Upload</h2>");
-        out.println("        <p class=\"aira-meta\">Map the columns in the file, check the preview, then import. A row with an organization and no contact adds only the organization. Notes become the first timeline entry.</p>");
-        out.println("        <form class=\"aira-form\" method=\"post\" enctype=\"multipart/form-data\" action=\""
+        out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" enctype=\"multipart/form-data\" action=\""
                 + InitiativeHtml.esc(postUrl) + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"preview\" />");
-        out.println("          <div class=\"aira-field\"><label for=\"importFile\">Spreadsheet (.xlsx or .csv)</label>");
-        out.println("            <input id=\"importFile\" name=\"file\" type=\"file\" accept=\".xlsx,.xlsm,.csv\" required /></div>");
-        out.println("          <button class=\"aira-button aira-button--secondary\" type=\"submit\">Upload and preview</button>");
-        out.println("        </form></section>");
+        formError(out, input, "preview");
+        out.println("        <input type=\"hidden\" name=\"action\" value=\"preview\" />");
+        out.println("        <p class=\"aira-meta\">Map the columns in the file, check the preview, then import. A row with an organization and no contact adds only the organization. Notes become the first timeline entry.</p>");
+        out.println("        <div class=\"aira-field\"><label for=\"importFile\">Spreadsheet (.xlsx or .csv)</label>");
+        out.println("          <input id=\"importFile\" name=\"file\" type=\"file\" accept=\".xlsx,.xlsm,.csv,text/csv\" required /></div>");
+        out.println("        <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Upload and preview</button></div>");
+        out.println("      </form>");
         if (headers == null || mapping == null) {
+            if (input.failed("remap") || input.failed("commit")) {
+                formError(out, input, input.failed("remap") ? "remap" : "commit");
+            }
             return;
         }
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Column mapping</h2>");
-        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"remap\" />");
-        mappingSelect(out, "mapContact", "Point of contact", headers, mapping.contact());
-        mappingSelect(out, "mapEmail", "Email", headers, mapping.email());
-        mappingSelect(out, "mapOrganization", "Organization", headers, mapping.organization());
-        mappingSelect(out, "mapOrganizationType", "Organization type", headers, mapping.organizationType());
-        mappingSelect(out, "mapNotes", "Notes", headers, mapping.notes());
-        out.println("          <button class=\"aira-button aira-button--secondary\" type=\"submit\">Update preview</button>");
-        out.println("        </form></section>");
+        out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        formError(out, input, "remap");
+        out.println("        <input type=\"hidden\" name=\"action\" value=\"remap\" />");
+        out.println("        <h2 class=\"aira-section-title\">Column mapping</h2>");
+        out.println("        <div class=\"aira-field-row\">");
+        mappingSelect(out, "mapContact", "Point of contact", headers, mapped(input, "mapContact", mapping.contact()));
+        mappingSelect(out, "mapEmail", "Email", headers, mapped(input, "mapEmail", mapping.email()));
+        mappingSelect(out, "mapOrganization", "Organization", headers,
+                mapped(input, "mapOrganization", mapping.organization()));
+        mappingSelect(out, "mapOrganizationType", "Organization type", headers,
+                mapped(input, "mapOrganizationType", mapping.organizationType()));
+        mappingSelect(out, "mapNotes", "Notes", headers, mapped(input, "mapNotes", mapping.notes()));
+        out.println("        </div>");
+        out.println("        <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Update preview</button></div>");
+        out.println("      </form>");
         if (preview == null) {
             return;
         }
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Preview</h2>");
-        out.println("        <p class=\"aira-meta\">" + preview.memberCount() + " people, " + preview.organizationCount()
-                + " organizations, " + preview.errorCount() + " rows that will not be imported.</p>");
-        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr><th>Row</th><th>What will happen</th><th>Detail</th></tr></thead><tbody>");
-        for (InitiativeImport.PreviewRow row : preview.rows()) {
-            out.println("          <tr><td>" + row.rowNumber() + "</td><td>" + InitiativeHtml.esc(previewLabel(row))
-                    + "</td><td>" + InitiativeHtml.esc(row.detail()) + "</td></tr>");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\"><div>");
+        out.println("        <h2 class=\"aira-table-panel__title\">Preview</h2>");
+        out.println("        <p class=\"aira-table-panel__description\">" + preview.memberCount() + " people, "
+                + preview.organizationCount() + " organizations, " + preview.errorCount()
+                + " rows that will not be imported.</p></div></div>");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("          <caption class=\"aira-visually-hidden\">Import preview</caption>");
+        out.println("          <thead><tr><th scope=\"col\">Row</th><th scope=\"col\">What will happen</th><th scope=\"col\">Detail</th></tr></thead><tbody>");
+        if (preview.rows().isEmpty()) {
+            out.println("            <tr><td colspan=\"3\">The file has no rows to import.</td></tr>");
         }
-        out.println("        </tbody></table></div>");
-        out.println("        <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+        for (InitiativeImport.PreviewRow row : preview.rows()) {
+            out.println("            <tr><td>" + row.rowNumber() + "</td><td>" + InitiativeHtml.esc(previewLabel(row))
+                    + "</td><td class=\"aira-table__cell--wrap\">" + InitiativeHtml.esc(row.detail()) + "</td></tr>");
+        }
+        out.println("          </tbody></table></div>");
+        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+        formError(out, input, "commit");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"commit\" />");
-        out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Import these rows</button>");
+        out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Import these rows</button></div>");
         out.println("        </form></section>");
     }
 
+    private static void memberStatusDialog(PrintWriter out, String postUrl, FormInput input) {
+        dialogStart(out, "change-member-status", "Change status", input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        String heading = "Change status";
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"change-member-status-title\" data-dialog-heading>"
+                + InitiativeHtml.esc(heading) + "</h3>");
+        formError(out, input, "member-status");
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"member-status\" />");
+        out.println("          <input data-record-id type=\"hidden\" name=\"memberId\" value=\""
+                + InitiativeHtml.esc(input.value("member-status", "memberId", "")) + "\" />");
+        out.println("          <div class=\"aira-field\"><label for=\"memberStatusDialog\">Status</label>");
+        out.println("            <select class=\"aira-select\" id=\"memberStatusDialog\" name=\"memberStatus\" data-status-select required>");
+        statusOptions(out, EsInitiativeMember.MemberStatus.values(),
+                input.value("member-status", "memberStatus", ""), EsInitiativeMember.MemberStatus::getLabel);
+        out.println("            </select></div>");
+        out.println("          <div class=\"aira-field\"><label for=\"memberStatusNote\">Note</label>");
+        out.println("            <input class=\"aira-input\" id=\"memberStatusNote\" name=\"note\" type=\"text\" data-status-note value=\""
+                + InitiativeHtml.esc(input.value("member-status", "note", "")) + "\" /></div>");
+        dialogActions(out, "change-member-status", "Update status");
+        out.println("        </form></dialog>");
+    }
+
+    private static void statusDialog(PrintWriter out, String id, String postUrl, String action, String idName,
+            String statusName, FormInput input, EsInitiativeOrganization.ParticipationStatus[] values,
+            java.util.function.Function<EsInitiativeOrganization.ParticipationStatus, String> labels,
+            List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations) {
+        String heading = "Change status";
+        if (input.failed(action)) {
+            String postedId = input.posted(idName);
+            for (EsInitiativeOrganization participation : participations) {
+                if (postedId.equals(String.valueOf(participation.getEsInitiativeOrganizationId()))) {
+                    Organization organization = organizations.get(participation.getOrganizationId());
+                    heading = "Change status for "
+                            + (organization == null ? "organization" : organization.getOrganizationName());
+                }
+            }
+        }
+        dialogStart(out, id, heading, input);
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(postUrl) + "\">");
+        out.println("          <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\" data-dialog-heading>"
+                + InitiativeHtml.esc(heading) + "</h3>");
+        formError(out, input, action);
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"" + action + "\" />");
+        out.println("          <input data-record-id type=\"hidden\" name=\"" + idName + "\" value=\""
+                + InitiativeHtml.esc(input.value(action, idName, "")) + "\" />");
+        out.println("          <div class=\"aira-field\"><label for=\"" + id + "-status\">Status</label>");
+        out.println("            <select class=\"aira-select\" id=\"" + id + "-status\" name=\"" + statusName
+                + "\" data-status-select required>");
+        statusOptions(out, values, input.value(action, statusName, ""), labels);
+        out.println("            </select></div>");
+        out.println("          <div class=\"aira-field\"><label for=\"" + id + "-note\">Note</label>");
+        out.println("            <input class=\"aira-input\" id=\"" + id + "-note\" name=\"note\" type=\"text\" data-status-note value=\""
+                + InitiativeHtml.esc(input.value(action, "note", "")) + "\" /></div>");
+        dialogActions(out, id, "Update status");
+        out.println("        </form></dialog>");
+    }
+
+    private static void dialogStart(PrintWriter out, String id, String title, FormInput input) {
+        String open = id.equals(input.openDialog()) ? " data-open-on-load" : "";
+        out.println("      <dialog class=\"aira-dialog\" id=\"" + id + "\" aria-labelledby=\"" + id + "-title\"" + open
+                + ">");
+    }
+
+    private static void dialogActions(PrintWriter out, String id, String submitLabel) {
+        out.println("          <div class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\">");
+        out.println("            <button class=\"aira-button aira-button--ghost\" type=\"button\" data-dialog-close=\""
+                + id + "\">Cancel</button>");
+        out.println("            <button class=\"aira-button aira-button--primary\" type=\"submit\">"
+                + InitiativeHtml.esc(submitLabel) + "</button>");
+        out.println("          </div>");
+    }
+
+    private static void personIdentity(PrintWriter out, FormInput input, String action, String prefix) {
+        out.println("          <div class=\"aira-field-row\">");
+        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Name\">Name</label>");
+        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Name\" name=\"name\" type=\"text\" maxlength=\"200\" value=\""
+                + InitiativeHtml.esc(input.value(action, "name", "")) + "\" /></div>");
+        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Email\">Email</label>");
+        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Email\" name=\"email\" type=\"email\" value=\""
+                + InitiativeHtml.esc(input.value(action, "email", "")) + "\" /></div>");
+        out.println("          </div>");
+        out.println("          <p class=\"aira-meta\">Enter a name or an email address.</p>");
+    }
+
+    private static void personRoleStatus(PrintWriter out, FormInput input, String action, String prefix,
+            String defaultStatus) {
+        out.println("          <div class=\"aira-field\"><label for=\"" + prefix + "Role\">Role in the initiative</label>");
+        out.println("            <input class=\"aira-input\" id=\"" + prefix + "Role\" name=\"initiativeRole\" type=\"text\" maxlength=\"200\" value=\""
+                + InitiativeHtml.esc(input.value(action, "initiativeRole", "")) + "\" /></div>");
+        out.println("          <div class=\"aira-field-row\">");
+        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Status\">Status</label>");
+        out.println("              <select class=\"aira-select\" id=\"" + prefix + "Status\" name=\"memberStatus\" required>");
+        statusOptions(out, EsInitiativeMember.MemberStatus.values(),
+                input.value(action, "memberStatus", defaultStatus), EsInitiativeMember.MemberStatus::getLabel);
+        out.println("              </select></div>");
+        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Note\">Note</label>");
+        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Note\" name=\"note\" type=\"text\" value=\""
+                + InitiativeHtml.esc(input.value(action, "note", "")) + "\" /></div>");
+        out.println("          </div>");
+    }
+
     private static String previewLabel(InitiativeImport.PreviewRow row) {
-        String who = row.contactName() != null ? row.contactName() : (row.email() != null ? row.email() : row.organizationName());
+        String who = row.contactName() != null ? row.contactName()
+                : (row.email() != null ? row.email() : row.organizationName());
         return switch (row.action()) {
             case ADD_MEMBER -> "Add " + (who == null ? "person" : who);
             case ADD_ORGANIZATION -> "Add organization " + (row.organizationName() == null ? "" : row.organizationName());
             case SKIP -> "Skip";
             case ERROR -> "Needs attention";
         };
+    }
+
+    private static int mapped(FormInput input, String name, int fallback) {
+        if (!input.failed("remap")) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(input.posted(name));
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
     }
 
     private static void mappingSelect(PrintWriter out, String name, String label, List<String> headers, int selected) {
@@ -509,18 +860,22 @@ final class InitiativePageRenderer {
         out.println("      </div></div>");
     }
 
-    private static void fields(PrintWriter out, EsInitiative initiative, List<EsTopic> topics, boolean creating) {
-        String name = initiative == null ? "" : initiative.getInitiativeName();
-        String code = initiative == null ? "" : initiative.getInitiativeCode();
-        String summary = initiative == null ? "" : InitiativeHtml.text(initiative.getSummary());
-        String description = initiative == null ? "" : InitiativeHtml.text(initiative.getDescription());
-        out.println("        <div class=\"aira-field\"><label for=\"initiativeName\">Name</label>");
-        out.println("          <input class=\"aira-input\" id=\"initiativeName\" name=\"name\" type=\"text\" required value=\""
+    private static void fields(PrintWriter out, FormInput input, String action, EsInitiative initiative,
+            List<EsTopic> topics, boolean creating) {
+        String name = input.value(action, "name", initiative == null ? "" : initiative.getInitiativeName());
+        String code = input.value(action, "code", initiative == null ? "" : initiative.getInitiativeCode());
+        String summary = input.value(action, "summary", initiative == null ? "" : InitiativeHtml.text(initiative.getSummary()));
+        String description = input.value(action, "description",
+                initiative == null ? "" : InitiativeHtml.text(initiative.getDescription()));
+        out.println("        <div class=\"aira-field-row\">");
+        out.println("          <div class=\"aira-field\"><label for=\"initiativeName\">Name</label>");
+        out.println("            <input class=\"aira-input\" id=\"initiativeName\" name=\"name\" type=\"text\" required maxlength=\"200\" value=\""
                 + InitiativeHtml.esc(name) + "\" /></div>");
-        out.println("        <div class=\"aira-field\"><label for=\"initiativeCode\">Code</label>");
-        out.println("          <input class=\"aira-input\" id=\"initiativeCode\" name=\"code\" type=\"text\" value=\""
+        out.println("          <div class=\"aira-field\"><label for=\"initiativeCode\">Code</label>");
+        out.println("            <input class=\"aira-input\" id=\"initiativeCode\" name=\"code\" type=\"text\" maxlength=\"80\" pattern=\"[a-z0-9]+(?:-[a-z0-9]+)*\" title=\"Use lowercase letters, numbers, and hyphens.\" value=\""
                 + InitiativeHtml.esc(code) + "\" />");
-        out.println("          <p class=\"aira-meta\">Used in the page address. Leave blank to build it from the name.</p></div>");
+        out.println("            <p class=\"aira-meta\">Used in the page address. Leave blank to build it from the name.</p></div>");
+        out.println("        </div>");
         out.println("        <div class=\"aira-field\"><label for=\"summary\">Summary</label>");
         out.println("          <textarea class=\"aira-textarea\" id=\"summary\" name=\"summary\">" + InitiativeHtml.esc(summary)
                 + "</textarea></div>");
@@ -530,24 +885,35 @@ final class InitiativePageRenderer {
         out.println("        <div class=\"aira-field\"><label for=\"primaryEsTopicId\">Primary topic</label>");
         out.println("          <select class=\"aira-select\" id=\"primaryEsTopicId\" name=\"primaryEsTopicId\" required>");
         out.println("            <option value=\"\">Choose a topic</option>");
-        Long selectedTopic = initiative == null ? null : initiative.getPrimaryEsTopicId();
+        String selectedTopic = input.value(action, "primaryEsTopicId",
+                initiative == null || initiative.getPrimaryEsTopicId() == null ? ""
+                        : String.valueOf(initiative.getPrimaryEsTopicId()));
         for (EsTopic topic : topics) {
-            String selected = topic.getEsTopicId().equals(selectedTopic) ? " selected" : "";
+            String selected = String.valueOf(topic.getEsTopicId()).equals(selectedTopic) ? " selected" : "";
             out.println("            <option value=\"" + topic.getEsTopicId() + "\"" + selected + ">"
                     + InitiativeHtml.esc(topic.getTopicName()) + "</option>");
         }
         out.println("          </select></div>");
+        out.println("        <div class=\"aira-field-row\">");
         enumSelect(out, "status", "Status", EsInitiative.Status.values(),
-                initiative == null ? EsInitiative.Status.PLANNING.name() : initiative.getStatus().name(),
+                input.value(action, "status", initiative == null ? EsInitiative.Status.PLANNING.name()
+                        : initiative.getStatus().name()),
                 value -> ((EsInitiative.Status) value).getLabel());
         enumSelect(out, "visibility", "Visibility", EsInitiative.Visibility.values(),
-                initiative == null ? EsInitiative.Visibility.PRIVATE.name() : initiative.getVisibility().name(),
+                input.value(action, "visibility", initiative == null ? EsInitiative.Visibility.PRIVATE.name()
+                        : initiative.getVisibility().name()),
                 value -> ((EsInitiative.Visibility) value).getLabel());
         enumSelect(out, "joinPolicy", "Join policy", EsInitiative.JoinPolicy.values(),
-                initiative == null ? EsInitiative.JoinPolicy.INVITE_ONLY.name() : initiative.getJoinPolicy().name(),
+                input.value(action, "joinPolicy", initiative == null ? EsInitiative.JoinPolicy.INVITE_ONLY.name()
+                        : initiative.getJoinPolicy().name()),
                 value -> ((EsInitiative.JoinPolicy) value).getLabel());
-        dateField(out, "startDate", "Start date", initiative == null ? null : initiative.getStartDate());
-        dateField(out, "endDate", "End date", initiative == null ? null : initiative.getEndDate());
+        out.println("        </div>");
+        out.println("        <div class=\"aira-field-row\">");
+        dateField(out, "startDate", "Start date", input.value(action, "startDate",
+                initiative == null || initiative.getStartDate() == null ? "" : initiative.getStartDate().toString()));
+        dateField(out, "endDate", "End date", input.value(action, "endDate",
+                initiative == null || initiative.getEndDate() == null ? "" : initiative.getEndDate().toString()));
+        out.println("        </div>");
         if (creating) {
             out.println("        <p class=\"aira-meta\">You will be added as an admin manager. Global administrators can always open an initiative.</p>");
         }
@@ -555,14 +921,14 @@ final class InitiativePageRenderer {
 
     private static void enumSelect(PrintWriter out, String name, String label, Enum<?>[] values, String selected,
             java.util.function.Function<Enum<?>, String> labels) {
-        out.println("        <div class=\"aira-field\"><label for=\"" + name + "\">" + label + "</label>");
-        out.println("          <select class=\"aira-select\" id=\"" + name + "\" name=\"" + name + "\">");
+        out.println("          <div class=\"aira-field\"><label for=\"" + name + "\">" + label + "</label>");
+        out.println("            <select class=\"aira-select\" id=\"" + name + "\" name=\"" + name + "\" required>");
         for (Enum<?> value : values) {
             String mark = value.name().equals(selected) ? " selected" : "";
-            out.println("            <option value=\"" + value.name() + "\"" + mark + ">"
+            out.println("              <option value=\"" + value.name() + "\"" + mark + ">"
                     + InitiativeHtml.esc(labels.apply(value)) + "</option>");
         }
-        out.println("          </select></div>");
+        out.println("            </select></div>");
     }
 
     private static <E extends Enum<E>> void statusOptions(PrintWriter out, E[] values, String selected,
@@ -574,94 +940,123 @@ final class InitiativePageRenderer {
         }
     }
 
-    private static void dateField(PrintWriter out, String name, String label, LocalDate value) {
-        out.println("        <div class=\"aira-field\"><label for=\"" + name + "\">" + label + "</label>");
-        out.println("          <input class=\"aira-input\" id=\"" + name + "\" name=\"" + name + "\" type=\"date\" value=\""
-                + (value == null ? "" : value) + "\" /></div>");
-    }
-
-    static void organizationField(PrintWriter out, String contextPath, String code, String currentName, Long organizationId) {
-        String suggest = contextPath + "/es/initiatives/" + code + "/organization-suggest";
-        out.println("          <div class=\"initiative-org-field\" data-org-typeahead data-suggest-url=\""
-                + InitiativeHtml.esc(suggest) + "\">");
-        out.println("            <div class=\"aira-field\"><label>Organization</label>");
-        out.println("              <input class=\"aira-input\" data-org-query type=\"text\" autocomplete=\"off\" value=\""
-                + InitiativeHtml.esc(currentName) + "\" placeholder=\"Search organizations\" />");
-        out.println("              <input data-org-id type=\"hidden\" name=\"organizationId\" value=\""
-                + (organizationId == null ? "" : organizationId) + "\" /></div>");
-        out.println("            <div class=\"aira-search-popover\" hidden data-org-popover><div class=\"aira-search-listbox\" data-org-list role=\"listbox\"></div></div>");
-        out.println("            <div data-org-new hidden>");
-        out.println("              <div class=\"aira-field\"><label>New organization name</label>");
-        out.println("                <input class=\"aira-input\" data-org-new-name name=\"newOrganizationName\" type=\"text\" /></div>");
-        out.println("              <div class=\"aira-field\"><label>Type</label><select class=\"aira-select\" data-org-new-type name=\"newOrganizationType\">");
-        out.println("                <option value=\"\">Choose a type</option>");
+    private static void typeOptions(PrintWriter out, String selected) {
         for (OrganizationDirectory.OrganizationType organizationType : OrganizationDirectory.TYPES) {
-            out.println("                <option value=\"" + organizationType.code() + "\">"
+            String mark = organizationType.code().equals(selected) ? " selected" : "";
+            out.println("              <option value=\"" + organizationType.code() + "\"" + mark + ">"
                     + InitiativeHtml.esc(organizationType.label()) + "</option>");
         }
-        out.println("              </select></div>");
-        out.println("              <div class=\"aira-field\"><label>Website</label>");
-        out.println("                <input class=\"aira-input\" name=\"newOrganizationWebsite\" type=\"text\" /></div>");
+    }
+
+    private static void dateField(PrintWriter out, String name, String label, String value) {
+        out.println("          <div class=\"aira-field\"><label for=\"" + name + "\">" + label + "</label>");
+        out.println("            <input class=\"aira-input\" id=\"" + name + "\" name=\"" + name + "\" type=\"date\" value=\""
+                + InitiativeHtml.esc(value) + "\" /></div>");
+    }
+
+    private static void organizationField(PrintWriter out, String contextPath, String code, String prefix,
+            FormInput input, String action, String currentName, Long organizationId) {
+        String suggest = contextPath + "/es/initiatives/" + code + "/organization-suggest";
+        String query = input.value(action, "organizationQuery", currentName);
+        String postedId = input.value(action, "organizationId", organizationId == null ? "" : String.valueOf(organizationId));
+        String newName = input.value(action, "newOrganizationName", "");
+        String newType = input.value(action, "newOrganizationType", "");
+        String website = input.value(action, "newOrganizationWebsite", "");
+        boolean showNew = input.failed(action) && postedId.isBlank()
+                && (!newName.isBlank() || !newType.isBlank() || !website.isBlank());
+        String shownNewName = showNew && newName.isBlank() ? query : newName;
+        out.println("          <div class=\"initiative-org-field\" data-org-typeahead data-suggest-url=\""
+                + InitiativeHtml.esc(suggest) + "\">");
+        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "-organization-query\">Organization</label>");
+        out.println("              <input class=\"aira-input\" id=\"" + prefix + "-organization-query\" name=\"organizationQuery\" data-org-query type=\"text\" autocomplete=\"off\" value=\""
+                + InitiativeHtml.esc(query) + "\" placeholder=\"Search organizations\" />");
+        out.println("              <input data-org-id type=\"hidden\" name=\"organizationId\" value=\""
+                + InitiativeHtml.esc(postedId) + "\" /></div>");
+        out.println("            <div class=\"aira-search-popover\" hidden data-org-popover><div class=\"aira-search-listbox\" data-org-list role=\"listbox\"></div></div>");
+        out.println("            <div data-org-new" + (showNew ? "" : " hidden") + ">");
+        String required = showNew ? " required" : "";
+        out.println("              <div class=\"aira-field\"><label for=\"" + prefix + "-new-name\">New organization name</label>");
+        out.println("                <input class=\"aira-input\" id=\"" + prefix + "-new-name\" data-org-new-name name=\"newOrganizationName\" type=\"text\""
+                + required + " maxlength=\"200\" value=\"" + InitiativeHtml.esc(shownNewName) + "\" /></div>");
+        out.println("              <div class=\"aira-field\"><label for=\"" + prefix + "-new-type\">Type</label>");
+        out.println("                <select class=\"aira-select\" id=\"" + prefix + "-new-type\" data-org-new-type name=\"newOrganizationType\""
+                + required + ">");
+        out.println("                  <option value=\"\">Choose a type</option>");
+        typeOptions(out, newType);
+        out.println("                </select></div>");
+        out.println("              <div class=\"aira-field\"><label for=\"" + prefix + "-new-website\">Website</label>");
+        out.println("                <input class=\"aira-input\" id=\"" + prefix + "-new-website\" name=\"newOrganizationWebsite\" type=\"text\" maxlength=\"500\" value=\""
+                + InitiativeHtml.esc(website) + "\" /></div>");
         out.println("            </div></div>");
     }
 
     private static void representationBlock(PrintWriter out, InitiativeRosterRules.Representation representation) {
-        out.println("      <section class=\"aira-panel\"><h2 class=\"aira-section-title\">Representation</h2>");
-        out.println("        <p>" + representation.committedOrganizations() + " committed "
-                + (representation.committedOrganizations() == 1 ? "organization" : "organizations") + ".</p>");
-        if (representation.committedByType().isEmpty()) {
-            out.println("        <p class=\"aira-meta\">No organizations are committed yet.</p>");
-        } else {
-            out.println("        <div class=\"aira-chip-list\">");
-            for (InitiativeRosterRules.TypeCount count : representation.committedByType()) {
-                out.println("          <span class=\"aira-chip\">" + InitiativeHtml.esc(count.label()) + " "
-                        + count.count() + "</span>");
-            }
-            out.println("        </div>");
+        out.println("      <div class=\"aira-cluster\" aria-label=\"Representation\">");
+        out.println("        <span class=\"aira-badge aira-badge--subtle\">" + representation.committedOrganizations()
+                + " committed " + (representation.committedOrganizations() == 1 ? "organization" : "organizations")
+                + "</span>");
+        out.println("        <span class=\"aira-badge aira-badge--"
+                + (representation.jurisdictionPresent() ? "success" : "warning") + "\">Jurisdiction: "
+                + (representation.jurisdictionPresent() ? "present" : "not yet") + "</span>");
+        out.println("        <span class=\"aira-badge aira-badge--"
+                + (representation.atLeastThreeOrganizations() ? "success" : "warning") + "\">At least 3 organizations: "
+                + (representation.atLeastThreeOrganizations() ? "yes" : "not yet") + "</span>");
+        for (InitiativeRosterRules.TypeCount count : representation.committedByType()) {
+            out.println("        <span class=\"aira-chip\">" + InitiativeHtml.esc(count.label()) + " " + count.count()
+                    + "</span>");
         }
-        out.println("        <p>Jurisdiction: " + (representation.jurisdictionPresent() ? "present" : "not yet") + ".</p>");
-        out.println("        <p>At least 3 organizations: " + (representation.atLeastThreeOrganizations() ? "yes" : "not yet")
-                + ".</p></section>");
+        out.println("      </div>");
     }
 
     private static void timeline(PrintWriter out, String postUrl, List<EsInitiativeTimelineEntry> entries,
             Map<Long, String> userNames, User viewer, boolean canComment, EsInitiativeTimelineEntry.SubjectType type,
-            Long subjectId) {
-        out.println("            <details><summary>History</summary><div class=\"aira-stack\">");
+            Long subjectId, FormInput input) {
         if (entries.isEmpty()) {
-            out.println("              <p class=\"aira-meta\">No history yet.</p>");
+            out.println("        <p class=\"aira-meta\">No history yet.</p>");
         }
         for (EsInitiativeTimelineEntry entry : entries) {
             String who = userNames.getOrDefault(entry.getCreatedByUserId(), "Someone");
             String when = entry.getCreatedAt() == null ? "" : DATE_FORMAT.format(entry.getCreatedAt());
-            out.println("              <article>");
-            out.println("                <p class=\"aira-meta\">" + InitiativeHtml.esc(when) + " · " + InitiativeHtml.esc(who) + "</p>");
-            out.println("                <p>" + InitiativeHtml.esc(entryText(entry)) + "</p>");
+            boolean editing = input.failed("edit-comment")
+                    && String.valueOf(entry.getEsInitiativeTimelineEntryId()).equals(input.posted("entryId"));
+            out.println("        <article>");
+            out.println("          <p class=\"aira-meta\">" + InitiativeHtml.esc(when) + " · " + InitiativeHtml.esc(who) + "</p>");
+            out.println("          <p>" + InitiativeHtml.esc(entryText(entry)) + "</p>");
             if (canComment && viewer != null && InitiativeRosterRules.canEditEntry(entry.getEntryType(),
                     entry.getCreatedByUserId(), viewer.getUserId())) {
-                out.println("                <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-                out.println("                  <input type=\"hidden\" name=\"action\" value=\"edit-comment\" />");
-                out.println("                  <input type=\"hidden\" name=\"entryId\" value=\""
+                out.println("          <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
+                        + InitiativeHtml.esc(postUrl) + "\">");
+                if (editing) {
+                    formError(out, input, "edit-comment");
+                }
+                out.println("            <input type=\"hidden\" name=\"action\" value=\"edit-comment\" />");
+                out.println("            <input type=\"hidden\" name=\"entryId\" value=\""
                         + entry.getEsInitiativeTimelineEntryId() + "\" />");
-                out.println("                  <div class=\"aira-field\"><label>Edit comment</label>");
-                out.println("                    <textarea class=\"aira-textarea\" name=\"note\">"
-                        + InitiativeHtml.esc(entry.getNoteText()) + "</textarea></div>");
-                out.println("                  <button class=\"aira-button aira-button--secondary\" type=\"submit\">Save comment</button>");
-                out.println("                </form>");
+                out.println("            <div class=\"aira-field\"><label for=\"edit-note-"
+                        + entry.getEsInitiativeTimelineEntryId() + "\">Edit comment</label>");
+                out.println("              <textarea class=\"aira-textarea\" id=\"edit-note-"
+                        + entry.getEsInitiativeTimelineEntryId() + "\" name=\"note\" required>"
+                        + InitiativeHtml.esc(editing ? input.posted("note") : entry.getNoteText()) + "</textarea></div>");
+                out.println("            <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Save comment</button></div>");
+                out.println("          </form>");
             }
-            out.println("              </article>");
+            out.println("        </article>");
         }
         if (canComment) {
-            out.println("              <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
-            out.println("                <input type=\"hidden\" name=\"action\" value=\"comment\" />");
-            out.println("                <input type=\"hidden\" name=\"subjectType\" value=\"" + type.name() + "\" />");
-            out.println("                <input type=\"hidden\" name=\"subjectId\" value=\"" + subjectId + "\" />");
-            out.println("                <div class=\"aira-field\"><label>Comment</label>");
-            out.println("                  <textarea class=\"aira-textarea\" name=\"note\"></textarea></div>");
-            out.println("                <button class=\"aira-button aira-button--secondary\" type=\"submit\">Add comment</button>");
-            out.println("              </form>");
+            out.println("        <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(postUrl) + "\">");
+            formError(out, input, "comment");
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"comment\" />");
+            out.println("          <input type=\"hidden\" name=\"subjectType\" value=\"" + type.name() + "\" />");
+            out.println("          <input type=\"hidden\" name=\"subjectId\" value=\"" + subjectId + "\" />");
+            out.println("          <div class=\"aira-field\"><label for=\"comment-" + type.name() + "-" + subjectId
+                    + "\">Comment</label>");
+            out.println("            <textarea class=\"aira-textarea\" id=\"comment-" + type.name() + "-" + subjectId
+                    + "\" name=\"note\" required>" + InitiativeHtml.esc(input.value("comment", "note", ""))
+                    + "</textarea></div>");
+            out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Add comment</button></div>");
+            out.println("        </form>");
         }
-        out.println("            </div></details>");
     }
 
     private static String entryText(EsInitiativeTimelineEntry entry) {
@@ -693,25 +1088,82 @@ final class InitiativePageRenderer {
         return trimmed.length() > 240 ? trimmed.substring(0, 240) + "…" : trimmed;
     }
 
-    private static Map<Long, List<EsInitiativeTimelineEntry>> groupTimeline(List<EsInitiativeTimelineEntry> entries) {
-        Map<Long, List<EsInitiativeTimelineEntry>> grouped = new LinkedHashMap<>();
-        for (EsInitiativeTimelineEntry entry : entries) {
-            grouped.computeIfAbsent(entry.getSubjectId(), id -> new ArrayList<>()).add(entry);
+    private static Map<Long, List<EsInitiativeMember>> groupMembers(List<EsInitiativeMember> members) {
+        Map<Long, List<EsInitiativeMember>> grouped = new LinkedHashMap<>();
+        for (EsInitiativeMember member : members) {
+            if (member.getEsInitiativeOrganizationId() != null) {
+                grouped.computeIfAbsent(member.getEsInitiativeOrganizationId(), id -> new ArrayList<>()).add(member);
+            }
         }
         return grouped;
     }
 
-    private static Organization organizationFor(EsInitiativeMember member, List<EsInitiativeOrganization> participations,
-            Map<Long, Organization> organizations) {
+    private static boolean orgVisible(EsInitiativeOrganization participation, Organization organization,
+            String statusFilter, String typeFilter) {
+        if (statusFilter != null && !statusFilter.isBlank()
+                && !statusFilter.equals(participation.getParticipationStatus().name())) {
+            return false;
+        }
+        String type = organization == null ? "" : organization.getOrganizationType();
+        return typeFilter == null || typeFilter.isBlank() || typeFilter.equals(type);
+    }
+
+    private static EsInitiativeOrganization participationFor(EsInitiativeMember member,
+            List<EsInitiativeOrganization> participations) {
         if (member.getEsInitiativeOrganizationId() == null) {
             return null;
         }
         for (EsInitiativeOrganization participation : participations) {
             if (member.getEsInitiativeOrganizationId().equals(participation.getEsInitiativeOrganizationId())) {
-                return organizations.get(participation.getOrganizationId());
+                return participation;
             }
         }
         return null;
+    }
+
+    private static Organization organizationFor(EsInitiativeMember member, List<EsInitiativeOrganization> participations,
+            Map<Long, Organization> organizations) {
+        EsInitiativeOrganization participation = participationFor(member, participations);
+        return participation == null ? null : organizations.get(participation.getOrganizationId());
+    }
+
+    private static void formError(PrintWriter out, FormInput input, String action) {
+        if (!input.failed(action)) {
+            return;
+        }
+        out.println("          <div class=\"aira-alert aira-alert--error\"><p>"
+                + InitiativeHtml.esc(input.error()) + "</p></div>");
+    }
+
+    private static String badge(String code, String label) {
+        String tone = switch (code) {
+            case "COMMITTED", "JOINED", "ACTIVE" -> "success";
+            case "DECLINED", "WITHDRAWN", "NOT_ACCEPTED", "LEFT", "ARCHIVED" -> "danger";
+            case "PROSPECT", "PLANNING" -> "subtle";
+            case "CLOSED" -> "warning";
+            default -> "info";
+        };
+        return "<span class=\"aira-badge aira-badge--" + tone + "\">" + InitiativeHtml.esc(label) + "</span>";
+    }
+
+    private static String when(LocalDateTime value) {
+        return value == null ? "—" : DATE_FORMAT.format(value);
+    }
+
+    private static String filterQuery(String... pairs) {
+        StringBuilder query = new StringBuilder();
+        for (int i = 0; i + 1 < pairs.length; i += 2) {
+            String value = pairs[i + 1];
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            if (!query.isEmpty()) {
+                query.append('&');
+            }
+            query.append(URLEncoder.encode(pairs[i], StandardCharsets.UTF_8)).append('=')
+                    .append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+        }
+        return query.isEmpty() ? "" : "?" + query;
     }
 
     private static void meta(PrintWriter out, String label, String value) {
@@ -728,13 +1180,5 @@ final class InitiativePageRenderer {
             return start + " to " + end;
         }
         return start != null ? "Starts " + start : "Ends " + end;
-    }
-
-    static String sectionActive(String section) {
-        return section == null ? "overview" : section;
-    }
-
-    static boolean canEdit(InitiativeAccess.Level level) {
-        return InitiativeAccess.canEditRoster(level);
     }
 }
