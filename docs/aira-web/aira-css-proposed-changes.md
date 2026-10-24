@@ -16,6 +16,72 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.10 | 2026-08-11 | [`aira-css-changes-revision-10.md`](aira-css-changes-revision-10.md) | Bounded/scrollable `aira-matrix-table-wrap` so sticky headers actually stick; `aira-matrix-table__label` wraps instead of truncating |
 | 0.1.11 | 2026-09-15 | [`aira-css-changes-revision-11.md`](aira-css-changes-revision-11.md) | Optional badge count on `AiraActionItem`/`addGlobalAction` — requested in [`aira-css-request-11.md`](aira-css-request-11.md) |
 | 0.1.12 | 2026-09-15 | [`aira-css-changes-revision-12.md`](aira-css-changes-revision-12.md) | Fixed `.aira-badge-count` invisible white-on-white text on `primary`/`danger`/`success` button variants |
+| 0.1.13 | 2026-10-24 | [`aira-css-changes-revision-13.md`](aira-css-changes-revision-13.md) | Natural-width direct-child buttons in `aira-form`/`aira-stack`; `aira-form--inline`, `aira-field--grow`, `aira-form--narrow`; Forms section in the guide — requested in [`aira-css-request-13.md`](aira-css-request-13.md) |
+
+---
+
+## Proposal: Let a search popover escape a modal dialog
+
+**Status:** Proposed
+**Found during:** Initiatives organization type-ahead inside an `aira-dialog` (`/es/initiatives/{code}/organizations`).
+**Date:** 2026-10-24
+
+### Problem
+
+`aira-search-popover` is `position: absolute` under its field. A native modal `<dialog>` uses `overflow: auto`, so the suggestion list is clipped at the dialog's edge instead of drawing over the fields below it. The popover cannot be moved outside the dialog either: the dialog is in the top layer, and page content behind it is covered by the backdrop.
+
+### Current local workaround
+
+`initiative-org.css` only positions the field (`position: relative`) and raises it while the menu is open. `initiative-org-typeahead.js` sets `overflow: visible` on the enclosing dialog for that moment, then clears it. That is an InteropHub behavior hook for this type-ahead, not a shared layout component.
+
+### Proposed shared interface
+
+A modifier such as `.aira-dialog:has(.aira-search-popover)` with `overflow: visible`, or a documented way for `.aira-search-popover` to paint outside a dialog without each application toggling overflow. A short note in the Dialogs section of the components guide would be enough if the CSS change is the `:has()` rule.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Any management dialog with a type-ahead will hit the same clip. The search popover and the dialog are both shared components.
+
+### Compatibility and migration impact
+
+`overflow: visible` on every dialog would let long dialog content spill instead of scroll, so the rule should apply only when a search popover is present. Existing dialogs without a popover stay scrollable.
+
+---
+
+## Proposal: Compact management forms (natural-width buttons, inline form, narrow form)
+
+**Status:** Available in this project
+**Found during:** Review of the first Initiatives pages (`/es/initiatives/{code}/organizations`, `/people`, `/settings`). Every button and field spanned the full panel width, which made roster management slow and hard to read.
+**Date:** 2026-10-24
+
+### Problem
+
+- A button placed directly in `.aira-form` (a grid) stretches to the full width.
+- There's no one-line form for filter bars or for "status + note + Save" actions.
+- There's no way to keep a stacked form at a readable width inside a wide panel.
+
+The components guide has no Forms section, and doesn't say how to put a form in an `aira-dialog`. See the standalone request for full detail.
+
+### Current local workaround
+
+Wrap buttons in `aira-form-actions`, and lay out short fields with `aira-field-row`. The Initiatives pages are being reworked to a list + dialog + detail-page pattern built from existing components (`aira-table-panel`, `aira-table`, `aira-dialog`). No local form CSS is being added while this is pending.
+
+### Proposed shared interface
+
+See [`aira-css-request-13.md`](aira-css-request-13.md): `.aira-form > .aira-button { justify-self: start }`, `.aira-form--inline` with `.aira-field--grow`, `.aira-form--narrow` with `--aira-form-max-width`, and a Forms section in `components-guide.md`.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Every AIRA application with admin or management screens needs compact forms. The stretched-button default is a trap for any page, not just InteropHub's.
+
+### Compatibility and migration impact
+
+- Change 1 changes how existing pages look: about 60 `aira-form` uses in InteropHub. Any button placed directly in a form becomes natural width. That's intended, but it should be spot-checked.
+- Changes 2 and 3 add new modifiers, so they have no effect until a page uses them.
+
+### Resolution
+
+Implemented upstream in `0.1.13` (see [`aira-css-changes-revision-13.md`](aira-css-changes-revision-13.md)), as requested, with one decision on the open question: the natural-width rule also applies to direct-child buttons in `.aira-stack`. A page that really wants a full-width button sets `justify-self: stretch` on that instance. InteropHub now consumes `0.1.13` (`pom.xml`).
 
 ---
 

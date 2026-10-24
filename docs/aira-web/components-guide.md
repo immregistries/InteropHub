@@ -340,6 +340,83 @@ Use `aira-entity-card` for compact records inside matrix cells or other dense li
 </div>
 ```
 
+### Forms
+
+Use `aira-form` for vertically stacked forms and wrap each label/control/help group in `aira-field`. Use `aira-field-row` for short fields that should share a row when space allows, and put related submit/cancel controls in `aira-form-actions`. Direct-child buttons and button links also keep their natural width rather than stretching across the form.
+
+```html
+<form class="aira-form aira-form--narrow">
+  <div class="aira-field-row">
+    <div class="aira-field">
+      <label for="person-name">Name</label>
+      <input class="aira-input" id="person-name" name="name">
+    </div>
+    <div class="aira-field">
+      <label for="person-code">Code</label>
+      <input class="aira-input" id="person-code" name="code">
+    </div>
+  </div>
+  <div class="aira-form-actions">
+    <button class="aira-button aira-button--primary" type="submit">Save</button>
+  </div>
+</form>
+```
+
+Add `aira-form--narrow` for an ordinary stacked data-entry form that should remain readable inside a wide panel. Its maximum width is `--aira-form-max-width`; `aira-field-row` still lays out short fields side by side within that width.
+
+Add `aira-form--inline` for filter bars and one-line actions. It aligns controls and buttons at their bottom edges and wraps them on narrow viewports. Controls use a natural width; add `aira-field--grow` to the field that should consume remaining space.
+
+```html
+<form class="aira-form aira-form--inline" method="get">
+  <div class="aira-field">
+    <label for="filter-status">Status</label>
+    <select class="aira-select" id="filter-status" name="status"><option>Active</option></select>
+  </div>
+  <div class="aira-field aira-field--grow">
+    <label for="filter-name">Organization</label>
+    <input class="aira-input" id="filter-name" name="organization">
+  </div>
+  <button class="aira-button aira-button--secondary" type="submit">Filter</button>
+</form>
+```
+
+For a form in a native dialog, compose the form directly inside `<dialog class="aira-dialog">` as a compact `aira-stack`. Do not wrap form fields in `aira-dialog__body`: that class uses `white-space: pre-wrap` for text content and can expose the source markup's indentation as whitespace.
+
+```html
+<dialog class="aira-dialog" id="add-organization" aria-labelledby="add-organization-title">
+  <form class="aira-stack aira-stack--compact" method="post">
+    <h3 class="aira-dialog__title" id="add-organization-title">Add organization</h3>
+    <div class="aira-field">
+      <label for="organization-name">Name</label>
+      <input class="aira-input" id="organization-name" name="name" required>
+    </div>
+    <div class="aira-dialog__actions aira-form-actions aira-form-actions--end">
+      <button class="aira-button aira-button--ghost" type="button">Cancel</button>
+      <button class="aira-button aira-button--primary" type="submit">Add</button>
+    </div>
+  </form>
+</dialog>
+```
+
+For a management list, use an `aira-table-panel`, place the Add button in `aira-table-panel__actions`, link each row's primary cell to its detail page, and handle add/edit actions in an `aira-dialog`. This keeps the table compact while preserving a clear route to full record details.
+
+```html
+<section class="aira-table-panel">
+  <div class="aira-table-panel__header">
+    <h2 class="aira-table-panel__title">Organizations</h2>
+    <div class="aira-table-panel__actions">
+      <button class="aira-button aira-button--small aira-button--secondary" type="button">Add</button>
+    </div>
+  </div>
+  <div class="aira-table-wrap">
+    <table class="aira-table">
+      <thead><tr><th scope="col">Organization</th><th scope="col">Status</th></tr></thead>
+      <tbody><tr><th scope="row" class="aira-table__cell--primary"><a href="/organizations/42">Example Health</a></th><td>Active</td></tr></tbody>
+    </table>
+  </div>
+</section>
+```
+
 ### Buttons and Actions
 
 Use shared button variants before defining application-specific action colors:
