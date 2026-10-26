@@ -32,7 +32,7 @@ final class FormInput {
         Map<String, String> values = new HashMap<>();
         request.getParameterMap().forEach((key, list) -> {
             if (list != null && list.length > 0 && list[0] != null) {
-                values.put(key, list[0]);
+                values.put(key, String.join(",", list));
             }
         });
         return new FormInput(action == null ? "" : action, error, openDialog, values);

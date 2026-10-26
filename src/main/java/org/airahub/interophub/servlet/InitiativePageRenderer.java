@@ -37,6 +37,7 @@ final class InitiativePageRenderer {
         chip(out, contextPath, code, "", "Overview", active);
         chip(out, contextPath, code, "/organizations", "Organizations", active);
         chip(out, contextPath, code, "/people", "People", active);
+        chip(out, contextPath, code, "/small-groups", "Small Groups", active);
         chip(out, contextPath, code, "/checklist", "Checklist", active);
         if (canEdit) {
             chip(out, contextPath, code, "/import", "Import", active);
@@ -795,7 +796,7 @@ final class InitiativePageRenderer {
         out.println("          </div>");
     }
 
-    private static void personIdentity(PrintWriter out, FormInput input, String action, String prefix) {
+    static void personIdentity(PrintWriter out, FormInput input, String action, String prefix) {
         out.println("          <div class=\"aira-field-row\">");
         out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Name\">Name</label>");
         out.println("              <input class=\"aira-input\" id=\"" + prefix + "Name\" name=\"name\" type=\"text\" maxlength=\"200\" value=\""
@@ -959,7 +960,7 @@ final class InitiativePageRenderer {
                 + InitiativeHtml.esc(value) + "\" /></div>");
     }
 
-    private static void organizationField(PrintWriter out, String contextPath, String code, String prefix,
+    static void organizationField(PrintWriter out, String contextPath, String code, String prefix,
             FormInput input, String action, String currentName, Long organizationId) {
         String suggest = contextPath + "/es/initiatives/" + code + "/organization-suggest";
         String query = input.value(action, "organizationQuery", currentName);
@@ -1140,12 +1141,12 @@ final class InitiativePageRenderer {
                 + InitiativeHtml.esc(input.error()) + "</p></div>");
     }
 
-    private static String badge(String code, String label) {
+    static String badge(String code, String label) {
         String tone = switch (code) {
             case "COMMITTED", "JOINED", "ACTIVE" -> "success";
-            case "DECLINED", "WITHDRAWN", "NOT_ACCEPTED", "LEFT", "ARCHIVED" -> "danger";
+            case "DECLINED", "WITHDRAWN", "NOT_ACCEPTED", "LEFT", "ARCHIVED", "CANCELLED", "REMOVED" -> "danger";
             case "PROSPECT", "PLANNING" -> "subtle";
-            case "CLOSED" -> "warning";
+            case "CLOSED", "HANDOFF" -> "warning";
             default -> "info";
         };
         return "<span class=\"aira-badge aira-badge--" + tone + "\">" + InitiativeHtml.esc(label) + "</span>";

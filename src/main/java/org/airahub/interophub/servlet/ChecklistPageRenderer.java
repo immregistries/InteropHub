@@ -33,10 +33,35 @@ final class ChecklistPageRenderer {
             User viewer, ChecklistHints.Facts facts, boolean canEdit, boolean upgradeAvailable, int availableVersion,
             boolean showRemoved, boolean hideDone, boolean templateAdmin, FormInput input) {
         String base = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/checklist";
+        checklistAt(out, contextPath, base, ChecklistDueDates.Anchors.initiative(initiative.getStartDate(), initiative.getEndDate()),
+                initiative.getInitiativeName(), true, checklist, items, managers, userNames, itemTimeline,
+                checklistTimeline, viewer, facts, canEdit, upgradeAvailable, availableVersion, showRemoved, hideDone,
+                templateAdmin, input);
+    }
+
+    static void embedded(PrintWriter out, String contextPath, String base, ChecklistDueDates.Anchors anchors,
+            EsChecklist checklist, List<EsChecklistItem> items, List<EsInitiativeManager> managers,
+            Map<Long, String> userNames, Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline,
+            List<EsInitiativeTimelineEntry> checklistTimeline, User viewer, ChecklistHints.Facts facts, boolean canEdit,
+            boolean upgradeAvailable, int availableVersion, boolean showRemoved, boolean hideDone, boolean templateAdmin,
+            FormInput input) {
+        checklistAt(out, contextPath, base, anchors, null, false, checklist, items, managers, userNames, itemTimeline,
+                checklistTimeline, viewer, facts, canEdit, upgradeAvailable, availableVersion, showRemoved, hideDone,
+                templateAdmin, input);
+    }
+
+    private static void checklistAt(PrintWriter out, String contextPath, String base, ChecklistDueDates.Anchors anchors, String title,
+            boolean showTitle, EsChecklist checklist, List<EsChecklistItem> items, List<EsInitiativeManager> managers,
+            Map<Long, String> userNames, Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline,
+            List<EsInitiativeTimelineEntry> checklistTimeline, User viewer, ChecklistHints.Facts facts, boolean canEdit,
+            boolean upgradeAvailable, int availableVersion, boolean showRemoved, boolean hideDone, boolean templateAdmin,
+            FormInput input) {
         String action = base + query(showRemoved, hideDone);
-        out.println("      <div class=\"aira-page-header\"><div>");
-        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(initiative.getInitiativeName()) + "</h1>");
-        out.println("      </div></div>");
+        if (showTitle) {
+            out.println("      <div class=\"aira-page-header\"><div>");
+            out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(title) + "</h1>");
+            out.println("      </div></div>");
+        }
         if (checklist == null) {
             out.println("      <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No checklist yet.</p>");
             if (canEdit) {
@@ -53,7 +78,7 @@ final class ChecklistPageRenderer {
                     + "</p></div>");
         }
         LocalDate today = LocalDate.now();
-        Progress progress = progress(items, initiative, today);
+        Progress progress = progress(items, anchors, today);
         out.println("      <p class=\"aira-meta\" id=\"checklist-progress\">" + InitiativeHtml.esc(progress.text()) + "</p>");
         if (upgradeAvailable) {
             out.println("      <div class=\"aira-alert aira-alert--info\"><p>Template v" + availableVersion
@@ -88,7 +113,7 @@ final class ChecklistPageRenderer {
         out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Remove</span></th>");
         out.println("        </tr></thead><tbody>");
         for (Map.Entry<String, List<EsChecklistItem>> phase : phases.entrySet()) {
-            phaseRows(out, action, phase.getKey(), phase.getValue(), managers, userNames, facts, initiative, today,
+            phaseRows(out, action, phase.getKey(), phase.getValue(), managers, userNames, facts, anchors, today,
                     canEdit, hideDone, input);
         }
         out.println("        </tbody></table></div></section>");
@@ -98,7 +123,7 @@ final class ChecklistPageRenderer {
                 continue;
             }
             itemDialog(out, action, item, userNames, itemTimeline.getOrDefault(item.getEsChecklistItemId(), List.of()),
-                    viewer, initiative, canEdit, input);
+                    viewer, canEdit, input);
         }
         if (canEdit) {
             addPhaseDialog(out, action, input);
@@ -114,20 +139,31 @@ final class ChecklistPageRenderer {
     static String itemRowMarkup(String action, EsChecklistItem item, List<EsInitiativeManager> managers,
             Map<Long, String> userNames, ChecklistHints.Facts facts, EsInitiative initiative, LocalDate today,
             boolean canEdit) {
+        return itemRowMarkup(action, item, managers, userNames, facts,
+                ChecklistDueDates.Anchors.initiative(initiative.getStartDate(), initiative.getEndDate()), today, canEdit);
+    }
+
+    static String itemRowMarkup(String action, EsChecklistItem item, List<EsInitiativeManager> managers,
+            Map<Long, String> userNames, ChecklistHints.Facts facts, ChecklistDueDates.Anchors anchors, LocalDate today,
+            boolean canEdit) {
         StringWriter buffer = new StringWriter();
-        itemRow(new PrintWriter(buffer), action, item, managers, userNames, facts, initiative, today, canEdit, false);
+        itemRow(new PrintWriter(buffer), action, item, managers, userNames, facts, anchors, today, canEdit, false);
         return buffer.toString();
     }
 
     static String itemDialogMarkup(String action, EsChecklistItem item, Map<Long, String> userNames, User viewer,
-            EsInitiative initiative, boolean canEdit) {
+            boolean canEdit) {
         StringWriter buffer = new StringWriter();
-        itemDialog(new PrintWriter(buffer), action, item, userNames, List.of(), viewer, initiative, canEdit,
-                FormInput.none());
+        itemDialog(new PrintWriter(buffer), action, item, userNames, List.of(), viewer, canEdit, FormInput.none());
         return buffer.toString();
     }
 
     static Progress progress(List<EsChecklistItem> items, EsInitiative initiative, LocalDate today) {
+        return progress(items, ChecklistDueDates.Anchors.initiative(initiative.getStartDate(), initiative.getEndDate()),
+                today);
+    }
+
+    static Progress progress(List<EsChecklistItem> items, ChecklistDueDates.Anchors anchors, LocalDate today) {
         int done = 0;
         int total = 0;
         int overdue = 0;
@@ -140,7 +176,7 @@ final class ChecklistPageRenderer {
             if (item.getItemStatus() == EsChecklistItem.Status.DONE) {
                 done++;
             }
-            ChecklistDueDates.Urgency urgency = urgency(item, initiative, today);
+            ChecklistDueDates.Urgency urgency = urgency(item, anchors, today);
             if (urgency == ChecklistDueDates.Urgency.OVERDUE) {
                 overdue++;
             } else if (urgency == ChecklistDueDates.Urgency.DUE_SOON) {
@@ -159,10 +195,17 @@ final class ChecklistPageRenderer {
     static void upgrade(PrintWriter out, String contextPath, EsInitiative initiative, int fromVersion,
             EsChecklistTemplate next, ChecklistMerge.Result result, boolean canApply) {
         String base = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/checklist";
-        out.println("      <p><a href=\"" + InitiativeHtml.esc(base) + "\">Back to the checklist</a></p>");
+        upgrade(out, base, fromVersion, next, result, canApply,
+                "Closed and archived initiatives keep the template they ran with.", "Back to the checklist");
+    }
+
+    static void upgrade(PrintWriter out, String base, int fromVersion, EsChecklistTemplate next,
+            ChecklistMerge.Result result, boolean canApply, String closedMessage, String backLabel) {
+        out.println("      <p><a href=\"" + InitiativeHtml.esc(base) + "\">" + InitiativeHtml.esc(backLabel) + "</a></p>");
         out.println("      <h1 class=\"aira-page-title\">Template v" + next.getVersionNo() + "</h1>");
         if (!canApply) {
-            out.println("      <div class=\"aira-alert aira-alert--info\"><p>Closed and archived initiatives keep the template they ran with.</p></div>");
+            out.println("      <div class=\"aira-alert aira-alert--info\"><p>" + InitiativeHtml.esc(closedMessage)
+                    + "</p></div>");
             return;
         }
         out.println("      <p>" + InitiativeHtml.esc(ChecklistMerge.upgradeNote(fromVersion, next.getVersionNo(), result))
@@ -264,7 +307,7 @@ final class ChecklistPageRenderer {
 
     private static void phaseRows(PrintWriter out, String action, String phase, List<EsChecklistItem> items,
             List<EsInitiativeManager> managers, Map<Long, String> userNames, ChecklistHints.Facts facts,
-            EsInitiative initiative, LocalDate today, boolean canEdit, boolean hideDone, FormInput input) {
+            ChecklistDueDates.Anchors anchors, LocalDate today, boolean canEdit, boolean hideDone, FormInput input) {
         String phaseId = "phase-" + Math.abs(phase.hashCode());
         out.println("        <tr class=\"initiative-checklist-phase\" data-phase=\"" + InitiativeHtml.esc(phase) + "\">");
         out.println("          <th colspan=\"7\" scope=\"colgroup\">");
@@ -286,7 +329,7 @@ final class ChecklistPageRenderer {
         }
         out.println("          </th></tr>");
         for (EsChecklistItem item : items) {
-            itemRow(out, action, item, managers, userNames, facts, initiative, today, canEdit,
+            itemRow(out, action, item, managers, userNames, facts, anchors, today, canEdit,
                     hideDone && item.getItemStatus() == EsChecklistItem.Status.DONE);
         }
         if (canEdit) {
@@ -309,14 +352,14 @@ final class ChecklistPageRenderer {
     }
 
     private static void itemRow(PrintWriter out, String action, EsChecklistItem item, List<EsInitiativeManager> managers,
-            Map<Long, String> userNames, ChecklistHints.Facts facts, EsInitiative initiative, LocalDate today,
+            Map<Long, String> userNames, ChecklistHints.Facts facts, ChecklistDueDates.Anchors anchors, LocalDate today,
             boolean canEdit, boolean hidden) {
         boolean removed = Boolean.TRUE.equals(item.getRemoved());
         boolean editable = canEdit && !removed;
         EsChecklistItem.Status status = item.getItemStatus();
         boolean muted = status == EsChecklistItem.Status.DONE || status == EsChecklistItem.Status.NOT_APPLICABLE;
-        ChecklistDueDates.Urgency urgency = urgency(item, initiative, today);
-        LocalDate due = dueDate(item, initiative);
+        ChecklistDueDates.Urgency urgency = urgency(item, anchors, today);
+        LocalDate due = dueDate(item, anchors);
         String id = String.valueOf(item.getEsChecklistItemId());
         out.println("        <tr id=\"item-" + id + "\" class=\"initiative-checklist-row" + (muted ? " aira-muted" : "")
                 + "\" data-item-id=\"" + id + "\" data-phase=\"" + InitiativeHtml.esc(item.getPhaseLabel())
@@ -413,8 +456,7 @@ final class ChecklistPageRenderer {
     }
 
     private static void itemDialog(PrintWriter out, String action, EsChecklistItem item, Map<Long, String> userNames,
-            List<EsInitiativeTimelineEntry> timeline, User viewer, EsInitiative initiative, boolean canEdit,
-            FormInput input) {
+            List<EsInitiativeTimelineEntry> timeline, User viewer, boolean canEdit, FormInput input) {
         String id = "item-" + item.getEsChecklistItemId() + "-dialog";
         boolean removed = Boolean.TRUE.equals(item.getRemoved());
         boolean failed = id.equals(input.openDialog());
@@ -556,13 +598,14 @@ final class ChecklistPageRenderer {
         return phases;
     }
 
-    private static LocalDate dueDate(EsChecklistItem item, EsInitiative initiative) {
+    private static LocalDate dueDate(EsChecklistItem item, ChecklistDueDates.Anchors anchors) {
         return ChecklistDueDates.effective(item.getDueAnchor(), item.getDueOffsetDays(), item.getDueDateOverride(),
-                initiative.getStartDate(), initiative.getEndDate());
+                anchors);
     }
 
-    private static ChecklistDueDates.Urgency urgency(EsChecklistItem item, EsInitiative initiative, LocalDate today) {
-        return ChecklistDueDates.urgency(dueDate(item, initiative), today,
+    private static ChecklistDueDates.Urgency urgency(EsChecklistItem item, ChecklistDueDates.Anchors anchors,
+            LocalDate today) {
+        return ChecklistDueDates.urgency(dueDate(item, anchors), today,
                 item.getItemStatus() == null ? null : item.getItemStatus().name());
     }
 
@@ -595,11 +638,20 @@ final class ChecklistPageRenderer {
     }
 
     static String itemUrgency(EsChecklistItem item, EsInitiative initiative, LocalDate today) {
-        return urgencyName(urgency(item, initiative, today));
+        return itemUrgency(item, ChecklistDueDates.Anchors.initiative(initiative.getStartDate(), initiative.getEndDate()),
+                today);
+    }
+
+    static String itemUrgency(EsChecklistItem item, ChecklistDueDates.Anchors anchors, LocalDate today) {
+        return urgencyName(urgency(item, anchors, today));
     }
 
     static String dueText(EsChecklistItem item, EsInitiative initiative) {
-        LocalDate due = dueDate(item, initiative);
+        return dueText(item, ChecklistDueDates.Anchors.initiative(initiative.getStartDate(), initiative.getEndDate()));
+    }
+
+    static String dueText(EsChecklistItem item, ChecklistDueDates.Anchors anchors) {
+        LocalDate due = dueDate(item, anchors);
         return due == null ? "" : InitiativePageRenderer.DATE_FORMAT.format(due);
     }
 }

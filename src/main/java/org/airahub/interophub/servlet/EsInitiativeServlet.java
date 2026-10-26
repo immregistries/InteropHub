@@ -17,6 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.airahub.interophub.dao.SmallGroupQueries;
 import org.airahub.interophub.model.EsChecklist;
 import org.airahub.interophub.model.EsChecklistItem;
 import org.airahub.interophub.model.EsChecklistTemplate;
@@ -26,11 +27,15 @@ import org.airahub.interophub.model.EsInitiativeManager;
 import org.airahub.interophub.model.EsInitiativeMember;
 import org.airahub.interophub.model.EsInitiativeOrganization;
 import org.airahub.interophub.model.EsInitiativeTimelineEntry;
+import org.airahub.interophub.model.EsSmallGroup;
+import org.airahub.interophub.model.EsSmallGroupParticipant;
 import org.airahub.interophub.model.EsSubscription;
 import org.airahub.interophub.model.EsTopic;
+import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.Organization;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.ChecklistDueDates;
 import org.airahub.interophub.service.ChecklistFeedback;
 import org.airahub.interophub.service.ChecklistHints;
 import org.airahub.interophub.service.ChecklistMerge;
@@ -40,6 +45,9 @@ import org.airahub.interophub.service.InitiativeImport;
 import org.airahub.interophub.service.InitiativeRosterRules;
 import org.airahub.interophub.service.InitiativeService;
 import org.airahub.interophub.service.OrganizationDirectory;
+import org.airahub.interophub.service.PublicUrlService;
+import org.airahub.interophub.service.SmallGroupSeriesComparison;
+import org.airahub.interophub.service.SmallGroupService;
 import org.immregistries.aira.web.AiraPage;
 
 public class EsInitiativeServlet extends HttpServlet {
@@ -51,6 +59,8 @@ public class EsInitiativeServlet extends HttpServlet {
     private final AuthFlowService authFlowService = new AuthFlowService();
     private final InitiativeService initiatives = new InitiativeService();
     private final ChecklistService checklists = new ChecklistService();
+    private final SmallGroupService smallGroups = new SmallGroupService();
+    private final PublicUrlService publicUrls = new PublicUrlService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -99,6 +109,10 @@ public class EsInitiativeServlet extends HttpServlet {
             response.setHeader("Content-Disposition", "attachment; filename=\"" + initiative.getInitiativeCode()
                     + "-checklist.md\"");
             response.getWriter().write(markdown);
+            return;
+        }
+        if (parts.length == 4 && "small-groups".equals(parts[1]) && "download".equals(parts[3])) {
+            serveSmallGroupDownload(response, initiative, parts[2]);
             return;
         }
         renderCurrent(request, response, user, initiative, level, parts, FormInput.none());
@@ -160,6 +174,23 @@ public class EsInitiativeServlet extends HttpServlet {
             }
             String section = parts.length > 1 ? parts[1] : "overview";
             String action = param(request, "action");
+            if ("small-groups".equals(section)) {
+                if (!InitiativeAccess.canEditSmallGroup(level)) {
+                    throw new IllegalArgumentException("You don't have permission to change this Small Group.");
+                }
+                String warning = dispatchSmallGroup(request, user, initiative, parts, action);
+                if (wantsJson(request)) {
+                    writeSmallGroupChecklistJson(request, response, user, initiative, parts);
+                    return;
+                }
+                if (warning != null) {
+                    flash(request, "warning", warning);
+                } else {
+                    flash(request, "success", "Saved.");
+                }
+                redirect(response, request, initiative, smallGroupRedirect(request, parts, action));
+                return;
+            }
             if (requiresSettings(action) && !InitiativeAccess.canManageSettings(level)) {
                 throw new IllegalArgumentException("You don't have permission to change these settings.");
             }
@@ -445,6 +476,7 @@ public class EsInitiativeServlet extends HttpServlet {
                     renderMissing(request, response);
                 }
             }
+            case "small-groups" -> renderSmallGroups(request, response, user, initiative, level, parts, input);
             default -> renderMissing(request, response);
         }
     }
@@ -692,7 +724,7 @@ public class EsInitiativeServlet extends HttpServlet {
             out.println("    </div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
-                    + "/js/initiative-dialogs.js\"></script>");
+                    + "/js/initiative-dialogs.js?v=2\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
                     + "/js/initiative-org-typeahead.js\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
@@ -832,6 +864,11 @@ public class EsInitiativeServlet extends HttpServlet {
             case "edit-item", "save-item", "item-status", "due-override", "assign-item" -> itemDialog(request);
             case "comment", "edit-comment" -> "CHECKLIST_ITEM".equals(param(request, "subjectType"))
                     ? "item-" + param(request, "subjectId") + "-dialog" : null;
+            case "create-small-group" -> "new-small-group";
+            case "add-participant" -> "add-participant";
+            case "add-new-participant" -> "add-new-participant";
+            case "remove-participant" -> "remove-participant";
+            case "group-status" -> "group-status";
             default -> null;
         };
     }
@@ -1130,7 +1167,7 @@ public class EsInitiativeServlet extends HttpServlet {
             json.append(",\"html\":").append(jsonString(ChecklistPageRenderer.itemRowMarkup(page, item, managers, names,
                     hintFacts(initiative), initiative, today, true)));
             json.append(",\"dialog\":").append(jsonString(ChecklistPageRenderer.itemDialogMarkup(page, item, names, user,
-                    initiative, true)));
+                    true)));
         }
         json.append('}');
         response.setContentType("application/json;charset=UTF-8");
@@ -1165,6 +1202,420 @@ public class EsInitiativeServlet extends HttpServlet {
             }
         }
         return null;
+    }
+
+    private void serveSmallGroupDownload(HttpServletResponse response, EsInitiative initiative, String rawId)
+            throws IOException {
+        EsSmallGroup group = smallGroup(initiative, rawId);
+        if (group == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        EsChecklist checklist = checklists.findForSmallGroup(group.getEsSmallGroupId()).orElse(null);
+        if (checklist == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND);
+            return;
+        }
+        String markdown = checklists.download(checklist, group.getSmallGroupName());
+        response.setContentType("text/markdown;charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"small-group-" + group.getEsSmallGroupId()
+                + "-checklist.md\"");
+        response.getWriter().write(markdown);
+    }
+
+    private void renderSmallGroups(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, InitiativeAccess.Level level, String[] parts, FormInput input) throws IOException {
+        boolean canEdit = InitiativeAccess.canEditSmallGroup(level);
+        if (parts.length == 2) {
+            List<EsSmallGroup> groups = smallGroups.list(initiative.getEsInitiativeId());
+            List<EsTopic> topics = topicChoices(initiative, null);
+            page(request, response, initiative.getInitiativeName() + " small groups - InteropHub", initiative,
+                    "small-groups", input, out -> SmallGroupPageRenderer.list(out, request.getContextPath(), initiative,
+                            groups, topicNames(groups, topics), smallGroups.activeCounts(groups), topics,
+                            seriesChoices(topics), groups, canEdit, input));
+            return;
+        }
+        EsSmallGroup group = smallGroup(initiative, parts[2]);
+        if (group == null) {
+            renderMissing(request, response);
+            return;
+        }
+        if (parts.length == 4 && "upgrade".equals(parts[3])) {
+            renderSmallGroupUpgrade(request, response, initiative, group, level, input);
+            return;
+        }
+        if (parts.length != 3) {
+            renderMissing(request, response);
+            return;
+        }
+        String base = request.getContextPath() + "/es/initiatives/" + initiative.getInitiativeCode() + "/small-groups/"
+                + group.getEsSmallGroupId();
+        EsTopic topic = initiatives.findTopic(group.getEsTopicId()).orElse(null);
+        List<EsTopic> topics = topicChoices(initiative, group.getEsTopicId());
+        List<EsTopicMeeting> series = seriesChoices(topics);
+        List<EsSmallGroupParticipant> rows = smallGroups.participants(group.getEsSmallGroupId());
+        Map<Long, EsInitiativeMember> members = new HashMap<>();
+        for (EsInitiativeMember member : initiatives.members(initiative.getEsInitiativeId())) {
+            members.put(member.getEsInitiativeMemberId(), member);
+        }
+        List<SmallGroupPageRenderer.ParticipantRow> participants = new ArrayList<>();
+        Set<Long> activeMemberIds = new HashSet<>();
+        for (EsSmallGroupParticipant row : rows) {
+            if (row.getParticipantStatus() != EsSmallGroupParticipant.Status.ACTIVE) {
+                continue;
+            }
+            activeMemberIds.add(row.getEsInitiativeMemberId());
+            participants.add(new SmallGroupPageRenderer.ParticipantRow(row, members.get(row.getEsInitiativeMemberId())));
+        }
+        List<EsInitiativeMember> rosterChoices = new ArrayList<>();
+        for (EsInitiativeMember member : members.values()) {
+            if (!activeMemberIds.contains(member.getEsInitiativeMemberId())) {
+                rosterChoices.add(member);
+            }
+        }
+        rosterChoices.sort((left, right) -> left.displayName().compareToIgnoreCase(right.displayName()));
+        List<EsSmallGroup> earlier = new ArrayList<>();
+        for (EsSmallGroup candidate : smallGroups.list(initiative.getEsInitiativeId())) {
+            if (!group.getEsSmallGroupId().equals(candidate.getEsSmallGroupId())) {
+                earlier.add(candidate);
+            }
+        }
+        String path = smallGroups.registrationPath(group);
+        String registrationUrl = path == null ? null : publicUrls.resolveExternalUrl(path);
+        EsChecklist checklist = checklists.findForSmallGroup(group.getEsSmallGroupId()).orElse(null);
+        List<EsChecklistItem> items = checklist == null ? List.of() : checklists.items(checklist.getEsChecklistId());
+        List<EsInitiativeManager> managers = initiatives.managers(initiative.getEsInitiativeId());
+        Map<Long, String> names = managerNames(managers);
+        Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline = new HashMap<>();
+        List<EsInitiativeTimelineEntry> itemEntries = initiatives.timelineForInitiative(initiative.getEsInitiativeId(),
+                EsInitiativeTimelineEntry.SubjectType.CHECKLIST_ITEM);
+        for (EsInitiativeTimelineEntry entry : itemEntries) {
+            itemTimeline.computeIfAbsent(entry.getSubjectId(), key -> new ArrayList<>()).add(entry);
+        }
+        names.putAll(names(itemEntries));
+        List<EsInitiativeTimelineEntry> checklistEntries = checklist == null ? List.of()
+                : initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.CHECKLIST, checklist.getEsChecklistId());
+        names.putAll(names(checklistEntries));
+        List<EsInitiativeTimelineEntry> groupEntries = initiatives.timeline(
+                EsInitiativeTimelineEntry.SubjectType.SMALL_GROUP, group.getEsSmallGroupId());
+        names.putAll(names(groupEntries));
+        boolean upgrade = checklists.upgradeAvailable(checklist, group.acceptsTemplateUpgrade());
+        int availableVersion = checklist == null ? 0
+                : checklists.currentTemplate(checklist.getTemplateKind()).map(EsChecklistTemplate::getVersionNo).orElse(0);
+        ChecklistHints.Facts facts = smallGroups.facts(initiative, group);
+        page(request, response, group.getSmallGroupName() + " - InteropHub", initiative, "small-groups", input,
+                out -> SmallGroupPageRenderer.page(out, request.getContextPath(), base, initiative, group, topic, topics,
+                        series, participants, rosterChoices, smallGroups.comparison(group), registrationUrl, earlier,
+                        canEdit, smallGroups.anchors(initiative, group), checklist, items, managers, names, itemTimeline,
+                        checklistEntries, groupEntries, user, facts, upgrade, availableVersion,
+                        "1".equals(param(request, "removed")), "1".equals(param(request, "hideDone")),
+                        authFlowService.isAdminUser(user), input));
+    }
+
+    private void renderSmallGroupUpgrade(HttpServletRequest request, HttpServletResponse response,
+            EsInitiative initiative, EsSmallGroup group, InitiativeAccess.Level level, FormInput input)
+            throws IOException {
+        String back = "/small-groups/" + group.getEsSmallGroupId();
+        if (!InitiativeAccess.canEditSmallGroup(level)) {
+            redirect(response, request, initiative, back);
+            return;
+        }
+        EsChecklist checklist = checklists.findForSmallGroup(group.getEsSmallGroupId()).orElse(null);
+        if (checklist == null || !checklists.upgradeAvailable(checklist, group.acceptsTemplateUpgrade())) {
+            redirect(response, request, initiative, back);
+            return;
+        }
+        EsChecklistTemplate next = checklists.currentTemplate(checklist.getTemplateKind()).orElseThrow();
+        EsChecklistTemplate applied = checklists.findTemplate(checklist.getAppliedEsChecklistTemplateId()).orElse(null);
+        int fromVersion = applied == null ? 0 : applied.getVersionNo();
+        ChecklistMerge.Result result = checklists.previewUpgrade(checklist);
+        String base = request.getContextPath() + "/es/initiatives/" + initiative.getInitiativeCode() + back;
+        page(request, response, "Template upgrade - InteropHub", initiative, "small-groups", input,
+                out -> SmallGroupPageRenderer.upgrade(out, base, fromVersion, next, result,
+                        group.acceptsTemplateUpgrade()));
+    }
+
+    private String dispatchSmallGroup(HttpServletRequest request, User user, EsInitiative initiative, String[] parts,
+            String action) {
+        Long groupId = parts.length >= 3 ? pathId(parts[2]) : null;
+        EsSmallGroup group = groupId == null ? null : smallGroups.find(initiative, groupId).orElse(null);
+        if (!"create-small-group".equals(action) && group == null) {
+            throw new IllegalArgumentException("That Small Group was not found.");
+        }
+        Long id = group == null ? null : group.getEsSmallGroupId();
+        return switch (action == null ? "" : action) {
+            case "create-small-group" -> {
+                EsSmallGroup created = smallGroups.create(user, initiative, param(request, "name"),
+                        longParam(request, "topicId"), longParam(request, "seriesId"), param(request, "description"),
+                        enumParam(EsSmallGroup.Status.class, param(request, "status")),
+                        dateParam(request, "cycleStartDate"), dateParam(request, "workingDayDate"),
+                        dateParam(request, "closeoutDate"), param(request, "breakNote"), productAreas(request),
+                        param(request, "charterUrl"), longParam(request, "copyFromId"));
+                request.setAttribute("smallGroup.created", created.getEsSmallGroupId());
+                yield null;
+            }
+            case "save-small-group" -> {
+                smallGroups.updateDetails(user, initiative, group, param(request, "name"), longParam(request, "topicId"),
+                        longParam(request, "seriesId"), param(request, "description"),
+                        dateParam(request, "cycleStartDate"), dateParam(request, "workingDayDate"),
+                        dateParam(request, "closeoutDate"), param(request, "breakNote"), productAreas(request),
+                        param(request, "charterUrl"));
+                yield null;
+            }
+            case "group-status" -> {
+                smallGroups.changeStatus(user, initiative, group, enumParam(EsSmallGroup.Status.class, param(request, "status")),
+                        param(request, "note"));
+                yield null;
+            }
+            case "add-participant" -> smallGroups.addParticipant(user, initiative, group, longParam(request, "memberId"),
+                    param(request, "role"));
+            case "add-new-participant" -> smallGroups.addNewPerson(user, initiative, group, param(request, "name"),
+                    param(request, "email"), longParam(request, "organizationId"), param(request, "newOrganizationName"),
+                    param(request, "newOrganizationType"), param(request, "newOrganizationWebsite"),
+                    param(request, "role"));
+            case "add-registrant" -> smallGroups.addRegistrant(user, initiative, group, param(request, "email"),
+                    longParam(request, "userId"), param(request, "label"));
+            case "remove-participant" -> {
+                smallGroups.removeParticipant(user, initiative, group, longParam(request, "participantId"),
+                        param(request, "note"));
+                yield null;
+            }
+            case "update-role" -> {
+                smallGroups.updateRole(user, initiative, group, longParam(request, "participantId"), param(request, "role"));
+                yield null;
+            }
+            case "copy-participants" -> smallGroups.copyParticipants(user, initiative, group,
+                    longParam(request, "copyFromId"));
+            case "comment" -> {
+                initiatives.addComment(user, initiative,
+                        enumParam(EsInitiativeTimelineEntry.SubjectType.class, param(request, "subjectType")),
+                        longParam(request, "subjectId"), param(request, "note"));
+                yield null;
+            }
+            case "edit-comment" -> {
+                initiatives.editComment(user, initiative, longParam(request, "entryId"), param(request, "note"));
+                yield null;
+            }
+            case "start-checklist" -> {
+                checklists.startForSmallGroup(initiative, id);
+                yield null;
+            }
+            case "item-status" -> {
+                checklists.setStatus(user, initiative, id, longParam(request, "itemId"),
+                        enumParam(EsChecklistItem.Status.class, param(request, "itemStatus")), param(request, "note"));
+                yield null;
+            }
+            case "add-item", "add-phase" -> {
+                request.setAttribute("checklist.created", checklists.addItem(user, initiative, id, param(request, "phase"),
+                        param(request, "title"), param(request, "guidance"), longParam(request, "afterItemId")));
+                yield null;
+            }
+            case "save-item" -> {
+                Long itemId = longParam(request, "itemId");
+                LocalDate due = dateParam(request, "dueDate");
+                LocalDate currentDue = currentDue(initiative, id, itemId);
+                checklists.editItem(user, initiative, id, itemId, param(request, "title"), param(request, "guidance"));
+                if ((currentDue == null && due != null) || (currentDue != null && !currentDue.equals(due))) {
+                    checklists.setDueOverride(user, initiative, id, itemId, due);
+                }
+                yield null;
+            }
+            case "edit-item" -> {
+                checklists.editItem(user, initiative, id, longParam(request, "itemId"), param(request, "title"),
+                        param(request, "guidance"));
+                yield null;
+            }
+            case "remove-item" -> {
+                checklists.removeItem(user, initiative, id, longParam(request, "itemId"));
+                yield null;
+            }
+            case "restore-item" -> {
+                checklists.restoreItem(user, initiative, id, longParam(request, "itemId"));
+                yield null;
+            }
+            case "move-item" -> {
+                checklists.move(initiative, id, longParam(request, "itemId"), param(request, "direction"));
+                yield null;
+            }
+            case "reorder-item" -> {
+                checklists.reorder(initiative, id, longParam(request, "itemId"), longParam(request, "beforeItemId"),
+                        param(request, "phase"));
+                yield null;
+            }
+            case "rename-phase" -> {
+                checklists.renamePhase(initiative, id, param(request, "fromPhase"), param(request, "toPhase"));
+                yield null;
+            }
+            case "assign-item" -> {
+                checklists.assign(user, initiative, id, longParam(request, "itemId"), longParam(request, "assignedUserId"));
+                yield null;
+            }
+            case "due-override" -> {
+                checklists.setDueOverride(user, initiative, id, longParam(request, "itemId"), dateParam(request, "dueDate"));
+                yield null;
+            }
+            case "apply-upgrade" -> {
+                EsChecklist checklist = checklists.findForSmallGroup(id).orElse(null);
+                checklists.applyUpgrade(user, initiative, checklist, group.acceptsTemplateUpgrade());
+                yield null;
+            }
+            default -> throw new IllegalArgumentException("That action is not recognized.");
+        };
+    }
+
+    private String smallGroupRedirect(HttpServletRequest request, String[] parts, String action) {
+        Object created = request.getAttribute("smallGroup.created");
+        if (created != null) {
+            return "/small-groups/" + created;
+        }
+        if (parts.length >= 3 && pathId(parts[2]) != null) {
+            String suffix = "/small-groups/" + parts[2];
+            String itemId = param(request, "itemId");
+            if (itemId != null && !itemId.isBlank() && itemId.chars().allMatch(Character::isDigit)
+                    && !"apply-upgrade".equals(action)) {
+                return suffix + "#item-" + itemId;
+            }
+            return suffix;
+        }
+        return "/small-groups";
+    }
+
+    private void writeSmallGroupChecklistJson(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, String[] parts) throws IOException {
+        EsSmallGroup group = smallGroup(initiative, parts.length >= 3 ? parts[2] : null);
+        if (group == null) {
+            writeJsonError(response, HttpServletResponse.SC_NOT_FOUND, "That Small Group was not found.");
+            return;
+        }
+        EsChecklist checklist = checklists.findForSmallGroup(group.getEsSmallGroupId()).orElse(null);
+        List<EsChecklistItem> items = checklist == null ? List.of() : checklists.items(checklist.getEsChecklistId());
+        LocalDate today = LocalDate.now();
+        ChecklistDueDates.Anchors anchors = smallGroups.anchors(initiative, group);
+        ChecklistPageRenderer.Progress progress = ChecklistPageRenderer.progress(items, anchors, today);
+        EsChecklistItem created = (EsChecklistItem) request.getAttribute("checklist.created");
+        Long itemId = created == null ? longParam(request, "itemId") : created.getEsChecklistItemId();
+        EsChecklistItem item = null;
+        if (itemId != null) {
+            for (EsChecklistItem candidate : items) {
+                if (itemId.equals(candidate.getEsChecklistItemId())) {
+                    item = candidate;
+                }
+            }
+        }
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true");
+        json.append(",\"done\":").append(progress.done());
+        json.append(",\"total\":").append(progress.total());
+        json.append(",\"overdue\":").append(progress.overdue());
+        json.append(",\"dueSoon\":").append(progress.dueSoon());
+        json.append(",\"progress\":").append(jsonString(progress.text()));
+        if (item != null) {
+            json.append(",\"itemId\":").append(item.getEsChecklistItemId());
+            json.append(",\"title\":").append(jsonString(item.getTitle()));
+            json.append(",\"status\":").append(jsonString(item.getItemStatus().name()));
+            json.append(",\"removed\":").append(Boolean.TRUE.equals(item.getRemoved()));
+            json.append(",\"urgency\":").append(jsonString(ChecklistPageRenderer.itemUrgency(item, anchors, today)));
+            json.append(",\"due\":").append(jsonString(ChecklistPageRenderer.dueText(item, anchors)));
+            json.append(",\"override\":").append(item.getDueDateOverride() != null);
+            json.append(",\"guidance\":").append(jsonString(item.getGuidance()));
+            json.append(",\"phase\":").append(jsonString(item.getPhaseLabel()));
+            json.append(",\"assignee\":");
+            json.append(item.getAssignedUserId() == null ? "null" : item.getAssignedUserId().toString());
+        }
+        if (created != null && item != null) {
+            String pageUrl = request.getContextPath() + "/es/initiatives/" + initiative.getInitiativeCode()
+                    + "/small-groups/" + group.getEsSmallGroupId();
+            String query = request.getQueryString();
+            if (query != null && !query.isBlank() && query.indexOf('\r') < 0 && query.indexOf('\n') < 0) {
+                pageUrl += "?" + query;
+            }
+            List<EsInitiativeManager> managers = initiatives.managers(initiative.getEsInitiativeId());
+            Map<Long, String> names = managerNames(managers);
+            ChecklistHints.Facts facts = smallGroups.facts(initiative, group);
+            json.append(",\"html\":").append(jsonString(ChecklistPageRenderer.itemRowMarkup(pageUrl, item, managers, names,
+                    facts, anchors, today, true)));
+            json.append(",\"dialog\":").append(jsonString(ChecklistPageRenderer.itemDialogMarkup(pageUrl, item, names, user,
+                    true)));
+        }
+        json.append('}');
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(json.toString());
+    }
+
+    private LocalDate currentDue(EsInitiative initiative, Long smallGroupId, Long itemId) {
+        if (itemId == null || smallGroupId == null) {
+            return null;
+        }
+        EsChecklist checklist = checklists.findForSmallGroup(smallGroupId).orElse(null);
+        if (checklist == null) {
+            return null;
+        }
+        for (EsChecklistItem item : checklists.items(checklist.getEsChecklistId())) {
+            if (itemId.equals(item.getEsChecklistItemId())) {
+                return item.getDueDateOverride();
+            }
+        }
+        return null;
+    }
+
+    private EsSmallGroup smallGroup(EsInitiative initiative, String rawId) {
+        Long id = pathId(rawId);
+        return id == null ? null : smallGroups.find(initiative, id).orElse(null);
+    }
+
+    private List<EsTopic> topicChoices(EsInitiative initiative, Long extraTopicId) {
+        List<EsTopic> topics = new ArrayList<>(initiatives.activeTopics());
+        addTopic(topics, initiative.getPrimaryEsTopicId());
+        addTopic(topics, extraTopicId);
+        return topics;
+    }
+
+    private void addTopic(List<EsTopic> topics, Long topicId) {
+        if (topicId == null) {
+            return;
+        }
+        for (EsTopic topic : topics) {
+            if (topicId.equals(topic.getEsTopicId())) {
+                return;
+            }
+        }
+        initiatives.findTopic(topicId).ifPresent(topics::add);
+    }
+
+    private List<EsTopicMeeting> seriesChoices(List<EsTopic> topics) {
+        List<Long> topicIds = new ArrayList<>();
+        for (EsTopic topic : topics) {
+            topicIds.add(topic.getEsTopicId());
+        }
+        return SmallGroupQueries.seriesForTopics(topicIds);
+    }
+
+    private Map<Long, String> topicNames(List<EsSmallGroup> groups, List<EsTopic> topics) {
+        Map<Long, String> names = new HashMap<>();
+        for (EsTopic topic : topics) {
+            names.put(topic.getEsTopicId(), topic.getTopicName());
+        }
+        for (EsSmallGroup group : groups) {
+            if (!names.containsKey(group.getEsTopicId())) {
+                initiatives.findTopic(group.getEsTopicId())
+                        .ifPresent(topic -> names.put(topic.getEsTopicId(), topic.getTopicName()));
+            }
+        }
+        return names;
+    }
+
+    private List<String> productAreas(HttpServletRequest request) {
+        String[] values = request.getParameterValues("productArea");
+        if (values == null) {
+            return List.of();
+        }
+        List<String> areas = new ArrayList<>();
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                areas.add(value.trim());
+            }
+        }
+        return areas;
     }
 
     private interface PageBody {

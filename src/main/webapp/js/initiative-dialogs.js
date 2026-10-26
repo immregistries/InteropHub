@@ -48,4 +48,90 @@
       dialog.showModal();
     }
   });
+
+  document.querySelectorAll('[data-series-form]').forEach(function (form) {
+    var topic = form.querySelector('[data-topic-select]');
+    var filter = function () {
+      filterSeries(form);
+    };
+    if (topic) {
+      topic.addEventListener('change', filter);
+    }
+    filter();
+  });
+
+  document.querySelectorAll('[data-roster-filter]').forEach(function (input) {
+    var select = document.getElementById(input.getAttribute('data-roster-filter'));
+    if (!select) {
+      return;
+    }
+    input.addEventListener('input', function () {
+      var query = input.value.trim().toLowerCase();
+      Array.prototype.forEach.call(select.options, function (option) {
+        if (!option.value) {
+          return;
+        }
+        var show = query.length === 0 || option.text.toLowerCase().indexOf(query) >= 0;
+        option.hidden = !show;
+        option.disabled = !show;
+      });
+    });
+  });
+
+  document.querySelectorAll('[data-copy-value]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var text = button.getAttribute('data-copy-value');
+      if (!text || !navigator.clipboard || !navigator.clipboard.writeText) {
+        return;
+      }
+      var previous = button.textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        button.textContent = 'Copied';
+        window.setTimeout(function () {
+          button.textContent = previous;
+        }, 1500);
+      });
+    });
+  });
+
+  function filterSeries(form) {
+    var topic = form.querySelector('[data-topic-select]');
+    var series = form.querySelector('[data-series-select]');
+    var empty = form.querySelector('[data-series-empty]');
+    var create = form.querySelector('[data-series-create]');
+    if (!topic || !series) {
+      return;
+    }
+    var topicId = topic.value;
+    var keep = false;
+    Array.prototype.forEach.call(series.options, function (option) {
+      if (!option.value) {
+        option.hidden = false;
+        option.disabled = false;
+        return;
+      }
+      var match = option.getAttribute('data-topic-id') === topicId;
+      option.hidden = !match;
+      option.disabled = !match;
+      if (match && option.value === series.value) {
+        keep = true;
+      }
+    });
+    if (!keep) {
+      series.value = '';
+    }
+    var any = false;
+    Array.prototype.forEach.call(series.options, function (option) {
+      if (option.value && !option.disabled) {
+        any = true;
+      }
+    });
+    if (empty) {
+      empty.hidden = any;
+    }
+    if (create) {
+      var context = form.getAttribute('data-context') || '';
+      create.href = context + '/admin/es/meetings?action=new&topicId=' + encodeURIComponent(topicId);
+    }
+  }
 })();
