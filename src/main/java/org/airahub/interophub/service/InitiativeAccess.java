@@ -46,6 +46,11 @@ public final class InitiativeAccess {
         return canEditRoster(level);
     }
 
+    /** Small Groups use the same edit right as the roster and the checklist. */
+    public static boolean canEditSmallGroup(Level level) {
+        return canEditRoster(level);
+    }
+
     public static boolean canManageTemplates(boolean globalAdmin) {
         return globalAdmin;
     }

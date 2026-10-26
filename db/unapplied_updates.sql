@@ -156,10 +156,54 @@ CREATE TABLE es_initiative_timeline_entry (
   CONSTRAINT fk_es_initiative_timeline_user FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
--- Initiatives phase 2: checklist templates and per-initiative checklist copies.
--- es_checklist.es_small_group_id is left out until Small Groups exist.
--- Status columns stay varchar codes. See
+-- Initiatives phase 2: checklist templates and checklist copies.
+-- Initiatives phase 3: a Small Group has its own participant list. The meeting
+-- series is compared with that list. Status columns stay varchar codes. See
 -- docs/initiatives/InteropHub_Initiatives_Design.md.
+
+CREATE TABLE es_small_group (
+  es_small_group_id bigint NOT NULL AUTO_INCREMENT,
+  es_initiative_id bigint NOT NULL,
+  es_topic_id bigint NOT NULL,
+  es_topic_meeting_id bigint DEFAULT NULL,
+  small_group_name varchar(200) NOT NULL,
+  description text,
+  status varchar(32) NOT NULL,
+  cycle_start_date date DEFAULT NULL,
+  working_day_date date DEFAULT NULL,
+  closeout_date date DEFAULT NULL,
+  break_note text,
+  primary_product_areas varchar(80) DEFAULT NULL,
+  charter_url varchar(2048) DEFAULT NULL,
+  created_by_user_id bigint DEFAULT NULL,
+  created_at datetime(6) NOT NULL,
+  updated_at datetime(6) NOT NULL,
+  PRIMARY KEY (es_small_group_id),
+  KEY idx_es_small_group_initiative (es_initiative_id, cycle_start_date),
+  KEY idx_es_small_group_topic (es_topic_id),
+  KEY idx_es_small_group_series (es_topic_meeting_id),
+  CONSTRAINT fk_es_small_group_initiative FOREIGN KEY (es_initiative_id) REFERENCES es_initiative (es_initiative_id),
+  CONSTRAINT fk_es_small_group_topic FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id),
+  CONSTRAINT fk_es_small_group_series FOREIGN KEY (es_topic_meeting_id) REFERENCES es_topic_meeting (es_topic_meeting_id),
+  CONSTRAINT fk_es_small_group_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_small_group_participant (
+  es_small_group_participant_id bigint NOT NULL AUTO_INCREMENT,
+  es_small_group_id bigint NOT NULL,
+  es_initiative_member_id bigint NOT NULL,
+  participant_role varchar(200) DEFAULT NULL,
+  participant_status varchar(32) NOT NULL,
+  created_by_user_id bigint DEFAULT NULL,
+  created_at datetime(6) NOT NULL,
+  updated_at datetime(6) NOT NULL,
+  PRIMARY KEY (es_small_group_participant_id),
+  UNIQUE KEY uq_es_small_group_participant (es_small_group_id, es_initiative_member_id),
+  KEY idx_es_small_group_participant_member (es_initiative_member_id),
+  CONSTRAINT fk_es_small_group_participant_group FOREIGN KEY (es_small_group_id) REFERENCES es_small_group (es_small_group_id),
+  CONSTRAINT fk_es_small_group_participant_member FOREIGN KEY (es_initiative_member_id) REFERENCES es_initiative_member (es_initiative_member_id),
+  CONSTRAINT fk_es_small_group_participant_created_by FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE es_checklist_template (
   es_checklist_template_id bigint NOT NULL AUTO_INCREMENT,
@@ -196,14 +240,20 @@ CREATE TABLE es_checklist_template_item (
 CREATE TABLE es_checklist (
   es_checklist_id bigint NOT NULL AUTO_INCREMENT,
   es_initiative_id bigint NOT NULL,
+  es_small_group_id bigint DEFAULT NULL,
   template_kind varchar(32) NOT NULL,
   applied_es_checklist_template_id bigint NOT NULL,
   created_at datetime(6) NOT NULL,
   updated_at datetime(6) NOT NULL,
+  initiative_only_id bigint GENERATED ALWAYS AS (
+    CASE WHEN es_small_group_id IS NULL THEN es_initiative_id ELSE NULL END
+  ) STORED,
   PRIMARY KEY (es_checklist_id),
-  UNIQUE KEY uq_es_checklist_initiative (es_initiative_id),
+  UNIQUE KEY uq_es_checklist_initiative (initiative_only_id),
+  UNIQUE KEY uq_es_checklist_small_group (es_small_group_id),
   KEY idx_es_checklist_template (applied_es_checklist_template_id),
   CONSTRAINT fk_es_checklist_initiative FOREIGN KEY (es_initiative_id) REFERENCES es_initiative (es_initiative_id),
+  CONSTRAINT fk_es_checklist_small_group FOREIGN KEY (es_small_group_id) REFERENCES es_small_group (es_small_group_id),
   CONSTRAINT fk_es_checklist_template FOREIGN KEY (applied_es_checklist_template_id) REFERENCES es_checklist_template (es_checklist_template_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 

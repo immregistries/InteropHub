@@ -18,9 +18,23 @@ public class EsChecklistDao extends GenericDao<EsChecklist, Long> {
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return session.createQuery(
-                    "from EsChecklist c where c.esInitiativeId = :id",
+                    "from EsChecklist c where c.esInitiativeId = :id and c.esSmallGroupId is null",
                     EsChecklist.class)
                     .setParameter("id", initiativeId)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    public Optional<EsChecklist> findBySmallGroupId(Long smallGroupId) {
+        if (smallGroupId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsChecklist c where c.esSmallGroupId = :id",
+                    EsChecklist.class)
+                    .setParameter("id", smallGroupId)
                     .setMaxResults(1)
                     .uniqueResultOptional();
         }

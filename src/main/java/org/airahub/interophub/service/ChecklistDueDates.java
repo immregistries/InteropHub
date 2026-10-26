@@ -3,8 +3,8 @@ package org.airahub.interophub.service;
 import java.time.LocalDate;
 
 /**
- * Due dates for an initiative checklist. Small Group anchors are recognized by
- * the parser, and they stay blank until a Small Group has dates.
+ * Due dates from an initiative's start and end, or a Small Group's cycle
+ * anchors. A date stays blank until its anchor is set. An override wins.
  */
 public final class ChecklistDueDates {
 
@@ -15,20 +15,42 @@ public final class ChecklistDueDates {
         DUE_SOON
     }
 
+    public record Anchors(LocalDate start, LocalDate end, LocalDate cycleStart, LocalDate workingDay,
+            LocalDate closeout) {
+
+        public static Anchors initiative(LocalDate start, LocalDate end) {
+            return new Anchors(start, end, null, null, null);
+        }
+
+        public static Anchors of(LocalDate start, LocalDate end, LocalDate cycleStart, LocalDate workingDay,
+                LocalDate closeout) {
+            return new Anchors(start, end, cycleStart, workingDay, closeout);
+        }
+    }
+
     private ChecklistDueDates() {
     }
 
     public static LocalDate effective(String anchor, Integer offsetDays, LocalDate override, LocalDate start,
             LocalDate end) {
+        return effective(anchor, offsetDays, override, Anchors.initiative(start, end));
+    }
+
+    public static LocalDate effective(String anchor, Integer offsetDays, LocalDate override, Anchors anchors) {
         if (override != null) {
             return override;
         }
-        LocalDate base = null;
-        if ("start".equals(anchor)) {
-            base = start;
-        } else if ("end".equals(anchor)) {
-            base = end;
+        if (anchors == null || anchor == null) {
+            return null;
         }
+        LocalDate base = switch (anchor) {
+            case "start" -> anchors.start();
+            case "end" -> anchors.end();
+            case "cycle-start" -> anchors.cycleStart();
+            case "working-day" -> anchors.workingDay();
+            case "closeout" -> anchors.closeout();
+            default -> null;
+        };
         if (base == null) {
             return null;
         }

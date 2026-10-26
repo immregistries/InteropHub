@@ -39,8 +39,12 @@ class InitiativeAccessTest {
         assertTrue(InitiativeAccess.canView(viewer));
         assertFalse(InitiativeAccess.canEditRoster(viewer));
         assertFalse(InitiativeAccess.canEditChecklist(viewer));
+        assertFalse(InitiativeAccess.canEditSmallGroup(viewer));
         assertFalse(InitiativeAccess.canComment(viewer));
         assertFalse(InitiativeAccess.canManageSettings(viewer));
+        assertTrue(InitiativeAccess.canEditSmallGroup(admin));
+        assertTrue(InitiativeAccess.canEditSmallGroup(editor));
+        assertTrue(InitiativeAccess.canEditSmallGroup(InitiativeAccess.level(true, null)));
         assertTrue(InitiativeAccess.canManageTemplates(true));
         assertFalse(InitiativeAccess.canManageTemplates(false));
     }

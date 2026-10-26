@@ -24,6 +24,9 @@ public class EsChecklist {
     @Column(name = "es_initiative_id", nullable = false)
     private Long esInitiativeId;
 
+    @Column(name = "es_small_group_id")
+    private Long esSmallGroupId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "template_kind", nullable = false, length = 32)
     private EsChecklistTemplate.Kind templateKind;
@@ -67,6 +70,14 @@ public class EsChecklist {
 
     public void setEsInitiativeId(Long esInitiativeId) {
         this.esInitiativeId = esInitiativeId;
+    }
+
+    public Long getEsSmallGroupId() {
+        return esSmallGroupId;
+    }
+
+    public void setEsSmallGroupId(Long esSmallGroupId) {
+        this.esSmallGroupId = esSmallGroupId;
     }
 
     public EsChecklistTemplate.Kind getTemplateKind() {

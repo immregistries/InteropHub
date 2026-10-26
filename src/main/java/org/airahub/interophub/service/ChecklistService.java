@@ -80,6 +80,22 @@ public class ChecklistService {
         copyTemplate(initiative, template);
     }
 
+    public void startForSmallGroup(EsInitiative initiative, Long smallGroupId) {
+        if (initiative == null || smallGroupId == null) {
+            throw new IllegalArgumentException("Choose a Small Group.");
+        }
+        if (checklistDao.findBySmallGroupId(smallGroupId).isPresent()) {
+            throw new IllegalArgumentException("This Small Group already has a checklist.");
+        }
+        EsChecklistTemplate template = templateDao.findCurrent(EsChecklistTemplate.Kind.SMALL_GROUP)
+                .orElseThrow(() -> new IllegalArgumentException("There is no current Small Group template."));
+        copyTemplate(initiative, template, smallGroupId);
+    }
+
+    public Optional<EsChecklist> findForSmallGroup(Long smallGroupId) {
+        return checklistDao.findBySmallGroupId(smallGroupId);
+    }
+
     public Optional<EsChecklist> findForInitiative(Long initiativeId) {
         return checklistDao.findByInitiativeId(initiativeId);
     }
@@ -105,7 +121,11 @@ public class ChecklistService {
     }
 
     public boolean upgradeAvailable(EsInitiative initiative, EsChecklist checklist) {
-        if (initiative == null || checklist == null || !acceptsUpgrade(initiative)) {
+        return upgradeAvailable(checklist, initiative != null && acceptsUpgrade(initiative));
+    }
+
+    public boolean upgradeAvailable(EsChecklist checklist, boolean acceptsUpgrade) {
+        if (checklist == null || !acceptsUpgrade) {
             return false;
         }
         return newerTemplate(checklist).isPresent();
@@ -194,7 +214,10 @@ public class ChecklistService {
     }
 
     public ChecklistMerge.Result previewUpgrade(EsInitiative initiative) {
-        EsChecklist checklist = requireChecklist(initiative);
+        return previewUpgrade(requireChecklist(initiative));
+    }
+
+    public ChecklistMerge.Result previewUpgrade(EsChecklist checklist) {
         EsChecklistTemplate next = newerTemplate(checklist)
                 .orElseThrow(() -> new IllegalArgumentException("This checklist is already on the current template."));
         return ChecklistMerge.merge(states(itemDao.findByChecklistId(checklist.getEsChecklistId())),
@@ -202,10 +225,18 @@ public class ChecklistService {
     }
 
     public void applyUpgrade(User actor, EsInitiative initiative) {
-        if (!acceptsUpgrade(initiative)) {
-            throw new IllegalArgumentException("Closed and archived initiatives keep the template they ran with.");
+        applyUpgrade(actor, initiative, requireChecklist(initiative), acceptsUpgrade(initiative));
+    }
+
+    public void applyUpgrade(User actor, EsInitiative initiative, EsChecklist checklist, boolean acceptsUpgrade) {
+        if (checklist == null || !initiative.getEsInitiativeId().equals(checklist.getEsInitiativeId())) {
+            throw new IllegalArgumentException("That checklist was not found.");
         }
-        EsChecklist checklist = requireChecklist(initiative);
+        if (!acceptsUpgrade) {
+            throw new IllegalArgumentException(checklist.getEsSmallGroupId() == null
+                    ? "Closed and archived initiatives keep the template they ran with."
+                    : "Closed and cancelled Small Groups keep the template they ran with.");
+        }
         EsChecklistTemplate applied = templateDao.findById(checklist.getAppliedEsChecklistTemplateId())
                 .orElseThrow(() -> new IllegalArgumentException("The applied template is missing."));
         EsChecklistTemplate next = newerTemplate(checklist)
@@ -241,6 +272,10 @@ public class ChecklistService {
 
     public String download(EsInitiative initiative) {
         EsChecklist checklist = requireChecklist(initiative);
+        return download(checklist, initiative.getInitiativeName() + " checklist");
+    }
+
+    public String download(EsChecklist checklist, String title) {
         List<ChecklistTemplateParser.Item> items = new ArrayList<>();
         for (EsChecklistItem item : itemDao.findByChecklistId(checklist.getEsChecklistId())) {
             if (Boolean.TRUE.equals(item.getRemoved())) {
@@ -250,12 +285,17 @@ public class ChecklistService {
                     item.getGuidance(), item.getDueAnchor(), item.getDueOffsetDays(), item.getCheckCode(),
                     item.getDisplayOrder() == null ? items.size() + 1 : item.getDisplayOrder(), 0));
         }
-        return ChecklistMarkdown.write(initiative.getInitiativeName() + " checklist", checklist.getTemplateKind().name(),
-                items);
+        String heading = title == null || title.isBlank() ? "Checklist" : title;
+        return ChecklistMarkdown.write(heading, checklist.getTemplateKind().name(), items);
     }
 
     public void setStatus(User actor, EsInitiative initiative, Long itemId, EsChecklistItem.Status status, String note) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        setStatus(actor, initiative, null, itemId, status, note);
+    }
+
+    public void setStatus(User actor, EsInitiative initiative, Long smallGroupId, Long itemId,
+            EsChecklistItem.Status status, String note) {
+        EsChecklistItem item = requireItem(initiative, smallGroupId, itemId);
         if (status == null) {
             throw new IllegalArgumentException("Choose a status.");
         }
@@ -275,7 +315,12 @@ public class ChecklistService {
 
     public EsChecklistItem addItem(User actor, EsInitiative initiative, String phase, String title, String guidance,
             Long afterItemId) {
-        EsChecklist checklist = requireChecklist(initiative);
+        return addItem(actor, initiative, null, phase, title, guidance, afterItemId);
+    }
+
+    public EsChecklistItem addItem(User actor, EsInitiative initiative, Long smallGroupId, String phase, String title,
+            String guidance, Long afterItemId) {
+        EsChecklist checklist = requireChecklist(initiative, smallGroupId);
         String phaseLabel = requireText(phase, "Phase", 200);
         String itemTitle = requireText(title, "Title", 500);
         List<EsChecklistItem> items = itemDao.findByChecklistId(checklist.getEsChecklistId());
@@ -302,7 +347,13 @@ public class ChecklistService {
     }
 
     public void editItem(User actor, EsInitiative initiative, Long itemId, String title, String guidance) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        editItem(actor, initiative, null, itemId, title, guidance);
+    }
+
+    public void editItem(User actor, EsInitiative initiative, Long smallGroupId, Long itemId, String title,
+            String guidance) {
+        EsChecklist checklist = requireChecklist(initiative, smallGroupId);
+        EsChecklistItem item = requireItem(checklist, itemId);
         String itemTitle = requireText(title, "Title", 500);
         String itemGuidance = cleanGuidance(guidance);
         String previousTitle = item.getTitle();
@@ -310,8 +361,8 @@ public class ChecklistService {
         item.setTitle(itemTitle);
         item.setGuidance(itemGuidance);
         if (item.getItemOrigin() == EsChecklistItem.Origin.TEMPLATE) {
-            item.setLocallyEdited(!sameText(itemTitle, templateTitle(initiative, item))
-                    || !sameText(itemGuidance, templateGuidance(initiative, item)));
+            item.setLocallyEdited(!sameText(itemTitle, templateTitle(checklist, item))
+                    || !sameText(itemGuidance, templateGuidance(checklist, item)));
         }
         itemDao.save(item);
         recordField(initiative, item, actor, "Title", previousTitle, itemTitle);
@@ -319,7 +370,11 @@ public class ChecklistService {
     }
 
     public void removeItem(User actor, EsInitiative initiative, Long itemId) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        removeItem(actor, initiative, null, itemId);
+    }
+
+    public void removeItem(User actor, EsInitiative initiative, Long smallGroupId, Long itemId) {
+        EsChecklistItem item = requireItem(initiative, smallGroupId, itemId);
         if (Boolean.TRUE.equals(item.getRemoved())) {
             return;
         }
@@ -329,7 +384,11 @@ public class ChecklistService {
     }
 
     public void restoreItem(User actor, EsInitiative initiative, Long itemId) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        restoreItem(actor, initiative, null, itemId);
+    }
+
+    public void restoreItem(User actor, EsInitiative initiative, Long smallGroupId, Long itemId) {
+        EsChecklistItem item = requireItem(initiative, smallGroupId, itemId);
         if (!Boolean.TRUE.equals(item.getRemoved())) {
             return;
         }
@@ -339,7 +398,11 @@ public class ChecklistService {
     }
 
     public void move(EsInitiative initiative, Long itemId, String direction) {
-        EsChecklist checklist = requireChecklist(initiative);
+        move(initiative, null, itemId, direction);
+    }
+
+    public void move(EsInitiative initiative, Long smallGroupId, Long itemId, String direction) {
+        EsChecklist checklist = requireChecklist(initiative, smallGroupId);
         List<EsChecklistItem> items = itemDao.findByChecklistId(checklist.getEsChecklistId());
         EsChecklistItem item = findItem(items, itemId);
         List<EsChecklistItem> phase = new ArrayList<>();
@@ -368,7 +431,11 @@ public class ChecklistService {
 
     /** When {@code phase} is set, the item lands in that phase. Otherwise it takes the phase of the item it precedes. */
     public void reorder(EsInitiative initiative, Long itemId, Long beforeItemId, String phase) {
-        EsChecklist checklist = requireChecklist(initiative);
+        reorder(initiative, null, itemId, beforeItemId, phase);
+    }
+
+    public void reorder(EsInitiative initiative, Long smallGroupId, Long itemId, Long beforeItemId, String phase) {
+        EsChecklist checklist = requireChecklist(initiative, smallGroupId);
         List<EsChecklistItem> items = itemDao.findByChecklistId(checklist.getEsChecklistId());
         EsChecklistItem moving = findItem(items, itemId);
         String phaseLabel = phase == null || phase.isBlank() ? null : requireText(phase, "Phase", 200);
@@ -404,7 +471,11 @@ public class ChecklistService {
     }
 
     public void renamePhase(EsInitiative initiative, String fromPhase, String toPhase) {
-        EsChecklist checklist = requireChecklist(initiative);
+        renamePhase(initiative, null, fromPhase, toPhase);
+    }
+
+    public void renamePhase(EsInitiative initiative, Long smallGroupId, String fromPhase, String toPhase) {
+        EsChecklist checklist = requireChecklist(initiative, smallGroupId);
         String from = requireText(fromPhase, "Phase", 200);
         String to = requireText(toPhase, "Phase", 200);
         if (from.equals(to)) {
@@ -424,7 +495,11 @@ public class ChecklistService {
     }
 
     public void assign(User actor, EsInitiative initiative, Long itemId, Long userId) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        assign(actor, initiative, null, itemId, userId);
+    }
+
+    public void assign(User actor, EsInitiative initiative, Long smallGroupId, Long itemId, Long userId) {
+        EsChecklistItem item = requireItem(initiative, smallGroupId, itemId);
         if (userId != null) {
             boolean manager = false;
             for (EsInitiativeManager candidate : managerDao.findByInitiativeId(initiative.getEsInitiativeId())) {
@@ -443,7 +518,11 @@ public class ChecklistService {
     }
 
     public void setDueOverride(User actor, EsInitiative initiative, Long itemId, LocalDate due) {
-        EsChecklistItem item = requireItem(initiative, itemId);
+        setDueOverride(actor, initiative, null, itemId, due);
+    }
+
+    public void setDueOverride(User actor, EsInitiative initiative, Long smallGroupId, Long itemId, LocalDate due) {
+        EsChecklistItem item = requireItem(initiative, smallGroupId, itemId);
         String from = item.getDueDateOverride() == null ? null : item.getDueDateOverride().toString();
         item.setDueDateOverride(due);
         itemDao.save(item);
@@ -451,8 +530,13 @@ public class ChecklistService {
     }
 
     private void copyTemplate(EsInitiative initiative, EsChecklistTemplate template) {
+        copyTemplate(initiative, template, null);
+    }
+
+    private void copyTemplate(EsInitiative initiative, EsChecklistTemplate template, Long smallGroupId) {
         EsChecklist checklist = new EsChecklist();
         checklist.setEsInitiativeId(initiative.getEsInitiativeId());
+        checklist.setEsSmallGroupId(smallGroupId);
         checklist.setTemplateKind(template.getTemplateKind());
         checklist.setAppliedEsChecklistTemplateId(template.getEsChecklistTemplateId());
         checklist = checklistDao.save(checklist);
@@ -489,12 +573,31 @@ public class ChecklistService {
     }
 
     private EsChecklist requireChecklist(EsInitiative initiative) {
-        return checklistDao.findByInitiativeId(initiative.getEsInitiativeId())
-                .orElseThrow(() -> new IllegalArgumentException("This initiative does not have a checklist yet."));
+        return requireChecklist(initiative, null);
+    }
+
+    private EsChecklist requireChecklist(EsInitiative initiative, Long smallGroupId) {
+        EsChecklist checklist = smallGroupId == null
+                ? checklistDao.findByInitiativeId(initiative.getEsInitiativeId()).orElse(null)
+                : checklistDao.findBySmallGroupId(smallGroupId).orElse(null);
+        if (checklist == null || initiative == null
+                || !initiative.getEsInitiativeId().equals(checklist.getEsInitiativeId())) {
+            throw new IllegalArgumentException(smallGroupId == null
+                    ? "This initiative does not have a checklist yet."
+                    : "This Small Group does not have a checklist yet.");
+        }
+        return checklist;
     }
 
     private EsChecklistItem requireItem(EsInitiative initiative, Long itemId) {
-        EsChecklist checklist = requireChecklist(initiative);
+        return requireItem(initiative, null, itemId);
+    }
+
+    private EsChecklistItem requireItem(EsInitiative initiative, Long smallGroupId, Long itemId) {
+        return requireItem(requireChecklist(initiative, smallGroupId), itemId);
+    }
+
+    private EsChecklistItem requireItem(EsChecklist checklist, Long itemId) {
         return itemDao.findById(itemId)
                 .filter(item -> checklist.getEsChecklistId().equals(item.getEsChecklistId()))
                 .orElseThrow(() -> new IllegalArgumentException("That checklist item was not found."));
@@ -509,18 +612,17 @@ public class ChecklistService {
         throw new IllegalArgumentException("That checklist item was not found.");
     }
 
-    private String templateTitle(EsInitiative initiative, EsChecklistItem item) {
-        EsChecklistTemplateItem templateItem = templateItem(initiative, item.getItemKey());
+    private String templateTitle(EsChecklist checklist, EsChecklistItem item) {
+        EsChecklistTemplateItem templateItem = templateItem(checklist, item.getItemKey());
         return templateItem == null ? null : templateItem.getTitle();
     }
 
-    private String templateGuidance(EsInitiative initiative, EsChecklistItem item) {
-        EsChecklistTemplateItem templateItem = templateItem(initiative, item.getItemKey());
+    private String templateGuidance(EsChecklist checklist, EsChecklistItem item) {
+        EsChecklistTemplateItem templateItem = templateItem(checklist, item.getItemKey());
         return templateItem == null ? null : templateItem.getGuidance();
     }
 
-    private EsChecklistTemplateItem templateItem(EsInitiative initiative, String key) {
-        EsChecklist checklist = checklistDao.findByInitiativeId(initiative.getEsInitiativeId()).orElse(null);
+    private EsChecklistTemplateItem templateItem(EsChecklist checklist, String key) {
         if (checklist == null) {
             return null;
         }
