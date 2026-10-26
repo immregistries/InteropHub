@@ -1,6 +1,7 @@
 package org.airahub.interophub.servlet;
 
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -30,8 +31,12 @@ final class ChecklistPageRenderer {
             List<EsChecklistItem> items, List<EsInitiativeManager> managers, Map<Long, String> userNames,
             Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline, List<EsInitiativeTimelineEntry> checklistTimeline,
             User viewer, ChecklistHints.Facts facts, boolean canEdit, boolean upgradeAvailable, int availableVersion,
-            boolean showRemoved, FormInput input) {
+            boolean showRemoved, boolean hideDone, boolean templateAdmin, FormInput input) {
         String base = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/checklist";
+        String action = base + query(showRemoved, hideDone);
+        out.println("      <div class=\"aira-page-header\"><div>");
+        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(initiative.getInitiativeName()) + "</h1>");
+        out.println("      </div></div>");
         if (checklist == null) {
             out.println("      <div class=\"aira-empty-state\"><p class=\"aira-empty-state__title\">No checklist yet.</p>");
             if (canEdit) {
@@ -47,39 +52,107 @@ final class ChecklistPageRenderer {
             out.println("      <div class=\"aira-alert aira-alert--error\"><p>" + InitiativeHtml.esc(input.error())
                     + "</p></div>");
         }
+        LocalDate today = LocalDate.now();
+        Progress progress = progress(items, initiative, today);
+        out.println("      <p class=\"aira-meta\" id=\"checklist-progress\">" + InitiativeHtml.esc(progress.text()) + "</p>");
         if (upgradeAvailable) {
             out.println("      <div class=\"aira-alert aira-alert--info\"><p>Template v" + availableVersion
                     + " is available. <a href=\"" + InitiativeHtml.esc(base + "/upgrade") + "\">Preview the upgrade</a>.</p></div>");
         }
-        out.println("      <div class=\"aira-cluster\">");
-        out.println("        <a class=\"aira-button aira-button--secondary aira-button--small\" href=\""
+        out.println("      <div class=\"initiative-checklist\" data-checklist data-show-removed=\"" + showRemoved + "\">");
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\">");
+        out.println("        <h2 class=\"aira-table-panel__title\">Checklist</h2>");
+        out.println("        <div class=\"aira-table-panel__actions\">");
+        out.println("          <a class=\"aira-button aira-button--small aira-button--secondary\" href=\""
                 + InitiativeHtml.esc(base + "/download") + "\">Download as template</a>");
-        out.println("        <a class=\"aira-button aira-button--ghost aira-button--small\" href=\""
-                + InitiativeHtml.esc(base + (showRemoved ? "" : "?removed=1")) + "\">"
+        out.println("          <a class=\"aira-button aira-button--small aira-button--ghost\" data-removed-toggle href=\""
+                + InitiativeHtml.esc(base + query(!showRemoved, hideDone)) + "\">"
                 + (showRemoved ? "Hide removed" : "Show removed") + "</a>");
-        out.println("      </div>");
-        if (!checklistTimeline.isEmpty()) {
-            out.println("      <section class=\"aira-stack aira-stack--compact\">");
-            out.println("        <h2>Checklist history</h2>");
-            InitiativePageRenderer.timeline(out, base, checklistTimeline, userNames, viewer, false,
-                    EsInitiativeTimelineEntry.SubjectType.CHECKLIST, checklist.getEsChecklistId(), input);
-            out.println("      </section>");
+        out.println("          <a class=\"aira-button aira-button--small aira-button--ghost\" data-hide-done href=\""
+                + InitiativeHtml.esc(base + query(showRemoved, !hideDone)) + "\" aria-pressed=\"" + hideDone
+                + "\">" + (hideDone ? "Show done" : "Hide done") + "</a>");
+        if (templateAdmin) {
+            out.println("          <a class=\"aira-button aira-button--small aira-button--ghost\" href=\""
+                    + InitiativeHtml.esc(contextPath + "/es/initiatives/templates") + "\">Templates</a>");
         }
+        if (canEdit) {
+            out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-phase\">Add phase</button>");
+        }
+        out.println("        </div></div>");
         Map<String, List<EsChecklistItem>> phases = phases(items, showRemoved);
-        LocalDate today = LocalDate.now();
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr>");
+        out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Reorder</span></th>");
+        out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Done</span></th>");
+        out.println("          <th scope=\"col\">Item</th><th scope=\"col\">Assignee</th><th scope=\"col\">Due</th>");
+        out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Details</span></th>");
+        out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Remove</span></th>");
+        out.println("        </tr></thead><tbody>");
         for (Map.Entry<String, List<EsChecklistItem>> phase : phases.entrySet()) {
-            phasePanel(out, base, phase.getKey(), phase.getValue(), managers, userNames, itemTimeline, viewer, facts,
-                    initiative, today, canEdit, showRemoved, input);
+            phaseRows(out, action, phase.getKey(), phase.getValue(), managers, userNames, facts, initiative, today,
+                    canEdit, hideDone, input);
         }
-            if (canEdit) {
-                addPhaseDialog(out, base, input);
-                addItemDialog(out, base, input);
-            out.println("      <form id=\"checklist-reorder\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-            out.println("        <input type=\"hidden\" name=\"action\" value=\"reorder-item\" />");
-            out.println("        <input type=\"hidden\" name=\"itemId\" value=\"\" />");
-            out.println("        <input type=\"hidden\" name=\"beforeItemId\" value=\"\" />");
-            out.println("      </form>");
-            out.println("      <p><button class=\"aira-button aira-button--secondary aira-button--small\" type=\"button\" data-dialog-open=\"add-phase\">Add phase</button></p>");
+        out.println("        </tbody></table></div></section>");
+        out.println("      <div id=\"checklist-dialogs\">");
+        for (EsChecklistItem item : items) {
+            if (!showRemoved && Boolean.TRUE.equals(item.getRemoved())) {
+                continue;
+            }
+            itemDialog(out, action, item, userNames, itemTimeline.getOrDefault(item.getEsChecklistItemId(), List.of()),
+                    viewer, initiative, canEdit, input);
+        }
+        if (canEdit) {
+            addPhaseDialog(out, action, input);
+        }
+        out.println("      </div></div>");
+        out.println("      <section class=\"aira-stack aira-stack--compact\">");
+        out.println("        <h2>Checklist history</h2>");
+        InitiativePageRenderer.timeline(out, action, checklistTimeline, userNames, viewer, false,
+                EsInitiativeTimelineEntry.SubjectType.CHECKLIST, checklist.getEsChecklistId(), input);
+        out.println("      </section>");
+    }
+
+    static String itemRowMarkup(String action, EsChecklistItem item, List<EsInitiativeManager> managers,
+            Map<Long, String> userNames, ChecklistHints.Facts facts, EsInitiative initiative, LocalDate today,
+            boolean canEdit) {
+        StringWriter buffer = new StringWriter();
+        itemRow(new PrintWriter(buffer), action, item, managers, userNames, facts, initiative, today, canEdit, false);
+        return buffer.toString();
+    }
+
+    static String itemDialogMarkup(String action, EsChecklistItem item, Map<Long, String> userNames, User viewer,
+            EsInitiative initiative, boolean canEdit) {
+        StringWriter buffer = new StringWriter();
+        itemDialog(new PrintWriter(buffer), action, item, userNames, List.of(), viewer, initiative, canEdit,
+                FormInput.none());
+        return buffer.toString();
+    }
+
+    static Progress progress(List<EsChecklistItem> items, EsInitiative initiative, LocalDate today) {
+        int done = 0;
+        int total = 0;
+        int overdue = 0;
+        int dueSoon = 0;
+        for (EsChecklistItem item : items) {
+            if (Boolean.TRUE.equals(item.getRemoved())) {
+                continue;
+            }
+            total++;
+            if (item.getItemStatus() == EsChecklistItem.Status.DONE) {
+                done++;
+            }
+            ChecklistDueDates.Urgency urgency = urgency(item, initiative, today);
+            if (urgency == ChecklistDueDates.Urgency.OVERDUE) {
+                overdue++;
+            } else if (urgency == ChecklistDueDates.Urgency.DUE_SOON) {
+                dueSoon++;
+            }
+        }
+        return new Progress(done, total, overdue, dueSoon);
+    }
+
+    record Progress(int done, int total, int overdue, int dueSoon) {
+        String text() {
+            return done + " of " + total + " done · " + overdue + " overdue · " + dueSoon + " due soon";
         }
     }
 
@@ -130,7 +203,7 @@ final class ChecklistPageRenderer {
             out.println("          <tr><td colspan=\"4\">No templates yet.</td></tr>");
         }
         for (EsChecklistTemplate template : templates) {
-            out.println("          <tr><td>" + template.getTemplateKind().name() + "</td><td><a href=\""
+            out.println("          <tr><td>" + kindLabel(template.getTemplateKind().name()) + "</td><td><a href=\""
                     + InitiativeHtml.esc(base + "/" + template.getEsChecklistTemplateId()) + "\">v"
                     + template.getVersionNo() + "</a></td><td>" + InitiativeHtml.esc(template.getTitle())
                     + "</td><td>" + (Boolean.TRUE.equals(template.getCurrent()) ? "Current" : "") + "</td></tr>");
@@ -148,7 +221,7 @@ final class ChecklistPageRenderer {
         out.println("      </form>");
         if (preview != null && preview.ok()) {
             out.println("      <section class=\"aira-stack aira-stack--compact\">");
-            out.println("        <h2>" + InitiativeHtml.esc(preview.parsed().title()) + " · " + preview.parsed().kind()
+            out.println("        <h2>" + InitiativeHtml.esc(preview.parsed().title()) + " · " + kindLabel(preview.parsed().kind())
                     + " v" + preview.parsed().version() + "</h2>");
             out.println("        <p class=\"aira-meta\">" + preview.parsed().items().size() + " items. Saving makes this the current version.</p>");
             out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr>");
@@ -173,7 +246,7 @@ final class ChecklistPageRenderer {
         String base = contextPath + "/es/initiatives/templates/" + template.getEsChecklistTemplateId();
         out.println("      <p><a href=\"" + InitiativeHtml.esc(contextPath + "/es/initiatives/templates") + "\">Templates</a></p>");
         out.println("      <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(template.getTitle()) + "</h1>");
-        out.println("      <p class=\"aira-meta\">" + template.getTemplateKind().name() + " v" + template.getVersionNo()
+        out.println("      <p class=\"aira-meta\">" + kindLabel(template.getTemplateKind().name()) + " v" + template.getVersionNo()
                 + (Boolean.TRUE.equals(template.getCurrent()) ? " · current" : "") + "</p>");
         out.println("      <p><a class=\"aira-button aira-button--secondary aira-button--small\" href=\""
                 + InitiativeHtml.esc(base + "/download") + "\">Download</a></p>");
@@ -183,117 +256,130 @@ final class ChecklistPageRenderer {
 
     static void feedback(PrintWriter out, String contextPath, EsChecklistTemplate.Kind kind, ChecklistFeedback.Report report) {
         out.println("      <p><a href=\"" + InitiativeHtml.esc(contextPath + "/es/initiatives/templates") + "\">Templates</a></p>");
-        out.println("      <h1 class=\"aira-page-title\">" + kind.name() + " template feedback</h1>");
+        out.println("      <h1 class=\"aira-page-title\">" + kindLabel(kind.name()) + " template feedback</h1>");
         feedbackTable(out, "Items organizers added", report.added());
         feedbackTable(out, "Removed or not applicable", report.removedOrNotApplicable());
         feedbackTable(out, "Reworded", report.reworded());
     }
 
-    private static void phasePanel(PrintWriter out, String base, String phase, List<EsChecklistItem> items,
-            List<EsInitiativeManager> managers, Map<Long, String> userNames,
-            Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline, User viewer, ChecklistHints.Facts facts,
-            EsInitiative initiative, LocalDate today, boolean canEdit, boolean showRemoved, FormInput input) {
+    private static void phaseRows(PrintWriter out, String action, String phase, List<EsChecklistItem> items,
+            List<EsInitiativeManager> managers, Map<Long, String> userNames, ChecklistHints.Facts facts,
+            EsInitiative initiative, LocalDate today, boolean canEdit, boolean hideDone, FormInput input) {
         String phaseId = "phase-" + Math.abs(phase.hashCode());
-        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\">");
-        out.println("        <h2 class=\"aira-table-panel__title\">" + InitiativeHtml.esc(phase) + "</h2>");
+        out.println("        <tr class=\"initiative-checklist-phase\" data-phase=\"" + InitiativeHtml.esc(phase) + "\">");
+        out.println("          <th colspan=\"7\" scope=\"colgroup\">");
         if (canEdit) {
-            out.println("        <form class=\"aira-form aira-form--inline\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-            out.println("          <input type=\"hidden\" name=\"action\" value=\"rename-phase\" />");
-            out.println("          <input type=\"hidden\" name=\"fromPhase\" value=\"" + InitiativeHtml.esc(phase) + "\" />");
-            out.println("          <div class=\"aira-field\"><label for=\"" + phaseId + "\">Rename</label>");
-            out.println("            <input class=\"aira-input\" id=\"" + phaseId + "\" name=\"toPhase\" type=\"text\" maxlength=\"200\" required value=\""
-                    + InitiativeHtml.esc(input.failed("rename-phase") && phase.equals(input.posted("fromPhase"))
-                            ? input.posted("toPhase") : phase) + "\" /></div>");
-            out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Rename</button>");
-            out.println("        </form>");
+            String posted = input.failed("rename-phase") && phase.equals(input.posted("fromPhase"))
+                    ? input.posted("toPhase") : phase;
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
+            out.println("              <input type=\"hidden\" name=\"action\" value=\"rename-phase\" />");
+            out.println("              <input type=\"hidden\" name=\"fromPhase\" value=\"" + InitiativeHtml.esc(phase) + "\" />");
+            out.println("              <button class=\"initiative-checklist-phase-name\" type=\"button\">"
+                    + InitiativeHtml.esc(phase) + "</button>");
+            out.println("              <input class=\"aira-input initiative-checklist-editor\" name=\"toPhase\" type=\"text\" maxlength=\"200\" hidden value=\""
+                    + InitiativeHtml.esc(posted) + "\" />");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form>");
+        } else {
+            out.println("            " + InitiativeHtml.esc(phase));
         }
-        out.println("      </div><div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr>");
-        out.println("        <th scope=\"col\">Status</th><th scope=\"col\">Item</th><th scope=\"col\">Assignee</th>");
-        out.println("        <th scope=\"col\">Due</th><th scope=\"col\">Updated</th><th scope=\"col\">Actions</th>");
-        out.println("      </tr></thead><tbody>");
+        out.println("          </th></tr>");
         for (EsChecklistItem item : items) {
-            itemRow(out, base, item, managers, userNames, facts, initiative, today, canEdit);
+            itemRow(out, action, item, managers, userNames, facts, initiative, today, canEdit,
+                    hideDone && item.getItemStatus() == EsChecklistItem.Status.DONE);
         }
-        out.println("      </tbody></table></div>");
         if (canEdit) {
-            out.println("        <form class=\"aira-form aira-form--inline\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-            out.println("          <input type=\"hidden\" name=\"action\" value=\"add-item\" />");
-            out.println("          <input type=\"hidden\" name=\"phase\" value=\"" + InitiativeHtml.esc(phase) + "\" />");
-            out.println("          <div class=\"aira-field aira-field--grow\"><label class=\"aira-visually-hidden\" for=\"add-"
-                    + phaseId + "\">Add item to " + InitiativeHtml.esc(phase) + "</label>");
-            out.println("            <input class=\"aira-input\" id=\"add-" + phaseId + "\" name=\"title\" type=\"text\" maxlength=\"500\" required placeholder=\"Add an item\" value=\""
-                    + InitiativeHtml.esc(phase.equals(input.posted("phase")) && input.posted("afterItemId").isEmpty()
-                            ? input.value("add-item", "title", "") : "") + "\" /></div>");
-            out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Add</button>");
-            out.println("        </form>");
-            for (EsChecklistItem item : items) {
-                itemDialog(out, base, item, userNames, itemTimeline.getOrDefault(item.getEsChecklistItemId(), List.of()),
-                        viewer, initiative, input);
-            }
+            String kept = phase.equals(input.posted("phase")) && input.posted("afterItemId").isEmpty()
+                    && input.failed("add-item") ? input.posted("title") : "";
+            out.println("        <tr class=\"initiative-checklist-add\" data-phase=\"" + InitiativeHtml.esc(phase) + "\">");
+            out.println("          <td colspan=\"7\">");
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
+            out.println("              <input type=\"hidden\" name=\"action\" value=\"add-item\" />");
+            out.println("              <input type=\"hidden\" name=\"phase\" value=\"" + InitiativeHtml.esc(phase) + "\" />");
+            out.println("              <label class=\"aira-visually-hidden\" for=\"add-" + phaseId + "\">Add item to "
+                    + InitiativeHtml.esc(phase) + "</label>");
+            out.println("              <input class=\"aira-input\" id=\"add-" + phaseId
+                    + "\" name=\"title\" type=\"text\" maxlength=\"500\" placeholder=\"+ Add item\" value=\""
+                    + InitiativeHtml.esc(kept) + "\" />");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form></td></tr>");
         }
-        out.println("      </section>");
     }
 
-    private static void itemRow(PrintWriter out, String base, EsChecklistItem item, List<EsInitiativeManager> managers,
+    private static void itemRow(PrintWriter out, String action, EsChecklistItem item, List<EsInitiativeManager> managers,
             Map<Long, String> userNames, ChecklistHints.Facts facts, EsInitiative initiative, LocalDate today,
-            boolean canEdit) {
+            boolean canEdit, boolean hidden) {
         boolean removed = Boolean.TRUE.equals(item.getRemoved());
-        LocalDate due = ChecklistDueDates.effective(item.getDueAnchor(), item.getDueOffsetDays(),
-                item.getDueDateOverride(), initiative.getStartDate(), initiative.getEndDate());
-        ChecklistDueDates.Urgency urgency = ChecklistDueDates.urgency(due, today,
-                item.getItemStatus() == null ? null : item.getItemStatus().name());
-        out.println("        <tr class=\"initiative-checklist-row\" data-item-id=\"" + item.getEsChecklistItemId() + "\">");
-        out.println("          <td><span class=\"aira-badge aira-badge--" + statusTone(item.getItemStatus()) + "\">"
-                + item.getItemStatus().getLabel() + "</span>");
-        if (canEdit && !removed) {
-            if (item.getItemStatus() != EsChecklistItem.Status.DONE) {
-                statusButton(out, base, item, EsChecklistItem.Status.DONE, "Done");
-            }
-            if (item.getItemStatus() != EsChecklistItem.Status.OPEN) {
-                statusButton(out, base, item, EsChecklistItem.Status.OPEN, "Reopen");
-            }
-            if (item.getItemStatus() != EsChecklistItem.Status.NOT_APPLICABLE) {
-                statusButton(out, base, item, EsChecklistItem.Status.NOT_APPLICABLE, "Not applicable");
-            }
+        boolean editable = canEdit && !removed;
+        EsChecklistItem.Status status = item.getItemStatus();
+        boolean muted = status == EsChecklistItem.Status.DONE || status == EsChecklistItem.Status.NOT_APPLICABLE;
+        ChecklistDueDates.Urgency urgency = urgency(item, initiative, today);
+        LocalDate due = dueDate(item, initiative);
+        String id = String.valueOf(item.getEsChecklistItemId());
+        out.println("        <tr id=\"item-" + id + "\" class=\"initiative-checklist-row" + (muted ? " aira-muted" : "")
+                + "\" data-item-id=\"" + id + "\" data-phase=\"" + InitiativeHtml.esc(item.getPhaseLabel())
+                + "\" data-status=\"" + status.name() + "\" data-removed=\"" + removed + "\""
+                + (hidden ? " hidden" : "") + ">");
+        out.println("          <td>");
+        if (editable) {
+            out.println("            <button class=\"initiative-checklist-handle\" type=\"button\" draggable=\"true\" aria-label=\"Reorder "
+                    + InitiativeHtml.esc(item.getTitle()) + "\">⋮⋮</button>");
         }
         out.println("          </td>");
         out.println("          <td>");
-        if (canEdit && !removed) {
-            out.println("            <form class=\"aira-form aira-form--inline\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+        if (editable) {
+            String next = status == EsChecklistItem.Status.DONE ? "OPEN" : "DONE";
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
+            out.println("              <input type=\"hidden\" name=\"action\" value=\"item-status\" />");
+            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + id + "\" />");
+            out.println("              <input type=\"hidden\" name=\"itemStatus\" value=\"" + next + "\" />");
+            out.println("              <input type=\"checkbox\"" + (status == EsChecklistItem.Status.DONE ? " checked" : "")
+                    + " aria-label=\"Done\" />");
+            out.println("              <noscript><button class=\"aira-button aira-button--link\" type=\"submit\">"
+                    + (status == EsChecklistItem.Status.DONE ? "Reopen" : "Mark done") + "</button></noscript>");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form>");
+        } else {
+            out.println("            <input type=\"checkbox\" disabled" + (status == EsChecklistItem.Status.DONE ? " checked" : "")
+                    + " aria-label=\"Done\" />");
+        }
+        out.println("          </td>");
+        out.println("          <td class=\"aira-table__cell--wrap\">");
+        if (editable) {
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
             out.println("              <input type=\"hidden\" name=\"action\" value=\"edit-item\" />");
-            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-            out.println("              <input type=\"hidden\" name=\"guidance\" value=\"" + InitiativeHtml.esc(item.getGuidance()) + "\" />");
-            out.println("              <div class=\"aira-field aira-field--grow\"><label class=\"aira-visually-hidden\" for=\"title-"
-                    + item.getEsChecklistItemId() + "\">Title</label>");
-            out.println("                <input class=\"aira-input\" id=\"title-" + item.getEsChecklistItemId()
-                    + "\" name=\"title\" type=\"text\" maxlength=\"500\" required value=\""
-                    + InitiativeHtml.esc(item.getTitle()) + "\" /></div>");
-            out.println("              <button class=\"aira-button aira-button--small\" type=\"submit\">Save</button></form>");
+            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + id + "\" />");
+            out.println("              <input type=\"hidden\" name=\"guidance\" value=\"" + InitiativeHtml.esc(item.getGuidance())
+                    + "\" />");
+            out.println("              <button class=\"initiative-checklist-text\" type=\"button\">"
+                    + InitiativeHtml.esc(item.getTitle()) + "</button>");
+            out.println("              <input class=\"aira-input initiative-checklist-editor\" name=\"title\" type=\"text\" maxlength=\"500\" hidden value=\""
+                    + InitiativeHtml.esc(item.getTitle()) + "\" />");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form>");
         } else {
             out.println("            " + InitiativeHtml.esc(item.getTitle()));
         }
         if (item.getItemOrigin() == EsChecklistItem.Origin.TEMPLATE && !Boolean.TRUE.equals(item.getInCurrentTemplate())) {
-            out.println("            <span class=\"aira-badge aira-badge--warning\">No longer in template</span>");
+            out.println("            <br /><span class=\"aira-badge aira-badge--warning\">No longer in template</span>");
         }
         String hint = ChecklistHints.hint(item.getCheckCode(), facts);
         if (hint != null) {
-            out.println("            <p class=\"aira-meta\">" + InitiativeHtml.esc(hint) + "</p>");
-        }
-        if (item.getGuidance() != null && !item.getGuidance().isBlank()) {
-            String excerpt = item.getGuidance().replace('\n', ' ');
-            if (excerpt.length() > 120) {
-                excerpt = excerpt.substring(0, 117) + "...";
-            }
-            out.println("            <p class=\"aira-meta\">" + InitiativeHtml.esc(excerpt) + "</p>");
+            out.println("            <br /><span class=\"aira-meta\">" + InitiativeHtml.esc(hint) + "</span>");
         }
         out.println("          </td>");
         out.println("          <td>");
-        if (canEdit && !removed) {
-            out.println("            <form class=\"aira-form aira-form--inline\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+        if (editable) {
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
             out.println("              <input type=\"hidden\" name=\"action\" value=\"assign-item\" />");
-            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-            out.println("              <label class=\"aira-visually-hidden\" for=\"assignee-" + item.getEsChecklistItemId() + "\">Assignee</label>");
-            out.println("              <select class=\"aira-select\" id=\"assignee-" + item.getEsChecklistItemId() + "\" name=\"assignedUserId\">");
+            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + id + "\" />");
+            out.println("              <label class=\"aira-visually-hidden\" for=\"assignee-" + id + "\">Assignee</label>");
+            out.println("              <select class=\"aira-select\" id=\"assignee-" + id + "\" name=\"assignedUserId\">");
             out.println("                <option value=\"\">Unassigned</option>");
             for (EsInitiativeManager manager : managers) {
                 boolean selected = manager.getUserId().equals(item.getAssignedUserId());
@@ -301,90 +387,90 @@ final class ChecklistPageRenderer {
                         + ">" + InitiativeHtml.esc(userNames.getOrDefault(manager.getUserId(), "Manager")) + "</option>");
             }
             out.println("              </select>");
-            out.println("              <button class=\"aira-button aira-button--small\" type=\"submit\">Save</button></form>");
-        } else {
+            out.println("              <noscript><button class=\"aira-button aira-button--small\" type=\"submit\">Save</button></noscript>");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form>");
+        } else if (item.getAssignedUserId() != null) {
             out.println("            " + InitiativeHtml.esc(userNames.getOrDefault(item.getAssignedUserId(), "")));
         }
         out.println("          </td>");
-        out.println("          <td>" + (due == null ? "" : InitiativePageRenderer.DATE_FORMAT.format(due)));
-        if (item.getDueDateOverride() != null) {
-            out.println("            <span class=\"aira-meta\">override</span>");
-        }
-        if (urgency == ChecklistDueDates.Urgency.OVERDUE) {
-            out.println("            <span class=\"aira-badge aira-badge--danger\">Overdue</span>");
-        } else if (urgency == ChecklistDueDates.Urgency.DUE_SOON) {
-            out.println("            <span class=\"aira-badge aira-badge--warning\">Due soon</span>");
-        }
-        out.println("          </td>");
-        LocalDateTime updated = item.getStatusChangedAt() != null ? item.getStatusChangedAt() : item.getUpdatedAt();
-        out.println("          <td>" + (updated == null ? "" : InitiativePageRenderer.DATE_FORMAT.format(updated)) + "</td>");
+        dueCell(out, due, urgency, item.getDueDateOverride() != null);
+        out.println("          <td><button class=\"aira-button aira-button--link\" type=\"button\" data-dialog-open=\"item-"
+                + id + "-dialog\">Details</button></td>");
         out.println("          <td>");
         if (canEdit) {
-            if (removed) {
-                mini(out, base, item, "restore-item", "Restore");
-            } else {
-                out.println("            <span class=\"aira-button aira-button--small aira-button--ghost initiative-checklist-handle\" draggable=\"true\">Move</span>");
-                mini(out, base, item, "move-item", "up", "Up");
-                mini(out, base, item, "move-item", "down", "Down");
-                out.println("            <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-add-after=\""
-                        + item.getEsChecklistItemId() + "\" data-phase=\"" + InitiativeHtml.esc(item.getPhaseLabel())
-                        + "\">Add below</button>");
-                mini(out, base, item, "remove-item", "Remove");
-            }
-            out.println("            <button class=\"aira-button aira-button--small\" type=\"button\" data-dialog-open=\"item-"
-                    + item.getEsChecklistItemId() + "\">Details</button>");
+            out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(action)
+                    + "\" data-checklist-save>");
+            out.println("              <input type=\"hidden\" name=\"action\" value=\""
+                    + (removed ? "restore-item" : "remove-item") + "\" />");
+            out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + id + "\" />");
+            out.println("              <button class=\"aira-button aira-button--link\" type=\"submit\" aria-label=\""
+                    + (removed ? "Restore" : "Remove") + "\">" + (removed ? "Restore" : "×") + "</button>");
+            out.println("              <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("            </form>");
         }
         out.println("          </td></tr>");
     }
 
-    private static void itemDialog(PrintWriter out, String base, EsChecklistItem item, Map<Long, String> userNames,
-            List<EsInitiativeTimelineEntry> timeline, User viewer, EsInitiative initiative, FormInput input) {
-        String id = "item-" + item.getEsChecklistItemId();
+    private static void itemDialog(PrintWriter out, String action, EsChecklistItem item, Map<Long, String> userNames,
+            List<EsInitiativeTimelineEntry> timeline, User viewer, EsInitiative initiative, boolean canEdit,
+            FormInput input) {
+        String id = "item-" + item.getEsChecklistItemId() + "-dialog";
+        boolean removed = Boolean.TRUE.equals(item.getRemoved());
         boolean failed = id.equals(input.openDialog());
         InitiativePageRenderer.dialogStart(out, id, item.getTitle(), input);
-        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        out.println("          <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">" + InitiativeHtml.esc(item.getTitle()) + "</h3>");
-        if (failed && input.failed("edit-item")) {
-            InitiativePageRenderer.formError(out, input, "edit-item");
+        out.println("        <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">" + InitiativeHtml.esc(item.getTitle())
+                + "</h3>");
+        if (canEdit && !removed) {
+            boolean textFailed = failed && (input.failed("save-item") || input.failed("edit-item"));
+            out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(action) + "\" data-checklist-save>");
+            if (textFailed) {
+                InitiativePageRenderer.formError(out, input, input.failed("save-item") ? "save-item" : "edit-item");
+            }
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"save-item\" />");
+            out.println("          <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
+            out.println("          <div class=\"aira-field\"><label for=\"" + id + "-title-input\">Title</label>");
+            out.println("            <input class=\"aira-input\" id=\"" + id + "-title-input\" name=\"title\" type=\"text\" maxlength=\"500\" required value=\""
+                    + InitiativeHtml.esc(textFailed ? input.posted("title") : item.getTitle()) + "\" /></div>");
+            out.println("          <div class=\"aira-field\"><label for=\"" + id + "-guidance\">Guidance</label>");
+            out.println("            <textarea class=\"aira-textarea\" id=\"" + id + "-guidance\" name=\"guidance\">"
+                    + InitiativeHtml.esc(textFailed ? input.posted("guidance") : item.getGuidance()) + "</textarea></div>");
+            String dueValue = item.getDueDateOverride() == null ? "" : item.getDueDateOverride().toString();
+            out.println("          <div class=\"aira-field\"><label for=\"" + id + "-due\">Due date override</label>");
+            out.println("            <input class=\"aira-input\" id=\"" + id + "-due\" name=\"dueDate\" type=\"date\" value=\""
+                    + InitiativeHtml.esc(failed && input.failed("save-item") ? input.posted("dueDate") : dueValue)
+                    + "\" /></div>");
+            out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Save</button></div>");
+            out.println("          <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("        </form>");
+            out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                    + InitiativeHtml.esc(action) + "\" data-checklist-save>");
+            if (failed && input.failed("item-status")) {
+                InitiativePageRenderer.formError(out, input, "item-status");
+            }
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"item-status\" />");
+            out.println("          <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
+            out.println("          <div class=\"aira-field-row\">");
+            out.println("            <div class=\"aira-field\"><label for=\"" + id + "-status\">Status</label>");
+            out.println("              <select class=\"aira-select\" id=\"" + id + "-status\" name=\"itemStatus\">");
+            for (EsChecklistItem.Status status : EsChecklistItem.Status.values()) {
+                out.println("                <option value=\"" + status.name() + "\""
+                        + (status == item.getItemStatus() ? " selected" : "") + ">" + status.getLabel() + "</option>");
+            }
+            out.println("              </select></div>");
+            out.println("            <div class=\"aira-field\"><label for=\"" + id + "-note\">Note</label>");
+            out.println("              <input class=\"aira-input\" id=\"" + id + "-note\" name=\"note\" type=\"text\" value=\""
+                    + InitiativeHtml.esc(failed && input.failed("item-status") ? input.posted("note") : "")
+                    + "\" /></div>");
+            out.println("          </div>");
+            out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Update status</button></div>");
+            out.println("          <span class=\"initiative-checklist-note\" aria-live=\"polite\"></span>");
+            out.println("        </form>");
+        } else if (item.getGuidance() != null && !item.getGuidance().isBlank()) {
+            out.println("        <p>" + InitiativeHtml.esc(item.getGuidance()) + "</p>");
         }
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"edit-item\" />");
-        out.println("          <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-        out.println("          <div class=\"aira-field\"><label for=\"" + id + "-title-input\">Title</label>");
-        out.println("            <input class=\"aira-input\" id=\"" + id + "-title-input\" name=\"title\" type=\"text\" maxlength=\"500\" required value=\""
-                + InitiativeHtml.esc(failed ? input.value("edit-item", "title", item.getTitle()) : item.getTitle()) + "\" /></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"" + id + "-guidance\">Guidance</label>");
-        out.println("            <textarea class=\"aira-textarea\" id=\"" + id + "-guidance\" name=\"guidance\">"
-                + InitiativeHtml.esc(failed ? input.value("edit-item", "guidance", item.getGuidance()) : item.getGuidance())
-                + "</textarea></div>");
-        out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Save text</button></div>");
-        out.println("        </form>");
-        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"item-status\" />");
-        out.println("          <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-        out.println("          <div class=\"aira-field-row\">");
-        out.println("            <div class=\"aira-field\"><label for=\"" + id + "-status\">Status</label>");
-        out.println("              <select class=\"aira-select\" id=\"" + id + "-status\" name=\"itemStatus\">");
-        for (EsChecklistItem.Status status : EsChecklistItem.Status.values()) {
-            out.println("                <option value=\"" + status.name() + "\""
-                    + (status == item.getItemStatus() ? " selected" : "") + ">" + status.getLabel() + "</option>");
-        }
-        out.println("              </select></div>");
-        out.println("            <div class=\"aira-field\"><label for=\"" + id + "-note\">Note</label>");
-        out.println("              <input class=\"aira-input\" id=\"" + id + "-note\" name=\"note\" type=\"text\" value=\"\" /></div>");
-        out.println("          </div>");
-        out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--primary\" type=\"submit\">Update status</button></div>");
-        out.println("        </form>");
-        out.println("        <form id=\"" + id + "-due-form\" class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
-                + InitiativeHtml.esc(base) + "\">");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"due-override\" />");
-        out.println("          <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-        out.println("          <div class=\"aira-field\"><label for=\"" + id + "-due\">Due date override</label>");
-        String dueValue = item.getDueDateOverride() == null ? "" : item.getDueDateOverride().toString();
-        out.println("            <input class=\"aira-input\" id=\"" + id + "-due\" name=\"dueDate\" type=\"date\" value=\""
-                + InitiativeHtml.esc(failed ? input.value("due-override", "dueDate", dueValue) : dueValue) + "\" /></div>");
-        out.println("          <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Save due date</button></div>");
-        out.println("        </form>");
-        InitiativePageRenderer.timeline(out, base, timeline, userNames, viewer, true,
+        InitiativePageRenderer.timeline(out, action, timeline, userNames, viewer, canEdit && !removed,
                 EsInitiativeTimelineEntry.SubjectType.CHECKLIST_ITEM, item.getEsChecklistItemId(), input);
         out.println("        <div class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\">");
         out.println("          <button class=\"aira-button aira-button--ghost\" type=\"button\" data-dialog-close=\""
@@ -392,33 +478,10 @@ final class ChecklistPageRenderer {
         out.println("      </dialog>");
     }
 
-    private static void addItemDialog(PrintWriter out, String base, FormInput input) {
-        InitiativePageRenderer.dialogStart(out, "add-item", "Add item", input);
-        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        out.println("          <h3 class=\"aira-dialog__title\" id=\"add-item-title\">Add item</h3>");
-        if (input.failed("add-item") && !input.posted("afterItemId").isEmpty()) {
-            InitiativePageRenderer.formError(out, input, "add-item");
-        }
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"add-item\" />");
-        out.println("          <input type=\"hidden\" name=\"afterItemId\" value=\""
-                + InitiativeHtml.esc(input.value("add-item", "afterItemId", "")) + "\" />");
-        out.println("          <div class=\"aira-field\"><label for=\"add-item-phase\">Phase</label>");
-        out.println("            <input class=\"aira-input\" id=\"add-item-phase\" name=\"phase\" type=\"text\" maxlength=\"200\" required value=\""
-                + InitiativeHtml.esc(input.value("add-item", "phase", "")) + "\" /></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"add-item-title-input\">Title</label>");
-        out.println("            <input class=\"aira-input\" id=\"add-item-title-input\" name=\"title\" type=\"text\" maxlength=\"500\" required value=\""
-                + InitiativeHtml.esc(input.posted("afterItemId").isEmpty() ? "" : input.value("add-item", "title", ""))
-                + "\" /></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"add-item-guidance\">Guidance</label>");
-        out.println("            <textarea class=\"aira-textarea\" id=\"add-item-guidance\" name=\"guidance\">"
-                + InitiativeHtml.esc(input.value("add-item", "guidance", "")) + "</textarea></div>");
-        InitiativePageRenderer.dialogActions(out, "add-item", "Add");
-        out.println("        </form></dialog>");
-    }
-
-    private static void addPhaseDialog(PrintWriter out, String base, FormInput input) {
+    private static void addPhaseDialog(PrintWriter out, String action, FormInput input) {
         InitiativePageRenderer.dialogStart(out, "add-phase", "Add phase", input);
-        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+        out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
+                + InitiativeHtml.esc(action) + "\">");
         out.println("          <h3 class=\"aira-dialog__title\" id=\"add-phase-title\">Add phase</h3>");
         InitiativePageRenderer.formError(out, input, "add-phase");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"add-phase\" />");
@@ -432,29 +495,19 @@ final class ChecklistPageRenderer {
         out.println("        </form></dialog>");
     }
 
-    private static void statusButton(PrintWriter out, String base, EsChecklistItem item, EsChecklistItem.Status status,
-            String label) {
-        out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        out.println("              <input type=\"hidden\" name=\"action\" value=\"item-status\" />");
-        out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-        out.println("              <input type=\"hidden\" name=\"itemStatus\" value=\"" + status.name() + "\" />");
-        out.println("              <button class=\"aira-button aira-button--small\" type=\"submit\">" + label + "</button></form>");
-    }
-
-    private static void mini(PrintWriter out, String base, EsChecklistItem item, String action, String label) {
-        mini(out, base, item, action, null, label);
-    }
-
-    private static void mini(PrintWriter out, String base, EsChecklistItem item, String action, String direction,
-            String label) {
-        out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        out.println("              <input type=\"hidden\" name=\"action\" value=\"" + action + "\" />");
-        out.println("              <input type=\"hidden\" name=\"itemId\" value=\"" + item.getEsChecklistItemId() + "\" />");
-        if (direction != null) {
-            out.println("              <input type=\"hidden\" name=\"direction\" value=\"" + direction + "\" />");
+    private static void dueCell(PrintWriter out, LocalDate due, ChecklistDueDates.Urgency urgency, boolean override) {
+        out.println("          <td class=\"initiative-checklist-due aira-table__cell--nowrap\">");
+        out.println("            <span class=\"initiative-checklist-due-text\">"
+                + (due == null ? "" : InitiativePageRenderer.DATE_FORMAT.format(due)) + "</span>");
+        if (override) {
+            out.println("            <span class=\"aira-meta initiative-checklist-override\">override</span>");
         }
-        out.println("              <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"submit\">"
-                + label + "</button></form>");
+        if (urgency == ChecklistDueDates.Urgency.OVERDUE) {
+            out.println("            <span class=\"aira-badge aira-badge--danger initiative-checklist-urgency\">Overdue</span>");
+        } else if (urgency == ChecklistDueDates.Urgency.DUE_SOON) {
+            out.println("            <span class=\"aira-badge aira-badge--warning initiative-checklist-urgency\">Due soon</span>");
+        }
+        out.println("          </td>");
     }
 
     private static void feedbackTable(PrintWriter out, String title, List<ChecklistFeedback.Row> rows) {
@@ -503,13 +556,50 @@ final class ChecklistPageRenderer {
         return phases;
     }
 
-    private static String statusTone(EsChecklistItem.Status status) {
-        if (status == EsChecklistItem.Status.DONE) {
-            return "success";
+    private static LocalDate dueDate(EsChecklistItem item, EsInitiative initiative) {
+        return ChecklistDueDates.effective(item.getDueAnchor(), item.getDueOffsetDays(), item.getDueDateOverride(),
+                initiative.getStartDate(), initiative.getEndDate());
+    }
+
+    private static ChecklistDueDates.Urgency urgency(EsChecklistItem item, EsInitiative initiative, LocalDate today) {
+        return ChecklistDueDates.urgency(dueDate(item, initiative), today,
+                item.getItemStatus() == null ? null : item.getItemStatus().name());
+    }
+
+    private static String query(boolean showRemoved, boolean hideDone) {
+        StringBuilder query = new StringBuilder();
+        if (showRemoved) {
+            query.append("removed=1");
         }
-        if (status == EsChecklistItem.Status.NOT_APPLICABLE) {
-            return "subtle";
+        if (hideDone) {
+            if (query.length() > 0) {
+                query.append('&');
+            }
+            query.append("hideDone=1");
         }
-        return "info";
+        return query.length() == 0 ? "" : "?" + query;
+    }
+
+    static String kindLabel(String kind) {
+        if ("SMALL_GROUP".equals(kind)) {
+            return "Small Group";
+        }
+        if ("INITIATIVE".equals(kind)) {
+            return "Initiative";
+        }
+        return kind == null ? "" : kind;
+    }
+
+    static String urgencyName(ChecklistDueDates.Urgency urgency) {
+        return urgency == null ? "" : urgency.name();
+    }
+
+    static String itemUrgency(EsChecklistItem item, EsInitiative initiative, LocalDate today) {
+        return urgencyName(urgency(item, initiative, today));
+    }
+
+    static String dueText(EsChecklistItem item, EsInitiative initiative) {
+        LocalDate due = dueDate(item, initiative);
+        return due == null ? "" : InitiativePageRenderer.DATE_FORMAT.format(due);
     }
 }

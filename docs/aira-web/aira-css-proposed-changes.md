@@ -20,6 +20,34 @@ Entries below the revision history are the **active queue** — proposals not ye
 
 ---
 
+## Proposal: Compact table rows for spreadsheet-style lists
+
+**Status:** Proposed
+**Found during:** Initiative checklist (`/es/initiatives/{code}/checklist`). Thirty-one items with the standard table cell padding and 2.25rem selects made each row about 200px tall.
+**Date:** 2026-10-26
+
+### Problem
+
+`.aira-table` cells use `0.5rem 0.75rem` padding, and `.aira-input` / `.aira-select` have a `2.25rem` minimum height. A row that is only a line of text, a checkbox, and a select cannot sit near 40px, so a working checklist becomes a long form instead of a sheet.
+
+### Current local workaround
+
+`initiative-checklist.css` tightens cell padding and the select/input minimum height inside `.initiative-checklist` only. That file is also the home for the drag-target outline and the in-place title editor. Remove the padding and control-height rules when the shared modifier exists.
+
+### Proposed shared interface
+
+`.aira-table--compact` (and the same modifier on cells inside it): cell padding about `0.15rem 0.45rem`, `vertical-align: middle`, and `.aira-input` / `.aira-select` at about `1.5rem` tall with a narrower font. A short note in the Tables section of the components guide.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Any roster, queue, or checklist that should read as a sheet will hit the same row height. The density is a property of the table, not of InteropHub's checklist.
+
+### Compatibility and migration impact
+
+A new modifier has no effect until a page adds it. Existing tables stay as they are.
+
+---
+
 ## Proposal: Let a search popover escape a modal dialog
 
 **Status:** Proposed

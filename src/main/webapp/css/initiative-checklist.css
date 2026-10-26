@@ -1,3 +1,59 @@
-.initiative-checklist-row.is-drop-target {
+/* Drag state and the in-place title/phase editor. Compact row metrics are a
+   temporary stand-in for aira-table--compact; see aira-css-proposed-changes.md. */
+
+.initiative-checklist-row.is-drop-target,
+.initiative-checklist-add.is-drop-target,
+.initiative-checklist-phase.is-drop-target {
   outline: 2px solid currentColor;
+}
+
+.initiative-checklist-handle {
+  cursor: grab;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.initiative-checklist-text,
+.initiative-checklist-phase-name {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: text;
+}
+
+.initiative-checklist-phase-name {
+  font-weight: 700;
+}
+
+.initiative-checklist-text:hover,
+.initiative-checklist-phase-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.initiative-checklist-row.is-editing .initiative-checklist-text,
+.initiative-checklist-phase.is-editing .initiative-checklist-phase-name {
+  display: none;
+}
+
+.initiative-checklist .aira-table > :is(thead, tbody) > tr > :is(th, td) {
+  padding: 0.15rem 0.45rem;
+  vertical-align: middle;
+}
+
+.initiative-checklist .aira-select,
+.initiative-checklist .aira-input {
+  min-height: 1.5rem;
+  padding-top: 0.05rem;
+  padding-bottom: 0.05rem;
+}
+
+.initiative-checklist .aira-select {
+  width: 9.5rem;
 }

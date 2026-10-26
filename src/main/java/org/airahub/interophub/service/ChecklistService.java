@@ -273,7 +273,7 @@ public class ChecklistService {
         recordPlanned(initiative, item, actor, planned);
     }
 
-    public void addItem(User actor, EsInitiative initiative, String phase, String title, String guidance,
+    public EsChecklistItem addItem(User actor, EsInitiative initiative, String phase, String title, String guidance,
             Long afterItemId) {
         EsChecklist checklist = requireChecklist(initiative);
         String phaseLabel = requireText(phase, "Phase", 200);
@@ -298,6 +298,7 @@ public class ChecklistService {
         record(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.CHECKLIST_ITEM,
                 created.getEsChecklistItemId(), actor, EsInitiativeTimelineEntry.EntryType.STATUS_CHANGE, null,
                 EsChecklistItem.Status.OPEN.getLabel(), null);
+        return created;
     }
 
     public void editItem(User actor, EsInitiative initiative, Long itemId, String title, String guidance) {
@@ -362,9 +363,15 @@ public class ChecklistService {
     }
 
     public void reorder(EsInitiative initiative, Long itemId, Long beforeItemId) {
+        reorder(initiative, itemId, beforeItemId, null);
+    }
+
+    /** When {@code phase} is set, the item lands in that phase. Otherwise it takes the phase of the item it precedes. */
+    public void reorder(EsInitiative initiative, Long itemId, Long beforeItemId, String phase) {
         EsChecklist checklist = requireChecklist(initiative);
         List<EsChecklistItem> items = itemDao.findByChecklistId(checklist.getEsChecklistId());
         EsChecklistItem moving = findItem(items, itemId);
+        String phaseLabel = phase == null || phase.isBlank() ? null : requireText(phase, "Phase", 200);
         List<EsChecklistItem> visible = new ArrayList<>();
         for (EsChecklistItem candidate : items) {
             if (!Boolean.TRUE.equals(candidate.getRemoved()) && !candidate.getEsChecklistItemId().equals(itemId)) {
@@ -377,10 +384,15 @@ public class ChecklistService {
             for (int i = 0; i < visible.size(); i++) {
                 if (beforeItemId.equals(visible.get(i).getEsChecklistItemId())) {
                     index = i;
-                    moving.setPhaseLabel(visible.get(i).getPhaseLabel());
+                    if (phaseLabel == null) {
+                        moving.setPhaseLabel(visible.get(i).getPhaseLabel());
+                    }
                     break;
                 }
             }
+        }
+        if (phaseLabel != null) {
+            moving.setPhaseLabel(phaseLabel);
         }
         visible.add(index, moving);
         int order = 10;

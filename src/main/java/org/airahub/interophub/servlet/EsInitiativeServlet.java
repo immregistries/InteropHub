@@ -167,6 +167,10 @@ public class EsInitiativeServlet extends HttpServlet {
                 throw new IllegalArgumentException("You don't have permission to change this initiative.");
             }
             String warning = dispatch(request, user, initiative, section, action);
+            if (wantsJson(request)) {
+                writeChecklistJson(request, response, user, initiative);
+                return;
+            }
             boolean keepsItsOwnMessage = "commit".equals(action) || "preview".equals(action) || "remap".equals(action);
             if (warning != null) {
                 flash(request, "warning", warning);
@@ -175,8 +179,12 @@ public class EsInitiativeServlet extends HttpServlet {
             } else if (!"commit".equals(action)) {
                 flash(request, "success", "Preview updated. Import only after you have checked it.");
             }
-            redirect(response, request, initiative, redirectAfter(parts, action));
+            redirect(response, request, initiative, redirectAfter(request, parts, action));
         } catch (IllegalArgumentException ex) {
+            if (wantsJson(request)) {
+                writeJsonError(response, HttpServletResponse.SC_BAD_REQUEST, ex.getMessage());
+                return;
+            }
             if (parts.length > 0 && "templates".equals(parts[0])) {
                 renderTemplates(request, response, parts,
                         FormInput.replay(request, param(request, "action"), ex.getMessage(), null), null);
@@ -197,6 +205,10 @@ public class EsInitiativeServlet extends HttpServlet {
                     FormInput.replay(request, action == null ? "" : action, ex.getMessage(), dialogFor(request, parts, action)));
         } catch (RuntimeException ex) {
             LOGGER.log(Level.SEVERE, "Initiative update failed", ex);
+            if (wantsJson(request)) {
+                writeJsonError(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Could not save that change.");
+                return;
+            }
             flash(request, "danger", "Could not save that change.");
             response.sendRedirect(request.getContextPath() + "/es/initiatives");
         }
@@ -318,8 +330,18 @@ public class EsInitiativeServlet extends HttpServlet {
                 yield null;
             }
             case "add-item", "add-phase" -> {
-                checklists.addItem(user, initiative, param(request, "phase"), param(request, "title"),
-                        param(request, "guidance"), longParam(request, "afterItemId"));
+                request.setAttribute("checklist.created", checklists.addItem(user, initiative, param(request, "phase"),
+                        param(request, "title"), param(request, "guidance"), longParam(request, "afterItemId")));
+                yield null;
+            }
+            case "save-item" -> {
+                Long itemId = longParam(request, "itemId");
+                LocalDate due = dateParam(request, "dueDate");
+                LocalDate currentDue = currentDue(initiative, itemId);
+                checklists.editItem(user, initiative, itemId, param(request, "title"), param(request, "guidance"));
+                if ((currentDue == null && due != null) || (currentDue != null && !currentDue.equals(due))) {
+                    checklists.setDueOverride(user, initiative, itemId, due);
+                }
                 yield null;
             }
             case "edit-item" -> {
@@ -340,7 +362,8 @@ public class EsInitiativeServlet extends HttpServlet {
                 yield null;
             }
             case "reorder-item" -> {
-                checklists.reorder(initiative, longParam(request, "itemId"), longParam(request, "beforeItemId"));
+                checklists.reorder(initiative, longParam(request, "itemId"), longParam(request, "beforeItemId"),
+                        param(request, "phase"));
                 yield null;
             }
             case "rename-phase" -> {
@@ -644,7 +667,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 .applicationSubtitle("Initiatives")
                 .mainClass("aira-main")
                 .addLocalStylesheet("/css/initiative-org.css")
-                .addLocalStylesheet("/css/initiative-checklist.css")
+                .addLocalStylesheet("/css/initiative-checklist.css?v=4")
                 .context(InteropAiraPageFactory.topicsMeetingsContext("InteropHub", null, false, false))
                 .build();
         String kind = null;
@@ -673,7 +696,7 @@ public class EsInitiativeServlet extends HttpServlet {
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
                     + "/js/initiative-org-typeahead.js\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
-                    + "/js/initiative-checklist.js\"></script>");
+                    + "/js/initiative-checklist.js?v=4\"></script>");
             page.writeEnd(out);
         }
     }
@@ -749,6 +772,12 @@ public class EsInitiativeServlet extends HttpServlet {
 
     private void redirect(HttpServletResponse response, HttpServletRequest request, EsInitiative initiative, String suffix)
             throws IOException {
+        String fragment = "";
+        int hash = suffix.indexOf('#');
+        if (hash >= 0) {
+            fragment = suffix.substring(hash);
+            suffix = suffix.substring(0, hash);
+        }
         EsInitiative current = initiatives.findByCode(initiative.getInitiativeCode()).orElse(initiative);
         String target = request.getContextPath() + "/es/initiatives/" + current.getInitiativeCode() + suffix;
         String query = request.getQueryString();
@@ -756,7 +785,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 && !"commit".equals(param(request, "action"))) {
             target += "?" + query;
         }
-        response.sendRedirect(target);
+        response.sendRedirect(target + fragment);
     }
 
     private boolean requiresSettings(String action) {
@@ -764,7 +793,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 || "remove-manager".equals(action) || "add-link".equals(action) || "delete-link".equals(action);
     }
 
-    private String redirectAfter(String[] parts, String action) {
+    private String redirectAfter(HttpServletRequest request, String[] parts, String action) {
         if ("commit".equals(action)) {
             return "/people";
         }
@@ -772,6 +801,13 @@ public class EsInitiativeServlet extends HttpServlet {
             return "";
         }
         if ("apply-upgrade".equals(action)) {
+            return "/checklist";
+        }
+        if ("checklist".equals(parts[1]) && parts.length == 2) {
+            String itemId = param(request, "itemId");
+            if (itemId != null && !itemId.isBlank() && itemId.chars().allMatch(Character::isDigit)) {
+                return "/checklist#item-" + itemId;
+            }
             return "/checklist";
         }
         String suffix = "/" + parts[1];
@@ -793,16 +829,16 @@ public class EsInitiativeServlet extends HttpServlet {
             case "add-link" -> "add-link";
             case "add-item" -> "add-item";
             case "add-phase" -> "add-phase";
-            case "edit-item", "item-status", "due-override", "assign-item" -> itemDialog(request);
+            case "edit-item", "save-item", "item-status", "due-override", "assign-item" -> itemDialog(request);
             case "comment", "edit-comment" -> "CHECKLIST_ITEM".equals(param(request, "subjectType"))
-                    ? "item-" + param(request, "subjectId") : null;
+                    ? "item-" + param(request, "subjectId") + "-dialog" : null;
             default -> null;
         };
     }
 
     private String itemDialog(HttpServletRequest request) {
         String itemId = param(request, "itemId");
-        return itemId == null || itemId.isBlank() ? null : "item-" + itemId;
+        return itemId == null || itemId.isBlank() ? null : "item-" + itemId + "-dialog";
     }
 
     private void renderChecklist(HttpServletRequest request, HttpServletResponse response, User user,
@@ -828,7 +864,8 @@ public class EsInitiativeServlet extends HttpServlet {
                 input, out -> ChecklistPageRenderer.checklist(out, request.getContextPath(), initiative, checklist, items,
                         managers, names, itemTimeline, checklistEntries, user, hintFacts(initiative),
                         InitiativeAccess.canEditChecklist(level), upgrade, availableVersion,
-                        "1".equals(param(request, "removed")), input));
+                        "1".equals(param(request, "removed")), "1".equals(param(request, "hideDone")),
+                        authFlowService.isAdminUser(user), input));
     }
 
     private void renderUpgrade(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
@@ -1039,6 +1076,95 @@ public class EsInitiativeServlet extends HttpServlet {
         } catch (IllegalArgumentException ex) {
             throw new IllegalArgumentException("That choice is not recognized.");
         }
+    }
+
+    private boolean wantsJson(HttpServletRequest request) {
+        String accept = request.getHeader("Accept");
+        return accept != null && accept.contains("application/json");
+    }
+
+    private void writeChecklistJson(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative) throws IOException {
+        EsChecklist checklist = checklists.findForInitiative(initiative.getEsInitiativeId()).orElse(null);
+        List<EsChecklistItem> items = checklist == null ? List.of() : checklists.items(checklist.getEsChecklistId());
+        LocalDate today = LocalDate.now();
+        ChecklistPageRenderer.Progress progress = ChecklistPageRenderer.progress(items, initiative, today);
+        EsChecklistItem created = (EsChecklistItem) request.getAttribute("checklist.created");
+        Long itemId = created == null ? longParam(request, "itemId") : created.getEsChecklistItemId();
+        EsChecklistItem item = null;
+        if (itemId != null) {
+            for (EsChecklistItem candidate : items) {
+                if (itemId.equals(candidate.getEsChecklistItemId())) {
+                    item = candidate;
+                }
+            }
+        }
+        StringBuilder json = new StringBuilder();
+        json.append("{\"ok\":true");
+        json.append(",\"done\":").append(progress.done());
+        json.append(",\"total\":").append(progress.total());
+        json.append(",\"overdue\":").append(progress.overdue());
+        json.append(",\"dueSoon\":").append(progress.dueSoon());
+        json.append(",\"progress\":").append(jsonString(progress.text()));
+        if (item != null) {
+            json.append(",\"itemId\":").append(item.getEsChecklistItemId());
+            json.append(",\"title\":").append(jsonString(item.getTitle()));
+            json.append(",\"status\":").append(jsonString(item.getItemStatus().name()));
+            json.append(",\"removed\":").append(Boolean.TRUE.equals(item.getRemoved()));
+            json.append(",\"urgency\":").append(jsonString(ChecklistPageRenderer.itemUrgency(item, initiative, today)));
+            json.append(",\"due\":").append(jsonString(ChecklistPageRenderer.dueText(item, initiative)));
+            json.append(",\"override\":").append(item.getDueDateOverride() != null);
+            json.append(",\"guidance\":").append(jsonString(item.getGuidance()));
+            json.append(",\"phase\":").append(jsonString(item.getPhaseLabel()));
+            json.append(",\"assignee\":");
+            json.append(item.getAssignedUserId() == null ? "null" : item.getAssignedUserId().toString());
+        }
+        if (created != null && item != null) {
+            String page = request.getContextPath() + "/es/initiatives/" + initiative.getInitiativeCode() + "/checklist";
+            String query = request.getQueryString();
+            if (query != null && !query.isBlank() && query.indexOf('\r') < 0 && query.indexOf('\n') < 0) {
+                page += "?" + query;
+            }
+            List<EsInitiativeManager> managers = initiatives.managers(initiative.getEsInitiativeId());
+            Map<Long, String> names = managerNames(managers);
+            json.append(",\"html\":").append(jsonString(ChecklistPageRenderer.itemRowMarkup(page, item, managers, names,
+                    hintFacts(initiative), initiative, today, true)));
+            json.append(",\"dialog\":").append(jsonString(ChecklistPageRenderer.itemDialogMarkup(page, item, names, user,
+                    initiative, true)));
+        }
+        json.append('}');
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write(json.toString());
+    }
+
+    private void writeJsonError(HttpServletResponse response, int status, String message) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"ok\":false,\"error\":" + jsonString(message) + "}");
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "\\r").replace("\n", "\\n")
+                .replace("\t", "\\t") + "\"";
+    }
+
+    private LocalDate currentDue(EsInitiative initiative, Long itemId) {
+        if (itemId == null) {
+            return null;
+        }
+        EsChecklist checklist = checklists.findForInitiative(initiative.getEsInitiativeId()).orElse(null);
+        if (checklist == null) {
+            return null;
+        }
+        for (EsChecklistItem item : checklists.items(checklist.getEsChecklistId())) {
+            if (itemId.equals(item.getEsChecklistItemId())) {
+                return item.getDueDateOverride();
+            }
+        }
+        return null;
     }
 
     private interface PageBody {
