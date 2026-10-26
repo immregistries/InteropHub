@@ -1,6 +1,6 @@
 # InteropHub Initiatives and Small Groups Design
 
-**Status:** Design agreed in discussion with Nathan, October 2026. Not yet implemented.
+**Status:** Design agreed in discussion with Nathan, October 2026. Phases 1 and 2 are implemented. Phase 3 uses a Small Group participant list; the meeting series is compared with that list and is not the list itself.
 
 ## Purpose
 
@@ -42,8 +42,10 @@ Initiative ── primary topic (exactly one)
    │
    └── Small Groups (zero or more)
           ├── topic (exactly one; may or may not be the primary topic)
-          │     └── the topic's existing meeting series is the Small Group's group list
-          │           └── meetings → agendas → other topics (unchanged)
+          ├── participant list, drawn from the initiative roster
+          │     └── an email or a linked account follows this topic
+          ├── the topic's meeting series, compared with the participant list
+          │     └── meetings → agendas → other topics (unchanged)
           └── Checklist (from the Small Group template)
 ```
 
@@ -152,7 +154,11 @@ The existing `supporter` table (organizations shown on topics) is a separate con
 Joining an initiative is a deliberate step beyond following a topic. That solves the problem that following alone says too little.
 
 1. **Joining an initiative means following its primary topic.** When a member becomes `JOINED`, InteropHub creates or restores a follow of the primary topic, if one doesn't already exist. Prospects and invited people do *not* follow automatically, because they haven't agreed to anything.
-2. **Joining a Small Group means following its topic.** Joining a Small Group means registering for its topic's meeting series. Self-registration through `EsRegisterForMeetingServlet` already creates a topic follow. Staff-added series members should do the same; verify this during implementation.
+2. **Taking part in a Small Group means joining the initiative and following the Small Group topic.** Staff add participants from the roster. No notification is sent, and the person does not need to sign in.
+   - A roster member who is not yet `JOINED` becomes `JOINED`, with a timeline entry, because taking part means joining the initiative. That also follows the primary topic, under rule 1, and with the same notification behavior (the follow is recorded and the follower-added email is not sent).
+   - A participant with an email, or a linked account, follows the Small Group's topic the same way. Prospects who are only on the roster do not follow that topic.
+   - Removing a participant does not unfollow the topic. The follow stays until the person changes it.
+   - Registering for the meeting series is separate. Self-registration through `EsRegisterForMeetingServlet` still follows the topic, as it does today. This phase does not add or remove series members.
 3. **Explicitly unfollowing the primary topic means leaving the initiative.** If a joined member uses the follow toggle to unfollow the primary topic, InteropHub asks: "This will remove you from the *X* initiative. Continue?" If confirmed, the member becomes `LEFT`, with an automatic note.
 4. **Email preference is separate from following.** The topic-roles redesign (`docs/topic-roles-implementation-prompt.md`) separates a person's relationship to a topic from whether they receive email. Once that lands, a member can turn off topic emails without leaving. Unsubscribe links in emails must keep working and must not silently remove anyone from an initiative.
 
@@ -176,12 +182,19 @@ The cycle dates follow the roadmap's language: four working weeks, with the work
 
 **Only public meetings are tracked.** Small Group meetings are public and run in the topic's meeting series. Project meetings with a state partner or funder, one-on-one partner meetings and internal staff meetings are not tracked in InteropHub.
 
-**The meeting series is the Small Group's group list.** There is no separate Small Group roster:
+**Each Small Group has its own participant list, drawn from the initiative roster.** Some people will never sign in, register, or attend a meeting, so the meeting series cannot be the group list. Staff add and remove participants directly. Adding someone does not email them and does not require an account.
 
-- Joined initiative members are invited to register for the topic's meeting series. Registrants are the people taking part.
-- Later cycles on the same topic reuse the same series. Registrants carry over, and people are added and removed in the usual way. Teardown includes a step to review the registrants.
-- Because AIRA won't run unrelated meetings in the same series while a Small Group is active, this doesn't conflict with other uses.
-- Many people will appear on both the initiative roster and the series list. That's expected: the initiative roster is the larger pool, and the series is who is in the room.
+- A participant is an initiative member with an optional free-text role or team, and a status of `ACTIVE` or `REMOVED`.
+- Adding a member who is not yet `JOINED` marks them `JOINED`.
+- A participant with an email, or a linked account, follows the Small Group topic.
+- Removing a participant leaves that follow in place.
+
+**The series is compared with the participant list.** The Small Group page shows:
+
+- participants who are not registered for the series (`REQUESTED` or `APPROVED`), with a copyable registration link for that person or for the whole group. This phase does not send email.
+- series registrants who are not participants, with **Add as participant**. That adds them to the initiative roster as `JOINED` when they are not already on it.
+
+Later cycles on the same topic reuse the series. A new Small Group can copy participants from an earlier one. Teardown still includes a step to review who should stay registered. Because AIRA won't run unrelated meetings in the same series while a Small Group is active, sharing the series across cycles does not conflict with other uses.
 
 ### Checklists
 
@@ -209,18 +222,20 @@ None of this needs approval or affects any other checklist. It should feel as li
 
 | Check code | What InteropHub looks at |
 |---|---|
-| `org-representation` | Committed organizations and their types; whether an IIS/jurisdiction is present; at least 3 organizations |
-| `orgs-need-contact` | Interested or committed organizations with no joined contact |
-| `topic-champion` | The relevant topic has a `CHAMPION` |
-| `members-follow-primary-topic` | Joined initiative members who don't follow the primary topic |
+| `org-representation` | Committed organizations and their types; whether an IIS/jurisdiction is present; at least 3 organizations. On a Small Group checklist, only committed organizations that have an active participant in that Small Group. |
+| `orgs-need-contact` | Interested or committed organizations with no joined contact. On a Small Group checklist, interested or committed organizations with no active participant in that Small Group. |
+| `topic-champion` | The initiative's primary topic has a `CHAMPION`. The same check on a Small Group checklist. |
+| `members-follow-primary-topic` | Joined initiative members who don't follow the primary topic. The same check on a Small Group checklist. |
 | `series-exists` | The Small Group topic has an active meeting series |
-| `members-registered-for-series` | Joined initiative members not registered for the Small Group's series |
-| `members-follow-topic` | Series registrants who don't follow the Small Group topic |
-| `meetings-scheduled` | Meetings in the series between the cycle start and closeout dates |
+| `members-registered-for-series` | Small Group participants who are not registered for the series |
+| `members-follow-topic` | Small Group participants with an email who don't follow the Small Group topic |
+| `meetings-scheduled` | Meetings in the series, other than cancelled ones, between the cycle start and closeout dates |
 | `agenda-topics-linked` | Agenda items in the cycle's meetings that are linked to a topic |
 | `notes-finalized` | Cycle meetings more than 7 days old without published notes |
-| `orientation-bundle` | The topic has a Topic Orientation bundle |
-| `technical-bundle` | A Starter Packet snapshot was created for the topic during the cycle |
+| `orientation-bundle` | The Small Group topic has a Topic Orientation bundle |
+| `technical-bundle` | A published Starter Packet snapshot was created for the Small Group topic during the cycle |
+
+Hints only report what they find. They never mark an item done. `topic-champion` and `members-follow-primary-topic` keep their initiative meaning on a Small Group checklist. The two organization checks above are the ones that narrow to the Small Group.
 
 New checks can be added over time. A template item that names a check InteropHub doesn't know simply shows no hint.
 
@@ -349,6 +364,13 @@ Table names use the `es_` prefix, because initiatives sit in the same area as to
 - `primary_product_areas` (e.g. a comma list of `GUIDANCE`, `TESTS`, `SOFTWARE`), `charter_url`
 - `created_by_user_id`, `created_at`, `updated_at`
 
+**`es_small_group_participant`**
+- `es_small_group_participant_id`, `es_small_group_id`, `es_initiative_member_id`
+- `participant_role` (free text, nullable: a role or a team)
+- `participant_status` (`ACTIVE`, `REMOVED`)
+- `created_by_user_id`, `created_at`, `updated_at`
+- unique on (`es_small_group_id`, `es_initiative_member_id`)
+
 **`es_checklist_template`**
 - `es_checklist_template_id`, `template_kind` (`INITIATIVE`, `SMALL_GROUP`), `version_no`, `title`
 - `source_markdown`, `is_current`
@@ -396,7 +418,8 @@ Status columns are stored as varchar codes, not MySQL enums, so the lists can ch
 | **Initiative workspace** | Managers | Overview, Roster, Small Groups, Checklist, Settings |
 | **Roster: Organizations** | Managers | Each organization with its status, type, contacts and "needs a contact" flag; add organization; change status with a note; representation summary |
 | **Roster: People** | Managers | Filter by status, organization and organization type; add person (organization type-ahead with add-new); change status with a note; import from xlsx/CSV; pull from primary-topic followers; "doesn't follow primary topic" flag |
-| **Small Group page** | Managers | Cycle details, link to the topic and its series, list of series registrants (read from the series), checklist |
+| **Small Groups** | Managers | Compact list: name, topic, status, cycle dates, participant count. New Small Group defaults the topic to the primary topic and chooses a series from that topic. If the topic has no series, the page says so and links to the existing series admin. |
+| **Small Group page** | Managers | Topic and series links, status change with a note, cycle dates, product areas, charter, participant list, series comparison with copyable registration links, checklist, timeline |
 | **Checklist** (initiative or Small Group) | Managers | Items grouped by phase, status, due dates, hints, timeline per item; spreadsheet-style inline add, edit, remove, restore and reorder; template-upgrade preview; download as template Markdown |
 | **Checklist templates** | Global admins | Upload Markdown, see versions, download source, template-feedback view |
 | **Primary topic page** | Everyone | Banner for a listed initiative: "Part of *X* — learn more / join" |
@@ -438,10 +461,12 @@ This replaces Sabrina's spreadsheet and the Stakeholder Matrix, and doesn't touc
 
 ### Phase 3: Small Groups
 
-- `es_small_group`, linked to a topic and series.
-- Small Group checklists.
-- Reading series registrants onto the Small Group page.
-- Checklist hints that read topic, series, meeting and note data.
+- `es_small_group` and `es_small_group_participant`. `es_checklist.es_small_group_id` links the Small Group checklist.
+- Staff add participants from the roster, or add a new person onto the roster and the Small Group together. Adding someone who is not `JOINED` marks them `JOINED` and follows the Small Group topic when they have an email or a linked account. Removing a participant does not unfollow the topic.
+- The Small Group page compares participants with series registrants. It offers a copyable registration link and **Add as participant**. It does not send email and does not change series membership.
+- A new Small Group can copy participants from an earlier one. Later cycles reuse the topic's series.
+- The Small Group checklist is copied from the current `SMALL_GROUP` template when the Small Group is created. Due dates use `cycle-start`, `working-day`, and `closeout`. Template upgrade and download work the same way as for an initiative.
+- Checklist hints read the participant list, the series, meetings, agendas, notes, the Topic Orientation bundle, and Starter Packet snapshots. They never mark an item done.
 
 ### Phase 4: Public listing and joining
 
@@ -461,7 +486,7 @@ This replaces Sabrina's spreadsheet and the Stakeholder Matrix, and doesn't touc
 - **Topic-roles email split.** The full following rules depend on separating email preference from the topic relationship (`docs/topic-roles-implementation-prompt.md`). Phase 1 uses the interim flag described under **Following rules**.
 - **Stakeholder Matrix.** Proposed: move it into InteropHub as the initiative roster. Get its current columns from Smartsheet to confirm the roster covers them and to shape the import.
 - **Initiative checklist content.** The Small Group template comes from the roadmap's operating checklist. The initiative template draws on the Indiana project plan's generic steps and will be corrected by Sabrina after using it.
-- **Staff-added series members and following.** Confirm that adding someone to a meeting series through admin pages creates a topic follow, as self-registration does.
+- **Series membership stays in the meeting tools.** Phase 3 reads registrants and does not add or remove them. Whether an admin-added series member follows the topic is unchanged.
 
 ## Design Principles
 
