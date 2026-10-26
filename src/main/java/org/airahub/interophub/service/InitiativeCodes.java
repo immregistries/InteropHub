@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 
 public final class InitiativeCodes {
 
-    public static final Set<String> RESERVED = Set.of("new");
+    public static final Set<String> RESERVED = Set.of("new", "templates");
 
     private static final Pattern CODE = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
 

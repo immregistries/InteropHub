@@ -37,6 +37,7 @@ final class InitiativePageRenderer {
         chip(out, contextPath, code, "", "Overview", active);
         chip(out, contextPath, code, "/organizations", "Organizations", active);
         chip(out, contextPath, code, "/people", "People", active);
+        chip(out, contextPath, code, "/checklist", "Checklist", active);
         if (canEdit) {
             chip(out, contextPath, code, "/import", "Import", active);
         }
@@ -70,8 +71,12 @@ final class InitiativePageRenderer {
         out.println("        <p class=\"aira-meta\">Efforts you can manage. Listed initiatives are not public yet.</p>");
         out.println("      </div>");
         if (admin) {
-            out.println("        <a class=\"aira-button aira-button--primary\" href=\""
+            out.println("        <div class=\"aira-cluster\">");
+            out.println("          <a class=\"aira-button aira-button--secondary\" href=\""
+                    + InitiativeHtml.esc(contextPath + "/es/initiatives/templates") + "\">Templates</a>");
+            out.println("          <a class=\"aira-button aira-button--primary\" href=\""
                     + InitiativeHtml.esc(contextPath + "/es/initiatives/new") + "\">New initiative</a>");
+            out.println("        </div>");
         }
         out.println("      </div>");
         if (initiatives.isEmpty()) {
@@ -775,13 +780,13 @@ final class InitiativePageRenderer {
         out.println("        </form></dialog>");
     }
 
-    private static void dialogStart(PrintWriter out, String id, String title, FormInput input) {
+    static void dialogStart(PrintWriter out, String id, String title, FormInput input) {
         String open = id.equals(input.openDialog()) ? " data-open-on-load" : "";
         out.println("      <dialog class=\"aira-dialog\" id=\"" + id + "\" aria-labelledby=\"" + id + "-title\"" + open
                 + ">");
     }
 
-    private static void dialogActions(PrintWriter out, String id, String submitLabel) {
+    static void dialogActions(PrintWriter out, String id, String submitLabel) {
         out.println("          <div class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\">");
         out.println("            <button class=\"aira-button aira-button--ghost\" type=\"button\" data-dialog-close=\""
                 + id + "\">Cancel</button>");
@@ -1008,7 +1013,7 @@ final class InitiativePageRenderer {
         out.println("      </div>");
     }
 
-    private static void timeline(PrintWriter out, String postUrl, List<EsInitiativeTimelineEntry> entries,
+    static void timeline(PrintWriter out, String postUrl, List<EsInitiativeTimelineEntry> entries,
             Map<Long, String> userNames, User viewer, boolean canComment, EsInitiativeTimelineEntry.SubjectType type,
             Long subjectId, FormInput input) {
         if (entries.isEmpty()) {
@@ -1127,7 +1132,7 @@ final class InitiativePageRenderer {
         return participation == null ? null : organizations.get(participation.getOrganizationId());
     }
 
-    private static void formError(PrintWriter out, FormInput input, String action) {
+    static void formError(PrintWriter out, FormInput input, String action) {
         if (!input.failed(action)) {
             return;
         }

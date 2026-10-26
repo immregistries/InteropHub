@@ -108,6 +108,10 @@
     <mapping class="org.airahub.interophub.model.EsInitiativeOrganization"/>
     <mapping class="org.airahub.interophub.model.EsInitiativeMember"/>
     <mapping class="org.airahub.interophub.model.EsInitiativeTimelineEntry"/>
+    <mapping class="org.airahub.interophub.model.EsChecklistTemplate"/>
+    <mapping class="org.airahub.interophub.model.EsChecklistTemplateItem"/>
+    <mapping class="org.airahub.interophub.model.EsChecklist"/>
+    <mapping class="org.airahub.interophub.model.EsChecklistItem"/>
     <mapping class="org.airahub.interophub.model.Supporter"/>
     <mapping class="org.airahub.interophub.model.EsTopicSupporter"/>
     <mapping class="org.airahub.interophub.model.DigestRunState"/>

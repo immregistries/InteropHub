@@ -17,6 +17,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.airahub.interophub.model.EsChecklist;
+import org.airahub.interophub.model.EsChecklistItem;
+import org.airahub.interophub.model.EsChecklistTemplate;
 import org.airahub.interophub.model.EsInitiative;
 import org.airahub.interophub.model.EsInitiativeLink;
 import org.airahub.interophub.model.EsInitiativeManager;
@@ -28,6 +31,10 @@ import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.Organization;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.ChecklistFeedback;
+import org.airahub.interophub.service.ChecklistHints;
+import org.airahub.interophub.service.ChecklistMerge;
+import org.airahub.interophub.service.ChecklistService;
 import org.airahub.interophub.service.InitiativeAccess;
 import org.airahub.interophub.service.InitiativeImport;
 import org.airahub.interophub.service.InitiativeRosterRules;
@@ -43,6 +50,7 @@ public class EsInitiativeServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService = new AuthFlowService();
     private final InitiativeService initiatives = new InitiativeService();
+    private final ChecklistService checklists = new ChecklistService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -52,6 +60,17 @@ public class EsInitiativeServlet extends HttpServlet {
             return;
         }
         String[] parts = parts(request);
+        if (parts.length > 0 && "templates".equals(parts[0])) {
+            if (!InitiativeAccess.canManageTemplates(authFlowService.isAdminUser(user))) {
+                renderMissing(request, response);
+                return;
+            }
+            if (serveTemplateDownload(request, response, parts)) {
+                return;
+            }
+            renderTemplates(request, response, parts, FormInput.none(), null);
+            return;
+        }
         if (parts.length == 0) {
             renderList(request, response, user);
             return;
@@ -74,6 +93,14 @@ public class EsInitiativeServlet extends HttpServlet {
             suggest(request, response, initiative, level);
             return;
         }
+        if (parts.length == 3 && "checklist".equals(parts[1]) && "download".equals(parts[2])) {
+            String markdown = checklists.download(initiative);
+            response.setContentType("text/markdown;charset=UTF-8");
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + initiative.getInitiativeCode()
+                    + "-checklist.md\"");
+            response.getWriter().write(markdown);
+            return;
+        }
         renderCurrent(request, response, user, initiative, level, parts, FormInput.none());
     }
 
@@ -86,6 +113,26 @@ public class EsInitiativeServlet extends HttpServlet {
         }
         String[] parts = parts(request);
         try {
+            if (parts.length > 0 && "templates".equals(parts[0])) {
+                if (!InitiativeAccess.canManageTemplates(authFlowService.isAdminUser(user))) {
+                    renderMissing(request, response);
+                    return;
+                }
+                String action = param(request, "action");
+                if ("save-template".equals(action)) {
+                    checklists.saveUpload(user, param(request, "markdown"));
+                    flash(request, "success", "Template saved.");
+                    response.sendRedirect(request.getContextPath() + "/es/initiatives/templates");
+                } else {
+                    ChecklistService.TemplatePreview preview = checklists.previewUpload(param(request, "markdown"));
+                    if (!preview.ok()) {
+                        throw new IllegalArgumentException(preview.errorText());
+                    }
+                    renderTemplates(request, response, parts, FormInput.replay(request, "preview-template", null, null),
+                            preview);
+                }
+                return;
+            }
             if (parts.length == 1 && "new".equals(parts[0])) {
                 if (!authFlowService.isAdminUser(user)) {
                     renderMissing(request, response);
@@ -130,6 +177,11 @@ public class EsInitiativeServlet extends HttpServlet {
             }
             redirect(response, request, initiative, redirectAfter(parts, action));
         } catch (IllegalArgumentException ex) {
+            if (parts.length > 0 && "templates".equals(parts[0])) {
+                renderTemplates(request, response, parts,
+                        FormInput.replay(request, param(request, "action"), ex.getMessage(), null), null);
+                return;
+            }
             if (parts.length == 1 && "new".equals(parts[0])) {
                 renderCreate(request, response, FormInput.replay(request, "create", ex.getMessage(), null));
                 return;
@@ -142,7 +194,7 @@ public class EsInitiativeServlet extends HttpServlet {
             }
             String action = param(request, "action");
             renderCurrent(request, response, user, initiative, level, parts,
-                    FormInput.replay(request, action == null ? "" : action, ex.getMessage(), dialogFor(parts, action)));
+                    FormInput.replay(request, action == null ? "" : action, ex.getMessage(), dialogFor(request, parts, action)));
         } catch (RuntimeException ex) {
             LOGGER.log(Level.SEVERE, "Initiative update failed", ex);
             flash(request, "danger", "Could not save that change.");
@@ -256,6 +308,57 @@ public class EsInitiativeServlet extends HttpServlet {
                         + result.organizationsAdded() + " organizations.");
                 yield null;
             }
+            case "start-checklist" -> {
+                checklists.startChecklist(initiative);
+                yield null;
+            }
+            case "item-status" -> {
+                checklists.setStatus(user, initiative, longParam(request, "itemId"),
+                        enumParam(EsChecklistItem.Status.class, param(request, "itemStatus")), param(request, "note"));
+                yield null;
+            }
+            case "add-item", "add-phase" -> {
+                checklists.addItem(user, initiative, param(request, "phase"), param(request, "title"),
+                        param(request, "guidance"), longParam(request, "afterItemId"));
+                yield null;
+            }
+            case "edit-item" -> {
+                checklists.editItem(user, initiative, longParam(request, "itemId"), param(request, "title"),
+                        param(request, "guidance"));
+                yield null;
+            }
+            case "remove-item" -> {
+                checklists.removeItem(user, initiative, longParam(request, "itemId"));
+                yield null;
+            }
+            case "restore-item" -> {
+                checklists.restoreItem(user, initiative, longParam(request, "itemId"));
+                yield null;
+            }
+            case "move-item" -> {
+                checklists.move(initiative, longParam(request, "itemId"), param(request, "direction"));
+                yield null;
+            }
+            case "reorder-item" -> {
+                checklists.reorder(initiative, longParam(request, "itemId"), longParam(request, "beforeItemId"));
+                yield null;
+            }
+            case "rename-phase" -> {
+                checklists.renamePhase(initiative, param(request, "fromPhase"), param(request, "toPhase"));
+                yield null;
+            }
+            case "assign-item" -> {
+                checklists.assign(user, initiative, longParam(request, "itemId"), longParam(request, "assignedUserId"));
+                yield null;
+            }
+            case "due-override" -> {
+                checklists.setDueOverride(user, initiative, longParam(request, "itemId"), dateParam(request, "dueDate"));
+                yield null;
+            }
+            case "apply-upgrade" -> {
+                checklists.applyUpgrade(user, initiative);
+                yield null;
+            }
             default -> throw new IllegalArgumentException("That action is not recognized.");
         };
     }
@@ -309,6 +412,15 @@ public class EsInitiativeServlet extends HttpServlet {
                     return;
                 }
                 renderImport(request, response, user, initiative, input);
+            }
+            case "checklist" -> {
+                if (parts.length == 3 && "upgrade".equals(parts[2])) {
+                    renderUpgrade(request, response, initiative, level, input);
+                } else if (parts.length == 2) {
+                    renderChecklist(request, response, user, initiative, level, input);
+                } else {
+                    renderMissing(request, response);
+                }
             }
             default -> renderMissing(request, response);
         }
@@ -532,6 +644,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 .applicationSubtitle("Initiatives")
                 .mainClass("aira-main")
                 .addLocalStylesheet("/css/initiative-org.css")
+                .addLocalStylesheet("/css/initiative-checklist.css")
                 .context(InteropAiraPageFactory.topicsMeetingsContext("InteropHub", null, false, false))
                 .build();
         String kind = null;
@@ -559,6 +672,8 @@ public class EsInitiativeServlet extends HttpServlet {
                     + "/js/initiative-dialogs.js\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
                     + "/js/initiative-org-typeahead.js\"></script>");
+            out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
+                    + "/js/initiative-checklist.js\"></script>");
             page.writeEnd(out);
         }
     }
@@ -656,6 +771,9 @@ public class EsInitiativeServlet extends HttpServlet {
         if (parts.length <= 1 || "overview".equals(parts[1])) {
             return "";
         }
+        if ("apply-upgrade".equals(action)) {
+            return "/checklist";
+        }
         String suffix = "/" + parts[1];
         if (parts.length > 2 && ("organizations".equals(parts[1]) || "people".equals(parts[1]))) {
             suffix += "/" + parts[2];
@@ -663,7 +781,7 @@ public class EsInitiativeServlet extends HttpServlet {
         return suffix;
     }
 
-    private String dialogFor(String[] parts, String action) {
+    private String dialogFor(HttpServletRequest request, String[] parts, String action) {
         boolean organizationList = parts.length == 2 && "organizations".equals(parts[1]);
         boolean peopleList = parts.length == 2 && "people".equals(parts[1]);
         return switch (action == null ? "" : action) {
@@ -673,8 +791,167 @@ public class EsInitiativeServlet extends HttpServlet {
             case "member-status" -> peopleList ? "change-member-status" : null;
             case "add-manager" -> "add-manager";
             case "add-link" -> "add-link";
+            case "add-item" -> "add-item";
+            case "add-phase" -> "add-phase";
+            case "edit-item", "item-status", "due-override", "assign-item" -> itemDialog(request);
+            case "comment", "edit-comment" -> "CHECKLIST_ITEM".equals(param(request, "subjectType"))
+                    ? "item-" + param(request, "subjectId") : null;
             default -> null;
         };
+    }
+
+    private String itemDialog(HttpServletRequest request) {
+        String itemId = param(request, "itemId");
+        return itemId == null || itemId.isBlank() ? null : "item-" + itemId;
+    }
+
+    private void renderChecklist(HttpServletRequest request, HttpServletResponse response, User user,
+            EsInitiative initiative, InitiativeAccess.Level level, FormInput input) throws IOException {
+        EsChecklist checklist = checklists.findForInitiative(initiative.getEsInitiativeId()).orElse(null);
+        List<EsChecklistItem> items = checklist == null ? List.of() : checklists.items(checklist.getEsChecklistId());
+        List<EsInitiativeManager> managers = initiatives.managers(initiative.getEsInitiativeId());
+        Map<Long, String> names = managerNames(managers);
+        Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline = new HashMap<>();
+        List<EsInitiativeTimelineEntry> itemEntries = initiatives.timelineForInitiative(initiative.getEsInitiativeId(),
+                EsInitiativeTimelineEntry.SubjectType.CHECKLIST_ITEM);
+        for (EsInitiativeTimelineEntry entry : itemEntries) {
+            itemTimeline.computeIfAbsent(entry.getSubjectId(), key -> new ArrayList<>()).add(entry);
+        }
+        names.putAll(names(itemEntries));
+        List<EsInitiativeTimelineEntry> checklistEntries = checklist == null ? List.of()
+                : initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.CHECKLIST, checklist.getEsChecklistId());
+        names.putAll(names(checklistEntries));
+        boolean upgrade = checklists.upgradeAvailable(initiative, checklist);
+        int availableVersion = checklist == null ? 0
+                : checklists.currentTemplate(checklist.getTemplateKind()).map(EsChecklistTemplate::getVersionNo).orElse(0);
+        page(request, response, initiative.getInitiativeName() + " checklist - InteropHub", initiative, "checklist",
+                input, out -> ChecklistPageRenderer.checklist(out, request.getContextPath(), initiative, checklist, items,
+                        managers, names, itemTimeline, checklistEntries, user, hintFacts(initiative),
+                        InitiativeAccess.canEditChecklist(level), upgrade, availableVersion,
+                        "1".equals(param(request, "removed")), input));
+    }
+
+    private void renderUpgrade(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
+            InitiativeAccess.Level level, FormInput input) throws IOException {
+        if (!InitiativeAccess.canEditChecklist(level)) {
+            redirect(response, request, initiative, "/checklist");
+            return;
+        }
+        EsChecklist checklist = checklists.findForInitiative(initiative.getEsInitiativeId()).orElse(null);
+        if (checklist == null || !checklists.upgradeAvailable(initiative, checklist)) {
+            redirect(response, request, initiative, "/checklist");
+            return;
+        }
+        EsChecklistTemplate next = checklists.currentTemplate(checklist.getTemplateKind()).orElseThrow();
+        EsChecklistTemplate applied = checklists.findTemplate(checklist.getAppliedEsChecklistTemplateId()).orElse(null);
+        int fromVersion = applied == null ? 0 : applied.getVersionNo();
+        ChecklistMerge.Result result = checklists.previewUpgrade(initiative);
+        boolean canApply = initiative.getStatus() != EsInitiative.Status.CLOSED
+                && initiative.getStatus() != EsInitiative.Status.ARCHIVED;
+        page(request, response, "Template upgrade - InteropHub", initiative, "checklist", input,
+                out -> ChecklistPageRenderer.upgrade(out, request.getContextPath(), initiative, fromVersion, next,
+                        result, canApply));
+    }
+
+    private void renderTemplates(HttpServletRequest request, HttpServletResponse response, String[] parts,
+            FormInput input, ChecklistService.TemplatePreview preview) throws IOException {
+        if (parts.length >= 3 && "feedback".equals(parts[1])) {
+            EsChecklistTemplate.Kind kind;
+            try {
+                kind = EsChecklistTemplate.Kind.valueOf(parts[2]);
+            } catch (IllegalArgumentException ex) {
+                renderMissing(request, response);
+                return;
+            }
+            ChecklistFeedback.Report report = checklists.feedback(kind);
+            page(request, response, kind.name() + " template feedback - InteropHub", null, null, input,
+                    out -> ChecklistPageRenderer.feedback(out, request.getContextPath(), kind, report));
+            return;
+        }
+        if (parts.length >= 2 && !"feedback".equals(parts[1])) {
+            Long id = pathId(parts[1]);
+            EsChecklistTemplate template = id == null ? null : checklists.findTemplate(id).orElse(null);
+            if (template == null) {
+                renderMissing(request, response);
+                return;
+            }
+            page(request, response, template.getTitle() + " - InteropHub", null, null, input,
+                    out -> ChecklistPageRenderer.templateSource(out, request.getContextPath(), template));
+            return;
+        }
+        page(request, response, "Checklist templates - InteropHub", null, null, input,
+                out -> ChecklistPageRenderer.templates(out, request.getContextPath(), checklists.templates(), preview,
+                        input));
+    }
+
+    private boolean serveTemplateDownload(HttpServletRequest request, HttpServletResponse response, String[] parts)
+            throws IOException {
+        if (parts.length == 3 && "download".equals(parts[2])) {
+            Long id = pathId(parts[1]);
+            EsChecklistTemplate template = id == null ? null : checklists.findTemplate(id).orElse(null);
+            if (template == null) {
+                renderMissing(request, response);
+                return true;
+            }
+            response.setContentType("text/markdown;charset=UTF-8");
+            response.setHeader("Content-Disposition", "attachment; filename=\"" + template.getTemplateKind().name()
+                    .toLowerCase(java.util.Locale.US) + "-v" + template.getVersionNo() + ".md\"");
+            response.getWriter().write(template.getSourceMarkdown());
+            return true;
+        }
+        return false;
+    }
+
+    private ChecklistHints.Facts hintFacts(EsInitiative initiative) {
+        List<EsInitiativeOrganization> participations = initiatives.organizations(initiative.getEsInitiativeId());
+        Map<Long, Organization> organizations = indexOrganizations(participations);
+        List<EsInitiativeMember> members = initiatives.members(initiative.getEsInitiativeId());
+        List<String> committedTypes = new ArrayList<>();
+        int needingContact = 0;
+        for (EsInitiativeOrganization participation : participations) {
+            Organization organization = organizations.get(participation.getOrganizationId());
+            boolean committed = participation.getParticipationStatus()
+                    == EsInitiativeOrganization.ParticipationStatus.COMMITTED;
+            boolean interested = participation.getParticipationStatus()
+                    == EsInitiativeOrganization.ParticipationStatus.INTERESTED;
+            if (committed && organization != null) {
+                committedTypes.add(organization.getOrganizationType());
+            }
+            if (committed || interested) {
+                boolean joined = false;
+                for (EsInitiativeMember member : members) {
+                    if (participation.getEsInitiativeOrganizationId().equals(member.getEsInitiativeOrganizationId())
+                            && member.getMemberStatus() == EsInitiativeMember.MemberStatus.JOINED) {
+                        joined = true;
+                    }
+                }
+                if (!joined) {
+                    needingContact++;
+                }
+            }
+        }
+        List<EsSubscription> follows = initiatives.activePrimaryTopicFollows(initiative);
+        int missing = 0;
+        for (EsInitiativeMember member : members) {
+            if (!initiatives.followsPrimaryTopic(initiative, member, follows)) {
+                missing++;
+            }
+        }
+        return new ChecklistHints.Facts(InitiativeRosterRules.summarize(committedTypes), needingContact,
+                initiatives.primaryTopicHasChampion(initiative), missing);
+    }
+
+    private Map<Long, String> managerNames(List<EsInitiativeManager> managers) {
+        Set<Long> ids = new HashSet<>();
+        for (EsInitiativeManager manager : managers) {
+            ids.add(manager.getUserId());
+        }
+        Map<Long, String> names = new HashMap<>();
+        for (User manager : initiatives.usersByIds(ids)) {
+            String label = manager.getFullName();
+            names.put(manager.getUserId(), label == null || label.isBlank() ? manager.getEmail() : label);
+        }
+        return names;
     }
 
     private Long pathId(String raw) {

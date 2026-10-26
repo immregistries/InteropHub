@@ -11,6 +11,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.airahub.interophub.dao.EsChecklistDao;
+import org.airahub.interophub.dao.EsChecklistItemDao;
 import org.airahub.interophub.dao.EsInitiativeDao;
 import org.airahub.interophub.dao.EsInitiativeLinkDao;
 import org.airahub.interophub.dao.EsInitiativeManagerDao;
@@ -50,6 +52,8 @@ public class InitiativeService {
     private final EsInitiativeOrganizationDao initiativeOrganizationDao;
     private final EsInitiativeMemberDao memberDao;
     private final EsInitiativeTimelineEntryDao timelineDao;
+    private final EsChecklistDao checklistDao;
+    private final EsChecklistItemDao checklistItemDao;
     private final OrganizationDao organizationDao;
     private final EsTopicDao topicDao;
     private final UserDao userDao;
@@ -64,6 +68,8 @@ public class InitiativeService {
         this.initiativeOrganizationDao = new EsInitiativeOrganizationDao();
         this.memberDao = new EsInitiativeMemberDao();
         this.timelineDao = new EsInitiativeTimelineEntryDao();
+        this.checklistDao = new EsChecklistDao();
+        this.checklistItemDao = new EsChecklistItemDao();
         this.organizationDao = new OrganizationDao();
         this.topicDao = new EsTopicDao();
         this.userDao = new UserDao();
@@ -208,6 +214,7 @@ public class InitiativeService {
         addPlanned(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.INITIATIVE,
                 initiative.getEsInitiativeId(), actor,
                 InitiativeRosterRules.planStatusUpdate(null, status.name(), null), EsInitiative.Status::labelOf);
+        new ChecklistService().copyCurrentIfPresent(initiative, actor);
         return initiative;
     }
 
@@ -675,6 +682,10 @@ public class InitiativeService {
         return false;
     }
 
+    public boolean primaryTopicHasChampion(EsInitiative initiative) {
+        return !subscriptionDao.findChampionOnlyByTopicId(initiative.getPrimaryEsTopicId()).isEmpty();
+    }
+
     public List<EsSubscription> activePrimaryTopicFollows(EsInitiative initiative) {
         return subscriptionDao.findActiveByTopicId(initiative.getPrimaryEsTopicId());
     }
@@ -834,6 +845,13 @@ public class InitiativeService {
                     .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
                     .isPresent();
             case MEMBER -> memberDao.findById(subjectId)
+                    .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
+                    .isPresent();
+            case CHECKLIST -> checklistDao.findById(subjectId)
+                    .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
+                    .isPresent();
+            case CHECKLIST_ITEM -> checklistItemDao.findById(subjectId)
+                    .flatMap(item -> checklistDao.findById(item.getEsChecklistId()))
                     .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
                     .isPresent();
             default -> false;
