@@ -37,9 +37,17 @@ public final class InitiativeAccess {
         return level != null && level != Level.NONE;
     }
 
-    /** Members, organizations, import, and comments. */
+    /** Members, organizations, import, comments, and the checklist. */
     public static boolean canEditRoster(Level level) {
         return level == Level.EDIT || level == Level.ADMIN;
+    }
+
+    public static boolean canEditChecklist(Level level) {
+        return canEditRoster(level);
+    }
+
+    public static boolean canManageTemplates(boolean globalAdmin) {
+        return globalAdmin;
     }
 
     /** Initiative settings, managers, and links. */
