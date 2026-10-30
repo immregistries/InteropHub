@@ -30,6 +30,25 @@ class CommunicationBundleComponentRendererTest {
     }
 
     @Test
+    void narrativeRendersStoredTextAndOmitsEmptyComponents() {
+        var text = component(1L, EsCommunicationBundleTemplateComponent.Kind.TEXT);
+        var value = new EsCommunicationBundleComponentValue();
+        value.setComponentId(1L);
+        value.setContentText("<b>Hello</b>");
+        var writer = new StringWriter();
+        CommunicationBundleComponentRenderer.narrative(new PrintWriter(writer),
+                content(List.of(text), List.of(value), List.of(), List.of()));
+        String html = writer.toString();
+        assertTrue(html.contains("&lt;b&gt;Hello&lt;/b&gt;"));
+        assertFalse(html.contains("<textarea"));
+        value.setContentText("  ");
+        writer = new StringWriter();
+        CommunicationBundleComponentRenderer.narrative(new PrintWriter(writer),
+                content(List.of(text), List.of(value), List.of(), List.of()));
+        assertEquals("", writer.toString());
+    }
+
+    @Test
     void valueEditorUsesTheFieldKindAndRequiredFlag() {
         var text = component(1L, EsCommunicationBundleTemplateComponent.Kind.TEXT);
         text.setRequired(true);

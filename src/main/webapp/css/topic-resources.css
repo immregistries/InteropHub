@@ -1,0 +1,32 @@
+/* Topic Resources editor hooks. Read mode is the default when JavaScript runs;
+   without it, narrative sections stay editable inside the single save form. */
+
+html:not([data-topic-resources="js"]) [data-narrative-read] {
+  display: none;
+}
+
+html[data-topic-resources="js"] [data-narrative-editor],
+html[data-topic-resources="js"] [data-narrative-actions] {
+  display: none;
+}
+
+html[data-topic-resources="js"] [data-narrative-section].is-editing [data-narrative-read] {
+  display: none;
+}
+
+html[data-topic-resources="js"] [data-narrative-section].is-editing [data-narrative-editor] {
+  display: block;
+}
+
+html[data-topic-resources="js"] [data-narrative-form].is-editing [data-narrative-actions] {
+  display: flex;
+  gap: var(--aira-space-2);
+}
+
+html[data-topic-resources="js"] [data-add-panel] {
+  display: none;
+}
+
+html[data-topic-resources="js"] [data-add-panel].is-selected {
+  display: block;
+}

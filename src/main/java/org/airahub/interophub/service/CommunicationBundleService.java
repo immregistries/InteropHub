@@ -4,9 +4,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.airahub.interophub.dao.EsCommunicationBundleDao;
 import org.airahub.interophub.dao.EsCommunicationBundleComponentValueDao;
@@ -55,6 +62,8 @@ public class CommunicationBundleService {
             this(resource, file, null);
         }
     }
+
+    public record LibraryAddition(EsTopicResource resource, String roleName) { }
 
     public record OrientationResources(EsCommunicationBundle bundle,
             List<EsCommunicationBundleTemplateComponent> components,
@@ -257,7 +266,50 @@ public class CommunicationBundleService {
 
     public void selectOrientationResource(User user, Long topicId, Long componentId, Long resourceId) {
         EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        rejectMismatchedRole(componentId, resourceId);
         placementDao.selectResource(bundle.getBundleId(), componentId, resourceId, user.getUserId());
+    }
+
+    public LibraryAddition uploadResourceIntoRole(User user, Long topicId, InputStream input, String filename,
+            String contentType, String title, String description, String attribution, Long componentId)
+            throws IOException {
+        if (componentId == null) {
+            return new LibraryAddition(uploadResource(user, topicId, input, filename, contentType, title,
+                    description, attribution), null);
+        }
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        EsCommunicationBundleTemplateComponent component = requireResourceComponent(bundle, componentId);
+        ResourceType declared = resourceTypeForDeclared(contentType);
+        if (declared != null && !resourceFitsRole(component.getSemanticKey(), declared)) {
+            throw new IllegalArgumentException(component.getDisplayName() + " only accepts "
+                    + roleAcceptance(component.getSemanticKey()) + ".");
+        }
+        EsTopicResource resource = uploadResource(user, topicId, input, filename, contentType, title,
+                description, attribution);
+        if (!resourceFitsRole(component.getSemanticKey(), resource.getResourceType())) {
+            throw new IllegalArgumentException("The file was saved in the Topic library, but "
+                    + component.getDisplayName() + " only accepts "
+                    + roleAcceptance(component.getSemanticKey()) + ".");
+        }
+        selectOrientationResource(user, topicId, componentId, resource.getTopicResourceId());
+        return new LibraryAddition(resource, component.getDisplayName());
+    }
+
+    public LibraryAddition registerLinkIntoRole(User user, Long topicId, String url, String title,
+            String description, String attribution, Long componentId) {
+        if (componentId == null) {
+            return new LibraryAddition(registerExternalLinkResource(user, topicId, url, title, description,
+                    attribution), null);
+        }
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        EsCommunicationBundleTemplateComponent component = requireResourceComponent(bundle, componentId);
+        if (!resourceFitsRole(component.getSemanticKey(), ResourceType.EXTERNAL_LINK)) {
+            throw new IllegalArgumentException(component.getDisplayName() + " only accepts "
+                    + roleAcceptance(component.getSemanticKey()) + ".");
+        }
+        EsTopicResource resource = registerExternalLinkResource(user, topicId, url, title, description, attribution);
+        selectOrientationResource(user, topicId, componentId, resource.getTopicResourceId());
+        return new LibraryAddition(resource, component.getDisplayName());
     }
 
     public void removeOrientationResource(User user, Long topicId, Long placementId) {
@@ -447,6 +499,58 @@ public class CommunicationBundleService {
         return componentValueDao.saveEditableValue(value, component.getSemanticKey());
     }
 
+    public void saveNarrativeValues(User user, Long topicId, Long bundleId, Map<Long, String> contents) {
+        if (contents == null) {
+            throw new IllegalArgumentException("Narrative values are required.");
+        }
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        if (!bundle.getBundleId().equals(bundleId)) {
+            throw new IllegalArgumentException("The Orientation does not belong to this Topic.");
+        }
+        Map<Long, EsCommunicationBundleTemplateComponent> components = componentDao
+                .findByTemplateId(bundle.getTemplateId()).stream()
+                .collect(Collectors.toMap(EsCommunicationBundleTemplateComponent::getComponentId, component -> component));
+        Map<Long, EsCommunicationBundleComponentValue> existing = componentValueDao.findByBundleId(bundleId).stream()
+                .collect(Collectors.toMap(EsCommunicationBundleComponentValue::getComponentId, value -> value,
+                        (left, right) -> left));
+        List<EsCommunicationBundleComponentValue> changed = new ArrayList<>();
+        Map<Long, String> keys = new LinkedHashMap<>();
+        for (Map.Entry<Long, String> entry : contents.entrySet()) {
+            EsCommunicationBundleTemplateComponent component = components.get(entry.getKey());
+            if (component == null
+                    || (component.getKind() != EsCommunicationBundleTemplateComponent.Kind.TEXT
+                            && component.getKind() != EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST)) {
+                throw new IllegalArgumentException("The component is not a narrative field in this bundle's template.");
+            }
+            boolean structured = component.getKind() == EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST;
+            String text = optional(entry.getValue(), 50000);
+            if (bundle.getStatus() == EsCommunicationBundle.Status.PUBLISHED && component.isRequired() && text == null) {
+                throw new IllegalStateException(component.getDisplayName() + " is required for a published bundle.");
+            }
+            String newText = structured ? null : text;
+            String newJson = structured ? CommunicationBundleStructuredList.fromLines(text) : null;
+            EsCommunicationBundleComponentValue current = existing.get(component.getComponentId());
+            if (current == null && newText == null && newJson == null) {
+                continue;
+            }
+            if (current != null && sameNarrative(structured, current, newText, newJson)) {
+                continue;
+            }
+            EsCommunicationBundleComponentValue value = new EsCommunicationBundleComponentValue();
+            value.setBundleId(bundle.getBundleId());
+            value.setTemplateId(bundle.getTemplateId());
+            value.setComponentId(component.getComponentId());
+            value.setContentText(newText);
+            value.setContentJson(newJson);
+            value.setUpdatedByUserId(user.getUserId());
+            changed.add(value);
+            keys.put(component.getComponentId(), component.getSemanticKey());
+        }
+        if (!changed.isEmpty()) {
+            componentValueDao.saveEditableValues(changed, keys);
+        }
+    }
+
     public EsCommunicationBundleComponentValue setTextComponentValue(
             User user, Long topicId, Long bundleId, Long componentId, String content) {
         EsCommunicationBundle bundle = bundleDao.findById(bundleId)
@@ -473,11 +577,26 @@ public class CommunicationBundleService {
         return bundleDao.updateEditableSettings(bundle.getBundleId(), audience, month, year, user.getUserId());
     }
 
+    public EsCommunicationBundle saveOrientationAudience(User user, Long topicId, Audience audience) {
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        return saveOrientationSettings(user, topicId, audience, bundle.getCommunicationMonth(),
+                bundle.getCommunicationYear());
+    }
+
+    public EsCommunicationBundle markOrientationRefreshed(User user, Long topicId) {
+        EsCommunicationBundle bundle = requireEditableOrientation(user, topicId);
+        EsCommunicationBundlePurpose purpose = purposeDao.findById(bundle.getPurposeId())
+                .orElseThrow(() -> new IllegalStateException("The bundle purpose was not found."));
+        if (purpose.getMode() != EsCommunicationBundlePurpose.Mode.LIVING) {
+            throw new IllegalStateException("Only a living bundle can be marked refreshed.");
+        }
+        YearMonth current = YearMonth.now(ZoneOffset.UTC);
+        return bundleDao.updateEditableSettings(bundle.getBundleId(), bundle.getAudience(),
+                current.getMonthValue(), current.getYear(), user.getUserId());
+    }
+
     public EsCommunicationBundle publishOrientation(User user, Long topicId) {
         EsCommunicationBundle bundle = requireDraftOrientation(user, topicId);
-        if (bundle.getCommunicationMonth() == null || bundle.getCommunicationYear() == null) {
-            throw new IllegalStateException("Set the communication Month and Year before publishing.");
-        }
         if (!allowedAudiences(topicId).contains(bundle.getAudience())) {
             throw new IllegalStateException("The selected audience is broader than this Topic's visibility.");
         }
@@ -502,6 +621,17 @@ public class CommunicationBundleService {
             };
             if (!complete) {
                 throw new IllegalStateException(component.getDisplayName() + " is required before publishing.");
+            }
+        }
+        EsCommunicationBundlePurpose purpose = purposeDao.findById(bundle.getPurposeId())
+                .orElseThrow(() -> new IllegalStateException("The bundle purpose was not found."));
+        if (bundle.getCommunicationMonth() == null || bundle.getCommunicationYear() == null) {
+            if (purpose.getMode() == EsCommunicationBundlePurpose.Mode.LIVING) {
+                YearMonth current = YearMonth.now(ZoneOffset.UTC);
+                bundle = bundleDao.updateEditableSettings(bundle.getBundleId(), bundle.getAudience(),
+                        current.getMonthValue(), current.getYear(), user.getUserId());
+            } else {
+                throw new IllegalStateException("Set the communication Month and Year before publishing.");
             }
         }
         return bundleDao.publishDraft(bundle.getBundleId(), user.getUserId());
@@ -592,6 +722,84 @@ public class CommunicationBundleService {
             return null;
         }
         return value.trim();
+    }
+
+    public static boolean resourceFitsRole(String semanticKey, ResourceType type) {
+        if (type == null) {
+            return false;
+        }
+        return switch (semanticKey == null ? "" : semanticKey) {
+            case "primary_infographic" -> type == ResourceType.IMAGE;
+            case "primary_presentation" -> type == ResourceType.PRESENTATION;
+            case "one_pager" -> type == ResourceType.PDF || type == ResourceType.DOCUMENT
+                    || type == ResourceType.EXTERNAL_LINK;
+            default -> true;
+        };
+    }
+
+    public static String roleAcceptance(String semanticKey) {
+        return switch (semanticKey == null ? "" : semanticKey) {
+            case "primary_infographic" -> "an image";
+            case "primary_presentation" -> "a presentation";
+            case "one_pager" -> "a PDF, document, or link";
+            default -> "a Topic Resource";
+        };
+    }
+
+    static ResourceType resourceTypeForDeclared(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return null;
+        }
+        String type = contentType.toLowerCase(Locale.ROOT);
+        int semicolon = type.indexOf(';');
+        if (semicolon >= 0) {
+            type = type.substring(0, semicolon).trim();
+        }
+        if (Set.of("image/png", "image/jpeg", "image/webp", "image/gif").contains(type)) {
+            return ResourceType.IMAGE;
+        }
+        return switch (type) {
+            case "application/pdf" -> ResourceType.PDF;
+            case "text/plain", "application/msword",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document" -> ResourceType.DOCUMENT;
+            case "application/vnd.ms-powerpoint",
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation" ->
+                    ResourceType.PRESENTATION;
+            default -> null;
+        };
+    }
+
+    private void rejectMismatchedRole(Long componentId, Long resourceId) {
+        EsCommunicationBundleTemplateComponent component = componentDao.findById(componentId).orElse(null);
+        EsTopicResource resource = resourceId == null ? null : resourceDao.findById(resourceId).orElse(null);
+        if (component == null || resource == null || resource.getResourceType() == null) {
+            return;
+        }
+        if (!resourceFitsRole(component.getSemanticKey(), resource.getResourceType())) {
+            throw new IllegalArgumentException(component.getDisplayName() + " only accepts "
+                    + roleAcceptance(component.getSemanticKey()) + ".");
+        }
+    }
+
+    private EsCommunicationBundleTemplateComponent requireResourceComponent(EsCommunicationBundle bundle,
+            Long componentId) {
+        EsCommunicationBundleTemplateComponent component = componentDao.findById(componentId)
+                .orElseThrow(() -> new IllegalArgumentException("Choose a resource role from this Orientation."));
+        if (!bundle.getTemplateId().equals(component.getTemplateId())
+                || (component.getKind() != EsCommunicationBundleTemplateComponent.Kind.RESOURCE
+                        && component.getKind() != EsCommunicationBundleTemplateComponent.Kind.RESOURCE_COLLECTION)) {
+            throw new IllegalArgumentException("Choose a resource role from this Orientation.");
+        }
+        return component;
+    }
+
+    private static boolean sameNarrative(boolean structured, EsCommunicationBundleComponentValue current,
+            String newText, String newJson) {
+        if (structured) {
+            return CommunicationBundleStructuredList.items(current.getContentJson())
+                    .equals(CommunicationBundleStructuredList.items(newJson));
+        }
+        return Objects.equals(current.getContentText(), newText);
     }
 
     static ResourceType resourceTypeFor(StoredFile file) {

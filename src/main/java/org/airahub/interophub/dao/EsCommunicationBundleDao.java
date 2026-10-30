@@ -103,6 +103,17 @@ public class EsCommunicationBundleDao extends GenericDao<EsCommunicationBundle, 
             var transaction = session.beginTransaction();
             try {
                 EsCommunicationBundle bundle = requireDraft(session, bundleId);
+                EsCommunicationBundlePurpose purpose =
+                        session.find(EsCommunicationBundlePurpose.class, bundle.getPurposeId());
+                if (purpose != null && purpose.getMode() == EsCommunicationBundlePurpose.Mode.LIVING
+                        && (bundle.getCommunicationMonth() == null || bundle.getCommunicationYear() == null)) {
+                    java.time.YearMonth current = java.time.YearMonth.now(java.time.ZoneOffset.UTC);
+                    session.persist(EsCommunicationBundleAudit.event(bundleId, null, "DATE_UPDATED",
+                            "Communication Month/Year changed to " + current.getMonthValue() + "/"
+                                    + current.getYear() + ".", userId));
+                    bundle.setCommunicationMonth(current.getMonthValue());
+                    bundle.setCommunicationYear(current.getYear());
+                }
                 validateDate(bundle.getCommunicationMonth(), bundle.getCommunicationYear());
                 validateAudienceWithinTopic(session, bundle, bundle.getAudience());
                 validateRequiredComponents(session, bundle);

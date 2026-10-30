@@ -3,7 +3,11 @@ package org.airahub.interophub.servlet;
 import static org.junit.jupiter.api.Assertions.*;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import jakarta.servlet.http.HttpServletRequest;
 import org.airahub.interophub.model.*;
 import org.airahub.interophub.service.CommunicationBundleService.OrientationResources;
 import org.airahub.interophub.service.CommunicationBundleService.ResourceDetails;
@@ -190,16 +194,81 @@ class TopicOrientationResourceRendererTest {
                 List.of(orientation.components().get(0), orientation.components().get(1), narrative),
                 orientation.placements(), orientation.resources());
         String html = editor(orientation, List.of(resource), null);
-        assertTrue(html.contains("Published Topic Orientation"));
+        assertTrue(html.contains(">Published</span>"));
+        assertTrue(html.contains("Edits update the published Topic page immediately."));
         assertTrue(html.contains("name=\"action\" value=\"select\""));
         assertTrue(html.contains("name=\"action\" value=\"remove\""));
         assertTrue(html.contains("name=\"action\" value=\"settings\""));
-        assertTrue(html.contains("name=\"action\" value=\"text\""));
-        assertTrue(html.contains("min=\"1\" max=\"12\" required"));
-        assertTrue(html.contains("min=\"1\" max=\"9999\" required"));
-        assertTrue(html.contains("Each save updates the published Topic page immediately"));
+        assertTrue(html.contains("name=\"action\" value=\"narrative\""));
+        assertTrue(html.contains("name=\"action\" value=\"refreshDate\""));
+        assertFalse(html.contains("name=\"communicationMonth\""));
+        assertFalse(html.contains("name=\"action\" value=\"text\""));
         assertFalse(html.contains("name=\"action\" value=\"publish\""));
         assertTrue(html.contains("name=\"action\" value=\"retire\""));
+        assertTrue(html.contains("Mark as refreshed this month"));
+    }
+
+    @Test
+    void narrativeIsReadOnlyUntilEditAndReplaysAFailedSave() {
+        var narrative = new EsCommunicationBundleTemplateComponent();
+        narrative.setComponentId(30L);
+        narrative.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+        narrative.setDisplayName("What this Topic is");
+        narrative.setAuthoringPrompt("Explain the Topic.");
+        var empty = new EsCommunicationBundleTemplateComponent();
+        empty.setComponentId(31L);
+        empty.setKind(EsCommunicationBundleTemplateComponent.Kind.TEXT);
+        empty.setDisplayName("Why it matters");
+        var bundle = new EsCommunicationBundle();
+        bundle.setBundleId(10L);
+        bundle.setStatus(EsCommunicationBundle.Status.DRAFT);
+        bundle.setAudience(EsCommunicationBundlePurpose.Audience.PUBLIC);
+        var value = new EsCommunicationBundleComponentValue();
+        value.setComponentId(30L);
+        value.setContentText("Already written");
+        var orientation = new OrientationResources(bundle, List.of(narrative, empty), List.of(), List.of(),
+                List.of(value), List.of(), List.of(EsCommunicationBundlePurpose.Audience.PUBLIC));
+        String html = editor(orientation, List.of(), null);
+        assertTrue(html.contains("Already written"));
+        assertTrue(html.contains("Not written yet"));
+        assertTrue(html.contains("data-narrative-read"));
+        assertTrue(html.contains(">Edit</button>"));
+        assertEquals(1, html.split("name=\"action\" value=\"narrative\"", -1).length - 1);
+        assertTrue(html.contains("Save narrative"));
+        assertFalse(html.contains("name=\"action\" value=\"text\""));
+        FormInput replay = FormInput.replay(parameters(Map.of("action", "narrative", "content-30", "Rejected & draft")),
+                "narrative", "Narrative rejected.", "narrative");
+        String failed = editor(orientation, List.of(), null, replay);
+        assertTrue(failed.contains("is-editing"));
+        assertTrue(failed.contains("Rejected &amp; draft"));
+        assertTrue(failed.contains("Narrative rejected."));
+    }
+
+    @Test
+    void infographicRoleOffersOnlyImages() {
+        var image = resource(1L, "Picture", "image/png", "picture.png");
+        var link = resource(2L, "Link", null, null);
+        String html = editor(orientation(List.of(image, link)), List.of(image, link), null);
+        int imageDialog = html.indexOf("id=\"add-resource-20\"");
+        int linkDialog = html.indexOf("id=\"add-resource-21\"");
+        assertTrue(imageDialog >= 0 && linkDialog > imageDialog);
+        String infographic = html.substring(imageDialog, linkDialog);
+        assertTrue(infographic.contains("<option value=\"1\">"));
+        assertFalse(infographic.contains("<option value=\"2\">"));
+        assertTrue(html.substring(linkDialog).contains("<option value=\"2\">"));
+    }
+
+    @Test
+    void failedDialogActionReopensWithSubmittedValues() {
+        var link = resource(1L, "Link", null, null);
+        FormInput replay = FormInput.replay(parameters(Map.of("action", "link", "title", "Rejected title",
+                "externalUrl", "notaurl", "componentId", "21")), "link", "External URL is invalid.", "add-resource-21");
+        String html = editor(orientation(List.of(link)), List.of(link), null, replay);
+        assertTrue(html.contains("id=\"add-resource-21\""));
+        assertTrue(html.contains("data-open-on-load"));
+        assertTrue(html.contains("value=\"Rejected title\""));
+        assertTrue(html.contains("value=\"notaurl\""));
+        assertTrue(html.contains("External URL is invalid."));
     }
 
     private static String preview(OrientationResources orientation) {
@@ -211,10 +280,28 @@ class TopicOrientationResourceRendererTest {
     }
 
     private static String editor(OrientationResources orientation, List<ResourceDetails> resources, String problem) {
+        return editor(orientation, resources, problem, FormInput.none());
+    }
+
+    private static String editor(OrientationResources orientation, List<ResourceDetails> resources, String problem,
+            FormInput input) {
         StringWriter writer = new StringWriter();
-        TopicOrientationResourceRenderer.editor(new PrintWriter(writer), "/hub", 10L, "test-token",
-                orientation, resources, new StoredFileService(), problem);
+        TopicOrientationResourceRenderer.editor(new PrintWriter(writer), "/hub", 10L, "Example Topic", "test-token",
+                orientation, resources, new StoredFileService(), problem, input);
         return writer.toString();
+    }
+
+    private static HttpServletRequest parameters(Map<String, String> parameters) {
+        return (HttpServletRequest) Proxy.newProxyInstance(HttpServletRequest.class.getClassLoader(),
+                new Class<?>[] {HttpServletRequest.class}, (proxy, method, args) -> switch (method.getName()) {
+                    case "getParameter" -> parameters.get(args[0]);
+                    case "getParameterMap" -> {
+                        Map<String, String[]> values = new HashMap<>();
+                        parameters.forEach((key, value) -> values.put(key, new String[] {value}));
+                        yield values;
+                    }
+                    default -> null;
+                });
     }
 
     private static OrientationResources orientation(List<ResourceDetails> resources) {

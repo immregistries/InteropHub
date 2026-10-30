@@ -2,7 +2,9 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jakarta.servlet.ServletException;
@@ -47,7 +49,7 @@ public class EsTopicResourceServlet extends HttpServlet {
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
         EsTopic topic = authorizedTopic(request, response);
         if (topic != null) {
-            render(request, response, topic, auth.findAuthenticatedUser(request).orElseThrow(), null, null);
+            render(request, response, topic, auth.findAuthenticatedUser(request).orElseThrow(), FormInput.none());
         }
     }
 
@@ -79,12 +81,13 @@ public class EsTopicResourceServlet extends HttpServlet {
                     throw new IllegalArgumentException("Choose exactly one non-empty resource file.");
                 }
                 Part file = files.get(0);
+                CommunicationBundleService.LibraryAddition added;
                 try (var input = file.getInputStream()) {
-                    bundles.uploadResource(user, topicId, input, file.getSubmittedFileName(), file.getContentType(),
-                            request.getParameter("title"), request.getParameter("description"),
-                            request.getParameter("attribution"));
+                    added = bundles.uploadResourceIntoRole(user, topicId, input, file.getSubmittedFileName(),
+                            file.getContentType(), request.getParameter("title"), request.getParameter("description"),
+                            request.getParameter("attribution"), optionalId(request.getParameter("componentId")));
                 }
-                message = "Resource uploaded. Select it for an Orientation role below.";
+                message = placedMessage(added, "Resource uploaded.");
             } else if ("replaceResourceFile".equals(action)) {
                 var files = parts.stream().filter(p -> p.getSubmittedFileName() != null).toList();
                 if (files.size() != 1 || !"replacementFile".equals(files.get(0).getName())
@@ -98,10 +101,10 @@ public class EsTopicResourceServlet extends HttpServlet {
                 }
                 message = "Current resource file replaced. Existing Orientation placements now use the replacement.";
             } else if ("link".equals(action)) {
-                bundles.registerExternalLinkResource(user, topicId, request.getParameter("externalUrl"),
+                var added = bundles.registerLinkIntoRole(user, topicId, request.getParameter("externalUrl"),
                         request.getParameter("title"), request.getParameter("description"),
-                        request.getParameter("attribution"));
-                message = "External link added. Select it for an Orientation role below.";
+                        request.getParameter("attribution"), optionalId(request.getParameter("componentId")));
+                message = placedMessage(added, "External link added.");
             } else if ("metadata".equals(action)) {
                 bundles.updateResourceMetadata(user, topicId, id(request.getParameter("resourceId")),
                         request.getParameter("title"), request.getParameter("description"),
@@ -118,6 +121,9 @@ public class EsTopicResourceServlet extends HttpServlet {
                 bundles.setStructuredListComponentValue(user, topicId, id(request.getParameter("bundleId")),
                         id(request.getParameter("componentId")), request.getParameter("content"));
                 message = "Orientation list saved.";
+            } else if ("narrative".equals(action)) {
+                bundles.saveNarrativeValues(user, topicId, id(request.getParameter("bundleId")), narrativeValues(request));
+                message = "Orientation narrative saved.";
             } else if ("settings".equals(action)) {
                 EsCommunicationBundlePurpose.Audience audience;
                 try {
@@ -125,10 +131,11 @@ public class EsTopicResourceServlet extends HttpServlet {
                 } catch (IllegalArgumentException | NullPointerException ex) {
                     throw new IllegalArgumentException("Choose a valid Orientation audience.", ex);
                 }
-                bundles.saveOrientationSettings(user, topicId, audience,
-                        optionalInteger(request.getParameter("communicationMonth")),
-                        optionalInteger(request.getParameter("communicationYear")));
-                message = "Orientation audience and Month/Year saved.";
+                bundles.saveOrientationAudience(user, topicId, audience);
+                message = "Orientation audience saved.";
+            } else if ("refreshDate".equals(action)) {
+                bundles.markOrientationRefreshed(user, topicId);
+                message = "Orientation marked as refreshed this month.";
             } else if ("publish".equals(action)) {
                 bundles.publishOrientation(user, topicId);
                 message = "Orientation published for its selected audience.";
@@ -153,20 +160,24 @@ public class EsTopicResourceServlet extends HttpServlet {
                 throw new IllegalArgumentException("Unknown resource operation.");
             }
             request.getSession().setAttribute(flashKey(topicId), message);
-            response.sendRedirect(request.getContextPath() + "/es/topic-resources/" + topicId);
+            response.sendRedirect(request.getContextPath() + "/es/topic-resources/" + topicId + anchor(request, action));
         } catch (SecurityException ex) {
             LOGGER.log(Level.WARNING, "Topic resource access denied", ex);
             response.sendError(HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
         } catch (IllegalArgumentException | IllegalStateException ex) {
             LOGGER.log(Level.WARNING, "Topic resource request rejected", ex);
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-            render(request, response, topic, user, ex.getMessage(), null);
+            String action = request.getParameter("action");
+            render(request, response, topic, user, FormInput.replay(request, action, rejectionMessage(action, ex),
+                    dialogFor(request, action)));
         } catch (IOException | ServletException | RuntimeException ex) {
             LOGGER.log(Level.SEVERE, "Topic resource operation failed", ex);
             response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-            render(request, response, topic, user,
-                    "Resource operation failed. Check the 25 MiB limit, file format, storage permissions and server log.",
-                    null);
+            String action = request.getParameter("action");
+            render(request, response, topic, user, FormInput.replay(request, action,
+                    "Resource operation failed. Check the 25 MiB limit, file format, storage permissions and server log."
+                            + fileAgain(action),
+                    dialogFor(request, action)));
         } finally {
             for (Part part : parts) {
                 try {
@@ -200,11 +211,12 @@ public class EsTopicResourceServlet extends HttpServlet {
         return topic;
     }
 
-    private void render(HttpServletRequest request, HttpServletResponse response, EsTopic topic,
-            User user, String error, String message) throws IOException {
+    void render(HttpServletRequest request, HttpServletResponse response, EsTopic topic,
+            User user, FormInput input) throws IOException {
         var resources = bundles.listResourceDetailsForSteward(user, topic.getEsTopicId());
         var orientation = bundles.findOrientationResourcesForViewer(user, topic.getEsTopicId()).orElse(null);
-        if (message == null && request.getSession(false) != null) {
+        String message = null;
+        if (input.error() == null && request.getSession(false) != null) {
             Object flash = request.getSession(false).getAttribute(flashKey(topic.getEsTopicId()));
             if (flash instanceof String text) {
                 message = text;
@@ -216,6 +228,7 @@ public class EsTopicResourceServlet extends HttpServlet {
         var page = InteropAiraPageFactory.base(request, "Topic Resources - InteropHub")
                 .applicationSubtitle("Orientation resource management")
                 .mainClass("aira-main")
+                .addLocalStylesheet("/css/topic-resources.css?v=1")
                 .context(InteropAiraPageFactory.topicsMeetingsContext(
                         topicSpace.getSpaceName(), topicSpace.getSpaceCode(), true, false))
                 .build();
@@ -223,29 +236,22 @@ public class EsTopicResourceServlet extends HttpServlet {
         response.setHeader("Cache-Control", "no-store");
         try (PrintWriter out = response.getWriter()) {
             page.writeStart(out);
-            out.println("<div class=\"aira-container aira-stack\"><header><h1>Resources for "
-                    + TopicOrientationResourceRenderer.escape(topic.getTopicName()) + "</h1>"
-                    + "<p><a class=\"aira-inline-link\" href=\"" + request.getContextPath() + "/es/topic/"
-                    + topic.getEsTopicId() + "\">View Topic page and draft preview</a></p></header>"
-                    + "<p class=\"aira-alert aira-alert--info\">Only Topic stewards can edit Orientation content."
-                    + " Published content is shown according to its audience and the Topic's visibility.</p>");
-            if (error != null) {
-                out.println("<p class=\"aira-alert aira-alert--error\" role=\"alert\">" + TopicOrientationResourceRenderer.escape(error) + "</p>");
+            out.println("<div class=\"aira-container aira-stack\">");
+            if (input.error() != null) {
+                out.println("<p class=\"aira-alert aira-alert--error\" role=\"alert\">"
+                        + TopicOrientationResourceRenderer.escape(input.error()) + "</p>");
             }
             if (message != null) {
-                out.println("<p class=\"aira-alert aira-alert--success\" role=\"status\">" + TopicOrientationResourceRenderer.escape(message) + "</p>");
+                out.println("<p class=\"aira-alert aira-alert--success\" role=\"status\">"
+                        + TopicOrientationResourceRenderer.escape(message) + "</p>");
             }
             TopicOrientationResourceRenderer.editor(out, request.getContextPath(), topic.getEsTopicId(),
-                    CsrfTokenSupport.getOrCreateToken(request), orientation, resources,
-                    bundles.storage(), bundles.storage().writeProblem(null));
-            if (orientation != null) {
-                out.println("<details class=\"aira-section-card\"><summary>Generic bundle preview</summary>"
-                        + "<div class=\"aira-section-card__body aira-stack\">");
-                CommunicationBundleComponentRenderer.render(out, request.getContextPath(), orientation);
-                out.println("</div></details>");
-            }
+                    topic.getTopicName(), CsrfTokenSupport.getOrCreateToken(request), orientation, resources,
+                    bundles.storage(), bundles.storage().writeProblem(null), input);
             out.println("</div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
+            out.println("<script src=\"" + TopicOrientationResourceRenderer.escape(request.getContextPath())
+                    + "/js/topic-resources.js?v=1\"></script>");
             page.writeEnd(out);
         }
     }
@@ -266,14 +272,75 @@ public class EsTopicResourceServlet extends HttpServlet {
         throw new IllegalArgumentException("A positive identifier is required.");
     }
 
-    private static Integer optionalInteger(String value) {
+    private static Long optionalId(String value) {
         if (value == null || value.isBlank()) {
             return null;
         }
-        try {
-            return Integer.valueOf(value);
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException("Month and Year must be whole numbers.", ex);
+        return id(value);
+    }
+
+    private static Map<Long, String> narrativeValues(HttpServletRequest request) {
+        Map<Long, String> values = new LinkedHashMap<>();
+        request.getParameterMap().forEach((name, list) -> {
+            if (name != null && name.startsWith("content-") && list != null && list.length > 0) {
+                values.put(id(name.substring("content-".length())), list[0]);
+            }
+        });
+        return values;
+    }
+
+    private static String placedMessage(CommunicationBundleService.LibraryAddition added, String libraryMessage) {
+        if (added.roleName() == null || added.roleName().isBlank()) {
+            return libraryMessage;
         }
+        return added.resource().getTitle() + " added to " + added.roleName() + ".";
+    }
+
+    private static String rejectionMessage(String action, RuntimeException ex) {
+        String message = ex.getMessage() == null ? "The Orientation could not be saved." : ex.getMessage();
+        return message + fileAgain(action);
+    }
+
+    private static String fileAgain(String action) {
+        if (!"upload".equals(action) && !"replaceResourceFile".equals(action)) {
+            return "";
+        }
+        return " Choose the file again.";
+    }
+
+    private static String anchor(HttpServletRequest request, String action) {
+        if (action == null) {
+            return "";
+        }
+        boolean roleAction = switch (action) {
+            case "select", "remove", "moveUp", "moveDown", "context", "upload", "link" -> true;
+            default -> false;
+        };
+        if (!roleAction) {
+            return "";
+        }
+        String componentId = request.getParameter("componentId");
+        if (componentId == null || !componentId.matches("[0-9]+")) {
+            return "";
+        }
+        return "#role-" + componentId;
+    }
+
+    private static String dialogFor(HttpServletRequest request, String action) {
+        String componentId = request.getParameter("componentId");
+        String resourceId = request.getParameter("resourceId");
+        String placementId = request.getParameter("placementId");
+        return switch (action == null ? "" : action) {
+            case "narrative" -> "narrative";
+            case "settings", "refreshDate", "retire" -> "orientation-settings";
+            case "context" -> numeric(placementId) ? "context-" + placementId : null;
+            case "select", "upload", "link" -> numeric(componentId) ? "add-resource-" + componentId : "library-add";
+            case "metadata", "replaceResourceFile" -> numeric(resourceId) ? "edit-resource-" + resourceId : null;
+            default -> null;
+        };
+    }
+
+    private static boolean numeric(String value) {
+        return value != null && value.matches("[0-9]+");
     }
 }

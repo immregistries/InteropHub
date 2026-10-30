@@ -6,7 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.airahub.interophub.dao.EsCommunicationBundleDao;
 import org.airahub.interophub.dao.EsCommunicationBundleComponentValueDao;
@@ -265,6 +269,7 @@ class CommunicationBundleServiceTest {
 
         assertThrows(IllegalStateException.class,
                 () -> fixture.service().publishOrientation(fixture.steward, 10L));
+        assertNull(bundle.getCommunicationMonth());
         bundle.setCommunicationMonth(4);
         bundle.setCommunicationYear(2026);
         assertThrows(IllegalStateException.class,
@@ -434,6 +439,152 @@ class CommunicationBundleServiceTest {
                 () -> fixture.service().setTextComponentValue(fixture.steward, 30L, 40L, "Retired"));
     }
 
+    @Test
+    void publishingALivingOrientationStampsTheCurrentMonthAndASnapshotStillRequiresOne() {
+        Fixture fixture = new Fixture();
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        var bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        fixture.bundles.bundle = bundle;
+        var required = narrativeComponent(40L, EsCommunicationBundleTemplateComponent.Kind.TEXT, "introduction");
+        required.setDisplayName("Introduction");
+        required.setRequired(true);
+        fixture.components.byTemplate = List.of(required);
+        var value = new EsCommunicationBundleComponentValue();
+        value.setComponentId(40L);
+        value.setContentText("A clear introduction.");
+        fixture.componentValues.saved = value;
+
+        var published = fixture.service().publishOrientation(fixture.steward, 10L);
+        var current = java.time.YearMonth.now(java.time.ZoneOffset.UTC);
+        assertEquals(EsCommunicationBundle.Status.PUBLISHED, published.getStatus());
+        assertEquals(current.getMonthValue(), published.getCommunicationMonth());
+        assertEquals(current.getYear(), published.getCommunicationYear());
+        assertTrue(fixture.bundles.dateUpdated);
+
+        Fixture snapshot = new Fixture();
+        snapshot.purposes.purpose = Fixture.orientationPurpose();
+        snapshot.purposes.purpose.setMode(EsCommunicationBundlePurpose.Mode.SNAPSHOT);
+        var packet = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        snapshot.bundles.bundle = packet;
+        snapshot.components.byTemplate = List.of(required);
+        snapshot.componentValues.saved = value;
+        var error = assertThrows(IllegalStateException.class,
+                () -> snapshot.service().publishOrientation(snapshot.steward, 10L));
+        assertTrue(error.getMessage().contains("Month"));
+        assertNull(packet.getCommunicationMonth());
+        assertFalse(snapshot.bundles.dateUpdated);
+
+        var starter = assertThrows(IllegalStateException.class, () -> StarterPacketService.validatePublication(
+                new CommunicationBundleService.OrientationResources(new EsCommunicationBundle(), List.of(), List.of(),
+                        List.of())));
+        assertTrue(starter.getMessage().contains("Month"));
+    }
+
+    @Test
+    void markingRefreshedSetsTheCurrentMonthThroughTheDateUpdate() {
+        Fixture fixture = new Fixture();
+        fixture.purposes.purpose = Fixture.orientationPurpose();
+        var bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.PUBLISHED);
+        bundle.setCommunicationMonth(1);
+        bundle.setCommunicationYear(2020);
+        fixture.bundles.bundle = bundle;
+        var updated = fixture.service().markOrientationRefreshed(fixture.steward, 10L);
+        var current = java.time.YearMonth.now(java.time.ZoneOffset.UTC);
+        assertEquals(current.getMonthValue(), updated.getCommunicationMonth());
+        assertEquals(current.getYear(), updated.getCommunicationYear());
+        assertEquals(EsCommunicationBundlePurpose.Audience.PUBLIC, updated.getAudience());
+        assertEquals(EsCommunicationBundle.Status.PUBLISHED, updated.getStatus());
+        assertTrue(fixture.bundles.dateUpdated);
+    }
+
+    @Test
+    void saveNarrativeValuesWritesOnlyChangedComponents() {
+        Fixture fixture = new Fixture();
+        fixture.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        fixture.components.byTemplate = List.of(
+                narrativeComponent(40L, EsCommunicationBundleTemplateComponent.Kind.TEXT, "introduction"),
+                narrativeComponent(41L, EsCommunicationBundleTemplateComponent.Kind.TEXT, "why"),
+                narrativeComponent(42L, EsCommunicationBundleTemplateComponent.Kind.STRUCTURED_LIST, "steps"));
+        var kept = new EsCommunicationBundleComponentValue();
+        kept.setComponentId(40L);
+        kept.setContentText("Same");
+        var changed = new EsCommunicationBundleComponentValue();
+        changed.setComponentId(41L);
+        changed.setContentText("Old");
+        var list = new EsCommunicationBundleComponentValue();
+        list.setComponentId(42L);
+        list.setContentJson(CommunicationBundleStructuredList.fromLines("One\nTwo"));
+        fixture.componentValues.stored = List.of(kept, changed, list);
+
+        fixture.service().saveNarrativeValues(fixture.steward, 10L, 30L, Map.of(40L, "Same", 41L, "New", 42L, "One\nTwo"));
+
+        assertEquals(1, fixture.componentValues.narrativeBatches);
+        assertEquals(List.of(41L), fixture.componentValues.narrativeIds);
+    }
+
+    @Test
+    void linkAndUploadWithARolePlaceTheResourceAndWithoutARoleStayInTheLibrary() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        fixture.components.component = resourceRole(21L, "additional_resources", "Additional resources",
+                EsCommunicationBundleTemplateComponent.Kind.RESOURCE_COLLECTION,
+                EsCommunicationBundleTemplateComponent.Cardinality.REPEATING);
+        var placed = fixture.service().registerLinkIntoRole(fixture.steward, 10L, "https://example.org/guide",
+                "Guide", null, null, 21L);
+        assertEquals("Guide", placed.resource().getTitle());
+        assertEquals("Additional resources", placed.roleName());
+        assertEquals(21L, fixture.placements.selectedComponentId);
+        assertEquals(77L, fixture.placements.selectedResourceId);
+
+        Fixture library = new Fixture();
+        var only = library.service().registerLinkIntoRole(library.steward, 10L, "https://example.org/guide",
+                "Guide", null, null, null);
+        assertNull(only.roleName());
+        assertNull(library.placements.selectedComponentId);
+
+        Fixture upload = new Fixture();
+        upload.bundles.bundle = Fixture.orientationBundle(30L, EsCommunicationBundle.Status.DRAFT);
+        upload.components.component = resourceRole(20L, "primary_infographic", "Infographic",
+                EsCommunicationBundleTemplateComponent.Kind.RESOURCE,
+                EsCommunicationBundleTemplateComponent.Cardinality.SINGLE);
+        var file = new EsTopicResource();
+        file.setTopicResourceId(88L);
+        file.setResourceType(EsTopicResource.ResourceType.IMAGE);
+        var added = upload.serviceWithUpload(file).uploadResourceIntoRole(upload.steward, 10L,
+                new ByteArrayInputStream(new byte[] {1}), "poster.png", "image/png", " Poster ", null, null, 20L);
+        assertEquals("Poster", added.resource().getTitle());
+        assertEquals("Infographic", added.roleName());
+        assertEquals(20L, upload.placements.selectedComponentId);
+        assertEquals(88L, upload.placements.selectedResourceId);
+        var rejected = assertThrows(IllegalArgumentException.class, () -> upload.service().uploadResourceIntoRole(
+                upload.steward, 10L, new ByteArrayInputStream(new byte[] {1}), "notes.pdf", "application/pdf",
+                "Notes", null, null, 20L));
+        assertTrue(rejected.getMessage().contains("image"));
+    }
+
+    private static EsCommunicationBundleTemplateComponent narrativeComponent(Long id,
+            EsCommunicationBundleTemplateComponent.Kind kind, String key) {
+        var component = new EsCommunicationBundleTemplateComponent();
+        component.setComponentId(id);
+        component.setTemplateId(5L);
+        component.setSemanticKey(key);
+        component.setKind(kind);
+        component.setDisplayName(key);
+        return component;
+    }
+
+    private static EsCommunicationBundleTemplateComponent resourceRole(Long id, String key, String name,
+            EsCommunicationBundleTemplateComponent.Kind kind, EsCommunicationBundleTemplateComponent.Cardinality cardinality) {
+        var component = new EsCommunicationBundleTemplateComponent();
+        component.setComponentId(id);
+        component.setTemplateId(5L);
+        component.setSemanticKey(key);
+        component.setDisplayName(name);
+        component.setKind(kind);
+        component.setCardinality(cardinality);
+        return component;
+    }
+
     private static final class Fixture {
         private final EsTopic topic = topic(10L, 100L);
         private final User steward = user(1L);
@@ -459,6 +610,20 @@ class CommunicationBundleServiceTest {
         private CommunicationBundleService service() {
             return new CommunicationBundleService(topics, spaces, resources, purposes, bundles,
                     componentValues, templates, components, placements, files, access);
+        }
+
+        private CommunicationBundleService serviceWithUpload(EsTopicResource uploaded) {
+            return new CommunicationBundleService(topics, spaces, resources, purposes, bundles,
+                    componentValues, templates, components, placements, files, access, new StoredFileService()) {
+                @Override public EsTopicResource uploadResource(User user, Long topicId, InputStream input,
+                        String filename, String contentType, String title, String description, String attribution) {
+                    uploaded.setTitle(title == null ? null : title.trim());
+                    uploaded.setEsTopicId(topicId);
+                    uploaded.setStatus(EsTopicResource.Status.ACTIVE);
+                    resources.resource = uploaded;
+                    return uploaded;
+                }
+            };
         }
 
             private static EsCommunicationBundlePurpose orientationPurpose() {
@@ -527,7 +692,16 @@ class CommunicationBundleServiceTest {
 
     private static final class Resources extends EsTopicResourceDao {
         private EsTopicResource resource;
-        @Override public EsTopicResource save(EsTopicResource value) { resource = value; return value; }
+        @Override public EsTopicResource save(EsTopicResource value) {
+            if (value.getTopicResourceId() == null) {
+                value.setTopicResourceId(77L);
+            }
+            if (value.getStatus() == null) {
+                value.setStatus(EsTopicResource.Status.ACTIVE);
+            }
+            resource = value;
+            return value;
+        }
         @Override public EsTopicResource updateMetadataWithAudit(EsTopicResource value, Long userId) {
             resource = value;
             return value;
@@ -553,6 +727,7 @@ class CommunicationBundleServiceTest {
         private EsCommunicationBundle existing;
         private EsCommunicationBundle bundle;
         private EsCommunicationBundle saved;
+        private boolean dateUpdated;
         @Override public Optional<EsCommunicationBundle> findByTopicAndPurpose(Long topicId, Long purposeId) {
             EsCommunicationBundle result = existing != null ? existing : bundle;
             return result != null && result.getStatus() != EsCommunicationBundle.Status.RETIRED
@@ -573,6 +748,10 @@ class CommunicationBundleServiceTest {
         }
         @Override public EsCommunicationBundle updateEditableSettings(Long id,
                 EsCommunicationBundlePurpose.Audience audience, Integer month, Integer year, Long userId) {
+            if (!java.util.Objects.equals(bundle.getCommunicationMonth(), month)
+                    || !java.util.Objects.equals(bundle.getCommunicationYear(), year)) {
+                dateUpdated = true;
+            }
             bundle.setAudience(audience);
             bundle.setCommunicationMonth(month);
             bundle.setCommunicationYear(year);
@@ -608,9 +787,24 @@ class CommunicationBundleServiceTest {
             return value;
         }
         @Override public List<EsCommunicationBundleComponentValue> findByBundleId(Long bundleId) {
+            if (stored != null) {
+                return stored;
+            }
             return saved == null ? List.of() : List.of(saved);
         }
+        @Override public List<EsCommunicationBundleComponentValue> saveEditableValues(
+                List<EsCommunicationBundleComponentValue> values, Map<Long, String> keys) {
+            narrativeBatches++;
+            for (EsCommunicationBundleComponentValue value : values) {
+                narrativeIds.add(value.getComponentId());
+                saved = value;
+            }
+            return values;
+        }
         private EsCommunicationBundleComponentValue saved;
+        private List<EsCommunicationBundleComponentValue> stored;
+        private int narrativeBatches;
+        private final List<Long> narrativeIds = new ArrayList<>();
     }
 
     private static final class Components extends EsCommunicationBundleTemplateComponentDao {
@@ -638,12 +832,14 @@ class CommunicationBundleServiceTest {
         @Override public EsCommunicationBundleResourcePlacement saveEditablePlacementWithAudit(
                 EsCommunicationBundleResourcePlacement value, Long userId) { return value; }
         @Override public void selectResource(Long bundleId, Long componentId, Long resourceId, Long userId) {
+            selectedComponentId = componentId;
             selectedResourceId = resourceId;
         }
         @Override public void removeResource(Long bundleId, Long placementId, Long userId) {
             removedPlacementId = placementId;
         }
         private Long selectedResourceId;
+        private Long selectedComponentId;
         private Long removedPlacementId;
     }
 

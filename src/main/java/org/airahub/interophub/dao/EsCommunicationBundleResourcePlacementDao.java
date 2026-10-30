@@ -60,6 +60,12 @@ public class EsCommunicationBundleResourcePlacementDao
                     || resource.getStatus() != EsTopicResource.Status.ACTIVE) {
                 throw new IllegalArgumentException("Choose an active resource from this Topic.");
             }
+            if (!org.airahub.interophub.service.CommunicationBundleService.resourceFitsRole(
+                    component.getSemanticKey(), resource.getResourceType())) {
+                throw new IllegalArgumentException(component.getDisplayName() + " only accepts "
+                        + org.airahub.interophub.service.CommunicationBundleService.roleAcceptance(
+                                component.getSemanticKey()) + ".");
+            }
             List<EsCommunicationBundleResourcePlacement> existing = session.createQuery(
                     "from EsCommunicationBundleResourcePlacement where bundleId = :bundle"
                             + " and componentId = :component",
@@ -98,6 +104,12 @@ public class EsCommunicationBundleResourcePlacementDao
             if (resource == null || !bundle.getEsTopicId().equals(resource.getEsTopicId())
                     || resource.getStatus() != EsTopicResource.Status.ACTIVE) {
                 throw new IllegalArgumentException("Choose an active resource from this Topic.");
+            }
+            if (!org.airahub.interophub.service.CommunicationBundleService.resourceFitsRole(
+                    component.getSemanticKey(), resource.getResourceType())) {
+                throw new IllegalArgumentException(component.getDisplayName() + " only accepts "
+                        + org.airahub.interophub.service.CommunicationBundleService.roleAcceptance(
+                                component.getSemanticKey()) + ".");
             }
             List<EsCommunicationBundleResourcePlacement> placements = session.createQuery(
                     "from EsCommunicationBundleResourcePlacement where bundleId = :bundle and componentId = :component"

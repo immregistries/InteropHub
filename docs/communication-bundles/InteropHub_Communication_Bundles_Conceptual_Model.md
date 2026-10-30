@@ -154,7 +154,7 @@ The domain date for a Communication Bundle is Month + Year, not a precise calend
 
 The system should separately maintain exact timestamps for creation, update, publication, and audit history. Those timestamps are system provenance. The Month/Year value is communication meaning.
 
-For a living bundle, the Month/Year should change when a steward performs a meaningful refresh of the communication, not when someone makes a trivial editorial correction. For a snapshot bundle, the Month/Year remains the period the communication represents.
+For a living bundle, the Month/Year should change when a steward performs a meaningful refresh of the communication, not when someone makes a trivial editorial correction. The steward does not type that date. Publishing a living bundle that has no Month/Year stamps the current month and year. After publication, the only way to change it is an explicit "Mark as refreshed this month" action, which records a date update. For a snapshot bundle, the Month/Year remains the period the communication represents, and the steward enters it. Publishing a snapshot without a Month/Year fails.
 
 ## 8. Explicit Resource Versioning
 
@@ -296,7 +296,7 @@ Communication Bundles should not become a path toward general file-server or CMS
 
 9. Every bundle can be rendered generically. Specialized views may elevate known semantic components.
 
-10. Bundle dating uses Month + Year for communication meaning; exact timestamps remain system history.
+10. Bundle dating uses Month + Year for communication meaning; exact timestamps remain system history. Living bundles are dated automatically on publish and when a steward marks the bundle refreshed. Snapshot bundles keep a steward-entered Month/Year.
 
 11. Published snapshot bundles should not silently change because a shared Resource file changes.
 
