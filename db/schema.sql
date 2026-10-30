@@ -132,7 +132,7 @@ CREATE TABLE `app_redirect_allowlist` (
   UNIQUE KEY `uq_app_base` (`app_id`,`base_url`),
   KEY `ix_allow_enabled` (`app_id`,`is_enabled`),
   CONSTRAINT `fk_allow_app` FOREIGN KEY (`app_id`) REFERENCES `app_registry` (`app_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=11 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -156,7 +156,7 @@ CREATE TABLE `app_registry` (
   PRIMARY KEY (`app_id`),
   UNIQUE KEY `uq_app_code` (`app_code`),
   KEY `ix_app_enabled` (`is_enabled`,`kill_switch`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -172,6 +172,7 @@ CREATE TABLE `app_user_token` (
   `app_id` bigint unsigned NOT NULL,
   `token_hash` varbinary(32) NOT NULL,
   `label` varchar(120) DEFAULT NULL,
+  `scopes` varchar(255) DEFAULT NULL,
   `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `expires_at` datetime NOT NULL,
   `revoked_at` datetime DEFAULT NULL,
@@ -201,6 +202,8 @@ CREATE TABLE `auth_login_code` (
   `return_to` varchar(500) DEFAULT NULL,
   `state_nonce` varchar(255) DEFAULT NULL,
   `requested_url` varchar(500) DEFAULT NULL,
+  `code_challenge` varchar(128) DEFAULT NULL,
+  `code_challenge_method` varchar(16) DEFAULT NULL,
   `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `expires_at` datetime NOT NULL,
   `consumed_at` datetime DEFAULT NULL,
@@ -227,6 +230,8 @@ CREATE TABLE `auth_magic_link` (
   `return_to` varchar(500) DEFAULT NULL,
   `state_nonce` varchar(255) DEFAULT NULL,
   `requested_url` varchar(500) DEFAULT NULL,
+  `code_challenge` varchar(128) DEFAULT NULL,
+  `code_challenge_method` varchar(16) DEFAULT NULL,
   `issued_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `expires_at` datetime NOT NULL,
   `consumed_at` datetime DEFAULT NULL,
@@ -321,7 +326,7 @@ CREATE TABLE `auth_user` (
   UNIQUE KEY `uq_auth_user_email_norm` (`email_normalized`),
   KEY `ix_auth_user_status` (`status`),
   KEY `ix_auth_user_delete_after` (`delete_after_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=96 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -914,6 +919,201 @@ CREATE TABLE `es_communication_bundle_template_component` (
   CONSTRAINT `chk_bundle_component_cardinality` CHECK ((`cardinality` in (_utf8mb4'SINGLE',_utf8mb4'REPEATING'))),
   CONSTRAINT `chk_bundle_component_kind` CHECK ((`component_kind` in (_utf8mb4'TEXT',_utf8mb4'STRUCTURED_LIST',_utf8mb4'RESOURCE',_utf8mb4'RESOURCE_COLLECTION')))
 ) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_comment`
+--
+
+DROP TABLE IF EXISTS `es_guide_comment`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_comment` (
+  `guide_comment_id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_document_id` bigint NOT NULL,
+  `parent_comment_id` bigint DEFAULT NULL,
+  `anchor_id` varchar(100) DEFAULT NULL,
+  `block_index` int DEFAULT NULL,
+  `block_snippet` varchar(120) DEFAULT NULL,
+  `comment_text` text,
+  `state` varchar(16) NOT NULL,
+  `disposition_code` varchar(32) DEFAULT NULL,
+  `change_note` varchar(500) DEFAULT NULL,
+  `user_id` bigint NOT NULL,
+  `source_note` varchar(200) DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `edited_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `deleted_at` datetime(6) DEFAULT NULL,
+  `deleted_by_user_id` bigint DEFAULT NULL,
+  `withdrawn_at` datetime(6) DEFAULT NULL,
+  `disposed_at` datetime(6) DEFAULT NULL,
+  `disposed_by_user_id` bigint DEFAULT NULL,
+  `closed_at` datetime(6) DEFAULT NULL,
+  `closed_by_user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`guide_comment_id`),
+  KEY `ix_es_guide_comment_document` (`guide_document_id`,`created_at`),
+  KEY `ix_es_guide_comment_parent` (`parent_comment_id`,`created_at`),
+  KEY `ix_es_guide_comment_updated` (`guide_document_id`,`updated_at`),
+  KEY `fk_es_guide_comment_user` (`user_id`),
+  KEY `fk_es_guide_comment_deleted_by` (`deleted_by_user_id`),
+  KEY `fk_es_guide_comment_disposition` (`disposition_code`),
+  KEY `fk_es_guide_comment_disposed_by` (`disposed_by_user_id`),
+  KEY `fk_es_guide_comment_closed_by` (`closed_by_user_id`),
+  CONSTRAINT `fk_es_guide_comment_closed_by` FOREIGN KEY (`closed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_comment_deleted_by` FOREIGN KEY (`deleted_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_comment_disposed_by` FOREIGN KEY (`disposed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_comment_disposition` FOREIGN KEY (`disposition_code`) REFERENCES `es_guide_disposition` (`disposition_code`),
+  CONSTRAINT `fk_es_guide_comment_document` FOREIGN KEY (`guide_document_id`) REFERENCES `es_guide_document` (`guide_document_id`),
+  CONSTRAINT `fk_es_guide_comment_parent` FOREIGN KEY (`parent_comment_id`) REFERENCES `es_guide_comment` (`guide_comment_id`),
+  CONSTRAINT `fk_es_guide_comment_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_comment_audit`
+--
+
+DROP TABLE IF EXISTS `es_guide_comment_audit`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_comment_audit` (
+  `guide_comment_audit_id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_comment_id` bigint NOT NULL,
+  `changed_by_user_id` bigint NOT NULL,
+  `changed_at` datetime(6) NOT NULL,
+  `field_name` varchar(32) NOT NULL,
+  `old_value` text,
+  `new_value` text,
+  `app_user_token_id` bigint unsigned DEFAULT NULL,
+  PRIMARY KEY (`guide_comment_audit_id`),
+  KEY `ix_es_guide_comment_audit_comment` (`guide_comment_id`,`changed_at`),
+  KEY `fk_es_guide_comment_audit_user` (`changed_by_user_id`),
+  KEY `fk_es_guide_comment_audit_token` (`app_user_token_id`),
+  CONSTRAINT `fk_es_guide_comment_audit_comment` FOREIGN KEY (`guide_comment_id`) REFERENCES `es_guide_comment` (`guide_comment_id`),
+  CONSTRAINT `fk_es_guide_comment_audit_token` FOREIGN KEY (`app_user_token_id`) REFERENCES `app_user_token` (`token_id`),
+  CONSTRAINT `fk_es_guide_comment_audit_user` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_disposition`
+--
+
+DROP TABLE IF EXISTS `es_guide_disposition`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_disposition` (
+  `disposition_code` varchar(32) NOT NULL,
+  `label` varchar(80) NOT NULL,
+  `display_order` int NOT NULL,
+  PRIMARY KEY (`disposition_code`),
+  UNIQUE KEY `uq_es_guide_disposition_order` (`display_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_document`
+--
+
+DROP TABLE IF EXISTS `es_guide_document`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_document` (
+  `guide_document_id` bigint NOT NULL AUTO_INCREMENT,
+  `document_key` varchar(100) NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `title` varchar(200) NOT NULL,
+  `repository_url` varchar(500) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` bigint NOT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`guide_document_id`),
+  UNIQUE KEY `uq_es_guide_document_key` (`document_key`),
+  KEY `ix_es_guide_document_topic` (`es_topic_id`),
+  KEY `fk_es_guide_document_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_guide_document_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_document_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_document_url`
+--
+
+DROP TABLE IF EXISTS `es_guide_document_url`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_document_url` (
+  `guide_document_url_id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_document_id` bigint NOT NULL,
+  `url` varchar(255) NOT NULL,
+  `label` varchar(40) NOT NULL,
+  `sort_order` int NOT NULL,
+  `allow_id` bigint unsigned DEFAULT NULL,
+  `owns_allowlist` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`guide_document_url_id`),
+  UNIQUE KEY `uq_es_guide_document_url` (`url`),
+  UNIQUE KEY `uq_es_guide_document_url_label` (`guide_document_id`,`label`),
+  KEY `ix_es_guide_document_url_document` (`guide_document_id`,`sort_order`),
+  KEY `ix_es_guide_document_url_allow` (`allow_id`),
+  CONSTRAINT `fk_es_guide_document_url_allow` FOREIGN KEY (`allow_id`) REFERENCES `app_redirect_allowlist` (`allow_id`),
+  CONSTRAINT `fk_es_guide_document_url_document` FOREIGN KEY (`guide_document_id`) REFERENCES `es_guide_document` (`guide_document_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_review_flag`
+--
+
+DROP TABLE IF EXISTS `es_guide_review_flag`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_review_flag` (
+  `review_flag_id` bigint NOT NULL AUTO_INCREMENT,
+  `guide_document_id` bigint NOT NULL,
+  `anchor_id` varchar(100) NOT NULL,
+  `note` varchar(500) NOT NULL,
+  `created_by_user_id` bigint NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `cleared_at` datetime(6) DEFAULT NULL,
+  `cleared_by_user_id` bigint DEFAULT NULL,
+  `active_anchor` varchar(100) GENERATED ALWAYS AS ((case when (`cleared_at` is null) then `anchor_id` else NULL end)) STORED,
+  PRIMARY KEY (`review_flag_id`),
+  UNIQUE KEY `uq_es_guide_review_flag_active` (`guide_document_id`,`active_anchor`),
+  KEY `ix_es_guide_review_flag_document` (`guide_document_id`,`cleared_at`),
+  KEY `fk_es_guide_review_flag_created_by` (`created_by_user_id`),
+  KEY `fk_es_guide_review_flag_cleared_by` (`cleared_by_user_id`),
+  CONSTRAINT `fk_es_guide_review_flag_cleared_by` FOREIGN KEY (`cleared_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_review_flag_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_review_flag_document` FOREIGN KEY (`guide_document_id`) REFERENCES `es_guide_document` (`guide_document_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_guide_url_prefix`
+--
+
+DROP TABLE IF EXISTS `es_guide_url_prefix`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_guide_url_prefix` (
+  `guide_url_prefix_id` bigint NOT NULL AUTO_INCREMENT,
+  `url_prefix` varchar(255) NOT NULL,
+  `is_enabled` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `disabled_at` datetime(6) DEFAULT NULL,
+  `disabled_by_user_id` bigint DEFAULT NULL,
+  PRIMARY KEY (`guide_url_prefix_id`),
+  UNIQUE KEY `uq_es_guide_url_prefix` (`url_prefix`),
+  KEY `fk_es_guide_url_prefix_created_by` (`created_by_user_id`),
+  KEY `fk_es_guide_url_prefix_disabled_by` (`disabled_by_user_id`),
+  CONSTRAINT `fk_es_guide_url_prefix_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_guide_url_prefix_disabled_by` FOREIGN KEY (`disabled_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1697,7 +1897,7 @@ CREATE TABLE `es_subscription` (
   PRIMARY KEY (`es_subscription_id`),
   KEY `fk_es_subscription_managed_added_by` (`managed_added_by_user_id`),
   CONSTRAINT `fk_es_subscription_managed_added_by` FOREIGN KEY (`managed_added_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1635 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1636 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1823,7 +2023,7 @@ CREATE TABLE `es_topic` (
   CONSTRAINT `fk_es_topic_path_definition` FOREIGN KEY (`es_topic_path_definition_id`) REFERENCES `es_topic_path_definition` (`es_topic_path_definition_id`),
   CONSTRAINT `fk_es_topic_stage_definition` FOREIGN KEY (`es_topic_stage_definition_id`) REFERENCES `es_topic_stage_definition` (`es_topic_stage_definition_id`),
   CONSTRAINT `fk_es_topic_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=178 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=179 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1894,6 +2094,32 @@ CREATE TABLE `es_topic_board_stage` (
   CONSTRAINT `fk_es_topic_board_stage_board` FOREIGN KEY (`es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`),
   CONSTRAINT `fk_es_topic_board_stage_definition` FOREIGN KEY (`es_topic_stage_definition_id`) REFERENCES `es_topic_stage_definition` (`es_topic_stage_definition_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=39 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_topic_change`
+--
+
+DROP TABLE IF EXISTS `es_topic_change`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_topic_change` (
+  `es_topic_change_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_topic_id` bigint NOT NULL,
+  `changed_by_user_id` bigint NOT NULL,
+  `changed_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `source` varchar(16) NOT NULL,
+  `change_type` varchar(16) NOT NULL,
+  `changes_json` json NOT NULL,
+  `app_user_token_id` bigint unsigned DEFAULT NULL,
+  PRIMARY KEY (`es_topic_change_id`),
+  KEY `ix_es_topic_change_topic_changed_at` (`es_topic_id`,`changed_at`),
+  KEY `ix_es_topic_change_user` (`changed_by_user_id`),
+  KEY `ix_es_topic_change_token` (`app_user_token_id`),
+  CONSTRAINT `fk_es_topic_change_token` FOREIGN KEY (`app_user_token_id`) REFERENCES `app_user_token` (`token_id`),
+  CONSTRAINT `fk_es_topic_change_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`),
+  CONSTRAINT `fk_es_topic_change_user` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2342,7 +2568,7 @@ CREATE TABLE `es_topic_space` (
   KEY `ix_es_topic_space_visible_order` (`visibility`,`is_active`,`display_order`,`space_name`),
   KEY `ix_es_topic_space_primary_board` (`primary_es_topic_board_definition_id`),
   CONSTRAINT `fk_es_topic_space_primary_board` FOREIGN KEY (`primary_es_topic_board_definition_id`) REFERENCES `es_topic_board_definition` (`es_topic_board_definition_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2867,4 +3093,4 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-30  0:30:15
+-- Dump completed on 2026-10-30 14:12:16
