@@ -6,6 +6,15 @@
 
   <display-name>InteropHub</display-name>
 
+  <filter>
+    <filter-name>GuideBearerTokenFilter</filter-name>
+    <filter-class>org.airahub.interophub.servlet.GuideBearerTokenFilter</filter-class>
+  </filter>
+  <filter-mapping>
+    <filter-name>GuideBearerTokenFilter</filter-name>
+    <url-pattern>/api/guide/*</url-pattern>
+  </filter-mapping>
+
   <servlet>
     <servlet-name>HomeServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.HomeServlet</servlet-class>
@@ -243,6 +252,15 @@
   <servlet-mapping>
     <servlet-name>ApiAuthExchangeServlet</servlet-name>
     <url-pattern>/api/auth/exchange</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>GuideTokenServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.GuideTokenServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>GuideTokenServlet</servlet-name>
+    <url-pattern>/api/guide/token</url-pattern>
   </servlet-mapping>
 
   <servlet>

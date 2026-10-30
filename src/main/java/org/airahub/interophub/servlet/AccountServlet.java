@@ -2,6 +2,8 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -11,6 +13,7 @@ import java.util.Set;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.LegalTermAcceptanceDao;
 import org.airahub.interophub.dao.LegalTermDao;
@@ -20,6 +23,9 @@ import org.airahub.interophub.model.LegalTerm;
 import org.airahub.interophub.model.LegalTermAcceptance;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.GuideApps;
+import org.airahub.interophub.service.GuideScopes;
+import org.airahub.interophub.service.GuideTokenService;
 import org.immregistries.aira.web.AiraPage;
 
 /**
@@ -46,12 +52,15 @@ public class AccountServlet extends HttpServlet {
     private static final int MAX_LAST_NAME_LENGTH = 60;
     private static final int MAX_ORGANIZATION_LENGTH = 120;
     private static final int MAX_ROLE_TITLE_LENGTH = 120;
+    private static final String FLASH_PERSONAL_TOKEN = "interophub.account.revealedPersonalToken";
+    private static final DateTimeFormatter TOKEN_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final AuthFlowService authFlowService;
     private final UserDao userDao;
     private final EsSubscriptionDao esSubscriptionDao;
     private final LegalTermAcceptanceDao legalTermAcceptanceDao;
     private final LegalTermDao legalTermDao;
+    private final GuideTokenService guideTokenService;
 
     public AccountServlet() {
         this.authFlowService = new AuthFlowService();
@@ -59,6 +68,7 @@ public class AccountServlet extends HttpServlet {
         this.esSubscriptionDao = new EsSubscriptionDao();
         this.legalTermAcceptanceDao = new LegalTermAcceptanceDao();
         this.legalTermDao = new LegalTermDao();
+        this.guideTokenService = new GuideTokenService();
     }
 
     @Override
@@ -70,7 +80,9 @@ public class AccountServlet extends HttpServlet {
         }
 
         User user = authenticatedUser.get();
-        renderAccountPage(request, response, user, null, Map.of(),
+        String notice = request.getParameter("notice");
+        Map<String, String> noticeErrors = "revoke-failed".equals(notice) ? Map.of("token", "failed") : Map.of();
+        renderAccountPage(request, response, user, noticeMessage(notice), noticeErrors,
                 user.getFirstName(), user.getLastName(), user.getOrganization(), user.getRoleTitle());
     }
 
@@ -95,6 +107,10 @@ public class AccountServlet extends HttpServlet {
             esSubscriptionDao.unsubscribeAllByEmailNormalized(user.getEmailNormalized());
             renderAccountPage(request, response, user, "You have been unsubscribed from all topics.", Map.of(),
                     user.getFirstName(), user.getLastName(), user.getOrganization(), user.getRoleTitle());
+        } else if ("create-personal-token".equals(action)) {
+            handleCreatePersonalToken(request, response, user);
+        } else if ("revoke-token".equals(action)) {
+            handleRevokeToken(request, response, user);
         } else {
             renderAccountPage(request, response, user, null, Map.of(),
                     user.getFirstName(), user.getLastName(), user.getOrganization(), user.getRoleTitle());
@@ -124,6 +140,30 @@ public class AccountServlet extends HttpServlet {
 
         renderAccountPage(request, response, user, "Profile updated.", Map.of(),
                 firstName, lastName, organization, roleTitle);
+    }
+
+    private void handleCreatePersonalToken(HttpServletRequest request, HttpServletResponse response, User user)
+            throws IOException {
+        int lifetimeDays = parseLifetimeDays(request.getParameter("lifetimeDays"));
+        String[] scopes = request.getParameterValues("scope");
+        try {
+            GuideTokenService.IssuedToken issued = guideTokenService.createPersonalToken(
+                    user, request.getParameter("label"), scopes == null ? java.util.List.of() : java.util.List.of(scopes),
+                    lifetimeDays);
+            request.getSession(true).setAttribute(FLASH_PERSONAL_TOKEN, issued.rawToken());
+            response.sendRedirect(request.getContextPath() + "/account");
+        } catch (IllegalArgumentException ex) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            renderAccountPage(request, response, user, ex.getMessage(), Map.of("token", ex.getMessage()),
+                    user.getFirstName(), user.getLastName(), user.getOrganization(), user.getRoleTitle());
+        }
+    }
+
+    private void handleRevokeToken(HttpServletRequest request, HttpServletResponse response, User user)
+            throws IOException {
+        Long tokenId = parseTokenId(request.getParameter("tokenId"));
+        boolean revoked = tokenId != null && guideTokenService.revokeOwned(user.getUserId(), tokenId);
+        response.sendRedirect(request.getContextPath() + "/account?notice=" + (revoked ? "revoked" : "revoke-failed"));
     }
 
     private void handleSaveSubscriptions(HttpServletRequest request, HttpServletResponse response, User user)
@@ -173,7 +213,7 @@ public class AccountServlet extends HttpServlet {
             out.println("          <div>");
             out.println("            <h1 class=\"aira-page-title\">My Account</h1>");
             out.println(
-                    "            <p class=\"aira-page-intro\">Manage your profile, review the legal terms you have accepted, and control which topics you receive email updates for.</p>");
+                    "            <p class=\"aira-page-intro\">Manage your profile, review the legal terms you have accepted, control which topics you receive email updates for, and manage guide sign-ins and personal access tokens.</p>");
             out.println("          </div>");
             out.println("        </div>");
 
@@ -186,6 +226,7 @@ public class AccountServlet extends HttpServlet {
 
             out.println("        <div class=\"aira-stack\">");
             renderProfileSection(out, contextPath, user, fieldErrors, firstName, lastName, organization, roleTitle);
+            renderTokensSection(out, request, contextPath, user);
             renderSubscriptionsSection(out, contextPath, user);
             renderLegalTermsSection(out, user);
             renderDeleteAccountSection(out);
@@ -246,6 +287,159 @@ public class AccountServlet extends HttpServlet {
                 + escapeHtml(orEmpty(value)) + "\""
                 + (hasError ? " aria-invalid=\"true\" aria-describedby=\"" + errorId + "\"" : "") + " />");
         out.println("              </div>");
+    }
+
+    private void renderTokensSection(PrintWriter out, HttpServletRequest request, String contextPath, User user) {
+        String revealed = takeRevealedToken(request);
+        List<GuideTokenService.AccountToken> tokens = guideTokenService.listForAccount(user.getUserId());
+
+        out.println("          <section class=\"aira-panel\">");
+        out.println("            <h2 class=\"aira-section-title\">Access tokens</h2>");
+        out.println("              <p>Guide sign-ins are created when you comment from a Topic Reference guide. Personal access tokens are for scripts and other tools. Revoking a token stops it immediately. Your InteropHub sign-in is separate.</p>");
+        if (revealed != null) {
+            out.println("            <div class=\"aira-alert aira-alert--warning\">");
+            out.println("              <p class=\"aira-alert__title\">Copy this personal access token now</p>");
+            out.println("              <p>It will not be shown again.</p>");
+            out.println("              <p><input class=\"aira-input\" readonly=\"readonly\" value=\"" + escapeHtml(revealed)
+                    + "\" /></p>");
+            out.println("            </div>");
+        }
+        if (tokens.isEmpty()) {
+            out.println("            <p>You have no guide sign-ins or personal access tokens.</p>");
+        } else {
+            out.println("            <div class=\"aira-table-wrap\">");
+            out.println("            <table class=\"aira-table\">");
+            out.println("              <thead><tr><th>Label</th><th>Kind</th><th>Scopes</th><th>Issued</th><th>Expires</th><th>Last used</th><th></th></tr></thead>");
+            out.println("              <tbody>");
+            for (GuideTokenService.AccountToken token : tokens) {
+                out.println("                <tr>");
+                out.println("                  <td>" + escapeHtml(orEmpty(token.getLabel())) + "</td>");
+                out.println("                  <td>" + escapeHtml(kindLabel(token.getKind())) + "</td>");
+                out.println("                  <td>" + escapeHtml(displayScopes(token.getScopes())) + "</td>");
+                out.println("                  <td>" + escapeHtml(formatTokenTime(token.getIssuedAt())) + "</td>");
+                out.println("                  <td>" + escapeHtml(formatExpiry(token.getExpiresAt())) + "</td>");
+                out.println("                  <td>" + escapeHtml(token.getLastUsedAt() == null ? "Not yet" : formatTokenTime(token.getLastUsedAt())) + "</td>");
+                out.println("                  <td>");
+                out.println("                    <form method=\"post\" action=\"" + contextPath + "/account\">");
+                out.println("                      <input type=\"hidden\" name=\"action\" value=\"revoke-token\" />");
+                out.println("                      <input type=\"hidden\" name=\"tokenId\" value=\"" + token.getTokenId() + "\" />");
+                out.println("                      <button class=\"aira-button aira-button--secondary\" type=\"submit\">Revoke</button>");
+                out.println("                    </form>");
+                out.println("                  </td>");
+                out.println("                </tr>");
+            }
+            out.println("              </tbody>");
+            out.println("            </table>");
+            out.println("            </div>");
+        }
+
+        out.println("            <h3 class=\"aira-section-title\">Create a personal access token</h3>");
+        out.println("            <form class=\"aira-form\" method=\"post\" action=\"" + contextPath + "/account\">");
+        out.println("              <input type=\"hidden\" name=\"action\" value=\"create-personal-token\" />");
+        out.println("              <div class=\"aira-field\">");
+        out.println("                <label for=\"tokenLabel\">Label</label>");
+        out.println("                <input class=\"aira-input\" id=\"tokenLabel\" name=\"label\" type=\"text\" maxlength=\"120\" required />");
+        out.println("              </div>");
+        out.println("              <div class=\"aira-field\">");
+        out.println("                <span>Scopes</span>");
+        for (String scope : GuideScopes.PERSONAL_CHOICES) {
+            out.println("                <label><input type=\"checkbox\" name=\"scope\" value=\"" + escapeHtml(scope) + "\" /> "
+                    + escapeHtml(scope) + "</label>");
+        }
+        out.println("              </div>");
+        out.println("              <div class=\"aira-field\">");
+        out.println("                <label for=\"lifetimeDays\">Lifetime</label>");
+        out.println("                <select class=\"aira-select\" id=\"lifetimeDays\" name=\"lifetimeDays\">");
+        out.println("                  <option value=\"30\">30 days</option>");
+        out.println("                  <option value=\"90\" selected>90 days</option>");
+        out.println("                  <option value=\"365\">365 days</option>");
+        out.println("                </select>");
+        out.println("              </div>");
+        out.println("              <div class=\"aira-action-group\">");
+        out.println("                <button class=\"aira-button aira-button--primary\" type=\"submit\">Create token</button>");
+        out.println("              </div>");
+        out.println("            </form>");
+        out.println("          </section>");
+    }
+
+    private String takeRevealedToken(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return null;
+        }
+        Object flashed = session.getAttribute(FLASH_PERSONAL_TOKEN);
+        session.removeAttribute(FLASH_PERSONAL_TOKEN);
+        if (flashed instanceof String value && !value.isBlank()) {
+            return value;
+        }
+        return null;
+    }
+
+    private static String noticeMessage(String notice) {
+        if ("revoked".equals(notice)) {
+            return "The token was revoked.";
+        }
+        if ("revoke-failed".equals(notice)) {
+            return "That token could not be revoked.";
+        }
+        return null;
+    }
+
+    private static int parseLifetimeDays(String value) {
+        if (value == null) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException ex) {
+            return -1;
+        }
+    }
+
+    private static Long parseTokenId(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private static String kindLabel(String kind) {
+        if (GuideApps.KIND_GUIDE.equals(kind)) {
+            return "Guide sign-in";
+        }
+        if (GuideApps.KIND_PERSONAL.equals(kind)) {
+            return "Personal access token";
+        }
+        return kind == null ? "" : kind;
+    }
+
+    private static String displayScopes(String scopes) {
+        if (scopes == null || scopes.isBlank()) {
+            return "";
+        }
+        return scopes.replace(",", ", ");
+    }
+
+    private static String formatTokenTime(LocalDateTime value) {
+        if (value == null) {
+            return "";
+        }
+        return TOKEN_TIME.format(value);
+    }
+
+    private static String formatExpiry(LocalDateTime value) {
+        if (value == null) {
+            return "";
+        }
+        String formatted = TOKEN_TIME.format(value);
+        if (value.isBefore(LocalDateTime.now())) {
+            return formatted + " (expired)";
+        }
+        return formatted;
     }
 
     private void renderSubscriptionsSection(PrintWriter out, String contextPath, User user) {

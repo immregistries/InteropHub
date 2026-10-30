@@ -29,6 +29,9 @@ public class UserToken {
     @Column(name = "label", length = 120)
     private String label;
 
+    @Column(name = "scopes", length = 255)
+    private String scopes;
+
     @Column(name = "issued_at", nullable = false)
     private LocalDateTime issuedAt;
 
@@ -86,6 +89,14 @@ public class UserToken {
 
     public void setLabel(String label) {
         this.label = label;
+    }
+
+    public String getScopes() {
+        return scopes;
+    }
+
+    public void setScopes(String scopes) {
+        this.scopes = scopes;
     }
 
     public LocalDateTime getIssuedAt() {

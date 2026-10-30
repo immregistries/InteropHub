@@ -646,3 +646,46 @@ INSERT INTO es_checklist_template_item
   (es_checklist_template_id, item_key, phase_label, title, guidance, due_anchor, due_offset_days, check_code, display_order)
 VALUES (@template_id, 'close-small-group', 'Complete and hand off', 'Move this Small Group to Closed, with a note summarizing the outcome.', NULL, 'closeout', 30, NULL, 46);
 -- END generated checklist templates
+
+-- =============================================================================
+-- H1 sign-in foundation (topic-reference comments).
+-- PKCE on the login code, scopes on access tokens, and the two app_registry
+-- rows the guide and personal access tokens use. Keep this block at the end
+-- so another stream can append above it and the merge stays local.
+--
+-- auth_magic_link gets the same PKCE columns as auth_login_code. The contract
+-- stores the challenge on the login code; the magic-link copy is what carries
+-- it across the email, including when the reader opens the link in a browser
+-- that does not have the original servlet session. Registration forms also
+-- repeat the values in hidden fields.
+-- =============================================================================
+
+ALTER TABLE auth_login_code
+  ADD COLUMN code_challenge varchar(128) DEFAULT NULL AFTER requested_url,
+  ADD COLUMN code_challenge_method varchar(16) DEFAULT NULL AFTER code_challenge;
+
+ALTER TABLE auth_magic_link
+  ADD COLUMN code_challenge varchar(128) DEFAULT NULL AFTER requested_url,
+  ADD COLUMN code_challenge_method varchar(16) DEFAULT NULL AFTER code_challenge;
+
+ALTER TABLE app_user_token
+  ADD COLUMN scopes varchar(255) DEFAULT NULL AFTER label;
+
+-- Public client shared by every Topic Reference guide. No secret; PKCE is required.
+-- No default redirect, so it does not appear as a launchable app on the welcome page.
+INSERT INTO app_registry
+  (app_code, app_name, default_redirect_url, app_description, managed_by, is_enabled, kill_switch, is_visible)
+SELECT 'topic-reference', 'Topic Reference', NULL,
+  'Public client shared by Topic Reference guides. No client secret; PKCE is required.',
+  'AIRA', 1, 0, 1
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM app_registry WHERE app_code = 'topic-reference');
+
+-- Personal access tokens. Not shown to users (is_visible = 0) and no redirect allowlist.
+INSERT INTO app_registry
+  (app_code, app_name, default_redirect_url, app_description, managed_by, is_enabled, kill_switch, is_visible)
+SELECT 'interophub-api', 'InteropHub API', NULL,
+  'Personal access tokens for the InteropHub API. Not shown to users.',
+  'AIRA', 1, 0, 0
+FROM DUAL
+WHERE NOT EXISTS (SELECT 1 FROM app_registry WHERE app_code = 'interophub-api');

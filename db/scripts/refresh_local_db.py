@@ -8,7 +8,8 @@ Steps, in order:
   3. Import the backup.
   4. Apply db/local_database_refresh.sql (production URLs/settings -> localhost).
   5. Apply db/unapplied_updates.sql, if non-empty.
-  6. Regenerate db/schema.sql via mysqldump (unless --no-schema-export).
+  6. Apply every db/scripts/*_dev_setup.sql, in name order. Local only; never production.
+  7. Regenerate db/schema.sql via mysqldump (unless --no-schema-export).
 
 This is destructive: anything that exists only in the local database is lost.
 See docs/local-dev-environment-setup.md and docs/database-release-practice.md.
@@ -336,6 +337,10 @@ def main(argv: list[str]) -> int:
         _print(f"Applying unapplied updates from {UNAPPLIED_UPDATES_SQL_PATH.name}")
         if _apply_optional_sql(mysql_path, config, UNAPPLIED_UPDATES_SQL_PATH):
             _print("Unapplied updates were applied successfully.")
+
+        for setup in sorted((DB_DIR / "scripts").glob("*_dev_setup.sql")):
+            _print(f"Applying local dev setup from {setup.name}")
+            _apply_sql_file(mysql_path, config, setup)
 
         if mysqldump_path:
             _print(f"Exporting current schema to {SCHEMA_SQL_PATH}")

@@ -22,6 +22,7 @@ import org.airahub.interophub.model.AppLoginEvent;
 import org.airahub.interophub.model.AppRegistry;
 import org.airahub.interophub.model.AuthLoginCode;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.GuideApps;
 
 public class ApiAuthExchangeServlet extends HttpServlet {
     private static final long RESPONSE_EXPIRES_IN_SECONDS = 3600L;
@@ -63,6 +64,12 @@ public class ApiAuthExchangeServlet extends HttpServlet {
         AuthLoginCode loginCode = authLoginCodeDao.findValidByCodeHash(codeHash)
                 .orElse(null);
         if (loginCode == null || !app.getAppId().equals(loginCode.getAppId())) {
+            response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+            writeError(response, "Invalid app_code or code.");
+            return;
+        }
+
+        if (GuideApps.TOPIC_REFERENCE.equals(app.getAppCode())) {
             response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
             writeError(response, "Invalid app_code or code.");
             return;
