@@ -88,7 +88,11 @@ Manager roles are about running the initiative. They are separate from member st
 
 ### Members (the roster)
 
-The roster is the pool of people the initiative draws from, before, during and after any Small Group. A person can be listed before they have an InteropHub account. Like `es_subscription`, rows are keyed by email and `user_id` is filled in once the person registers.
+The roster is the pool of people the initiative draws from, before, during and after any Small Group. A person can be listed before they have an InteropHub account. Like `es_subscription`, rows are keyed by email and `user_id` is filled in once the person registers. First and last name are stored separately. An email address is never stored in a name field, on the roster or on the topic follow that joining creates. When no name is known, the name fields stay empty.
+
+A person is shown by account name, then roster name, then email. Linking an account copies the account's first and last name into any blank roster name, including when the link happens later at sign-in.
+
+Managers find people through one search, used everywhere a person is added. Two or more characters match a name, email, or organization. Results are the initiative roster, then InteropHub accounts, then other people already known by email (topic-follow contact names and series registrants), then **Add new** (first name, last name, optional email, and the organization type-ahead). Choosing an account links `user_id` and copies the account name. Choosing a known email copies the contact names when there are any. The search never creates an account. Only initiative editors and global admins can use it, because it shows account emails. The spreadsheet import still has one Point of Contact column; that value is split into first and last name, and a cell that is only an email is stored as the email.
 
 People reach `JOINED` from either direction:
 
@@ -110,7 +114,7 @@ Status is not restrictive. Managers can move a member to any status. Every chang
 
 Contact information and notes are private to managers but are not treated as especially sensitive. InteropHub does not track stipends or other financial details. Anything relevant goes in notes.
 
-Each member records where they came from: added by staff, applied, imported from followers, or imported from a spreadsheet.
+Each member records where they came from: added by staff, applied, imported from followers, imported from a spreadsheet, or added from a Small Group.
 
 A member can also have an optional free-text **role in the initiative** (e.g. "product manager," "technical lead," "program manager"), so the roster can do the job of the stakeholder matrix.
 
@@ -154,7 +158,7 @@ The existing `supporter` table (organizations shown on topics) is a separate con
 Joining an initiative is a deliberate step beyond following a topic. That solves the problem that following alone says too little.
 
 1. **Joining an initiative means following its primary topic.** When a member becomes `JOINED`, InteropHub creates or restores a follow of the primary topic, if one doesn't already exist. Prospects and invited people do *not* follow automatically, because they haven't agreed to anything.
-2. **Taking part in a Small Group means joining the initiative and following the Small Group topic.** Staff add participants from the roster. No notification is sent, and the person does not need to sign in.
+2. **Taking part in a Small Group means joining the initiative and following the Small Group topic.** Staff add participants from the people search. Someone who is not on the roster is added as `JOINED`, with `member_source` `SMALL_GROUP` and a timeline entry, and then made a participant. No notification is sent, and the person does not need to sign in. An account is never created.
    - A roster member who is not yet `JOINED` becomes `JOINED`, with a timeline entry, because taking part means joining the initiative. That also follows the primary topic, under rule 1, and with the same notification behavior (the follow is recorded and the follower-added email is not sent).
    - A participant with an email, or a linked account, follows the Small Group's topic the same way. Prospects who are only on the roster do not follow that topic.
    - Removing a participant does not unfollow the topic. The follow stays until the person changes it.
@@ -182,17 +186,17 @@ The cycle dates follow the roadmap's language: four working weeks, with the work
 
 **Only public meetings are tracked.** Small Group meetings are public and run in the topic's meeting series. Project meetings with a state partner or funder, one-on-one partner meetings and internal staff meetings are not tracked in InteropHub.
 
-**Each Small Group has its own participant list, drawn from the initiative roster.** Some people will never sign in, register, or attend a meeting, so the meeting series cannot be the group list. Staff add and remove participants directly. Adding someone does not email them and does not require an account.
+**Each Small Group has its own participant list.** Some people will never sign in, register, or attend a meeting, so the meeting series cannot be the group list. Staff add and remove participants directly. Adding someone does not email them and does not require an account. The page opens with a summary (name, status, topic, series, cycle, working day, product areas, and charter when one is set). Break and description show only when they are filled in. **Edit details** holds the cycle fields. Change status stays a separate action.
 
-- A participant is an initiative member with an optional free-text role or team, and a status of `ACTIVE` or `REMOVED`.
-- Adding a member who is not yet `JOINED` marks them `JOINED`.
-- A participant with an email, or a linked account, follows the Small Group topic.
+- A participant is an initiative member with an optional free-text role or team, and a status of `ACTIVE` or `REMOVED`. The role is edited in place.
+- Adding someone who is not on the roster creates a `JOINED` roster row with `member_source` `SMALL_GROUP`. Adding a member who is not yet `JOINED` marks them `JOINED`.
+- A participant with an email, or a linked account, follows the Small Group topic. The follow stores a name only when one is known.
 - Removing a participant leaves that follow in place.
+- The participant table shows name, organization, email, role, whether they are registered, and whether they follow the topic. Registration is `APPROVED` only. Each person who is not registered has a copyable registration link, and so does the group.
 
-**The series is compared with the participant list.** The Small Group page shows:
+**People to bring in** lists everyone who is not already an active participant: series registrants (`APPROVED`, with `REQUESTED` shown as requested and not counted as registered), followers of the Small Group topic, and joined initiative members. Filters are registered, follows the topic, and on the initiative. **Add** puts that person on the participant list in one step. The list is paged because a topic can have many followers.
 
-- participants who are not registered for the series (`REQUESTED` or `APPROVED`), with a copyable registration link for that person or for the whole group. This phase does not send email.
-- series registrants who are not participants, with **Add as participant**. That adds them to the initiative roster as `JOINED` when they are not already on it.
+**The series is compared with the participant list.** Only an `APPROVED` registration counts as registered. `REQUESTED` is shown and is not counted. This phase does not send email and does not change series membership.
 
 Later cycles on the same topic reuse the series. A new Small Group can copy participants from an earlier one. Teardown still includes a step to review who should stay registered. Because AIRA won't run unrelated meetings in the same series while a Small Group is active, sharing the series across cycles does not conflict with other uses.
 
@@ -227,7 +231,7 @@ None of this needs approval or affects any other checklist. It should feel as li
 | `topic-champion` | The initiative's primary topic has a `CHAMPION`. The same check on a Small Group checklist. |
 | `members-follow-primary-topic` | Joined initiative members who don't follow the primary topic. The same check on a Small Group checklist. |
 | `series-exists` | The Small Group topic has an active meeting series |
-| `members-registered-for-series` | Small Group participants who are not registered for the series |
+| `members-registered-for-series` | Small Group participants who do not have an `APPROVED` registration for the series. A `REQUESTED` registration is not counted. |
 | `members-follow-topic` | Small Group participants with an email who don't follow the Small Group topic |
 | `meetings-scheduled` | Meetings in the series, other than cancelled ones, between the cycle start and closeout dates |
 | `agenda-topics-linked` | Agenda items in the cycle's meetings that are linked to a topic |
@@ -306,13 +310,15 @@ Comments and status changes are recorded the same way everywhere in this module.
 - checklist items (status changes, reassignment, comments);
 - checklists (template upgrades).
 
+Each entry is one line. A comment's text is on that same line. The page shows the latest five entries, with **Show all** for the rest.
+
 Example:
 
-> **Oct 23, Sabrina:** Prospect → Invited. "Emailed; she's checking with leadership about participating."
-> **Nov 2, Sabrina** commented: "Leadership approved, waiting for her reply."
-> **Nov 4, Sabrina:** Invited → Joined.
+> Oct 23 · Sabrina · Prospect → Invited: "Emailed; she's checking with leadership about participating."
+> Nov 2 · Sabrina · Leadership approved, waiting for her reply.
+> Nov 4 · Sabrina · Invited → Joined.
 
-Status-change entries can't be edited. Authors may edit the text of their own comments. One shared timeline component serves every page.
+Status-change entries can't be edited. Authors edit their own comments through an Edit link that opens a dialog. One shared timeline component serves every page.
 
 ## Suggested Data Model
 
@@ -350,7 +356,7 @@ Table names use the `es_` prefix, because initiatives sit in the same area as to
 - `es_initiative_member_id`, `es_initiative_id`, `user_id` (nullable)
 - `email` (nullable; a name may be known before an email), `email_normalized`, `contact_first_name`, `contact_last_name`
 - `es_initiative_organization_id` (nullable), `initiative_role` (free text, nullable)
-- `member_status`, `member_source` (`STAFF_ADDED`, `APPLIED`, `FOLLOWER_IMPORT`, `SPREADSHEET_IMPORT`)
+- `member_status`, `member_source` (`STAFF_ADDED`, `APPLIED`, `FOLLOWER_IMPORT`, `SPREADSHEET_IMPORT`, `SMALL_GROUP`)
 - `status_changed_at`, `status_changed_by_user_id`, `joined_at`
 - `created_by_user_id`, `created_at`, `updated_at`
 - unique on (`es_initiative_id`, `email_normalized`) where the email is present
@@ -419,7 +425,7 @@ Status columns are stored as varchar codes, not MySQL enums, so the lists can ch
 | **Roster: Organizations** | Managers | Each organization with its status, type, contacts and "needs a contact" flag; add organization; change status with a note; representation summary |
 | **Roster: People** | Managers | Filter by status, organization and organization type; add person (organization type-ahead with add-new); change status with a note; import from xlsx/CSV; pull from primary-topic followers; "doesn't follow primary topic" flag |
 | **Small Groups** | Managers | Compact list: name, topic, status, cycle dates, participant count. New Small Group defaults the topic to the primary topic and chooses a series from that topic. If the topic has no series, the page says so and links to the existing series admin. |
-| **Small Group page** | Managers | Topic and series links, status change with a note, cycle dates, product areas, charter, participant list, series comparison with copyable registration links, checklist, timeline |
+| **Small Group page** | Managers | Summary, Edit details, status change with a note, participant table, People to bring in, copyable registration links, checklist, one-line timeline |
 | **Checklist** (initiative or Small Group) | Managers | Items grouped by phase, status, due dates, hints, timeline per item; spreadsheet-style inline add, edit, remove, restore and reorder; template-upgrade preview; download as template Markdown |
 | **Checklist templates** | Global admins | Upload Markdown, see versions, download source, template-feedback view |
 | **Primary topic page** | Everyone | Banner for a listed initiative: "Part of *X* — learn more / join" |
@@ -462,8 +468,8 @@ This replaces Sabrina's spreadsheet and the Stakeholder Matrix, and doesn't touc
 ### Phase 3: Small Groups
 
 - `es_small_group` and `es_small_group_participant`. `es_checklist.es_small_group_id` links the Small Group checklist.
-- Staff add participants from the roster, or add a new person onto the roster and the Small Group together. Adding someone who is not `JOINED` marks them `JOINED` and follows the Small Group topic when they have an email or a linked account. Removing a participant does not unfollow the topic.
-- The Small Group page compares participants with series registrants. It offers a copyable registration link and **Add as participant**. It does not send email and does not change series membership.
+- Staff add participants through the shared people search, including someone who is not yet on the roster. That person is added as `JOINED` with `member_source` `SMALL_GROUP`. Adding someone who is not `JOINED` marks them `JOINED` and follows the Small Group topic when they have an email or a linked account. Names are first and last. An email is never stored as a name. Removing a participant does not unfollow the topic.
+- The Small Group page is a summary plus a participant table and a People to bring in table. Only an `APPROVED` series registration counts as registered. Copyable registration links do not send email and do not change series membership.
 - A new Small Group can copy participants from an earlier one. Later cycles reuse the topic's series.
 - The Small Group checklist is copied from the current `SMALL_GROUP` template when the Small Group is created. Due dates use `cycle-start`, `working-day`, and `closeout`. Template upgrade and download work the same way as for an initiative.
 - Checklist hints read the participant list, the series, meetings, agendas, notes, the Topic Orientation bundle, and Starter Packet snapshots. They never mark an item done.
