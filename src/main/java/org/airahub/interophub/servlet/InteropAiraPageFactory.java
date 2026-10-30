@@ -156,6 +156,15 @@ final class InteropAiraPageFactory {
         return new AiraContextConfig(label, items);
     }
 
+    /**
+     * Initiatives sit in the same header as Topics. That header is the Emerging
+     * Standards one, which is also where Supporters appears, so the items do not
+     * change when someone moves between Topics and Initiatives.
+     */
+    static AiraContextConfig initiativesContext() {
+        return topicsMeetingsContext("InteropHub", EMERGING_STANDARDS_SPACE_CODE, false, false);
+    }
+
     static void markInitiativesNavActive(HttpServletRequest request) {
         request.setAttribute(INITIATIVES_NAV_ACTIVE, Boolean.TRUE);
     }

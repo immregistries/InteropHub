@@ -761,7 +761,7 @@ public class EsInitiativeServlet extends HttpServlet {
                 .applicationSubtitle("Initiatives")
                 .mainClass("aira-main")
                 .addLocalStylesheet("/css/initiative-checklist.css?v=6")
-                .context(InteropAiraPageFactory.topicsMeetingsContext("InteropHub", null, false, false))
+                .context(InteropAiraPageFactory.initiativesContext())
                 .build();
         String kind = null;
         String message = null;

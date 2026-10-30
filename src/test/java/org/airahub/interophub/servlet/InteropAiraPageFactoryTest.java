@@ -148,6 +148,17 @@ class InteropAiraPageFactoryTest {
     }
 
     @Test
+    void initiativesContextKeepsTheEmergingStandardsHeaderItems() {
+        AiraContextConfig initiatives = InteropAiraPageFactory.initiativesContext();
+
+        assertEquals(List.of("Topics", "Meetings", "Supporters"), navLabels(initiatives));
+        assertEquals("/es/topics?space=emerging-standards", navItem(initiatives, "Topics").href());
+        assertEquals("/es/meetings?space=emerging-standards", navItem(initiatives, "Meetings").href());
+        assertEquals("/es/supporters", navItem(initiatives, "Supporters").href());
+        assertFalse(navItem(initiatives, "Supporters").active());
+    }
+
+    @Test
     void supportersNavItemLinksToPublicSupportersPageAndTracksActiveState() {
         AiraContextConfig inactive = InteropAiraPageFactory.topicsMeetingsContext(
                 "Emerging Standards", "emerging-standards", false, false);
