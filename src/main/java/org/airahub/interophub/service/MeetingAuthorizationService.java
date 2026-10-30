@@ -2,9 +2,11 @@ package org.airahub.interophub.service;
 
 import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
+import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingCochairDao;
 import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsMeeting;
+import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicNote;
 import org.airahub.interophub.model.User;
 
@@ -16,6 +18,7 @@ public class MeetingAuthorizationService {
     private final EsTopicMeetingCochairDao cochairDao;
     private final EsAgendaItemPresenterDao presenterDao;
     private final EsSubscriptionDao subscriptionDao;
+    private final EsTopicDao topicDao;
 
     public MeetingAuthorizationService() {
         this.authFlowService = new AuthFlowService();
@@ -24,6 +27,7 @@ public class MeetingAuthorizationService {
         this.cochairDao = new EsTopicMeetingCochairDao();
         this.presenterDao = new EsAgendaItemPresenterDao();
         this.subscriptionDao = new EsSubscriptionDao();
+        this.topicDao = new EsTopicDao();
     }
 
     public boolean canControlMeeting(Long userId, EsMeeting meeting) {
@@ -79,7 +83,8 @@ public class MeetingAuthorizationService {
             return true;
         }
         if (user != null) {
-            return topicSpaceAccessService.canAdministerSpace(user, topicSpaceIdForTopic(note.getEsTopicId()));
+            EsTopic topic = topicDao.findById(note.getEsTopicId()).orElse(null);
+            return topicSpaceAccessService.canEditTopic(user, topic);
         }
         return false;
     }
@@ -92,18 +97,7 @@ public class MeetingAuthorizationService {
         if (user != null && authFlowService.isAdminUser(user)) {
             return true;
         }
-        if (subscriptionDao.hasActiveChampionForTopicAndUserId(topicId, userId)) {
-            return true;
-        }
-        return user != null && topicSpaceAccessService.canAdministerSpace(user, topicSpaceIdForTopic(topicId));
-    }
-
-    private Long topicSpaceIdForTopic(Long topicId) {
-        if (topicId == null) {
-            return null;
-        }
-        return new org.airahub.interophub.dao.EsTopicDao().findById(topicId)
-                .map(org.airahub.interophub.model.EsTopic::getEsTopicSpaceId)
-                .orElse(null);
+        EsTopic topic = topicDao.findById(topicId).orElse(null);
+        return user != null && topicSpaceAccessService.canEditTopic(user, topic);
     }
 }

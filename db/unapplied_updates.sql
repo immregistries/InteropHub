@@ -646,3 +646,25 @@ INSERT INTO es_checklist_template_item
   (es_checklist_template_id, item_key, phase_label, title, guidance, due_anchor, due_offset_days, check_code, display_order)
 VALUES (@template_id, 'close-small-group', 'Complete and hand off', 'Move this Small Group to Closed, with a note summarizing the outcome.', NULL, 'closeout', 30, NULL, 46);
 -- END generated checklist templates
+
+-- E1 topic edit history. Keep app_user_token_id nullable until API token attribution is wired up.
+CREATE TABLE es_topic_change (
+  es_topic_change_id BIGINT NOT NULL AUTO_INCREMENT,
+  es_topic_id BIGINT NOT NULL,
+  changed_by_user_id BIGINT NOT NULL,
+  changed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  source VARCHAR(16) NOT NULL,
+  change_type VARCHAR(16) NOT NULL,
+  changes_json JSON NOT NULL,
+  app_user_token_id BIGINT UNSIGNED NULL,
+  PRIMARY KEY (es_topic_change_id),
+  KEY ix_es_topic_change_topic_changed_at (es_topic_id, changed_at),
+  KEY ix_es_topic_change_user (changed_by_user_id),
+  KEY ix_es_topic_change_token (app_user_token_id),
+  CONSTRAINT fk_es_topic_change_topic
+    FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id),
+  CONSTRAINT fk_es_topic_change_user
+    FOREIGN KEY (changed_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_topic_change_token
+    FOREIGN KEY (app_user_token_id) REFERENCES app_user_token (token_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

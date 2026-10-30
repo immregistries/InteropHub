@@ -144,4 +144,25 @@ public class EsTopicNeighborhoodDao extends GenericDao<EsTopicNeighborhood, Long
             throw ex;
         }
     }
+
+    public void replaceTopicNeighborhoods(org.hibernate.Session session, Long topicId, Set<Long> neighborhoodIds) {
+        if (topicId == null) {
+            return;
+        }
+        session.createMutationQuery("delete from EsTopicNeighborhood tn where tn.esTopicId = :topicId")
+                .setParameter("topicId", topicId)
+                .executeUpdate();
+        if (neighborhoodIds == null) {
+            return;
+        }
+        for (Long neighborhoodId : neighborhoodIds) {
+            if (neighborhoodId == null) {
+                continue;
+            }
+            EsTopicNeighborhood row = new EsTopicNeighborhood();
+            row.setEsTopicId(topicId);
+            row.setEsNeighborhoodId(neighborhoodId);
+            session.persist(row);
+        }
+    }
 }

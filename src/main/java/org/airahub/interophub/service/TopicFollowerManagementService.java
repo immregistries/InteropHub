@@ -251,11 +251,7 @@ public class TopicFollowerManagementService {
         if (viewer == null || topic == null) {
             return false;
         }
-        boolean isAdmin = authFlowService.isAdminUser(viewer);
-        boolean isSpaceAdmin = topicSpaceAccessService.canAdministerSpace(viewer, topic.getEsTopicSpaceId());
-        boolean isChampionOrSupport = isChampionOrSupportForTopic(
-                viewer, subscriptionDao.findActiveByTopicId(topic.getEsTopicId()));
-        return canManageFollowers(isAdmin, isSpaceAdmin, isChampionOrSupport);
+        return topicSpaceAccessService.canEditTopic(viewer, topic);
     }
 
     /**

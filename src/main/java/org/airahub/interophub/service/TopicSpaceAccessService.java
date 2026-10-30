@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.airahub.interophub.config.HibernateUtil;
@@ -16,14 +17,21 @@ import org.airahub.interophub.model.EsTopicCuration;
 import org.airahub.interophub.model.EsTopicRelationship;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicSpaceMember;
+import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.model.User;
 
 public class TopicSpaceAccessService {
 
     private final AuthFlowService authFlowService;
+    private final EsSubscriptionDao subscriptionDao;
 
     public TopicSpaceAccessService() {
-        this.authFlowService = new AuthFlowService();
+        this(new AuthFlowService(), new EsSubscriptionDao());
+    }
+
+    TopicSpaceAccessService(AuthFlowService authFlowService, EsSubscriptionDao subscriptionDao) {
+        this.authFlowService = authFlowService;
+        this.subscriptionDao = subscriptionDao;
     }
 
     public boolean canViewSpace(User user, EsTopicSpace topicSpace) {
@@ -73,7 +81,27 @@ public class TopicSpaceAccessService {
     }
 
     public boolean canEditTopic(User user, EsTopic topic) {
-        return topic != null && canAdministerSpace(user, topic.getEsTopicSpaceId());
+        if (topic == null) {
+            return false;
+        }
+        boolean isSpaceAdmin = canAdministerSpace(user, topic.getEsTopicSpaceId());
+        boolean isChampionOrSupport = user != null && subscriptionDao.hasActiveChampionOrSupportForTopicAndUser(
+                topic.getEsTopicId(), user.getUserId(),
+                user.getEmailNormalized() == null ? null
+                        : user.getEmailNormalized().trim().toLowerCase(Locale.ROOT));
+        return mayEditTopic(isSpaceAdmin, isChampionOrSupport);
+    }
+
+    public boolean canCreateTopicInSpace(User user, Long esTopicSpaceId) {
+        return mayCreateTopic(topicSpaceIsActive(esTopicSpaceId), canAdministerSpace(user, esTopicSpaceId));
+    }
+
+    static boolean mayEditTopic(boolean isSpaceAdmin, boolean activeChampionOrSupport) {
+        return isSpaceAdmin || activeChampionOrSupport;
+    }
+
+    static boolean mayCreateTopic(boolean activeSpace, boolean isSpaceAdmin) {
+        return activeSpace && isSpaceAdmin;
     }
 
     public boolean canViewMeeting(User user, EsMeeting meeting) {
@@ -268,6 +296,18 @@ public class TopicSpaceAccessService {
             return new LinkedHashSet<>(session.createQuery(
                     "select s.esTopicSpaceId from EsTopicSpace s",
                     Long.class).getResultList());
+        }
+    }
+
+    private boolean topicSpaceIsActive(Long esTopicSpaceId) {
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Long count = session.createQuery(
+                    "select count(s.esTopicSpaceId) from EsTopicSpace s"
+                            + " where s.esTopicSpaceId = :spaceId and s.isActive = true",
+                    Long.class)
+                    .setParameter("spaceId", esTopicSpaceId)
+                    .getSingleResult();
+            return count != null && count > 0;
         }
     }
 

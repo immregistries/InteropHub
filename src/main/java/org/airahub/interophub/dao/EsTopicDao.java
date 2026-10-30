@@ -26,6 +26,20 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
         }
     }
 
+    public Optional<EsTopic> findByTopicCode(org.hibernate.Session session, String topicCode) {
+        if (topicCode == null || topicCode.isBlank()) {
+            return Optional.empty();
+        }
+        return session.createQuery("from EsTopic t where t.topicCode = :code", EsTopic.class)
+                .setParameter("code", topicCode.trim())
+                .setMaxResults(1)
+                .uniqueResultOptional();
+    }
+
+    public Optional<EsTopic> findById(org.hibernate.Session session, Long topicId) {
+        return Optional.ofNullable(topicId == null ? null : session.get(EsTopic.class, topicId));
+    }
+
     public Optional<EsTopic> findByTopicCodeAndSpaceId(String topicCode, Long esTopicSpaceId) {
         if (topicCode == null || topicCode.isBlank() || esTopicSpaceId == null) {
             return Optional.empty();
@@ -250,6 +264,10 @@ public class EsTopicDao extends GenericDao<EsTopic, Long> {
             }
             throw ex;
         }
+    }
+
+    public EsTopic saveOrUpdate(org.hibernate.Session session, EsTopic topic) {
+        return session.merge(topic);
     }
 
     public List<String> findDistinctPolicyStatuses() {
