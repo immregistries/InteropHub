@@ -135,8 +135,8 @@ Kept current by stream G.
 
 | Step | Status | Notes |
 |---|---|---|
-| G0 contract | Not started | |
-| G0 test plan | Not started | |
+| G0 contract | Approved 2026-10-30 | Section 8 (MCP) waits for H0. | `topic-reference-comments-api-contract.md` |
+| G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
 | H0 MCP experiment | Prompt ready | `prompts/H0-mcp-experiment.md`. Worktree branch `experiment/h0-mcp`. |
 | T1 | Prompt ready | `prompts/T1-anchors.md`. Started before Gate 0 (decision 2026-10-30). |
 | H1 | Not started | |
@@ -164,3 +164,5 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | Topic permissions are one rule. Global admins, admins of the topic's space, and active `CHAMPION` or `SUPPORT` subscribers of the topic may do everything to that topic that a space admin can, including Topic Reference authorship. `canEditTopic` becomes this rule for all its callers; no narrower `canAdministerTopic` is kept. Callers that check `canAdministerSpace` for a topic-level action should move to `canEditTopic` (E1 audits them). Space-level actions such as creating topics stay with space admins. Reason: this replaces a Confluence process where anyone could edit, with no problems; start wide. |
 | 2026-10-30 | The pilot project is `contextual-conditions` (public, `C:\dev\writing\contextual-conditions`, InteropHub topic 7). |
 | 2026-10-30 | Contract details fixed in T1: commentable blocks carry `data-anchor` and `data-block-index` (0-based within the area); a block's snippet is its text with whitespace collapsed, trimmed, first 120 characters. |
+| 2026-10-30 | API contract and test plan approved. Choices confirmed: no automatic sign-in redirect when a guide token expires (the reader selects "Sign in to comment"; without an InteropHub session they get the email prompt, magic link, and registration if needed, then return to the guide); withdrawn comments show as withdrawn to everyone; deletes are soft (old deletes may be cleaned up later); review flags are visible to all viewers, one per area, a new one replaces the old; PAT lifetimes 30/90/365 days; localhost approved by a dev rule in code; any registered guide origin may call the API; threads returned with replies, and the poll also returns active flags. |
+| 2026-10-30 | Added "Signed in as …", Sign out, and "Not you?" to the guide. "Not you?" re-runs sign-in with `prompt=login`, which ends the InteropHub session and asks for an email. Low priority; may slip from T2/H1 to T3. Security is deliberately light: the aim is knowing who people are, in an open process. |
