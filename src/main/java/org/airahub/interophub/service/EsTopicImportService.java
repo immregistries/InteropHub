@@ -274,7 +274,9 @@ public class EsTopicImportService {
 
     private Map<String, Object> topicFields(JSONObject json, boolean creating) {
         Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put("topicCode", json.getString("topicCode"));
+        if (creating) {
+            fields.put("topicCode", json.getString("topicCode"));
+        }
         fields.put("topicName", json.getString("topicName"));
         for (String field : new String[] {
                 "topicSummary", "description", "searchKeywords", "topicEmoji", "neighborhood",
