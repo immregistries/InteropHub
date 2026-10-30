@@ -156,6 +156,16 @@ Kept current by stream G.
 | T4 | Not started | |
 | Gate 4 | | |
 
+## 7.1 Housekeeping
+
+Loose ends kept here so nobody has to remember them. G clears each item when it is done.
+
+| Item | When | Notes |
+|---|---|---|
+| Redeploy `hub.war` from `main` | Whenever Tomcat is next free | H0 replaced the normal WAR on local Tomcat. The product owner decides which branch runs on Tomcat at any time. |
+| Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
+| Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
+
 ## 8. Decisions Log
 
 Record decisions made during implementation here, with the date, so later prompts carry them.
