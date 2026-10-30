@@ -3,7 +3,7 @@
 **Date:** 2026-10-30
 **Run by:** Stream G, with H2's API checks
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 4
-**Result:** Local part passes. Production part (4.3, P3) not yet run.
+**Result:** Local part passes, approved by the product owner 2026-10-30. Production part (4.3, P3) not yet run.
 
 ## Summary
 
@@ -60,4 +60,4 @@ To do with P3: release InteropHub with the H1 and H2 database changes, register 
 
 ## Approval
 
-Product owner: _pending_ (local part)
+Product owner: local part approved 2026-10-30. Production part pending P3.
