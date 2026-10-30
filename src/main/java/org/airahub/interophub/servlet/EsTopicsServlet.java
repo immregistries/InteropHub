@@ -197,6 +197,8 @@ public class EsTopicsServlet extends HttpServlet {
 
             renderPageHeader(out, selectedSpace, myTopicsView, selectedNeighborhood, stageName, pathName,
                     pageRows.size(), showOverview, query);
+            renderAddTopicButton(out, contextPath, selectedSpace,
+                    topicSpaceAccessService.canCreateTopicInSpace(viewer, selectedSpaceId));
 
             out.println("      <div class=\"aira-right-rail-layout\">");
             out.println("        <div class=\"aira-stack\">");
@@ -262,6 +264,23 @@ public class EsTopicsServlet extends HttpServlet {
         out.println("          <p class=\"aira-page-intro\">" + intro + "</p>");
         out.println("        </div>");
         out.println("      </div>");
+    }
+
+    private void renderAddTopicButton(PrintWriter out, String contextPath, EsTopicSpace selectedSpace,
+            boolean canCreateTopics) {
+        String link = addTopicLink(contextPath, selectedSpace.getSpaceCode(), canCreateTopics);
+        if (link == null) {
+            return;
+        }
+        out.println("      <p>" + link + "</p>");
+    }
+
+    static String addTopicLink(String contextPath, String spaceCode, boolean canCreateTopics) {
+        if (!canCreateTopics) {
+            return null;
+        }
+        return "<a class=\"aira-button aira-button--primary\" href=\"" + contextPath
+                + "/es/topics/new?space=" + staticUrlEncode(spaceCode) + "\">Add topic</a>";
     }
 
     private void renderOverview(PrintWriter out, String contextPath, EsTopicSpace selectedSpace,

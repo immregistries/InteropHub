@@ -55,6 +55,7 @@
     <mapping class="org.airahub.interophub.model.EsTopicBoardStage"/>
     <mapping class="org.airahub.interophub.model.EsTopicBoardPath"/>
     <mapping class="org.airahub.interophub.model.EsTopicNeighborhood"/>
+    <mapping class="org.airahub.interophub.model.EsTopicChange"/>
     <mapping class="org.airahub.interophub.model.EsCampaign"/>
     <mapping class="org.airahub.interophub.model.EsCampaignTopic"/>
     <mapping class="org.airahub.interophub.model.EsInterest"/>

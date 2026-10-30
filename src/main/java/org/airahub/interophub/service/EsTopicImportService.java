@@ -2,7 +2,6 @@ package org.airahub.interophub.service;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -13,20 +12,15 @@ import org.airahub.interophub.dao.EsCampaignDao;
 import org.airahub.interophub.dao.EsCommentDao;
 import org.airahub.interophub.dao.EsCampaignTopicDao;
 import org.airahub.interophub.dao.EsInterestDao;
-import org.airahub.interophub.dao.EsNeighborhoodDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
-import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
-import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
 import org.airahub.interophub.dao.EsTopicSpaceDao;
-import org.airahub.interophub.dao.EsTopicStageDefinitionDao;
+import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsCampaign;
 import org.airahub.interophub.model.EsCampaignTopic;
-import org.airahub.interophub.model.EsNeighborhood;
 import org.airahub.interophub.model.EsTopic;
-import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
-import org.airahub.interophub.model.EsTopicStageDefinition;
+import org.airahub.interophub.model.User;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -43,11 +37,9 @@ public class EsTopicImportService {
     private final EsInterestDao interestDao;
     private final EsCommentDao commentDao;
     private final EsSubscriptionDao subscriptionDao;
-    private final EsNeighborhoodDao neighborhoodDao;
-    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsTopicSpaceDao topicSpaceDao;
-    private final EsTopicStageDefinitionDao stageDefinitionDao;
-    private final EsTopicPathDefinitionDao pathDefinitionDao;
+    private final UserDao userDao;
+    private final TopicEditService topicEditService;
 
     public EsTopicImportService() {
         this.topicDao = new EsTopicDao();
@@ -56,11 +48,9 @@ public class EsTopicImportService {
         this.interestDao = new EsInterestDao();
         this.commentDao = new EsCommentDao();
         this.subscriptionDao = new EsSubscriptionDao();
-        this.neighborhoodDao = new EsNeighborhoodDao();
-        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
-        this.stageDefinitionDao = new EsTopicStageDefinitionDao();
-        this.pathDefinitionDao = new EsTopicPathDefinitionDao();
+        this.userDao = new UserDao();
+        this.topicEditService = new TopicEditService();
     }
 
     /**
@@ -114,6 +104,8 @@ public class EsTopicImportService {
             String topicSpaceCode) {
 
         EsTopicSpace targetTopicSpace = resolveTopicSpace(topicSpaceCode);
+        User importingUser = userDao.findById(adminUserId)
+                .orElseThrow(() -> new IllegalArgumentException("Importing user was not found."));
         EsCampaign campaign = resolveCampaign(
                 selectedCampaignId, newCampaignCode, newCampaignName, adminUserId);
 
@@ -132,9 +124,6 @@ public class EsTopicImportService {
         String[] lines = rawLines.split("\r?\n");
         Tally tally = new Tally(campaign, allowCampaignReset);
         Set<String> seenTopicCodes = new HashSet<>();
-        Map<String, EsNeighborhood> activeNeighborhoodsByName = buildActiveNeighborhoodLookup(
-                targetTopicSpace.getEsTopicSpaceId());
-
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i].trim();
             if (line.isEmpty()) {
@@ -162,82 +151,22 @@ public class EsTopicImportService {
 
                 Optional<EsTopic> existingTopic = topicDao.findByTopicCodeAndSpaceId(
                         topicCode, targetTopicSpace.getEsTopicSpaceId());
-                EsTopic topic;
-                boolean isNewTopic;
-                if (existingTopic.isPresent()) {
-                    topic = existingTopic.get();
-                    isNewTopic = false;
-                } else {
+                EsTopic topic = existingTopic.orElse(null);
+                boolean isNewTopic = topic == null;
+                if (isNewTopic) {
                     Optional<EsTopic> topicInAnotherSpace = topicDao.findByTopicCode(topicCode);
                     if (topicInAnotherSpace.isPresent()) {
                         throw new IllegalArgumentException(
                                 "Topic code '" + topicCode
                                         + "' already exists in a different Topic Space. Import only updates topics in the selected Topic Space and will not move topics between spaces.");
                     }
-                    topic = new EsTopic();
-                    topic.setTopicCode(topicCode);
-                    topic.setCreatedByUserId(adminUserId);
-                    isNewTopic = true;
                 }
 
-                // Import policy: topic metadata is always upserted regardless of campaign
-                // status. Optional fields are applied to new topics (to get defaults) or when
-                // the key is present; a missing key leaves an existing topic's value alone.
-                topic.setEsTopicSpaceId(targetTopicSpace.getEsTopicSpaceId());
-                topic.setTopicName(json.getString("topicName"));
-                if (isNewTopic || json.has("topicSummary")) {
-                    topic.setTopicSummary(readLimitedString(json, "topicSummary", 300));
-                }
-                if (isNewTopic || json.has("description")) {
-                    topic.setDescription(readNullableTrimmedString(json, "description"));
-                }
-                if (isNewTopic || json.has("searchKeywords")) {
-                    topic.setSearchKeywords(readNullableTrimmedString(json, "searchKeywords"));
-                }
-                if (isNewTopic || json.has("topicEmoji")) {
-                    topic.setTopicEmoji(readLimitedString(json, "topicEmoji", 64));
-                }
-                boolean replaceNeighborhoods = isNewTopic || json.has("neighborhood");
-                Set<Long> neighborhoodIds = Set.of();
-                if (replaceNeighborhoods) {
-                    neighborhoodIds = resolveNeighborhoodIds(readNullableTrimmedString(json, "neighborhood"),
-                            activeNeighborhoodsByName);
-                    topic.setNeighborhood(joinNeighborhoodNames(neighborhoodIds, activeNeighborhoodsByName));
-                }
-                if (isNewTopic || json.has("priorityIis")) {
-                    topic.setPriorityIis(readPriority(json, "priorityIis"));
-                }
-                if (isNewTopic || json.has("priorityEhr")) {
-                    topic.setPriorityEhr(readPriority(json, "priorityEhr"));
-                }
-                if (isNewTopic || json.has("priorityCdc")) {
-                    topic.setPriorityCdc(readPriority(json, "priorityCdc"));
-                }
-                if (isNewTopic || json.has("stage")) {
-                    topic.setEsTopicStageDefinitionId(resolveStageId(
-                            readNullableTrimmedString(json, "stage"), targetTopicSpace, i + 1));
-                }
-                if (isNewTopic || json.has("path")) {
-                    topic.setEsTopicPathDefinitionId(resolvePathId(
-                            readNullableTrimmedString(json, "path"), targetTopicSpace, i + 1));
-                }
-                if (json.has("status")) {
-                    topic.setStatus(parseTopicStatus(readNullableTrimmedString(json, "status")));
-                }
-                if (isNewTopic || json.has("policyStatus")) {
-                    topic.setPolicyStatus(readNullableTrimmedString(json, "policyStatus"));
-                }
-                if (isNewTopic || json.has("topicType")) {
-                    topic.setTopicType(readNullableTrimmedString(json, "topicType"));
-                }
-                if (isNewTopic || json.has("confluenceUrl")) {
-                    topic.setConfluenceUrl(readNullableTrimmedString(json, "confluenceUrl"));
-                }
-
-                topic = topicDao.saveOrUpdate(topic);
-                if (replaceNeighborhoods) {
-                    topicNeighborhoodDao.replaceTopicNeighborhoods(topic.getEsTopicId(), neighborhoodIds);
-                }
+                Map<String, Object> fields = topicFields(json, isNewTopic);
+                TopicEditService.TopicEditResult editResult = isNewTopic
+                        ? topicEditService.create(importingUser, targetTopicSpace, fields, "IMPORT")
+                        : topicEditService.update(importingUser, topic, topic.getUpdatedAt(), fields, "IMPORT");
+                topic = editResult.topic();
 
                 if (isNewTopic) {
                     tally.topicsInserted++;
@@ -343,51 +272,31 @@ public class EsTopicImportService {
         return null;
     }
 
-    private Long resolveStageId(String stageName, EsTopicSpace topicSpace, int lineNo) {
-        if (stageName == null) {
-            return null;
+    private Map<String, Object> topicFields(JSONObject json, boolean creating) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        if (creating) {
+            fields.put("topicCode", json.getString("topicCode"));
         }
-        return stageDefinitionDao.findByNameInSpace(stageName, topicSpace.getEsTopicSpaceId())
-                .map(EsTopicStageDefinition::getEsTopicStageDefinitionId)
-                .orElseThrow(() -> new IllegalArgumentException("Stage '" + stageName + "' on line " + lineNo
-                        + " does not match any stage defined for Topic Space '" + topicSpace.getSpaceCode()
-                        + "'."));
-    }
-
-    private Long resolvePathId(String pathName, EsTopicSpace topicSpace, int lineNo) {
-        if (pathName == null) {
-            return null;
+        fields.put("topicName", json.getString("topicName"));
+        for (String field : new String[] {
+                "topicSummary", "description", "searchKeywords", "topicEmoji", "neighborhood",
+                "stage", "path", "status", "policyStatus", "topicType", "confluenceUrl"
+        }) {
+            if (!creating && !json.has(field)) {
+                continue;
+            }
+            fields.put(field, readNullableTrimmedString(json, field));
         }
-        return pathDefinitionDao.findByNameInSpace(pathName, topicSpace.getEsTopicSpaceId())
-                .map(EsTopicPathDefinition::getEsTopicPathDefinitionId)
-                .orElseThrow(() -> new IllegalArgumentException("Path '" + pathName + "' on line " + lineNo
-                        + " does not match any path defined for Topic Space '" + topicSpace.getSpaceCode()
-                        + "'."));
-    }
-
-    private EsTopic.EsTopicStatus parseTopicStatus(String raw) {
-        if (raw != null) {
-            for (EsTopic.EsTopicStatus status : EsTopic.EsTopicStatus.values()) {
-                if (status.name().equalsIgnoreCase(raw)) {
-                    return status;
-                }
+        for (String field : new String[] { "priorityIis", "priorityEhr", "priorityCdc" }) {
+            if (creating || json.has(field)) {
+                fields.put(field, readPriority(json, field));
             }
         }
-        throw new IllegalArgumentException("Invalid status '" + (raw == null ? "" : raw)
-                + "'. Use ACTIVE, ARCHIVED, or RETIRED, or omit the field to leave it unchanged.");
+        return fields;
     }
 
     private int readPriority(JSONObject json, String fieldName) {
         return hasNonNull(json, fieldName) ? json.getInt(fieldName) : 0;
-    }
-
-    private String readLimitedString(JSONObject json, String fieldName, int maxLength) {
-        String value = readNullableTrimmedString(json, fieldName);
-        if (value != null && value.codePointCount(0, value.length()) > maxLength) {
-            throw new IllegalArgumentException("Field '" + fieldName + "' is "
-                    + value.codePointCount(0, value.length()) + " characters; the maximum is " + maxLength + ".");
-        }
-        return value;
     }
 
     private boolean hasNonNull(JSONObject json, String fieldName) {
@@ -441,61 +350,6 @@ public class EsTopicImportService {
                                 + expectedTopicSpaceCode + "'.");
             }
         }
-    }
-
-    private Map<String, EsNeighborhood> buildActiveNeighborhoodLookup(Long topicSpaceId) {
-        Map<String, EsNeighborhood> lookup = new LinkedHashMap<>();
-        for (EsNeighborhood neighborhood : neighborhoodDao.findAllActiveBySpaceId(topicSpaceId)) {
-            String name = normalizeNeighborhoodToken(neighborhood.getNeighborhoodName());
-            if (name != null) {
-                lookup.putIfAbsent(name.toLowerCase(), neighborhood);
-            }
-        }
-        return lookup;
-    }
-
-    private Set<Long> resolveNeighborhoodIds(String neighborhoodRaw,
-            Map<String, EsNeighborhood> activeNeighborhoodsByName) {
-        Set<Long> neighborhoodIds = new LinkedHashSet<>();
-        for (String token : parseNeighborhoodTokens(neighborhoodRaw)) {
-            EsNeighborhood neighborhood = activeNeighborhoodsByName.get(token.toLowerCase());
-            if (neighborhood == null) {
-                throw new IllegalArgumentException("Unknown neighborhood: " + token
-                        + ". Use an active neighborhood name exactly as configured in the selected Topic Space.");
-            }
-            neighborhoodIds.add(neighborhood.getEsNeighborhoodId());
-        }
-        return neighborhoodIds;
-    }
-
-    private List<String> parseNeighborhoodTokens(String neighborhoodRaw) {
-        String normalized = normalizeNeighborhoodToken(neighborhoodRaw);
-        if (normalized == null) {
-            return List.of();
-        }
-
-        return java.util.Arrays.stream(normalized.split(","))
-                .map(this::normalizeNeighborhoodToken)
-                .filter(token -> token != null)
-                .distinct()
-                .collect(Collectors.toList());
-    }
-
-    private String joinNeighborhoodNames(Set<Long> neighborhoodIds,
-            Map<String, EsNeighborhood> activeNeighborhoodsByName) {
-        if (neighborhoodIds == null || neighborhoodIds.isEmpty()) {
-            return null;
-        }
-
-        Map<Long, String> namesById = new LinkedHashMap<>();
-        for (EsNeighborhood neighborhood : activeNeighborhoodsByName.values()) {
-            namesById.putIfAbsent(neighborhood.getEsNeighborhoodId(), neighborhood.getNeighborhoodName());
-        }
-
-        return neighborhoodIds.stream()
-                .map(namesById::get)
-                .filter(name -> name != null && !name.isBlank())
-                .collect(Collectors.joining(", "));
     }
 
     private String normalizeNeighborhoodToken(String value) {

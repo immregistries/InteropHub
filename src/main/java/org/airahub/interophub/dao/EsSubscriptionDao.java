@@ -669,6 +669,39 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    public boolean hasActiveChampionOrSupportForTopicAndUser(Long esTopicId, Long userId, String emailNormalized) {
+        if (esTopicId == null || (userId == null && (emailNormalized == null || emailNormalized.isBlank()))) {
+            return false;
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String identityClause;
+            if (userId != null && emailNormalized != null && !emailNormalized.isBlank()) {
+                identityClause = "(s.userId = :userId or s.emailNormalized = :email)";
+            } else if (userId != null) {
+                identityClause = "s.userId = :userId";
+            } else {
+                identityClause = "s.emailNormalized = :email";
+            }
+            var query = session.createQuery(
+                    "select count(s.esSubscriptionId) from EsSubscription s"
+                            + " where s.esTopicId = :topicId"
+                            + " and s.subscriptionType = :type and s.status in (:statuses)"
+                            + " and " + identityClause,
+                    Long.class)
+                    .setParameter("topicId", esTopicId)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameterList("statuses", CHAMPION_EQUIVALENT_STATUSES);
+            if (userId != null) {
+                query.setParameter("userId", userId);
+            }
+            if (emailNormalized != null && !emailNormalized.isBlank()) {
+                query.setParameter("email", emailNormalized);
+            }
+            Long count = query.getSingleResult();
+            return count != null && count > 0;
+        }
+    }
+
     /**
      * Returns active SUBSCRIBED subscriptions for any of the given topic IDs.
      * Used when building the topic-subscriber recipient group for a meeting

@@ -1,7 +1,7 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
-import java.net.URI;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -12,7 +12,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import org.airahub.interophub.dao.EsNeighborhoodDao;
-import org.airahub.interophub.dao.EsTopicNeighborhoodDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
 import org.airahub.interophub.dao.EsTopicPathDefinitionDao;
@@ -25,6 +24,7 @@ import org.airahub.interophub.model.EsTopicPathDefinition;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicStageDefinition;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.TopicEditService;
 
 /**
  * Admin-only: browse ES topics by Topic Space and create new ones. Editing an
@@ -38,20 +38,20 @@ public class AdminEsTopicServlet extends HttpServlet {
 
     private final EsTopicDao esTopicDao;
     private final EsTopicMeetingDao esTopicMeetingDao;
-    private final EsTopicNeighborhoodDao topicNeighborhoodDao;
     private final EsNeighborhoodDao esNeighborhoodDao;
     private final EsTopicSpaceDao topicSpaceDao;
     private final EsTopicStageDefinitionDao topicStageDefinitionDao;
     private final EsTopicPathDefinitionDao topicPathDefinitionDao;
+    private final TopicEditService topicEditService;
 
     public AdminEsTopicServlet() {
         this.esTopicDao = new EsTopicDao();
         this.esTopicMeetingDao = new EsTopicMeetingDao();
-        this.topicNeighborhoodDao = new EsTopicNeighborhoodDao();
         this.esNeighborhoodDao = new EsNeighborhoodDao();
         this.topicSpaceDao = new EsTopicSpaceDao();
         this.topicStageDefinitionDao = new EsTopicStageDefinitionDao();
         this.topicPathDefinitionDao = new EsTopicPathDefinitionDao();
+        this.topicEditService = new TopicEditService();
     }
 
     @Override
@@ -126,34 +126,25 @@ public class AdminEsTopicServlet extends HttpServlet {
                 requestedSpaceId = defaultSpaceId;
             }
             EsTopicSpace targetSpace = requireActiveTopicSpace(requestedSpaceId, "Topic Space");
-            String topicCodeVal = required(topicCodeParam, "Topic code");
-            if (esTopicDao.findByTopicCode(topicCodeVal).isPresent()) {
-                throw new IllegalArgumentException("Topic code is already in use.");
-            }
-            newTopic.setTopicCode(topicCodeVal);
-            newTopic.setEsTopicSpaceId(targetSpace.getEsTopicSpaceId());
-            newTopic.setTopicName(required(topicName, "Topic name"));
-            newTopic.setDescription(description);
-            newTopic.setTopicSummary(topicSummary);
-            newTopic.setTopicEmoji(topicEmoji);
-            newTopic.setNeighborhood(null);
-            newTopic.setPriorityIis(parseRequiredInt(priorityIisRaw, "Priority IIS"));
-            newTopic.setPriorityEhr(parseRequiredInt(priorityEhrRaw, "Priority EHR"));
-            newTopic.setPriorityCdc(parseRequiredInt(priorityCdcRaw, "Priority CDC"));
-            newTopic.setEsTopicStageDefinitionId(
-                    validateStageSelectionForTopicSpace(newTopic.getEsTopicSpaceId(), stageDefinitionId));
-            newTopic.setEsTopicPathDefinitionId(
-                    validatePathSelectionForTopicSpace(newTopic.getEsTopicSpaceId(), pathDefinitionId));
-            newTopic.setPolicyStatus(policyStatus);
-            newTopic.setTopicType(topicType);
-            newTopic.setConfluenceUrl(validateOptionalUrl(confluenceUrl, "Confluence URL"));
-            newTopic.setStatus(parseStatus(required(statusRaw, "Status")));
-            newTopic.setCreatedByUserId(adminUser.get().getUserId());
-
-            validateNeighborhoodSelectionForTopicSpace(newTopic.getEsTopicSpaceId(), selectedNeighborhoodIds);
-
-            EsTopic saved = esTopicDao.saveOrUpdate(newTopic);
-            topicNeighborhoodDao.replaceTopicNeighborhoods(saved.getEsTopicId(), selectedNeighborhoodIds);
+            Map<String, Object> fields = new LinkedHashMap<>();
+            fields.put("topicCode", topicCodeParam);
+            fields.put("topicName", topicName);
+            fields.put("description", description);
+            fields.put("topicSummary", topicSummary);
+            fields.put("searchKeywords", trimToNull(request.getParameter("searchKeywords")));
+            fields.put("topicEmoji", topicEmoji);
+            fields.put("neighborhoods", selectedNeighborhoodNames(targetSpace.getEsTopicSpaceId(), selectedNeighborhoodIds));
+            fields.put("priorityIis", priorityIisRaw);
+            fields.put("priorityEhr", priorityEhrRaw);
+            fields.put("priorityCdc", priorityCdcRaw);
+            fields.put("stage", stageName(targetSpace.getEsTopicSpaceId(), stageDefinitionId));
+            fields.put("path", pathName(targetSpace.getEsTopicSpaceId(), pathDefinitionId));
+            fields.put("policyStatus", policyStatus);
+            fields.put("topicType", topicType);
+            fields.put("confluenceUrl", confluenceUrl);
+            fields.put("status", statusRaw);
+            newTopic = topicEditService.create(adminUser.get(), targetSpace, fields, "WEB").topic();
+            EsTopic saved = newTopic;
 
             if (meetingEnabled) {
                 if (!topicSpaceDao.isActiveSpaceId(saved.getEsTopicSpaceId())) {
@@ -693,15 +684,6 @@ public class AdminEsTopicServlet extends HttpServlet {
         return ids;
     }
 
-    private Integer parseRequiredInt(String value, String label) {
-        String normalized = required(value, label);
-        try {
-            return Integer.valueOf(normalized);
-        } catch (NumberFormatException ex) {
-            throw new IllegalArgumentException(label + " must be a valid number.");
-        }
-    }
-
     private Integer parseIntOrNull(String value) {
         try {
             return value == null ? null : Integer.valueOf(value);
@@ -726,28 +708,6 @@ public class AdminEsTopicServlet extends HttpServlet {
         return normalized;
     }
 
-    private String validateOptionalUrl(String value, String label) {
-        String normalized = trimToNull(value);
-        if (normalized == null) {
-            return null;
-        }
-        try {
-            URI uri = URI.create(normalized);
-            String scheme = uri.getScheme();
-            if (scheme == null || !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))) {
-                throw new IllegalArgumentException(label + " must start with http:// or https://");
-            }
-            if (uri.getHost() == null || uri.getHost().isBlank()) {
-                throw new IllegalArgumentException(label + " must include a host.");
-            }
-            return normalized;
-        } catch (IllegalArgumentException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new IllegalArgumentException(label + " is invalid.");
-        }
-    }
-
     private EsTopicSpace requireActiveTopicSpace(Long topicSpaceId, String label) {
         EsTopicSpace topicSpace = topicSpaceDao.findById(topicSpaceId)
                 .orElseThrow(() -> new IllegalArgumentException(label + " is invalid."));
@@ -757,45 +717,43 @@ public class AdminEsTopicServlet extends HttpServlet {
         return topicSpace;
     }
 
-    private void validateNeighborhoodSelectionForTopicSpace(Long topicSpaceId, Set<Long> selectedNeighborhoodIds) {
-        if (selectedNeighborhoodIds == null || selectedNeighborhoodIds.isEmpty()) {
-            return;
-        }
-        Set<Long> allowedIds = esNeighborhoodDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+    private List<String> selectedNeighborhoodNames(Long topicSpaceId, Set<Long> selectedNeighborhoodIds) {
+        List<EsNeighborhood> activeNeighborhoods = esNeighborhoodDao.findAllActiveBySpaceId(topicSpaceId);
+        Set<Long> allowedIds = activeNeighborhoods.stream()
                 .map(EsNeighborhood::getEsNeighborhoodId)
                 .collect(Collectors.toSet());
-        List<Long> invalidIds = selectedNeighborhoodIds.stream()
-                .filter(id -> id != null && !allowedIds.contains(id))
-                .collect(Collectors.toList());
+        List<Long> invalidIds = selectedNeighborhoodIds.stream().filter(id -> !allowedIds.contains(id)).toList();
         if (!invalidIds.isEmpty()) {
             throw new IllegalArgumentException(
                     "Neighborhood assignments must belong to the selected Topic Space. Invalid neighborhood IDs: "
                             + invalidIds.stream().map(String::valueOf).collect(Collectors.joining(", ")));
         }
+        return activeNeighborhoods.stream()
+                .filter(neighborhood -> selectedNeighborhoodIds.contains(neighborhood.getEsNeighborhoodId()))
+                .map(EsNeighborhood::getNeighborhoodName)
+                .toList();
     }
 
-    private Long validateStageSelectionForTopicSpace(Long topicSpaceId, Long selectedStageDefinitionId) {
+    private String stageName(Long topicSpaceId, Long selectedStageDefinitionId) {
         if (selectedStageDefinitionId == null) {
             return null;
         }
-        boolean allowed = topicStageDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
-                .anyMatch(d -> selectedStageDefinitionId.equals(d.getEsTopicStageDefinitionId()));
-        if (!allowed) {
-            throw new IllegalArgumentException("Stage must belong to the selected Topic Space.");
-        }
-        return selectedStageDefinitionId;
+        return topicStageDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+                .filter(d -> selectedStageDefinitionId.equals(d.getEsTopicStageDefinitionId()))
+                .map(EsTopicStageDefinition::getStageName)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Stage must belong to the selected Topic Space."));
     }
 
-    private Long validatePathSelectionForTopicSpace(Long topicSpaceId, Long selectedPathDefinitionId) {
+    private String pathName(Long topicSpaceId, Long selectedPathDefinitionId) {
         if (selectedPathDefinitionId == null) {
             return null;
         }
-        boolean allowed = topicPathDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
-                .anyMatch(d -> selectedPathDefinitionId.equals(d.getEsTopicPathDefinitionId()));
-        if (!allowed) {
-            throw new IllegalArgumentException("Advancement Path must belong to the selected Topic Space.");
-        }
-        return selectedPathDefinitionId;
+        return topicPathDefinitionDao.findAllOrderedBySpaceId(topicSpaceId).stream()
+                .filter(d -> selectedPathDefinitionId.equals(d.getEsTopicPathDefinitionId()))
+                .map(EsTopicPathDefinition::getPathName)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Advancement Path must belong to the selected Topic Space."));
     }
 
     private Long findActiveDefaultTopicSpaceId() {

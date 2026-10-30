@@ -127,8 +127,7 @@ public class EsTopicManageServlet extends HttpServlet {
         List<EsSubscription> topicSubscriptions = subscriptionDao.findActiveByTopicId(topicId);
         boolean isChampionOrSupport = TopicFollowerManagementService.isChampionOrSupportForTopic(viewer,
                 topicSubscriptions);
-        boolean canManage = TopicFollowerManagementService.canManageFollowers(isAdmin, isSpaceAdmin,
-                isChampionOrSupport);
+        boolean canManage = topicSpaceAccessService.canEditTopic(viewer, topicEntity);
         if (!canManage) {
             response.sendRedirect(contextPath + "/es/topic/" + topicId);
             return;

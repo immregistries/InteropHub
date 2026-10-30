@@ -470,6 +470,11 @@
   </servlet>
 
   <servlet>
+    <servlet-name>EsTopicCreateServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.EsTopicCreateServlet</servlet-class>
+  </servlet>
+
+  <servlet>
     <servlet-name>EsTopicResourceServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.EsTopicResourceServlet</servlet-class>
     <multipart-config>
@@ -837,6 +842,11 @@
   <servlet-mapping>
     <servlet-name>EsTopicEditServlet</servlet-name>
     <url-pattern>/es/topic-edit/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet-mapping>
+    <servlet-name>EsTopicCreateServlet</servlet-name>
+    <url-pattern>/es/topics/new</url-pattern>
   </servlet-mapping>
 
   <servlet-mapping>
