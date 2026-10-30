@@ -140,9 +140,9 @@ Kept current by stream G.
 | H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
-| E1 | Reviewed 2026-10-30, fixes requested | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. Open: SUPPORTERS subview stays global-admin only (product owner to confirm). |
-| P1 | Reviewed 2026-10-30, waiting | 27 anchors placed, checks pass, uncommitted. Waits for product owner review of the anchor list, the explicit heading ID fix, and `v0.5.1`. |
-| T1.1 | Prompt ready | `prompts/T1.1-anchor-patch.md`: reading-copy blank lines, duplicate-ID guidance. Patch `v0.5.1`. |
+| E1 | Fixes in progress | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
+| P1 | Finishing | Anchor list accepted by the product owner. `prompts/P1.1-pilot-finish.md`: move to `v0.5.1`, explicit `{#related-representations}` ID. |
+| T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
 | H1 | Testing on Tomcat | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
 | T2 | Not started | |
@@ -182,3 +182,5 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | Gate 0 passed. The MCP server is hand-written in InteropHub (H0). The official Java SDK 2.1.0 also ran, but adds 3.8 MB, forces reactor-core 3.7 beside the Azure client's reactor-netty 1.0, mismatches Jackson annotations, has no logging binding, skips the protocol-version check, and leaks stack traces in errors. Revisit only if MCP needs server-initiated requests or resumable streams. Contract Section 8 records the transport. |
 | 2026-10-30 | Personal access tokens use their own `app_registry` row, `interophub-api`; guide tokens use `topic-reference`. The bearer filter does authentication only; each servlet and the MCP dispatcher check scopes. |
 | 2026-10-30 | `/guide/open` and the approved URL prefix setting move from H1 to H2, since both need the guide registration tables. H1 is sign-in and tokens only. Test check 1.35 becomes 2.32. |
+| 2026-10-30 | The SUPPORTERS view on the topic manage page stays global-admin only; champions get what space admins get, and space admins do not see it. E1's reworded import validation messages are accepted. |
+| 2026-10-30 | G may commit, push, and tag `content-publishing-templates` releases after verifying them, without asking. |
