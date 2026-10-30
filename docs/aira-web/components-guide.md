@@ -208,6 +208,8 @@ Use `hidden` on `aira-search-popover` when suggestions are closed. Use `aira-sea
 
 Use semantic tables for technical data. The standard header is light and restrained; use `aira-table--brand-header` sparingly when a stronger branded summary is appropriate. Tables preserve columns on narrow screens and should sit inside `aira-table-wrap` for horizontal overflow rather than converting rows into cards or hiding columns.
 
+Use `<th scope="row">` for a body cell that identifies its row. In `aira-table`, body row headers are visually styled like data cells; add `aira-table__cell--primary` when the identifying value should remain bold. This rule is limited to `aira-table`, so the intentionally header-styled row labels in `aira-matrix-table` are unchanged.
+
 ```html
 <section class="aira-table-panel">
   <div class="aira-table-panel__header">
@@ -241,6 +243,24 @@ Use semantic tables for technical data. The standard header is light and restrai
     </table>
   </div>
 </section>
+```
+
+Add `aira-table--compact` to a working table that should read like a spreadsheet or queue. It uses `--aira-space-1` / `--aira-space-2` cell padding, vertically centers cell content, and reduces inline inputs, selects, buttons, and badges. The compact controls use the existing small-control and spacing tokens; this density is intended for desktop working lists and does not preserve the default full touch-target height.
+
+```html
+<table class="aira-table aira-table--compact">
+  <thead>
+    <tr><th scope="col">Included</th><th scope="col">Person</th><th scope="col">Role</th><th scope="col">Status</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><label class="aira-check"><input type="checkbox" checked><span class="aira-visually-hidden">Include Avery Morgan</span></label></td>
+      <th scope="row" class="aira-table__cell--primary">Avery Morgan</th>
+      <td><select class="aira-select" aria-label="Role for Avery Morgan"><option>Participant</option></select></td>
+      <td><span class="aira-badge aira-badge--success">Active</span></td>
+    </tr>
+  </tbody>
+</table>
 ```
 
 Use semantic `aira-table-panel` accent modifiers when the table as a whole needs to read as a flagged callout. Available variants are `aira-table-panel--info`, `aira-table-panel--success`, `aira-table-panel--warning`, and `aira-table-panel--danger`.
@@ -481,6 +501,28 @@ Use `aira-dialog` on a native HTML `<dialog>` element for small blocking prompts
   });
 </script>
 ```
+
+For a bounded dialog containing an anchored type-ahead, add `aira-dialog--popover-visible` to the dialog and wrap the input and `aira-search-popover` in `aira-dialog-search`. The modifier makes dialog overflow visible, while the wrapper supplies the positioning context and overlay stacking. The application still owns combobox behavior and toggles the popover's `hidden` attribute; it does not need to toggle dialog overflow.
+
+```html
+<dialog class="aira-dialog aira-dialog--popover-visible" aria-labelledby="add-person-title">
+  <form class="aira-stack aira-stack--compact">
+    <h3 class="aira-dialog__title" id="add-person-title">Add person</h3>
+    <div class="aira-field aira-dialog-search">
+      <label for="person-search">Person</label>
+      <input class="aira-input" id="person-search" role="combobox"
+             aria-expanded="true" aria-controls="person-results" autocomplete="off">
+      <div class="aira-search-popover">
+        <div class="aira-search-listbox" id="person-results" role="listbox">
+          <button class="aira-search-option" type="button" role="option">Avery Morgan</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</dialog>
+```
+
+Use this opt-in only for dialogs whose content already fits in the viewport: visible overflow removes the dialog's clipping/scroll containment. Long dialogs should retain normal scrolling or use a different interaction. The contract uses an explicit modifier instead of `:has()` so behavior remains deterministic in embedded browser environments and does not depend on live descendant-selector support.
 
 ### Badges and Status Guidance
 

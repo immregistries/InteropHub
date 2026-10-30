@@ -292,9 +292,15 @@ button, input, select, textarea {
 .aira-search-option {
   display: grid;
   gap: 0.125rem;
+  width: 100%;
   padding: var(--aira-space-2) var(--aira-space-3);
+  border: 0;
+  background: transparent;
   color: inherit;
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .aira-search-option:hover,
@@ -1867,7 +1873,15 @@ mark,
   vertical-align: top;
 }
 
-.aira-table tbody tr:last-child td {
+.aira-table tbody th {
+  border-bottom: 1px solid var(--aira-border-subtle);
+  background: transparent;
+  vertical-align: top;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.aira-table tbody tr:last-child > :is(th, td) {
   border-bottom: 0;
 }
 
@@ -1918,14 +1932,41 @@ mark,
   white-space: normal;
 }
 
-.aira-table--brand-header th {
+.aira-table--compact > :is(thead, tbody) > tr > :is(th, td) {
+  padding: var(--aira-space-1) var(--aira-space-2);
+  vertical-align: middle;
+}
+
+.aira-table--compact :is(.aira-input, .aira-select, .aira-button) {
+  min-height: var(--aira-control-height-small);
+  padding-top: var(--aira-space-1);
+  padding-bottom: var(--aira-space-1);
+  font-size: 0.8125rem;
+}
+
+.aira-table--compact .aira-badge {
+  min-height: var(--aira-space-6);
+  padding: 0 var(--aira-space-2);
+  font-size: 0.75rem;
+}
+
+.aira-table--compact :is(.aira-check, .aira-radio) {
+  min-height: 0;
+  align-items: center;
+}
+
+.aira-table--compact :is(.aira-check, .aira-radio) input {
+  margin-top: 0;
+}
+
+.aira-table--brand-header thead th {
   background: var(--aira-navy);
   color: var(--aira-white);
   border-bottom-color: var(--aira-navy);
 }
 
-.aira-table--brand-header th a,
-.aira-table--brand-header th button {
+.aira-table--brand-header thead th a,
+.aira-table--brand-header thead th button {
   color: inherit;
 }
 
@@ -2145,6 +2186,15 @@ mark,
 
 .aira-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
+}
+
+.aira-dialog--popover-visible {
+  overflow: visible;
+}
+
+.aira-dialog-search {
+  position: relative;
+  z-index: var(--aira-z-overlay);
 }
 
 .aira-dialog__title {

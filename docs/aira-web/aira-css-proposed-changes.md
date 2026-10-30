@@ -17,12 +17,46 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.11 | 2026-09-15 | [`aira-css-changes-revision-11.md`](aira-css-changes-revision-11.md) | Optional badge count on `AiraActionItem`/`addGlobalAction` — requested in [`aira-css-request-11.md`](aira-css-request-11.md) |
 | 0.1.12 | 2026-09-15 | [`aira-css-changes-revision-12.md`](aira-css-changes-revision-12.md) | Fixed `.aira-badge-count` invisible white-on-white text on `primary`/`danger`/`success` button variants |
 | 0.1.13 | 2026-10-24 | [`aira-css-changes-revision-13.md`](aira-css-changes-revision-13.md) | Natural-width direct-child buttons in `aira-form`/`aira-stack`; `aira-form--inline`, `aira-field--grow`, `aira-form--narrow`; Forms section in the guide — requested in [`aira-css-request-13.md`](aira-css-request-13.md) |
+| 0.1.14 | 2026-10-30 | [`aira-css-changes-revision-14.md`](aira-css-changes-revision-14.md) | `aira-table--compact`; dialog popover contract (`aira-dialog--popover-visible` + `aira-dialog-search`); body row headers styled as data cells — requested in [`aira-css-request-14.md`](aira-css-request-14.md) |
+
+---
+
+## Proposal: Body row headers styled as data cells
+
+**Status:** Available in this project
+**Found during:** Nathan's review of the Small Group page (`/es/initiatives/{code}/small-groups/{id}`). The first column looked like a header column.
+**Date:** 2026-10-30
+
+### Problem
+
+`.aira-table th` gives every `th`, including `<th scope="row">` in `tbody`, the column-header look (muted background, 2px strong border). The components guide's own table example uses body row headers, so any page that follows it gets a grey header column.
+
+### Current local workaround
+
+None. Six InteropHub renderers use body row headers.
+
+### Proposed shared interface
+
+`.aira-table tbody th` styled like `td`, keeping the semantics and `aira-table__cell--primary` bold. See the request.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+It's the shared table's default, and the shared guide recommends the markup.
+
+### Compatibility and migration impact
+
+Existing pages with body row headers lose the grey background. That's intended, but spot-check them.
+
+
+### Resolution
+
+Implemented upstream in `0.1.14` as requested: `.aira-table tbody th` now looks like a data cell, and the brand/sticky header variants target only `thead th`. No InteropHub workaround to remove. InteropHub now consumes `0.1.14` (`pom.xml`).
 
 ---
 
 ## Proposal: Compact table rows for spreadsheet-style lists
 
-**Status:** Proposed
+**Status:** Available in this project
 **Found during:** Initiative checklist (`/es/initiatives/{code}/checklist`). Thirty-one items with the standard table cell padding and 2.25rem selects made each row about 200px tall.
 **Date:** 2026-10-26
 
@@ -46,11 +80,16 @@ Any roster, queue, or checklist that should read as a sheet will hit the same ro
 
 A new modifier has no effect until a page adds it. Existing tables stay as they are.
 
+
+### Resolution
+
+Implemented upstream in `0.1.14` as `aira-table--compact`. Controls use the existing `--aira-control-height-small` (1.875rem) rather than a new smaller token. Delete the two local padding/control-height rules in `initiative-checklist.css` once the checklist table adopts the modifier.
+
 ---
 
 ## Proposal: Let a search popover escape a modal dialog
 
-**Status:** Proposed
+**Status:** Available in this project
 **Found during:** Initiatives organization type-ahead inside an `aira-dialog` (`/es/initiatives/{code}/organizations`).
 **Date:** 2026-10-24
 
@@ -73,6 +112,11 @@ Any management dialog with a type-ahead will hit the same clip. The search popov
 ### Compatibility and migration impact
 
 `overflow: visible` on every dialog would let long dialog content spill instead of scroll, so the rule should apply only when a search popover is present. Existing dialogs without a popover stay scrollable.
+
+
+### Resolution
+
+Implemented upstream in `0.1.14` as an explicit contract rather than `:has()`: add `aira-dialog--popover-visible` to the dialog and wrap the field + popover in `aira-dialog-search`. Only for bounded dialogs. Delete the overflow toggling in `initiative-org-typeahead.js` and the positioning rules in `initiative-org.css` once adopted.
 
 ---
 
