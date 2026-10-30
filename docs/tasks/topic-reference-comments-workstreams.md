@@ -140,11 +140,11 @@ Kept current by stream G.
 | H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
-| E1 | Runtime checks on Tomcat | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
+| E1 | Done 2026-10-30, merged | Merged as `baab8ec`. Runtime checks 1.40 to 1.44 pass; import regression found and fixed (`9dbfdb3`). |
 | P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
-| H1 | Done 2026-10-30, waiting to merge | Commit `0d2aa3b` on `feature/h1-sign-in`. Gate checks 1.20 to 1.30, 1.32 to 1.34, 1.37 pass; 1.31 moves to Gate 2. UTC via `ApiTime`; refresh runs `*_dev_setup.sql`. |
-| Gate 1 | | |
+| H1 | Done 2026-10-30, merged | Merged as `07efc1c`. Commit `0d2aa3b`. 1.31 and 1.35 move to Gate 2. |
+| Gate 1 | Passed by G, awaiting product owner | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Prompt ready | `prompts/H2-registration-and-comments.md`. Branch `feature/h2-comments`, from `main` after E1 and H1 merge. |
 | Gate 2 | | |
@@ -163,7 +163,7 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 
 | Item | When | Notes |
 |---|---|---|
-| Redeploy `hub.war` from `main` | Whenever Tomcat is next free | H0 replaced the normal WAR on local Tomcat. The product owner decides which branch runs on Tomcat at any time. |
+| Redeploy `hub.war` from `main` | Now that E1 and H1 are merged | H0 replaced the normal WAR on local Tomcat. The product owner decides which branch runs on Tomcat at any time. |
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
