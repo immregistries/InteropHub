@@ -141,7 +141,8 @@ Kept current by stream G.
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | In progress | `prompts/E1-topic-edit-service.md`. Branch `feature/e1-topic-edit-service`. |
-| P1 | In progress | `prompts/P1-pilot-anchors.md`. |
+| P1 | Reviewed 2026-10-30, waiting | 27 anchors placed, checks pass, uncommitted. Waits for product owner review of the anchor list, the explicit heading ID fix, and `v0.5.1`. |
+| T1.1 | Prompt ready | `prompts/T1.1-anchor-patch.md`: reading-copy blank lines, duplicate-ID guidance. Patch `v0.5.1`. |
 | H1 | Prompt ready | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
 | T2 | Not started | |
