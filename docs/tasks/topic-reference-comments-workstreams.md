@@ -148,7 +148,7 @@ Kept current by stream G.
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Not started | |
 | Gate 2 | | |
-| T3 | Not started | |
+| T3 | Prompt ready | `prompts/T3-author-review.md`. Starts when Codex usage resets; builds against the mock, so it does not wait for Gate 1 or H2. Includes the T2 follow-ups. |
 | H3 | Not started | |
 | P2 | Not started | |
 | Gate 3 | | |
@@ -165,7 +165,6 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 |---|---|---|
 | Redeploy `hub.war` from `main` | Whenever Tomcat is next free | H0 replaced the normal WAR on local Tomcat. The product owner decides which branch runs on Tomcat at any time. |
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
-| T2 follow-ups, for T3 (same file) | T3 | (1) The first-comment notice and Withdraw use native `window.confirm`; replace with in-page prompts (they also freeze browser automation). (2) The InteropHub part of `guide.js` packs several statements per line; expand it to match the rest of the file. (3) `tests/browser_check.py` posts the comment with urllib, not through the guide's form; drive the form. (4) Close `HTTPError` responses in `tests/test_mock_hub.py` to silence ResourceWarnings, which make PowerShell 5.1 report exit code 1. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
 ## 8. Decisions Log
