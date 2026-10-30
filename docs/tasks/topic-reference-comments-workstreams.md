@@ -143,7 +143,7 @@ Kept current by stream G.
 | E1 | Runtime checks on Tomcat | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
 | P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
-| H1 | Reviewed 2026-10-30, fixes requested | Gate checks 1.20 to 1.30, 1.32 to 1.34, 1.37 pass; 1.31 waits for a `topics:write` route (H2). `prompts/H1.1-review-fixes.md`: UTC timestamp helper, dev setup after refresh (if approved), rebase, commit on branch. |
+| H1 | Reviewed 2026-10-30, fixes requested | Gate checks 1.20 to 1.30, 1.32 to 1.34, 1.37 pass; 1.31 waits for a `topics:write` route (H2). `prompts/H1.1-review-fixes.md`: UTC timestamp helper, dev setup after refresh (approved), rebase, commit on branch. |
 | Gate 1 | | |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Not started | |
@@ -188,3 +188,4 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | T2 starts before Gate 1. It builds against a mock server that follows the approved contract, so it does not wait for H1. If H1 changes the contract, G updates T2. |
 | 2026-10-30 | Contract 3.4 step 4: a disallowed origin on the token exchange gets `403 forbidden` before the code checks, and the code is not consumed (found by T2; matches test check 1.23). |
 | 2026-10-30 | All guide API timestamps are UTC, converted from the database's local `LocalDateTime` through the JVM default zone, by one shared helper (H1.1); H2 uses it for `since`. A signed-in user with a bad `return_to` now stays on the error page instead of going to Welcome (H1). |
+| 2026-10-30 | The local database refresh also runs every `db/scripts/*_dev_setup.sql` file after `unapplied_updates.sql` (H1.1). Dev setup scripts are idempotent, never applied to production, and may be emptied or removed at any time. Check 1.31 moves to Gate 2. H1's origin check already matched the 403 correction. |
