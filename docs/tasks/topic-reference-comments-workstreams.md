@@ -140,10 +140,10 @@ Kept current by stream G.
 | H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
-| E1 | In progress | `prompts/E1-topic-edit-service.md`. Branch `feature/e1-topic-edit-service`. |
+| E1 | Reviewed 2026-10-30, fixes requested | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. Open: SUPPORTERS subview stays global-admin only (product owner to confirm). |
 | P1 | Reviewed 2026-10-30, waiting | 27 anchors placed, checks pass, uncommitted. Waits for product owner review of the anchor list, the explicit heading ID fix, and `v0.5.1`. |
 | T1.1 | Prompt ready | `prompts/T1.1-anchor-patch.md`: reading-copy blank lines, duplicate-ID guidance. Patch `v0.5.1`. |
-| H1 | Prompt ready | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
+| H1 | Testing on Tomcat | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
 | T2 | Not started | |
 | H2 | Not started | |
