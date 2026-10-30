@@ -146,9 +146,9 @@ Kept current by stream G.
 | H1 | Done 2026-10-30, merged | Merged as `07efc1c`. Commit `0d2aa3b`. 1.31 and 1.35 move to Gate 2. |
 | Gate 1 | Passed 2026-10-30 | Approved by the product owner. | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
-| H2 | Prompt ready | `prompts/H2-registration-and-comments.md`. Branch `feature/h2-comments`, from `main` after E1 and H1 merge. |
+| H2 | In progress | `prompts/H2-registration-and-comments.md`. Branch `feature/h2-comments`. |
 | Gate 2 | | |
-| T3 | Prompt ready | `prompts/T3-author-review.md`. Starts when Codex usage resets; builds against the mock, so it does not wait for Gate 1 or H2. Includes the T2 follow-ups. |
+| T3 | In progress | `prompts/T3-author-review.md`. Builds against the mock; includes the T2 follow-ups. |
 | H3 | Not started | |
 | P2 | Not started | |
 | Gate 3 | | |
