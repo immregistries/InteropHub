@@ -145,7 +145,7 @@ Kept current by stream G.
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
 | H1 | Testing on Tomcat | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
-| T2 | Not started | |
+| T2 | Prompt ready | `prompts/T2-live-comments.md`. Started before Gate 1 (decision 2026-10-30); builds against the mock server. |
 | H2 | Not started | |
 | Gate 2 | | |
 | T3 | Not started | |
@@ -184,3 +184,4 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | `/guide/open` and the approved URL prefix setting move from H1 to H2, since both need the guide registration tables. H1 is sign-in and tokens only. Test check 1.35 becomes 2.32. |
 | 2026-10-30 | The SUPPORTERS view on the topic manage page stays global-admin only; champions get what space admins get, and space admins do not see it. E1's reworded import validation messages are accepted. |
 | 2026-10-30 | G may commit, push, and tag `content-publishing-templates` releases after verifying them, without asking. |
+| 2026-10-30 | T2 starts before Gate 1. It builds against a mock server that follows the approved contract, so it does not wait for H1. If H1 changes the contract, G updates T2. |
