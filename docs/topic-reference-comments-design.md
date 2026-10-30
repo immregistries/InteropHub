@@ -19,6 +19,7 @@ This design moves the comments into InteropHub:
 - Authors can flag anchor areas **for review** with a note, instead of the system detecting changes.
 - An HTTP API and an MCP server expose the same operations so an agent working in the content project can read comments, add comments from other sources, reply, set dispositions, and close them.
 - The current browser-only mode stays as an option for projects not connected to InteropHub.
+- Feedback is kept in **two records** with different jobs (Section 3.2). InteropHub records each comment and who made it, so every piece of feedback is accounted for. The project repository records the author's summarized reasons for each change, never tied to individual commenters, and these feed a readable change log.
 
 Out of scope for now: notifications, a formal review or ballot lifecycle, automatic closing rules, change detection or diff display.
 
@@ -30,16 +31,45 @@ Out of scope for now: notifications, a formal review or ballot lifecycle, automa
 4. The topic page in InteropHub shows recent comments and links straight to their place in the guide.
 5. The approach works for any Topic Reference project without project-specific code in the shared tools.
 
-## 3. Typical Review Round
+## 3. Review Rounds and Records
+
+### 3.1 Typical review round
 
 1. Authors publish a version of the guide and invite comments for a week.
 2. Participants sign in from the guide and comment on paragraphs and lists. They reply to each other.
 3. In a meeting, the group walks through open comments. The facilitator or an author enters comments raised in the meeting under their own name, giving them context without attributing them to the person who raised them.
 4. An author, often with an agent using the MCP server, revises the content. For each comment the author records a disposition and change note and replies where useful.
-5. Authors flag the areas they want the group to look at again, publish, and close the comments that are done.
-6. The group reviews the flagged areas. The next round begins.
+5. The author commits the revisions with messages that give the general reason for each change, and adds a summary of the round to the project's change log (Section 3.2).
+6. Authors flag the areas they want the group to look at again, publish, and close the comments that are done.
+7. The group reviews the flagged areas. The next round begins.
 
 Most comments are expected to be resolved and closed between meetings, so filtering by meeting is not needed.
+
+### 3.2 Two records of feedback
+
+Feedback is kept in two places, and each has a different job.
+
+**InteropHub is the accountability record.** It records every comment and who made it, so that:
+
+- authors can follow up with the commenter if a comment raises questions;
+- commenters can be told how their comment was resolved;
+- everyone's feedback is accounted for, and none is lost.
+
+Comments are useful for the week or so they are under discussion. On their own they are too detailed to serve as a long-term record.
+
+**The project repository is the record of the text and why it changed.** The author:
+
+- writes commit messages that justify each edit by its general reason, not by citing a particular person or comment;
+- combines duplicate themes, since many comments make the same point, into one statement of the take-home message;
+- adds readable entries to the project's change log that summarize what changed in each round and why.
+
+How revision history then appears in the published document is not yet designed (Section 15.2, question 3).
+
+The repository does not reproduce the conversation. It never identifies who raised a point. In a public repository, that also keeps commenters' names out of public history.
+
+**The author is responsible for the summary.** It is the author's job to summarize the feedback accurately and to make sure the updates and change log capture it correctly. If someone believes their feedback was misrepresented or missed, that is settled in meetings and conversations, not by editing the source or its history.
+
+The MCP server supports this by giving the author and their agent the full set of comments, dispositions, and change notes for a round, from which they draft commit messages and change log entries.
 
 ## 4. Authentication
 
@@ -49,7 +79,7 @@ The external login flow (`docs/external-application-login-flow.md`) assumes the 
 
 ### 4.2 Flow: authorization code with PKCE
 
-The guide is registered in `app_registry` as a public client (for example `app_code = topic-reference`). The allowlisted return bases are the GitHub Pages origins of the registered guides.
+All guides share one entry in `app_registry`, a public client with `app_code = topic-reference`, created once by a database update. It is not created per repository. The allowlisted return bases in `app_redirect_allowlist` are the published URLs of the registered guides, and InteropHub maintains them from guide registrations (Section 9.4).
 
 1. **Start.** The guide generates a random `code_verifier`, keeps it in `sessionStorage`, also saves the reader's current location (including any `#comment-…` or `#anchor` target), and redirects the top-level window to:
    `GET {hub}/home?app_code=topic-reference&return_to=<guide URL>&state=<random>&code_challenge=<S256 hash>&code_challenge_method=S256&response_mode=fragment&requested_url=<guide URL>`
@@ -73,12 +103,28 @@ A reader who arrives at the plain GitHub URL sees the full document and, in the 
 - The guide keeps the token in `localStorage`. All `*.github.io` pages for one GitHub organization share an origin, so any Pages site in that organization could read it. The token is limited to the comment API to keep that exposure small. A custom domain for guides removes the concern and can be adopted later.
 - MCP and API clients use **personal access tokens** that the user creates on their account page, stored in the same table with a label.
 
-### 4.5 InteropHub changes for authentication
+### 4.5 Token scopes
+
+Every token carries scopes that limit what it may do. A token acts as its user, and a scope can only narrow what the user may already do; it never grants more.
+
+| Scope | Allows |
+|---|---|
+| `comments` | The comment and review flag operations (Sections 9.1 and 9.3). |
+| `topics:read` | Reading topics, Topic Spaces, and guide registrations. |
+| `topics:write` | Registering and updating guides (Section 9.4), and the topic tools in `docs/tasks/topic-mcp-tools.md`. Implies `topics:read`. |
+
+- Guide access tokens always have `comments` only.
+- The user chooses scopes when creating a personal access token on the account page.
+- Scopes are stored on `app_user_token` as a comma-separated `scopes` column and checked in the API's bearer-token filter, for the HTTP API and the MCP server alike.
+- New features add scopes here, so this table stays the one list.
+
+### 4.6 InteropHub changes for authentication
 
 - Add `code_challenge` and `code_challenge_method` columns to `auth_login_code`, and support `response_mode=fragment`.
 - Add `POST /api/guide/token` with CORS limited to `app_redirect_allowlist` origins for the app.
 - Add the `/guide/open` bounce endpoint.
-- Add token management (list, revoke, create a personal token) to the account page.
+- Add the `scopes` column to `app_user_token` and enforce scopes in the bearer-token filter (Section 4.5).
+- Add token management (list, revoke, create a personal token with chosen scopes) to the account page.
 - Keep `/api/auth/exchange` unchanged for server-side apps.
 
 ## 5. Anchors
@@ -195,14 +241,18 @@ A review flag is a record in InteropHub on an anchor area, with a short note ("P
 
 Flags are kept in InteropHub, not in the content files. This keeps the text clean, needs no rebuild, lets other InteropHub screens show them, and leaves room to integrate with HL7 processes.
 
-The same division applies to comments generally: InteropHub holds the conversation, and the GitHub repository shows only the clean result. Someone watching the repository sees a series of changes without the comments behind them. Whether to record those reasons in the project as well is an open question (Section 15).
+The same division applies to comments generally (Section 3.2): InteropHub holds the conversation, and the repository holds the text with the author's summarized reasons for changing it.
 
 ## 8. Data Model (InteropHub)
 
 Table names follow the `es_` convention for topic features. Columns are indicative. All schema changes go through `db/unapplied_updates.sql` per `docs/database-release-practice.md`.
 
 **`es_guide_document`**: a published guide that accepts comments.
-`guide_document_id`, `document_key` (the `id` from the project's `guide.json`, unique), `es_topic_id`, `title`, `published_url`, `repository_url`, `is_active`, timestamps. A document may be published at more than one URL, such as a release build and a `/main/` preview. All of them share one comment set, and their origins are added to the app's redirect allowlist.
+`guide_document_id`, `document_key` (the `id` from the project's `guide.json`, unique), `es_topic_id`, `title`, `repository_url`, `is_active`, `created_by_user_id`, timestamps.
+
+This record is also the link between the topic and its Topic Reference: the topic page finds its guide here, so no separate link field on the topic is needed.
+
+**`es_guide_document_url`**: `guide_document_url_id`, `guide_document_id`, `url`, `label` (for example "Release", "Preview"). A document may be published at more than one URL, such as a release build and a `/main/` preview. All of them share one comment set. InteropHub adds and removes the matching `app_redirect_allowlist` rows for the `topic-reference` app when these rows change.
 
 **`es_guide_comment`**: top-level comments and replies.
 `guide_comment_id`, `guide_document_id`, `parent_comment_id` (null for top-level), `anchor_id`, `block_index` (position within the area), `block_snippet` (start of the paragraph's text), `comment_text`, `state`, `disposition_code`, `change_note`, `user_id` (who entered it), `source_note` (optional, for example "Meeting 2026-11-12", "Email", "GitHub issue #14"), `created_at`, `edited_at`, `disposed_at`, `disposed_by_user_id`, `closed_at`, `closed_by_user_id`.
@@ -263,11 +313,30 @@ The MCP server is hosted by InteropHub as a remote endpoint over streamable HTTP
 
 The tool descriptions should tell the agent to find each comment's location by searching the content files for `anchor: <name>` (or a heading ID) and then the snippet, and to report comments it cannot place rather than guessing.
 
+### 9.4 Registering a guide
+
+Registration is part of the API and MCP server, so an agent that sets up a new Topic Reference repository can register it in InteropHub in the same session.
+
+| Tool | HTTP | Purpose |
+|---|---|---|
+| `get_guide(document)` | `GET /api/guide/{documentKey}` | Registration details: topic, title, repository, URLs. |
+| `register_guide(topic, document_key, title, repository_url, urls, dry_run?)` | `POST /api/guides` | Create the registration for a topic, with its published URLs. |
+| `update_guide(document, title?, repository_url?, urls?, is_active?, dry_run?)` | `PATCH /api/guide/{documentKey}` | Change details, or add or remove URLs. |
+
+Rules:
+
+- The caller must be able to edit the topic (`canEditTopic`), and the token must have the `topics:write` scope (Section 4.5).
+- `topic` is the topic code. The response includes the topic's numeric ID and URL, which the agent writes into the project's `guide.json`.
+- **Published URLs are limited to approved hosts.** Each guide URL becomes a place InteropHub will send sign-in codes. A hub setting lists the allowed URL prefixes (for example `https://immregistries.github.io/`). A URL outside them is refused unless the caller is a global admin. Without this rule, any topic editor could allowlist a site of their choosing.
+- `app_registry` is not exposed. The `topic-reference` app and the approved hosts are managed by global admins.
+- Changes are recorded in the same change record as topic edits (`es_topic_change` in the topic tools task) once it exists.
+
 ## 10. InteropHub User Interface
 
 - **Topic page:** a "Topic Reference comments" panel beside the meeting notes, showing recent open comments and review flags with links into the guide (through `/guide/open`), and a link to the full list.
 - **Comment management page** for authors: all comments for a document, filterable by state, with disposition editing. This mirrors what authors can do in the guide, for those who prefer to work in InteropHub.
-- **Admin:** register guide documents (topic, document key, published URL) and add the published origin to the app's redirect allowlist.
+- **Guide registration page**, reachable from the topic's manage page, for topic editors who prefer not to use the API: the same fields and rules as Section 9.4.
+- **Admin:** the list of approved URL prefixes for guides, and all registrations across topics.
 - **Account page:** guide sessions and personal access tokens, with revoke and create.
 
 ## 11. Changes in content-publishing-templates
@@ -293,11 +362,13 @@ This is the public repository. Nothing here may name projects or private URLs. A
 - **`check_content.py`:** validate anchor syntax and uniqueness.
 - **`build_core_markdown.py` and the Word build:** confirm anchors are dropped. Regenerate the fixture reading copy.
 - **`import_guide_comments.py`:** keep for local mode. Add an option to write its output as `add_comment` calls, or a JSON file the MCP can load, for migrating existing comments.
+- **`new_topic_reference.py` and setup guidance:** after creating the repository, register it with `register_guide` through the MCP server and write the returned topic ID and the `comments` setting into `guide.json`. When no MCP server is available, the guidance points to the registration page instead.
 - **Topic Reference template project:**
   - Add example anchors to the starter content and the `comments` setting (commented) to `guide.json`.
-  - Update `review/README.md`: comments live in InteropHub, not in the repository.
-  - Update `AGENTS.md`: use the MCP server, place and keep anchors, record dispositions with change notes.
-- **Guidance:** update `guidance/TopicReference.md` (how commenting works in each mode) and `guidance/Conventions.md` (anchor naming).
+  - Update `review/README.md`: comments live in InteropHub, not in the repository, and the repository keeps only the author's summary of them.
+  - Add a project change log (for example `CHANGELOG.md`) with a short entry format: the round or version, the themes of feedback addressed, and what changed, without commenter names.
+  - Update `AGENTS.md`: use the MCP server, place and keep anchors, record dispositions with change notes, write commit messages and change log entries that state general reasons and combine duplicate themes, and never name commenters in the repository.
+- **Guidance:** update `guidance/TopicReference.md` (how commenting works in each mode, and the two records from Section 3.2) and `guidance/Conventions.md` (anchor naming, change log entries).
 - **Fixture and validation:** add anchors and a `comments` setting to `tests/fixture-project/`, and extend `validate.ps1`.
 - **Release:** CHANGELOG entry and a new release tag. Projects adopt it deliberately.
 
@@ -308,7 +379,7 @@ This is AIRA's internal counterpart. It should change to match, in its own words
 - The review-round workflow from Section 3, including adding meeting comments and closing comments between meetings.
 - Agent instructions for working through comments with the MCP server, writing change notes for the community, and setting review flags.
 - Guidance on placing anchors: where to put them, keeping names stable, and checking for orphaned comments after reorganizing.
-- The privacy point: in InteropHub mode, commenter names never enter the project repository.
+- The two records from Section 3.2: InteropHub accounts for every comment and its commenter; the repository carries the author's summarized reasons and change log, without commenter names. The author owns the accuracy of that summary, and disputes are resolved in meetings.
 
 ## 13. Changes in Content Projects
 
@@ -316,8 +387,8 @@ For each Topic Reference project:
 
 1. Move the `process/` submodule to the release that includes this feature.
 2. Add anchors to the content at useful review points.
-3. Add the `comments` setting to `guide.json`.
-4. Register the document in InteropHub and add its Pages origin to the allowlist.
+3. Register the guide in InteropHub with `register_guide` (or the registration page), which also allows its published URLs for sign-in.
+4. Add the `comments` setting and the returned topic ID to `guide.json`.
 5. Optionally import existing downloaded comments.
 6. Rebuild, publish, and check sign-in and commenting on the published page.
 
@@ -326,8 +397,8 @@ For each Topic Reference project:
 1. **Anchors.** Add anchor support to the templates (build, validation, deep links) while still in local mode. This is useful alone and lets projects add anchors early.
 2. **Sign-in and live comments.** Add PKCE sign-in, the guide document registration, the comment API, and the InteropHub backend in `guide.js`, with comments and replies, visibility rules, the notice, and the 14-day edit window.
 3. **Author review.** Add state, disposition, change note, closing, re-attaching orphans, review flags, and the author controls in the guide and InteropHub.
-4. **MCP and topic page.** Add personal access tokens, the remote MCP server, and the topic page panel with deep links.
-5. **Later.** Notifications, the review lifecycle and its relation to HL7 balloting, automatic closing, a record of review-driven changes in the project, and a custom domain for guides.
+4. **MCP and topic page.** Add personal access tokens with scopes, the remote MCP server, guide registration through the API and MCP, and the topic page panel with deep links.
+5. **Later.** Notifications, the review lifecycle and its relation to HL7 balloting, automatic closing, and a custom domain for guides.
 
 ## 15. Decisions and Open Questions
 
@@ -343,11 +414,12 @@ For each Topic Reference project:
 | 6 | Several published URLs | One comment set per document. Comments are not tied to versions. |
 | 7 | Private topic with a public guide, or the reverse | A setup mistake, not a supported mode. |
 | 8 | Anonymous comments | No special support. Facilitators enter meeting feedback under their own name. |
+| 9 | Record of review-driven changes | Two records (Section 3.2). InteropHub keeps each comment and its commenter for accountability. The repository keeps the author's summarized reasons in commit messages and a readable change log, without naming commenters. |
 
 ### 15.2 Open
 
 | # | Question | Notes |
 |---|---|---|
-| 1 | Should the project keep a record of review-driven changes, such as a change log built from dispositions and change notes? | It would let someone reading the repository see why text changed. It must not include commenter names if the repository is public. A tool could draft it from the MCP at the end of a round. |
-| 2 | How do the statuses and dispositions integrate with HL7 balloting? | To be decided with the review lifecycle. |
-| 3 | What is the review lifecycle that replaces the 14-day edit window and manual closing? | Later, with notifications. |
+| 1 | How do the statuses and dispositions integrate with HL7 balloting? | To be decided with the review lifecycle. |
+| 2 | What is the review lifecycle that replaces the 14-day edit window and manual closing? | Later, with notifications. |
+| 3 | How is revision history included in the published document? | Not yet designed. It should be generated with the document, not written by hand. Possibly two tiers: a detailed change log in the project that is not published, and a summary of it that appears in the published guide. Settle this before fixing the change log format in Section 11. |
