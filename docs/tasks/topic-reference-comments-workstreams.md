@@ -141,7 +141,7 @@ Kept current by stream G.
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | Fixes in progress | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
-| P1 | Finishing | Anchor list accepted by the product owner. `prompts/P1.1-pilot-finish.md`: move to `v0.5.1`, explicit `{#related-representations}` ID. |
+| P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
 | H1 | Testing on Tomcat | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
