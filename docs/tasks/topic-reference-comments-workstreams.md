@@ -138,10 +138,10 @@ Kept current by stream G.
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) waits for H0. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
 | H0 MCP experiment | Prompt ready | `prompts/H0-mcp-experiment.md`. Worktree branch `experiment/h0-mcp`. |
-| T1 | Accepted by G 2026-10-30 | Fixes done; `validate.ps1` re-run by G and passes; no internal names in the diff. Legacy check: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. Awaiting product owner commit and `v0.5.0` tag. |
+| T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | H1 | Not started | |
 | E1 | In progress | `prompts/E1-topic-edit-service.md`. Branch `feature/e1-topic-edit-service`. |
-| P1 | Prompt ready | `prompts/P1-pilot-anchors.md`. Starts after `v0.5.0` is tagged. |
+| P1 | In progress | `prompts/P1-pilot-anchors.md`. |
 | Gate 1 | | |
 | T2 | Not started | |
 | H2 | Not started | |
