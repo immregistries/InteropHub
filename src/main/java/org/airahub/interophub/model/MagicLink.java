@@ -50,6 +50,12 @@ public class MagicLink {
     @Column(name = "requested_url", length = 500)
     private String requestedUrl;
 
+    @Column(name = "code_challenge", length = 128)
+    private String codeChallenge;
+
+    @Column(name = "code_challenge_method", length = 16)
+    private String codeChallengeMethod;
+
     @PrePersist
     protected void onCreate() {
         if (issuedAt == null) {
@@ -151,5 +157,21 @@ public class MagicLink {
 
     public void setRequestedUrl(String requestedUrl) {
         this.requestedUrl = requestedUrl;
+    }
+
+    public String getCodeChallenge() {
+        return codeChallenge;
+    }
+
+    public void setCodeChallenge(String codeChallenge) {
+        this.codeChallenge = codeChallenge;
+    }
+
+    public String getCodeChallengeMethod() {
+        return codeChallengeMethod;
+    }
+
+    public void setCodeChallengeMethod(String codeChallengeMethod) {
+        this.codeChallengeMethod = codeChallengeMethod;
     }
 }

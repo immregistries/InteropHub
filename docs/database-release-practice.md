@@ -12,7 +12,7 @@ stays in sync with production in the meantime.
 | `db/vX.Y_description.sql` | One frozen, permanent record per past release (e.g. `v0.28_auth_user_admin_flag.sql`). Never modified after creation. | Yes (once, at creation) |
 | `db/schema.sql` | Full-schema reference snapshot (`mysqldump --no-data --routines --events --triggers`) of the local database, taken right after a refresh/restore. | **No — generated** |
 | `db/local_database_refresh.sql` | Rewrites production URLs/secrets to localhost equivalents after a snapshot restore. Separate concern from schema versioning — see `db/local_database_refresh.md`. | Yes |
-| `db/scripts/refresh_local_db.py` | Rebuilds the local DB. With `--download` it first fetches the latest production backup; without it, it reuses the backup already on disk (e.g. to reset local state mid-testing). Then it wipes the local DB, restores the snapshot, applies `local_database_refresh.sql`, applies `unapplied_updates.sql`, and regenerates `schema.sql`. Settings and secrets come from a gitignored env file — see `docs/local-dev-environment-setup.md`. | Yes (script) |
+| `db/scripts/refresh_local_db.py` | Rebuilds the local DB. With `--download` it first fetches the latest production backup; without it, it reuses the backup already on disk (e.g. to reset local state mid-testing). Then it wipes the local DB, restores the snapshot, applies `local_database_refresh.sql`, applies `unapplied_updates.sql`, applies every `db/scripts/*_dev_setup.sql` in name order, and regenerates `schema.sql`. Those dev setup scripts are local-only and are never applied to production. Settings and secrets come from a gitignored env file — see `docs/local-dev-environment-setup.md`. | Yes (script) |
 
 How often each developer refreshes is their own choice, made outside the
 repo. On Nathan's machine an hourly job runs
@@ -63,12 +63,13 @@ Every day (on Nathan's machine, via the hourly job above),
 3. Import the production snapshot.
 4. Apply `db/local_database_refresh.sql` (prod URLs → localhost).
 5. Apply `db/unapplied_updates.sql`, if non-empty.
-6. Regenerate `db/schema.sql` via `mysqldump`.
+6. Apply every `db/scripts/*_dev_setup.sql`, in name order. These scripts are local-only and are never applied to production.
+7. Regenerate `db/schema.sql` via `mysqldump`.
 
 After this runs, the local build works against a database that matches
 production plus whatever is pending in `unapplied_updates.sql`.
 
-`refresh_local_db.py` without `--download` does the same steps 2–6
+`refresh_local_db.py` without `--download` does the same steps 2–7
 on demand, against the most recently downloaded backup, for resetting
 local state mid-testing without waiting for a new daily download.
 

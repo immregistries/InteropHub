@@ -3,7 +3,6 @@ package org.airahub.interophub.service;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.net.URLEncoder;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -34,10 +33,22 @@ public class AuthFlowService {
     public static final String PARAM_RETURN_TO = "return_to";
     public static final String PARAM_STATE = "state";
     public static final String PARAM_REQUESTED_URL = "requested_url";
-    private static final String ATTR_EXTERNAL_APP_CODE = "interophub.externalAuth.appCode";
-    private static final String ATTR_EXTERNAL_RETURN_TO = "interophub.externalAuth.returnTo";
-    private static final String ATTR_EXTERNAL_STATE = "interophub.externalAuth.state";
-    private static final String ATTR_EXTERNAL_REQUESTED_URL = "interophub.externalAuth.requestedUrl";
+    public static final String PARAM_CODE_CHALLENGE = "code_challenge";
+    public static final String PARAM_CODE_CHALLENGE_METHOD = "code_challenge_method";
+    public static final String PARAM_RESPONSE_MODE = "response_mode";
+    public static final String PARAM_PROMPT = "prompt";
+    /**
+     * Servlet-session keys for an in-progress external sign-in. {@code prompt=login} revokes the
+     * InteropHub auth session and clears its cookie, and leaves these keys in place.
+     */
+    public static final String EXTERNAL_AUTH_ATTRIBUTE_PREFIX = "interophub.externalAuth.";
+    private static final String ATTR_EXTERNAL_APP_CODE = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "appCode";
+    private static final String ATTR_EXTERNAL_RETURN_TO = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "returnTo";
+    private static final String ATTR_EXTERNAL_STATE = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "state";
+    private static final String ATTR_EXTERNAL_REQUESTED_URL = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "requestedUrl";
+    private static final String ATTR_EXTERNAL_CODE_CHALLENGE = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "codeChallenge";
+    private static final String ATTR_EXTERNAL_CODE_CHALLENGE_METHOD = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "codeChallengeMethod";
+    private static final String ATTR_EXTERNAL_RESPONSE_MODE = EXTERNAL_AUTH_ATTRIBUTE_PREFIX + "responseMode";
     private static final String ATTR_INTERNAL_REQUESTED_URL = "interophub.internalAuth.requestedUrl";
 
     private static final int MAGIC_LINK_DAYS = 7;
@@ -94,6 +105,8 @@ public class AuthFlowService {
             link.setReturnTo(externalAuthRequest.getReturnTo());
             link.setStateNonce(externalAuthRequest.getState());
             link.setRequestedUrl(externalAuthRequest.getRequestedUrl());
+            link.setCodeChallenge(externalAuthRequest.getCodeChallenge());
+            link.setCodeChallengeMethod(externalAuthRequest.getCodeChallengeMethod());
         } else {
             recallInternalRequestedUrl(request)
                     .ifPresent(link::setRequestedUrl);
@@ -169,12 +182,15 @@ public class AuthFlowService {
         loginCode.setReturnTo(externalAuthRequest.getReturnTo());
         loginCode.setStateNonce(externalAuthRequest.getState());
         loginCode.setRequestedUrl(externalAuthRequest.getRequestedUrl());
+        loginCode.setCodeChallenge(externalAuthRequest.getCodeChallenge());
+        loginCode.setCodeChallengeMethod(externalAuthRequest.getCodeChallengeMethod());
         authLoginCodeDao.save(loginCode);
 
-        return buildExternalRedirectUrl(
+        return ExternalRedirect.build(
                 externalAuthRequest.getReturnTo(),
                 rawLoginCode,
-                externalAuthRequest.getState());
+                externalAuthRequest.getState(),
+                externalAuthRequest.isFragmentResponse());
     }
 
     public Optional<ExternalAuthRequest> parseExternalAuthRequest(HttpServletRequest request) {
@@ -182,19 +198,32 @@ public class AuthFlowService {
         String returnTo = trimToNull(request.getParameter(PARAM_RETURN_TO));
         String state = trimToNull(request.getParameter(PARAM_STATE));
         String requestedUrl = trimToNull(request.getParameter(PARAM_REQUESTED_URL));
+        String codeChallenge = trimToNull(request.getParameter(PARAM_CODE_CHALLENGE));
+        String codeChallengeMethod = trimToNull(request.getParameter(PARAM_CODE_CHALLENGE_METHOD));
+        String responseMode = trimToNull(request.getParameter(PARAM_RESPONSE_MODE));
 
-        if (appCode == null && returnTo == null && state == null && requestedUrl == null) {
+        if (appCode == null && returnTo == null && state == null && requestedUrl == null
+                && codeChallenge == null && codeChallengeMethod == null && responseMode == null) {
             return Optional.empty();
         }
 
         AppRegistry appRegistry = appRegistryDao.findByAppCode(required(appCode, "app_code"))
                 .orElseThrow(() -> new IllegalArgumentException("app_code is not registered."));
 
-        return Optional.of(validateExternalAuthRequest(
+        boolean topicReference = GuideApps.TOPIC_REFERENCE.equals(appRegistry.getAppCode());
+        if (topicReference) {
+            TopicReferenceSignInRules.check(returnTo, codeChallenge, codeChallengeMethod, responseMode);
+        }
+
+        ExternalAuthRequest parsed = validateExternalAuthRequest(
                 appRegistry,
                 required(returnTo, "return_to"),
                 required(state, "state"),
-                required(requestedUrl, "requested_url")));
+                required(requestedUrl, "requested_url"));
+        if (topicReference) {
+            parsed = parsed.withPkce(codeChallenge, codeChallengeMethod, true);
+        }
+        return Optional.of(parsed);
     }
 
     public void rememberExternalAuthRequest(HttpServletRequest request, ExternalAuthRequest externalAuthRequest) {
@@ -202,10 +231,21 @@ public class AuthFlowService {
             return;
         }
 
-        request.getSession(true).setAttribute(ATTR_EXTERNAL_APP_CODE, externalAuthRequest.getAppCode());
-        request.getSession(true).setAttribute(ATTR_EXTERNAL_RETURN_TO, externalAuthRequest.getReturnTo());
-        request.getSession(true).setAttribute(ATTR_EXTERNAL_STATE, externalAuthRequest.getState());
-        request.getSession(true).setAttribute(ATTR_EXTERNAL_REQUESTED_URL, externalAuthRequest.getRequestedUrl());
+        var session = request.getSession(true);
+        session.setAttribute(ATTR_EXTERNAL_APP_CODE, externalAuthRequest.getAppCode());
+        session.setAttribute(ATTR_EXTERNAL_RETURN_TO, externalAuthRequest.getReturnTo());
+        session.setAttribute(ATTR_EXTERNAL_STATE, externalAuthRequest.getState());
+        session.setAttribute(ATTR_EXTERNAL_REQUESTED_URL, externalAuthRequest.getRequestedUrl());
+        if (externalAuthRequest.getCodeChallenge() == null) {
+            session.removeAttribute(ATTR_EXTERNAL_CODE_CHALLENGE);
+            session.removeAttribute(ATTR_EXTERNAL_CODE_CHALLENGE_METHOD);
+            session.removeAttribute(ATTR_EXTERNAL_RESPONSE_MODE);
+        } else {
+            session.setAttribute(ATTR_EXTERNAL_CODE_CHALLENGE, externalAuthRequest.getCodeChallenge());
+            session.setAttribute(ATTR_EXTERNAL_CODE_CHALLENGE_METHOD, externalAuthRequest.getCodeChallengeMethod());
+            session.setAttribute(ATTR_EXTERNAL_RESPONSE_MODE,
+                    externalAuthRequest.isFragmentResponse() ? "fragment" : null);
+        }
     }
 
     public Optional<ExternalAuthRequest> recallExternalAuthRequest(HttpServletRequest request) {
@@ -222,6 +262,9 @@ public class AuthFlowService {
         String returnTo = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_RETURN_TO));
         String state = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_STATE));
         String requestedUrl = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_REQUESTED_URL));
+        String codeChallenge = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_CODE_CHALLENGE));
+        String codeChallengeMethod = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_CODE_CHALLENGE_METHOD));
+        String responseMode = trimToNull((String) session.getAttribute(ATTR_EXTERNAL_RESPONSE_MODE));
 
         if (appCode == null || returnTo == null || state == null || requestedUrl == null) {
             return Optional.empty();
@@ -234,7 +277,12 @@ public class AuthFlowService {
         }
 
         try {
-            return Optional.of(validateExternalAuthRequest(appRegistry.get(), returnTo, state, requestedUrl));
+            ExternalAuthRequest parsed = validateExternalAuthRequest(appRegistry.get(), returnTo, state, requestedUrl);
+            if (GuideApps.TOPIC_REFERENCE.equals(parsed.getAppCode())) {
+                TopicReferenceSignInRules.check(returnTo, codeChallenge, codeChallengeMethod, responseMode);
+                parsed = parsed.withPkce(codeChallenge, codeChallengeMethod, true);
+            }
+            return Optional.of(parsed);
         } catch (IllegalArgumentException ex) {
             clearRememberedExternalAuthRequest(request);
             return Optional.empty();
@@ -255,6 +303,9 @@ public class AuthFlowService {
         session.removeAttribute(ATTR_EXTERNAL_RETURN_TO);
         session.removeAttribute(ATTR_EXTERNAL_STATE);
         session.removeAttribute(ATTR_EXTERNAL_REQUESTED_URL);
+        session.removeAttribute(ATTR_EXTERNAL_CODE_CHALLENGE);
+        session.removeAttribute(ATTR_EXTERNAL_CODE_CHALLENGE_METHOD);
+        session.removeAttribute(ATTR_EXTERNAL_RESPONSE_MODE);
     }
 
     private ExternalAuthRequest validateExternalAuthRequest(AppRegistry appRegistry, String returnTo, String state,
@@ -411,6 +462,10 @@ public class AuthFlowService {
         return email.trim().toLowerCase().endsWith(requiredDomain);
     }
 
+    /**
+     * Revokes the InteropHub auth-session row behind the session cookie. Does not invalidate the
+     * servlet session, so an external sign-in remembered there survives {@code prompt=login}.
+     */
     public void logout(HttpServletRequest request) {
         extractSessionToken(request)
                 .ifPresent(token -> sessionDao.revokeByTokenHash(sha256(token)));
@@ -637,14 +692,6 @@ public class AuthFlowService {
         return Optional.of(normalized);
     }
 
-    private String buildExternalRedirectUrl(String returnTo, String code, String state) {
-        String encodedCode = URLEncoder.encode(code, java.nio.charset.StandardCharsets.UTF_8);
-        String encodedState = URLEncoder.encode(state, java.nio.charset.StandardCharsets.UTF_8);
-
-        String separator = returnTo.contains("?") ? "&" : "?";
-        return returnTo + separator + "code=" + encodedCode + "&state=" + encodedState;
-    }
-
     private ExternalAuthRequest resolveExternalAuthRequestForMagicLink(MagicLink magicLink) {
         String returnTo = trimToNull(magicLink.getReturnTo());
         String state = trimToNull(magicLink.getStateNonce());
@@ -655,12 +702,12 @@ public class AuthFlowService {
         }
 
         if (magicLink.getAppId() != null) {
-            return validateExternalAuthRequest(
+            return attachStoredPkce(validateExternalAuthRequest(
                     appRegistryDao.findById(magicLink.getAppId())
                             .orElseThrow(() -> new IllegalStateException("App for login request was not found.")),
                     required(returnTo, "return_to"),
                     required(state, "state"),
-                    required(requestedUrl, "requested_url"));
+                    required(requestedUrl, "requested_url")), magicLink);
         }
 
         if (returnTo == null || state == null || requestedUrl == null) {
@@ -672,7 +719,17 @@ public class AuthFlowService {
             return null;
         }
 
-        return validateExternalAuthRequest(resolvedApp.get(), returnTo, state, requestedUrl);
+        return attachStoredPkce(validateExternalAuthRequest(resolvedApp.get(), returnTo, state, requestedUrl), magicLink);
+    }
+
+    private ExternalAuthRequest attachStoredPkce(ExternalAuthRequest request, MagicLink magicLink) {
+        if (request == null || !GuideApps.TOPIC_REFERENCE.equals(request.getAppCode())) {
+            return request;
+        }
+        String challenge = trimToNull(magicLink.getCodeChallenge());
+        String method = trimToNull(magicLink.getCodeChallengeMethod());
+        TopicReferenceSignInRules.check(request.getReturnTo(), challenge, method, "fragment");
+        return request.withPkce(challenge, method, true);
     }
 
     private String resolveInternalRedirectForMagicLink(MagicLink magicLink) {
@@ -738,13 +795,29 @@ public class AuthFlowService {
         private final String returnTo;
         private final String state;
         private final String requestedUrl;
+        private final String codeChallenge;
+        private final String codeChallengeMethod;
+        private final boolean fragmentResponse;
 
         public ExternalAuthRequest(Long appId, String appCode, String returnTo, String state, String requestedUrl) {
+            this(appId, appCode, returnTo, state, requestedUrl, null, null, false);
+        }
+
+        public ExternalAuthRequest(Long appId, String appCode, String returnTo, String state, String requestedUrl,
+                String codeChallenge, String codeChallengeMethod, boolean fragmentResponse) {
             this.appId = appId;
             this.appCode = appCode;
             this.returnTo = returnTo;
             this.state = state;
             this.requestedUrl = requestedUrl;
+            this.codeChallenge = codeChallenge;
+            this.codeChallengeMethod = codeChallengeMethod;
+            this.fragmentResponse = fragmentResponse;
+        }
+
+        public ExternalAuthRequest withPkce(String codeChallenge, String codeChallengeMethod, boolean fragmentResponse) {
+            return new ExternalAuthRequest(appId, appCode, returnTo, state, requestedUrl, codeChallenge,
+                    codeChallengeMethod, fragmentResponse);
         }
 
         public Long getAppId() {
@@ -765,6 +838,18 @@ public class AuthFlowService {
 
         public String getRequestedUrl() {
             return requestedUrl;
+        }
+
+        public String getCodeChallenge() {
+            return codeChallenge;
+        }
+
+        public String getCodeChallengeMethod() {
+            return codeChallengeMethod;
+        }
+
+        public boolean isFragmentResponse() {
+            return fragmentResponse;
         }
     }
 

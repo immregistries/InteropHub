@@ -381,16 +381,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
         out.println("            <input type=\"hidden\" name=\"profileSubmission\" value=\"1\" />");
         out.println(
                 "            <input type=\"hidden\" name=\"email\" value=\"" + escapeHtml(orEmpty(email)) + "\" />");
-        if (externalAuthRequest != null) {
-            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_APP_CODE
-                    + "\" value=\"" + escapeHtml(externalAuthRequest.getAppCode()) + "\" />");
-            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_RETURN_TO
-                    + "\" value=\"" + escapeHtml(externalAuthRequest.getReturnTo()) + "\" />");
-            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_STATE + "\" value=\""
-                    + escapeHtml(externalAuthRequest.getState()) + "\" />");
-            out.println("            <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_REQUESTED_URL
-                    + "\" value=\"" + escapeHtml(externalAuthRequest.getRequestedUrl()) + "\" />");
-        }
+        ExternalAuthHtml.writeHiddenInputs(out, externalAuthRequest);
 
         renderTextField(out, fieldErrors, "firstName", "First Name", firstName, MAX_FIRST_NAME_LENGTH, true, null);
         renderTextField(out, fieldErrors, "lastName", "Last Name", lastName, MAX_LAST_NAME_LENGTH, false, null);
@@ -601,14 +592,7 @@ public class SendWelcomeEmailServlet extends HttpServlet {
             throws IOException {
         StringBuilder url = new StringBuilder(request.getContextPath()).append("/home?emailError=1");
         appendQueryParam(url, "email", trimToNull(email));
-        appendQueryParam(url, AuthFlowService.PARAM_APP_CODE,
-                trimToNull(request.getParameter(AuthFlowService.PARAM_APP_CODE)));
-        appendQueryParam(url, AuthFlowService.PARAM_RETURN_TO,
-                trimToNull(request.getParameter(AuthFlowService.PARAM_RETURN_TO)));
-        appendQueryParam(url, AuthFlowService.PARAM_STATE,
-                trimToNull(request.getParameter(AuthFlowService.PARAM_STATE)));
-        appendQueryParam(url, AuthFlowService.PARAM_REQUESTED_URL,
-                trimToNull(request.getParameter(AuthFlowService.PARAM_REQUESTED_URL)));
+        ExternalAuthHtml.appendRequestParams(url, request);
         response.sendRedirect(url.toString());
     }
 

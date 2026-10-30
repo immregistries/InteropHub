@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.logging.Logger;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
+import org.airahub.interophub.service.SignInPrompt;
 import org.immregistries.aira.web.AiraPage;
 
 public class HomeServlet extends HttpServlet {
@@ -25,7 +26,16 @@ public class HomeServlet extends HttpServlet {
                         throws ServletException, IOException {
                 LOGGER.info("Handling request for home page.");
 
-                Optional<User> authenticatedUser = authFlowService.findAuthenticatedUser(request);
+                boolean promptLogin = SignInPrompt.isLoginPrompt(request.getParameter(AuthFlowService.PARAM_PROMPT));
+                if (promptLogin) {
+                        // End the auth-session cookie only. The servlet session still holds the
+                        // external request, and the form below repeats it in hidden fields.
+                        authFlowService.logout(request);
+                        response.addCookie(authFlowService.buildClearedSessionCookie(request));
+                }
+                Optional<User> authenticatedUser = promptLogin
+                                ? Optional.empty()
+                                : authFlowService.findAuthenticatedUser(request);
 
                 String contextPath = request.getContextPath();
                 String emailValidationError = request.getParameter("emailError");
@@ -43,8 +53,16 @@ public class HomeServlet extends HttpServlet {
                         }
                 }
 
-                if (authenticatedUser.isPresent()) {
-                        if (externalAuthRequest.isPresent()) {
+                Optional<String> internalRedirect = Optional.empty();
+                if (externalAuthError == null && authenticatedUser.isPresent() && externalAuthRequest.isEmpty()) {
+                        internalRedirect = authFlowService.recallInternalRequestedUrl(request);
+                }
+                SignInPrompt.Next next = externalAuthError != null
+                                ? SignInPrompt.Next.SHOW_FORM
+                                : SignInPrompt.decide(promptLogin, authenticatedUser.isPresent(),
+                                                externalAuthRequest.isPresent(), internalRedirect.isPresent());
+                switch (next) {
+                        case ISSUE_EXTERNAL_CODE -> {
                                 String redirectTarget = authFlowService.issueExternalLoginCodeRedirect(
                                                 authenticatedUser.get(),
                                                 externalAuthRequest.get());
@@ -52,14 +70,18 @@ public class HomeServlet extends HttpServlet {
                                 response.sendRedirect(redirectTarget);
                                 return;
                         }
-                        Optional<String> internalRedirect = authFlowService.recallInternalRequestedUrl(request);
-                        if (internalRedirect.isPresent()) {
+                        case REDIRECT_INTERNAL -> {
                                 authFlowService.clearRememberedInternalRequestedUrl(request);
                                 response.sendRedirect(request.getContextPath() + internalRedirect.get());
                                 return;
                         }
-                        response.sendRedirect(request.getContextPath() + "/welcome");
-                        return;
+                        case REDIRECT_WELCOME -> {
+                                response.sendRedirect(request.getContextPath() + "/welcome");
+                                return;
+                        }
+                        case SHOW_FORM -> {
+                                // Fall through to the email form, including after prompt=login.
+                        }
                 }
 
                 response.setContentType("text/html;charset=UTF-8");
@@ -132,7 +154,7 @@ public class HomeServlet extends HttpServlet {
                                                 + " />");
                 out.println("                </div>");
                 if (externalAuthRequest.isPresent()) {
-                        renderExternalAuthHiddenInputs(out, externalAuthRequest.get());
+                        ExternalAuthHtml.writeHiddenInputs(out, externalAuthRequest.get());
                 }
                 out.println("                <div class=\"aira-action-group\">");
                 out.println(
@@ -161,19 +183,6 @@ public class HomeServlet extends HttpServlet {
 
                 out.println("        </div>");
                 out.println("      </div>");
-        }
-
-        private void renderExternalAuthHiddenInputs(PrintWriter out,
-                        AuthFlowService.ExternalAuthRequest externalAuthRequest) {
-                out.println("        <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_APP_CODE + "\" value=\""
-                                + escapeHtml(externalAuthRequest.getAppCode()) + "\" />");
-                out.println("        <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_RETURN_TO + "\" value=\""
-                                + escapeHtml(externalAuthRequest.getReturnTo()) + "\" />");
-                out.println("        <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_STATE + "\" value=\""
-                                + escapeHtml(externalAuthRequest.getState()) + "\" />");
-                out.println("        <input type=\"hidden\" name=\"" + AuthFlowService.PARAM_REQUESTED_URL
-                                + "\" value=\""
-                                + escapeHtml(externalAuthRequest.getRequestedUrl()) + "\" />");
         }
 
         private String escapeHtml(String value) {
