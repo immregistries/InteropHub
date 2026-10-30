@@ -140,12 +140,12 @@ Kept current by stream G.
 | H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
-| E1 | Fixes in progress | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
+| E1 | Runtime checks on Tomcat | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
 | P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
-| H1 | Testing on Tomcat | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
+| H1 | Reported, awaiting G review | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
-| T2 | Prompt ready | `prompts/T2-live-comments.md`. Started before Gate 1 (decision 2026-10-30); builds against the mock server. |
+| T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Not started | |
 | Gate 2 | | |
 | T3 | Not started | |
@@ -165,6 +165,8 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 |---|---|---|
 | Redeploy `hub.war` from `main` | Whenever Tomcat is next free | H0 replaced the normal WAR on local Tomcat. The product owner decides which branch runs on Tomcat at any time. |
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
+| T2 follow-ups, for T3 (same file) | T3 | (1) The first-comment notice and Withdraw use native `window.confirm`; replace with in-page prompts (they also freeze browser automation). (2) The InteropHub part of `guide.js` packs several statements per line; expand it to match the rest of the file. (3) `tests/browser_check.py` posts the comment with urllib, not through the guide's form; drive the form. (4) Close `HTTPError` responses in `tests/test_mock_hub.py` to silence ResourceWarnings, which make PowerShell 5.1 report exit code 1. |
+| Tell H1: token exchange origin check | Now | Contract 3.4 step 4 corrected 2026-10-30: a disallowed `Origin` gets `403 forbidden` before the code checks, and the code is not consumed. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
 ## 8. Decisions Log
@@ -185,3 +187,4 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | The SUPPORTERS view on the topic manage page stays global-admin only; champions get what space admins get, and space admins do not see it. E1's reworded import validation messages are accepted. |
 | 2026-10-30 | G may commit, push, and tag `content-publishing-templates` releases after verifying them, without asking. |
 | 2026-10-30 | T2 starts before Gate 1. It builds against a mock server that follows the approved contract, so it does not wait for H1. If H1 changes the contract, G updates T2. |
+| 2026-10-30 | Contract 3.4 step 4: a disallowed origin on the token exchange gets `403 forbidden` before the code checks, and the code is not consumed (found by T2; matches test check 1.23). |

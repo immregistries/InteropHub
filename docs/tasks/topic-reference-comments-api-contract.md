@@ -1,6 +1,6 @@
 # Topic Reference Comments: API Contract
 
-**Status:** Approved by the product owner 2026-10-30 (Gate 0). Section 8 and the refinements in 3.1 and 3.3 were added by G the same day from the H0 result.
+**Status:** Approved by the product owner 2026-10-30 (Gate 0). Section 8 and the refinements in 3.1 and 3.3 were added by G the same day from the H0 result. 3.4 step 4 corrected the same day: a disallowed origin is refused with `403` before the code checks (found by T2).
 **Implements:** `docs/topic-reference-comments-design.md`, Sections 4 and 9
 **Primary purpose:** The single agreement between the guide (`guide.js` in `content-publishing-templates`) and InteropHub. Both sides are built against this document and tested against it. A change here is recorded in the workstreams Decisions Log and announced to both streams.
 
@@ -157,12 +157,13 @@ Origin: https://<org>.github.io
 }
 ```
 
-InteropHub checks, in this order, refusing all failures with `400 invalid_request` and the same message ("Sign-in code is invalid or expired.") so the response does not reveal which check failed:
+First, the request's `Origin` must be allowed (Section 4). A disallowed origin gets `403 forbidden` with no CORS headers, and the code is **not** consumed, so a page on the wrong origin cannot burn a reader's code.
+
+Then InteropHub checks, in this order, refusing all failures with `400 invalid_request` and the same message ("Sign-in code is invalid or expired.") so the response does not reveal which check failed:
 
 1. The code exists, was issued for `topic-reference`, is not expired, and is not consumed.
 2. `returnTo` equals the stored `return_to`.
 3. base64url(SHA-256(`codeVerifier`)) equals the stored `code_challenge`.
-4. The request `Origin` is an allowed origin (Section 4).
 
 Then it consumes the code and responds `200`:
 
