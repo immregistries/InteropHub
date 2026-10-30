@@ -121,6 +121,10 @@ final class TopicManageNavRenderer {
                 + topicId + "\">");
         out.println("                <span class=\"aira-recent-topic__title\">Edit Topic</span>");
         out.println("              </a>");
+        out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath + "/es/topic-guide/"
+                + topicId + "\">");
+        out.println("                <span class=\"aira-recent-topic__title\">Topic Reference</span>");
+        out.println("              </a>");
         if (canManageResources) {
             out.println("              <a class=\"aira-recent-topic\" href=\"" + contextPath
                     + "/es/topic-resources/" + topicId + "\">");

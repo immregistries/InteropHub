@@ -40,7 +40,22 @@ public final class GuideApiErrors {
         write(response, "{\"error\":\"server_error\",\"message\":\"Something went wrong.\"}");
     }
 
-    private static void write(HttpServletResponse response, String body) throws IOException {
+    public static void write(HttpServletResponse response, GuideApiException ex) throws IOException {
+        response.setStatus(ex.getStatus());
+        StringBuilder body = new StringBuilder();
+        body.append("{\"error\":\"").append(escapeJson(ex.getError())).append("\"");
+        if (ex.getField() != null) {
+            body.append(",\"field\":\"").append(escapeJson(ex.getField())).append("\"");
+        }
+        body.append(",\"message\":\"").append(escapeJson(ex.getMessage())).append("\"");
+        if (ex.getCurrentJson() != null) {
+            body.append(",\"current\":").append(ex.getCurrentJson());
+        }
+        body.append("}");
+        write(response, body.toString());
+    }
+
+    static void write(HttpServletResponse response, String body) throws IOException {
         response.setCharacterEncoding("UTF-8");
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write(body);
