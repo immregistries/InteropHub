@@ -3786,7 +3786,7 @@ public class EsAgendaServlet extends HttpServlet {
                     + "/es/agenda/confluence?meetingId=" + meetingId + "\">Confluence export</a>");
             if (seriesId != null) {
                 out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
-                        + "/admin/es/meetings?meetingId=" + seriesId + "\">Meeting Admin</a>");
+                        + "/admin/es/meetings?meetingId=" + seriesId + "\">All Meetings in Series</a>");
             }
             out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
                     + "/admin/es/meeting-polls\">Meeting Polls</a>");

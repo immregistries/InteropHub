@@ -185,7 +185,7 @@ public class EsMeetingSeriesServlet extends HttpServlet {
                 out.println("            <div class=\"aira-section-card__body\">");
                 out.println("              <nav class=\"aira-sidebar-nav\" aria-label=\"Meeting series admin links\">");
                 out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
-                        + "/admin/es/meetings?meetingId=" + seriesId + "\">Meeting Admin</a>");
+                        + "/admin/es/meetings?meetingId=" + seriesId + "\">All Meetings in Series</a>");
                 out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
                         + "/admin/es/meeting-polls\">Meeting Polls</a>");
                 out.println("                <a class=\"aira-sidebar-link\" href=\"" + contextPath
