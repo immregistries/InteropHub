@@ -105,7 +105,7 @@ final class ChecklistPageRenderer {
         }
         out.println("        </div></div>");
         Map<String, List<EsChecklistItem>> phases = phases(items, showRemoved);
-        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr>");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\"><thead><tr>");
         out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Reorder</span></th>");
         out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Done</span></th>");
         out.println("          <th scope=\"col\">Item</th><th scope=\"col\">Assignee</th><th scope=\"col\">Due</th>");

@@ -1,9 +1,9 @@
 package org.airahub.interophub.servlet;
 
 import java.io.PrintWriter;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.airahub.interophub.model.EsChecklist;
 import org.airahub.interophub.model.EsChecklistItem;
 import org.airahub.interophub.model.EsInitiative;
@@ -17,6 +17,7 @@ import org.airahub.interophub.model.EsTopicMeeting;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.ChecklistDueDates;
 import org.airahub.interophub.service.ChecklistHints;
+import org.airahub.interophub.service.PeopleToBringIn;
 import org.airahub.interophub.service.SmallGroupParticipantRules;
 import org.airahub.interophub.service.SmallGroupSeriesComparison;
 
@@ -73,20 +74,18 @@ final class SmallGroupPageRenderer {
 
     static void page(PrintWriter out, String contextPath, String base, EsInitiative initiative, EsSmallGroup group,
             EsTopic topic, List<EsTopic> topics, List<EsTopicMeeting> seriesChoices, List<ParticipantRow> participants,
-            List<EsInitiativeMember> rosterChoices, SmallGroupSeriesComparison.Result comparison, String registrationUrl,
-            List<EsSmallGroup> earlierGroups, boolean canEdit, ChecklistDueDates.Anchors anchors, EsChecklist checklist,
+            Map<Long, User> users, Map<Long, String> organizationNames, Set<Long> registeredIds, Set<Long> followingIds,
+            PeopleToBringIn.Page bringIn, String bringFilter, String registrationUrl, List<EsSmallGroup> earlierGroups,
+            boolean canEdit, ChecklistDueDates.Anchors anchors, EsChecklist checklist,
             List<EsChecklistItem> items, List<EsInitiativeManager> managers, Map<Long, String> userNames,
             Map<Long, List<EsInitiativeTimelineEntry>> itemTimeline, List<EsInitiativeTimelineEntry> checklistTimeline,
             List<EsInitiativeTimelineEntry> groupTimeline, User viewer, ChecklistHints.Facts facts,
             boolean upgradeAvailable, int availableVersion, boolean showRemoved, boolean hideDone, boolean templateAdmin,
             FormInput input) {
-        header(out, contextPath, group, topic, seriesChoices, canEdit, input);
-        details(out, base, group, topics, seriesChoices, canEdit, input);
-        participants(out, contextPath, base, initiative, participants, rosterChoices, canEdit, input);
-        comparison(out, base, comparison, participants, registrationUrl, canEdit);
-        if (canEdit && !earlierGroups.isEmpty()) {
-            copyForm(out, base, earlierGroups);
-        }
+        header(out, contextPath, base, group, topic, topics, seriesChoices, canEdit, input);
+        participants(out, contextPath, base, initiative, participants, users, organizationNames, registeredIds,
+                followingIds, registrationUrl, earlierGroups, canEdit, input);
+        bringIn(out, base, initiative, bringIn, bringFilter, canEdit);
         ChecklistPageRenderer.embedded(out, contextPath, base, anchors, checklist, items, managers, userNames,
                 itemTimeline, checklistTimeline, viewer, facts, canEdit, upgradeAvailable, availableVersion, showRemoved,
                 hideDone, templateAdmin, input);
@@ -104,52 +103,52 @@ final class SmallGroupPageRenderer {
                 "Closed and cancelled Small Groups keep the template they ran with.", "Back to the Small Group");
     }
 
-    private static void header(PrintWriter out, String contextPath, EsSmallGroup group, EsTopic topic,
-            List<EsTopicMeeting> seriesChoices, boolean canEdit, FormInput input) {
+    private static void header(PrintWriter out, String contextPath, String base, EsSmallGroup group, EsTopic topic,
+            List<EsTopic> topics, List<EsTopicMeeting> seriesChoices, boolean canEdit, FormInput input) {
+        EsTopicMeeting series = selected(seriesChoices, group.getEsTopicMeetingId());
         out.println("      <div class=\"aira-page-header\"><div>");
         out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(group.getSmallGroupName()) + "</h1>");
-        out.println("        <p class=\"aira-meta\">");
-        out.println("          " + InitiativePageRenderer.badge(group.getStatus().name(), group.getStatus().getLabel()));
+        out.println("        <p><strong>" + InitiativeHtml.esc(group.getSmallGroupName()) + "</strong> · "
+                + InitiativeHtml.esc(group.getStatus().getLabel()));
         if (topic != null) {
-            out.println("          <a href=\"" + InitiativeHtml.esc(contextPath + "/es/topic/" + topic.getEsTopicId())
+            out.println("          · Topic: <a href=\"" + InitiativeHtml.esc(contextPath + "/es/topic/" + topic.getEsTopicId())
                     + "\">" + InitiativeHtml.esc(topic.getTopicName()) + "</a>");
         }
-        EsTopicMeeting series = selected(seriesChoices, group.getEsTopicMeetingId());
         if (series != null) {
-            out.println("          · <a href=\"" + InitiativeHtml.esc(contextPath + "/es/meeting-series?seriesId="
+            out.println("          · Series: <a href=\"" + InitiativeHtml.esc(contextPath + "/es/meeting-series?seriesId="
                     + series.getEsTopicMeetingId()) + "\">" + InitiativeHtml.esc(series.getMeetingName()) + "</a>");
         }
+        out.println("        </p>");
+        out.println("        <p>" + InitiativeHtml.esc(summaryLine(group)));
         if (group.getCharterUrl() != null && !group.getCharterUrl().isBlank()) {
             out.println("          · <a href=\"" + InitiativeHtml.esc(group.getCharterUrl()) + "\">Charter</a>");
         }
         out.println("        </p>");
-        out.println("      </div>");
-        if (canEdit) {
-            out.println("        <button class=\"aira-button aira-button--secondary\" type=\"button\" data-dialog-open=\"group-status\">Change status</button>");
+        if (group.getBreakNote() != null && !group.getBreakNote().isBlank()) {
+            out.println("        <p>" + InitiativeHtml.esc(group.getBreakNote()) + "</p>");
+        }
+        if (group.getDescription() != null && !group.getDescription().isBlank()) {
+            out.println("        <p>" + InitiativeHtml.esc(group.getDescription()) + "</p>");
         }
         out.println("      </div>");
         if (canEdit) {
+            out.println("        <div class=\"aira-cluster\">");
+            out.println("          <button class=\"aira-button aira-button--secondary\" type=\"button\" data-dialog-open=\"edit-details\">Edit details</button>");
+            out.println("          <button class=\"aira-button aira-button--secondary\" type=\"button\" data-dialog-open=\"group-status\">Change status</button>");
+            out.println("        </div>");
+        }
+        out.println("      </div>");
+        if (canEdit) {
+            detailsDialog(out, base, group, topics, seriesChoices, input);
             statusDialog(out, group, input);
         }
     }
 
-    private static void details(PrintWriter out, String base, EsSmallGroup group, List<EsTopic> topics,
-            List<EsTopicMeeting> seriesChoices, boolean canEdit, FormInput input) {
-        out.println("      <section class=\"aira-stack aira-stack--compact\">");
-        out.println("        <h2>Cycle</h2>");
-        if (!canEdit) {
-            out.println("        <p>" + InitiativeHtml.esc(cycle(group)) + "</p>");
-            if (group.getBreakNote() != null && !group.getBreakNote().isBlank()) {
-                out.println("        <p>" + InitiativeHtml.esc(group.getBreakNote()) + "</p>");
-            }
-            if (group.getDescription() != null && !group.getDescription().isBlank()) {
-                out.println("        <p>" + InitiativeHtml.esc(group.getDescription()) + "</p>");
-            }
-            out.println("        <p class=\"aira-meta\">" + InitiativeHtml.esc(areaLabels(group.getPrimaryProductAreas()))
-                    + "</p>");
-            out.println("      </section>");
-            return;
-        }
+    private static void detailsDialog(PrintWriter out, String base, EsSmallGroup group, List<EsTopic> topics,
+            List<EsTopicMeeting> seriesChoices, FormInput input) {
+        String id = "edit-details";
+        InitiativePageRenderer.dialogStart(out, id, "Edit details", input);
+        out.println("        <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">Edit details</h3>");
         out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(base)
                 + "\" data-series-form data-context=\"" + InitiativeHtml.esc(contextOf(base)) + "\">");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"save-small-group\" />");
@@ -166,52 +165,87 @@ final class SmallGroupPageRenderer {
         textField(out, "groupCharter", "charterUrl", "Charter URL", input.value("save-small-group", "charterUrl", group.getCharterUrl()), 2048, false);
         areaField(out, "groupBreak", "breakNote", "Break", input.value("save-small-group", "breakNote", group.getBreakNote()));
         areaField(out, "groupDescription", "description", "Description", input.value("save-small-group", "description", group.getDescription()));
-        out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\">Save details</button>");
-        out.println("        </form></section>");
+        InitiativePageRenderer.dialogActions(out, id, "Save details");
+        out.println("        </form></dialog>");
     }
 
     private static void participants(PrintWriter out, String contextPath, String base, EsInitiative initiative,
-            List<ParticipantRow> participants, List<EsInitiativeMember> rosterChoices, boolean canEdit, FormInput input) {
+            List<ParticipantRow> participants, Map<Long, User> users, Map<Long, String> organizationNames,
+            Set<Long> registeredIds, Set<Long> followingIds, String registrationUrl, List<EsSmallGroup> earlierGroups,
+            boolean canEdit, FormInput input) {
+        String peopleUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people/";
         out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\">");
         out.println("        <h2 class=\"aira-table-panel__title\">Participants</h2>");
         if (canEdit) {
             out.println("        <div class=\"aira-table-panel__actions\">");
             out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-participant\">Add participant</button>");
-            out.println("          <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-dialog-open=\"add-new-participant\">Add new person</button>");
+            if (!earlierGroups.isEmpty()) {
+                out.println("          <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-dialog-open=\"copy-participants\">Copy participants</button>");
+            }
+            if (registrationUrl != null) {
+                out.println("          <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-copy-value=\""
+                        + attr(registrationUrl) + "\">Copy registration link for everyone not registered</button>");
+            }
             out.println("        </div>");
         }
         out.println("      </div>");
         if (participants.isEmpty()) {
             out.println("        <p class=\"aira-meta\">No participants yet. People are added here directly. They do not need to sign in.</p>");
         } else {
-            out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\"><thead><tr>");
-            out.println("          <th scope=\"col\">Person</th><th scope=\"col\">Email</th><th scope=\"col\">Role or team</th>");
+            out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\"><thead><tr>");
+            out.println("          <th scope=\"col\">Name</th><th scope=\"col\">Organization</th><th scope=\"col\">Email</th>");
+            out.println("          <th scope=\"col\">Role or team</th><th scope=\"col\">Registered</th><th scope=\"col\">Follows topic</th>");
             if (canEdit) {
                 out.println("          <th scope=\"col\"><span class=\"aira-visually-hidden\">Remove</span></th>");
             }
             out.println("        </tr></thead><tbody>");
             for (ParticipantRow row : participants) {
                 EsInitiativeMember member = row.member();
-                String name = member == null ? "Participant" : member.displayName();
-                out.println("          <tr><th scope=\"row\">" + InitiativeHtml.esc(name) + "</th>");
-                out.println("            <td>" + InitiativeHtml.esc(member == null ? "" : member.getEmail()) + "</td><td>");
+                String name = InitiativePageRenderer.personLabel(member, users);
+                Long memberId = member == null ? null : member.getEsInitiativeMemberId();
+                boolean registered = memberId != null && registeredIds != null && registeredIds.contains(memberId);
+                String email = member == null ? "" : member.getEmail();
+                String organization = member == null || organizationNames == null ? ""
+                        : organizationNames.getOrDefault(member.getEsInitiativeOrganizationId(), "");
+                out.println("          <tr><th scope=\"row\" class=\"aira-table__cell--primary\">");
+                if (memberId != null) {
+                    out.println("            <a href=\"" + InitiativeHtml.esc(peopleUrl + memberId) + "\">"
+                            + InitiativeHtml.esc(name) + "</a>");
+                } else {
+                    out.println("            " + InitiativeHtml.esc(name));
+                }
+                out.println("          </th>");
+                out.println("            <td>" + InitiativeHtml.esc(organization) + "</td>");
+                out.println("            <td>" + InitiativeHtml.esc(email) + "</td><td>");
+                String role = row.participant().getParticipantRole();
                 if (canEdit) {
-                    out.println("              <form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+                    out.println("              <form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\" data-inline-role>");
                     out.println("                <input type=\"hidden\" name=\"action\" value=\"update-role\" />");
                     out.println("                <input type=\"hidden\" name=\"participantId\" value=\""
                             + row.participant().getEsSmallGroupParticipantId() + "\" />");
-                    out.println("                <input class=\"aira-input\" name=\"role\" type=\"text\" maxlength=\"200\" value=\""
-                            + InitiativeHtml.esc(row.participant().getParticipantRole()) + "\" />");
-                    out.println("                <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"submit\">Save</button>");
+                    out.println("                <button class=\"initiative-checklist-text\" type=\"button\" data-inline-display>"
+                            + InitiativeHtml.esc(role == null || role.isBlank() ? "Add role" : role) + "</button>");
+                    out.println("                <input class=\"aira-input\" name=\"role\" type=\"text\" maxlength=\"200\" hidden value=\""
+                            + InitiativeHtml.esc(role) + "\" />");
                     out.println("              </form>");
                 } else {
-                    out.println("              " + InitiativeHtml.esc(row.participant().getParticipantRole()));
+                    out.println("              " + InitiativeHtml.esc(role));
                 }
                 out.println("            </td>");
+                out.println("            <td>" + (registered ? "✓" : "—"));
+                if (!registered && canEdit && registrationUrl != null) {
+                    out.println("              <button class=\"aira-button aira-button--link\" type=\"button\" data-copy-value=\""
+                            + attr(SmallGroupSeriesComparison.copyText(name, registrationUrl))
+                            + "\">Copy link</button>");
+                }
+                out.println("            </td>");
+                boolean follows = memberId != null && followingIds != null && followingIds.contains(memberId);
+                out.println("            <td>" + (follows ? "✓" : "—") + "</td>");
                 if (canEdit) {
                     out.println("            <td><button class=\"aira-button aira-button--link\" type=\"button\" data-dialog-open=\"remove-participant\" data-record-id=\""
                             + row.participant().getEsSmallGroupParticipantId() + "\" data-dialog-title=\"Remove "
-                            + InitiativeHtml.esc(name) + "\">Remove</button></td>");
+                            + InitiativeHtml.esc(name) + "\" aria-label=\"Remove " + InitiativeHtml.esc(name)
+                            + "\">×</button></td>");
                 }
                 out.println("          </tr>");
             }
@@ -219,87 +253,95 @@ final class SmallGroupPageRenderer {
         }
         out.println("      </section>");
         if (canEdit) {
-            addDialog(out, base, rosterChoices, input);
-            newPersonDialog(out, contextPath, base, initiative, input);
+            addDialog(out, contextPath, base, initiative, input);
+            if (!earlierGroups.isEmpty()) {
+                copyDialog(out, base, earlierGroups);
+            }
             removeDialog(out, base, input);
         }
     }
 
-    private static void comparison(PrintWriter out, String base, SmallGroupSeriesComparison.Result comparison,
-            List<ParticipantRow> participants, String registrationUrl, boolean canEdit) {
-        Map<Long, EsInitiativeMember> members = new HashMap<>();
-        for (ParticipantRow row : participants) {
-            if (row.member() != null) {
-                members.put(row.member().getEsInitiativeMemberId(), row.member());
+    private static void bringIn(PrintWriter out, String base, EsInitiative initiative, PeopleToBringIn.Page page,
+            String filter, boolean canEdit) {
+        out.println("      <section class=\"aira-table-panel\"><div class=\"aira-table-panel__header\"><div>");
+        out.println("        <h2 class=\"aira-table-panel__title\">People to bring in</h2>");
+        if (page != null) {
+            out.println("        <p class=\"aira-table-panel__description\">" + page.total() + " people · "
+                    + page.registeredCount() + " registered · " + page.followsCount() + " follow the topic · "
+                    + page.onInitiativeCount() + " on the initiative</p>");
+        }
+        out.println("      </div></div>");
+        out.println("      <div class=\"aira-cluster\" role=\"group\" aria-label=\"Filter people to bring in\">");
+        filterLink(out, base, filter, "", "All");
+        filterLink(out, base, filter, "registered", "Registered");
+        filterLink(out, base, filter, "follows", "Follows topic");
+        filterLink(out, base, filter, "initiative", "On initiative");
+        out.println("      </div>");
+        if (page == null || page.filteredTotal() == 0) {
+            out.println("      <p class=\"aira-meta\">No one else to bring in.</p></section>");
+            return;
+        }
+        out.println("      <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\"><thead><tr>");
+        out.println("        <th scope=\"col\">Name</th><th scope=\"col\">Organization</th><th scope=\"col\">On initiative</th>");
+        out.println("        <th scope=\"col\">Registered for series</th><th scope=\"col\">Follows topic</th>");
+        if (canEdit) {
+            out.println("        <th scope=\"col\"><span class=\"aira-visually-hidden\">Add</span></th>");
+        }
+        out.println("      </tr></thead><tbody>");
+        for (PeopleToBringIn.Row row : page.rows()) {
+            out.println("        <tr><th scope=\"row\" class=\"aira-table__cell--primary\">" + InitiativeHtml.esc(row.name())
+                    + "</th>");
+            out.println("          <td>" + InitiativeHtml.esc(row.organization()) + "</td>");
+            out.println("          <td>" + InitiativeHtml.esc(row.initiativeStatus()) + "</td>");
+            out.println("          <td>" + InitiativeHtml.esc(row.registrationLabel()) + "</td>");
+            out.println("          <td>" + (row.follows() ? "✓" : "—") + "</td>");
+            if (canEdit) {
+                out.println("          <td><form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+                out.println("            <input type=\"hidden\" name=\"action\" value=\"add-participant\" />");
+                out.println("            <input type=\"hidden\" name=\"personSource\" value=\""
+                        + (row.memberId() != null ? "ROSTER" : row.userId() != null ? "ACCOUNT" : "KNOWN") + "\" />");
+                out.println("            <input type=\"hidden\" name=\"memberId\" value=\""
+                        + (row.memberId() == null ? "" : row.memberId()) + "\" />");
+                out.println("            <input type=\"hidden\" name=\"userId\" value=\""
+                        + (row.userId() == null ? "" : row.userId()) + "\" />");
+                out.println("            <input type=\"hidden\" name=\"email\" value=\"" + InitiativeHtml.esc(row.email())
+                        + "\" />");
+                out.println("            <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Add</button>");
+                out.println("          </form></td>");
             }
+            out.println("        </tr>");
         }
-        out.println("      <section class=\"aira-stack aira-stack--compact\">");
-        out.println("        <h2>Meeting series</h2>");
-        out.println("        <p class=\"aira-meta\">The series is compared with this participant list. Copy a registration link to share it. This page does not send email.</p>");
-        if (registrationUrl != null) {
-            out.println("        <p><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-copy-value=\""
-                    + attr(registrationUrl) + "\">Copy registration link</button></p>");
-        }
-        out.println("        <h3>Not registered</h3>");
-        if (comparison.participantsNotRegistered().isEmpty()) {
-            out.println("        <p class=\"aira-meta\">Every participant is registered for the series, or no series is selected.</p>");
-        } else {
-            out.println("        <ul class=\"aira-stack aira-stack--compact\">");
-            for (SmallGroupSeriesComparison.Person person : comparison.participantsNotRegistered()) {
-                EsInitiativeMember member = members.get(person.memberId());
-                String label = member == null ? "Participant" : member.displayName();
-                out.println("          <li>" + InitiativeHtml.esc(label));
-                if (registrationUrl != null) {
-                    out.println("            <button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-copy-value=\""
-                            + attr(SmallGroupSeriesComparison.copyText(label, registrationUrl))
-                            + "\">Copy registration link</button>");
+        out.println("      </tbody></table></div>");
+        if (page.pages() > 1) {
+            out.println("      <p class=\"aira-cluster\">");
+            for (int number = 1; number <= page.pages(); number++) {
+                String href = base + bringQuery(filter, number);
+                if (number == page.page()) {
+                    out.println("        <span>" + number + "</span>");
+                } else {
+                    out.println("        <a href=\"" + InitiativeHtml.esc(href) + "\">" + number + "</a>");
                 }
-                out.println("          </li>");
             }
-            out.println("        </ul>");
-        }
-        out.println("        <h3>Registered, not a participant</h3>");
-        if (comparison.registrantsNotParticipants().isEmpty()) {
-            out.println("        <p class=\"aira-meta\">No series registrants are missing from the participant list.</p>");
-        } else {
-            out.println("        <ul class=\"aira-stack aira-stack--compact\">");
-            for (SmallGroupSeriesComparison.Registrant registrant : comparison.registrantsNotParticipants()) {
-                String label = registrant.label() == null || registrant.label().isBlank()
-                        ? registrant.email() : registrant.label();
-                out.println("          <li>" + InitiativeHtml.esc(label == null ? registrant.email() : label));
-                if (canEdit) {
-                    out.println("            <form method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-                    out.println("              <input type=\"hidden\" name=\"action\" value=\"add-registrant\" />");
-                    out.println("              <input type=\"hidden\" name=\"email\" value=\""
-                            + InitiativeHtml.esc(registrant.email()) + "\" />");
-                    out.println("              <input type=\"hidden\" name=\"userId\" value=\""
-                            + (registrant.userId() == null ? "" : registrant.userId()) + "\" />");
-                    out.println("              <input type=\"hidden\" name=\"label\" value=\""
-                            + InitiativeHtml.esc(label) + "\" />");
-                    out.println("              <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"submit\">Add as participant</button>");
-                    out.println("            </form>");
-                }
-                out.println("          </li>");
-            }
-            out.println("        </ul>");
+            out.println("      </p>");
         }
         out.println("      </section>");
     }
 
-    private static void copyForm(PrintWriter out, String base, List<EsSmallGroup> earlierGroups) {
-        out.println("      <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
-                + InitiativeHtml.esc(base) + "\">");
-        out.println("        <input type=\"hidden\" name=\"action\" value=\"copy-participants\" />");
-        out.println("        <div class=\"aira-field\"><label for=\"copyFromId\">Copy participants from</label>");
-        out.println("          <select class=\"aira-select\" id=\"copyFromId\" name=\"copyFromId\" required>");
-        out.println("            <option value=\"\">Choose an earlier Small Group</option>");
-        for (EsSmallGroup earlier : earlierGroups) {
-            out.println("            <option value=\"" + earlier.getEsSmallGroupId() + "\">"
-                    + InitiativeHtml.esc(earlier.getSmallGroupName()) + "</option>");
+    private static void filterLink(PrintWriter out, String base, String current, String value, String label) {
+        boolean on = (value.isEmpty() && (current == null || current.isBlank())) || value.equals(current);
+        out.println("        <a class=\"aira-button aira-button--small "
+                + (on ? "aira-button--secondary" : "aira-button--ghost") + "\" href=\""
+                + InitiativeHtml.esc(base + bringQuery(value, 1)) + "\"" + (on ? " aria-current=\"true\"" : "") + ">"
+                + InitiativeHtml.esc(label) + "</a>");
+    }
+
+    private static String bringQuery(String filter, int page) {
+        StringBuilder query = new StringBuilder("?");
+        if (filter != null && !filter.isBlank()) {
+            query.append("bringIn=").append(filter).append('&');
         }
-        out.println("          </select></div>");
-        out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Copy participants</button>");
-        out.println("      </form>");
+        query.append("bringPage=").append(page);
+        return query.toString();
     }
 
     private static void newDialog(PrintWriter out, String contextPath, String base, EsInitiative initiative,
@@ -339,47 +381,42 @@ final class SmallGroupPageRenderer {
         out.println("        </form></dialog>");
     }
 
-    private static void addDialog(PrintWriter out, String base, List<EsInitiativeMember> rosterChoices, FormInput input) {
+    private static void copyDialog(PrintWriter out, String base, List<EsSmallGroup> earlierGroups) {
+        String id = "copy-participants";
+        InitiativePageRenderer.dialogStart(out, id, "Copy participants", FormInput.none());
+        out.println("        <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">Copy participants</h3>");
+        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
+        out.println("          <input type=\"hidden\" name=\"action\" value=\"copy-participants\" />");
+        out.println("          <div class=\"aira-field\"><label for=\"copyFromId\">Copy participants from an earlier Small Group</label>");
+        out.println("            <select class=\"aira-select\" id=\"copyFromId\" name=\"copyFromId\" required>");
+        out.println("              <option value=\"\">Choose a Small Group</option>");
+        for (EsSmallGroup earlier : earlierGroups) {
+            out.println("              <option value=\"" + earlier.getEsSmallGroupId() + "\">"
+                    + InitiativeHtml.esc(earlier.getSmallGroupName()) + "</option>");
+        }
+        out.println("            </select></div>");
+        InitiativePageRenderer.dialogActions(out, id, "Copy participants");
+        out.println("        </form></dialog>");
+    }
+
+    private static void addDialog(PrintWriter out, String contextPath, String base, EsInitiative initiative,
+            FormInput input) {
         String id = "add-participant";
-        InitiativePageRenderer.dialogStart(out, id, "Add participant", input);
+        InitiativePageRenderer.dialogStart(out, id, "Add participant", input, true);
         out.println("        <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">Add participant</h3>");
         out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
         InitiativePageRenderer.formError(out, input, "add-participant");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"add-participant\" />");
-        out.println("          <div class=\"aira-field\"><label for=\"rosterFilter\">Find on the roster</label>");
-        out.println("            <input class=\"aira-input\" id=\"rosterFilter\" type=\"search\" data-roster-filter=\"memberId\" placeholder=\"Type a name or email\" /></div>");
-        out.println("          <div class=\"aira-field\"><label for=\"memberId\">Person</label>");
-        out.println("            <select class=\"aira-select\" id=\"memberId\" name=\"memberId\" required>");
-        out.println("              <option value=\"\">Choose a person</option>");
-        for (EsInitiativeMember member : rosterChoices) {
-            String label = member.displayName() + (member.getEmail() == null || member.getEmail().isBlank()
-                    ? "" : " · " + member.getEmail());
-            out.println("              <option value=\"" + member.getEsInitiativeMemberId() + "\">"
-                    + InitiativeHtml.esc(label) + "</option>");
-        }
-        out.println("            </select></div>");
+        InitiativePageRenderer.personSearch(out, contextPath, initiative.getInitiativeCode(), "participant", input,
+                "add-participant", true);
+        InitiativePageRenderer.organizationField(out, contextPath, initiative.getInitiativeCode(), "participant", input,
+                "add-participant", "", null);
         textField(out, "participantRole", "role", "Role or team", input.value("add-participant", "role", ""), 200, false);
-        out.println("          <p class=\"aira-meta\">Adding someone who has not joined marks them joined and follows this Small Group's topic when they have an email or an account.</p>");
+        out.println("          <p class=\"aira-meta\">Someone who is not on the roster is added as joined. This does not send email.</p>");
         InitiativePageRenderer.dialogActions(out, id, "Add");
         out.println("        </form></dialog>");
     }
 
-    private static void newPersonDialog(PrintWriter out, String contextPath, String base, EsInitiative initiative,
-            FormInput input) {
-        String id = "add-new-participant";
-        InitiativePageRenderer.dialogStart(out, id, "Add new person", input);
-        out.println("        <h3 class=\"aira-dialog__title\" id=\"" + id + "-title\">Add new person</h3>");
-        out.println("        <form class=\"aira-form\" method=\"post\" action=\"" + InitiativeHtml.esc(base) + "\">");
-        InitiativePageRenderer.formError(out, input, "add-new-participant");
-        out.println("          <input type=\"hidden\" name=\"action\" value=\"add-new-participant\" />");
-        InitiativePageRenderer.personIdentity(out, input, "add-new-participant", "newPerson");
-        InitiativePageRenderer.organizationField(out, contextPath, initiative.getInitiativeCode(), "newPerson", input,
-                "add-new-participant", "", null);
-        textField(out, "newPersonRole", "role", "Role or team", input.value("add-new-participant", "role", ""), 200, false);
-        out.println("          <p class=\"aira-meta\">This also adds them to the initiative roster as joined.</p>");
-        InitiativePageRenderer.dialogActions(out, id, "Add person");
-        out.println("        </form></dialog>");
-    }
 
     private static void removeDialog(PrintWriter out, String base, FormInput input) {
         String id = "remove-participant";
@@ -497,6 +534,28 @@ final class SmallGroupPageRenderer {
             }
         }
         return null;
+    }
+
+    private static String summaryLine(EsSmallGroup group) {
+        StringBuilder line = new StringBuilder();
+        String dates = cycle(group);
+        if (!"Dates not set".equals(dates)) {
+            line.append("Cycle ").append(dates);
+        }
+        if (group.getWorkingDayDate() != null) {
+            if (line.length() > 0) {
+                line.append(" · ");
+            }
+            line.append("Working day ").append(InitiativePageRenderer.DATE_FORMAT.format(group.getWorkingDayDate()));
+        }
+        String areas = areaLabels(group.getPrimaryProductAreas());
+        if (!areas.isEmpty()) {
+            if (line.length() > 0) {
+                line.append(" · ");
+            }
+            line.append(areas);
+        }
+        return line.toString();
     }
 
     private static String cycle(EsSmallGroup group) {

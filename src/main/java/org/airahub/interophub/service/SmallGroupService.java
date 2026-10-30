@@ -235,32 +235,29 @@ public class SmallGroupService {
         return joinWarnings(warning, followTopic(actor, current, member));
     }
 
-    public String addNewPerson(User actor, EsInitiative initiative, EsSmallGroup group, String name, String email,
-            Long organizationId, String newOrganizationName, String newOrganizationType, String newOrganizationWebsite,
-            String role) {
+    public String addFromSearch(User actor, EsInitiative initiative, EsSmallGroup group, Long memberId, Long userId,
+            String email, String firstName, String lastName, Long organizationId, String newOrganizationName,
+            String newOrganizationType, String newOrganizationWebsite, String role) {
         EsSmallGroup current = requireGroup(initiative, group);
-        String warning = initiatives.addMember(actor, initiative, name, email, organizationId, newOrganizationName,
-                newOrganizationType, newOrganizationWebsite, null, EsInitiativeMember.MemberStatus.JOINED,
+        InitiativeService.PersonPlacement placed = initiatives.placePerson(actor, initiative, "participant", memberId,
+                userId, email, firstName, lastName, organizationId, newOrganizationName, newOrganizationType,
+                newOrganizationWebsite, null, EsInitiativeMember.MemberStatus.JOINED,
+                EsInitiativeMember.MemberSource.SMALL_GROUP,
                 "Added to the " + current.getSmallGroupName() + " small group.");
-        EsInitiativeMember member = locateMember(initiative, email, name);
-        return joinWarnings(warning, addParticipant(actor, initiative, current, member.getEsInitiativeMemberId(), role));
+        return joinWarnings(placed.warning(),
+                addParticipant(actor, initiative, current, placed.member().getEsInitiativeMemberId(), role));
+    }
+
+    public String addNewPerson(User actor, EsInitiative initiative, EsSmallGroup group, String firstName, String lastName,
+            String email, Long organizationId, String newOrganizationName, String newOrganizationType,
+            String newOrganizationWebsite, String role) {
+        return addFromSearch(actor, initiative, group, null, null, email, firstName, lastName, organizationId,
+                newOrganizationName, newOrganizationType, newOrganizationWebsite, role);
     }
 
     public String addRegistrant(User actor, EsInitiative initiative, EsSmallGroup group, String email, Long userId,
             String label) {
-        EsSmallGroup current = requireGroup(initiative, group);
-        String normalized = EsNormalizer.normalizeEmail(email);
-        EsInitiativeMember member = findRosterMatch(initiative, normalized, userId);
-        String warning = null;
-        if (member == null) {
-            String name = label == null || label.isBlank() ? email : label;
-            warning = initiatives.addMember(actor, initiative, name, email, null, null, null, null, null,
-                    EsInitiativeMember.MemberStatus.JOINED,
-                    "Added from the meeting series for " + current.getSmallGroupName() + ".");
-            member = locateMember(initiative, email, name);
-        }
-        return joinWarnings(warning,
-                addParticipant(actor, initiative, current, member.getEsInitiativeMemberId(), null));
+        return addFromSearch(actor, initiative, group, null, userId, email, null, null, null, null, null, null, null);
     }
 
     public void removeParticipant(User actor, EsInitiative initiative, EsSmallGroup group, Long participantId,
@@ -391,7 +388,7 @@ public class SmallGroupService {
         List<SmallGroupSeriesComparison.Registrant> registrants = List.of();
         List<SmallGroupSignals.MeetingView> meetings = List.of();
         if (selected != null) {
-            registrants = registrants(selected.getEsTopicMeetingId());
+            registrants = registrants(selected.getEsTopicMeetingId(), group.getEsTopicId());
             meetings = meetingViews(selected.getEsTopicMeetingId());
         }
         int unregistered = SmallGroupSeriesComparison.compare(people, registrants).participantsNotRegistered().size();
@@ -422,7 +419,122 @@ public class SmallGroupService {
                         member.getEmailNormalized(), member.getUserId()));
             }
         }
-        return SmallGroupSeriesComparison.compare(people, registrants(group.getEsTopicMeetingId()));
+        return SmallGroupSeriesComparison.compare(people, registrants(group.getEsTopicMeetingId(), group.getEsTopicId()));
+    }
+
+    public PeopleToBringIn.Page bringIn(EsInitiative initiative, EsSmallGroup group, String filter, int page) {
+        List<EsInitiativeMember> members = initiatives.members(initiative.getEsInitiativeId());
+        Map<Long, EsInitiativeMember> byId = new HashMap<>();
+        for (EsInitiativeMember member : members) {
+            byId.put(member.getEsInitiativeMemberId(), member);
+        }
+        Map<Long, String> organizations = new HashMap<>();
+        for (EsInitiativeOrganization participation : initiatives.organizations(initiative.getEsInitiativeId())) {
+            organizationDao.findById(participation.getOrganizationId()).ifPresent(organization -> organizations
+                    .put(participation.getEsInitiativeOrganizationId(), organization.getOrganizationName()));
+        }
+        List<PeopleToBringIn.Person> participants = new ArrayList<>();
+        for (EsSmallGroupParticipant row : participantDao.findBySmallGroupId(group.getEsSmallGroupId())) {
+            if (row.getParticipantStatus() != EsSmallGroupParticipant.Status.ACTIVE) {
+                continue;
+            }
+            EsInitiativeMember member = byId.get(row.getEsInitiativeMemberId());
+            if (member != null) {
+                participants.add(bringInPerson(member, organizations, null, false));
+            }
+        }
+        List<PeopleToBringIn.Person> joined = new ArrayList<>();
+        for (EsInitiativeMember member : members) {
+            if (member.getMemberStatus() == EsInitiativeMember.MemberStatus.JOINED) {
+                joined.add(bringInPerson(member, organizations, member.getMemberStatus().getLabel(), false));
+            }
+        }
+        List<PeopleToBringIn.Person> followers = new ArrayList<>();
+        for (EsSubscription follow : subscriptionDao.findActiveByTopicId(group.getEsTopicId())) {
+            User user = follow.getUserId() == null ? null : userDao.findById(follow.getUserId()).orElse(null);
+            followers.add(new PeopleToBringIn.Person(follow.getEmailNormalized(), follow.getUserId(), null,
+                    user == null ? null : user.getDisplayName(), user == null ? null : user.getFirstName(),
+                    user == null ? null : user.getLastName(), follow.getContactFirstName(), follow.getContactLastName(),
+                    follow.getEmail(), follow.getContactOrganization(), null, null, true));
+        }
+        List<PeopleToBringIn.Person> registrants = new ArrayList<>();
+        if (group.getEsTopicMeetingId() != null) {
+            for (SmallGroupSeriesComparison.Registrant registrant : registrants(group.getEsTopicMeetingId(),
+                    group.getEsTopicId())) {
+                if (!"APPROVED".equals(registrant.status()) && !"REQUESTED".equals(registrant.status())) {
+                    continue;
+                }
+                registrants.add(new PeopleToBringIn.Person(registrant.emailNormalized(), registrant.userId(), null,
+                        registrant.label(), null, null, null, null, registrant.email(), null, null, registrant.status(),
+                        false));
+            }
+        }
+        for (EsInitiativeMember member : members) {
+            if (member.getMemberStatus() == EsInitiativeMember.MemberStatus.JOINED) {
+                continue;
+            }
+            if (matchesBringIn(member, followers) || matchesBringIn(member, registrants)) {
+                joined.add(bringInPerson(member, organizations, member.getMemberStatus().getLabel(), false));
+            }
+        }
+        return PeopleToBringIn.page(PeopleToBringIn.assemble(joined, followers, registrants, participants), filter, page);
+    }
+
+    public Set<Long> registeredParticipantIds(EsSmallGroup group, List<EsSmallGroupParticipant> active) {
+        Set<Long> registered = new HashSet<>();
+        if (group == null || group.getEsTopicMeetingId() == null) {
+            return registered;
+        }
+        Set<Long> missing = new HashSet<>();
+        for (SmallGroupSeriesComparison.Person person : comparison(group).participantsNotRegistered()) {
+            if (person.memberId() != null) {
+                missing.add(person.memberId());
+            }
+        }
+        for (EsSmallGroupParticipant row : active) {
+            if (!missing.contains(row.getEsInitiativeMemberId())) {
+                registered.add(row.getEsInitiativeMemberId());
+            }
+        }
+        return registered;
+    }
+
+    public Set<Long> followingParticipantIds(EsSmallGroup group, List<EsInitiativeMember> participants) {
+        Set<Long> following = new HashSet<>();
+        List<EsSubscription> follows = subscriptionDao.findActiveByTopicId(group.getEsTopicId());
+        for (EsInitiativeMember member : participants) {
+            if (member == null) {
+                continue;
+            }
+            for (EsSubscription follow : follows) {
+                if (SmallGroupSeriesComparison.samePerson(member.getEmailNormalized(), member.getUserId(),
+                        follow.getEmailNormalized(), follow.getUserId())) {
+                    following.add(member.getEsInitiativeMemberId());
+                    break;
+                }
+            }
+        }
+        return following;
+    }
+
+    private boolean matchesBringIn(EsInitiativeMember member, List<PeopleToBringIn.Person> people) {
+        for (PeopleToBringIn.Person person : people) {
+            if (PeopleToBringIn.same(member.getEmailNormalized(), member.getUserId(), member.getEsInitiativeMemberId(),
+                    person.emailNormalized(), person.userId(), person.memberId())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private PeopleToBringIn.Person bringInPerson(EsInitiativeMember member, Map<Long, String> organizations,
+            String initiativeStatus, boolean follows) {
+        User user = member.getUserId() == null ? null : userDao.findById(member.getUserId()).orElse(null);
+        return new PeopleToBringIn.Person(member.getEmailNormalized(), member.getUserId(),
+                member.getEsInitiativeMemberId(), user == null ? null : user.getDisplayName(),
+                user == null ? null : user.getFirstName(), user == null ? null : user.getLastName(),
+                member.getContactFirstName(), member.getContactLastName(), member.getEmail(),
+                organizations.get(member.getEsInitiativeOrganizationId()), initiativeStatus, null, follows);
     }
 
     public String registrationPath(EsSmallGroup group) {
@@ -502,16 +614,30 @@ public class SmallGroupService {
         return missing;
     }
 
-    private List<SmallGroupSeriesComparison.Registrant> registrants(Long seriesId) {
-        List<SmallGroupSeriesComparison.Registrant> registrants = new ArrayList<>();
-        for (EsTopicMeetingMember member : seriesMemberDao.findByMeetingId(seriesId)) {
-            String label = member.getEmail();
-            if (member.getUserId() != null) {
-                User user = userDao.findById(member.getUserId()).orElse(null);
-                if (user != null && user.getFullName() != null && !user.getFullName().isBlank()) {
-                    label = user.getFullName();
+    private List<SmallGroupSeriesComparison.Registrant> registrants(Long seriesId, Long topicId) {
+        Map<String, EsSubscription> followsByEmail = new HashMap<>();
+        Map<Long, EsSubscription> followsByUser = new HashMap<>();
+        if (topicId != null) {
+            for (EsSubscription follow : subscriptionDao.findActiveByTopicId(topicId)) {
+                if (follow.getEmailNormalized() != null) {
+                    followsByEmail.putIfAbsent(follow.getEmailNormalized(), follow);
+                }
+                if (follow.getUserId() != null) {
+                    followsByUser.putIfAbsent(follow.getUserId(), follow);
                 }
             }
+        }
+        List<SmallGroupSeriesComparison.Registrant> registrants = new ArrayList<>();
+        for (EsTopicMeetingMember member : seriesMemberDao.findByMeetingId(seriesId)) {
+            User user = member.getUserId() == null ? null : userDao.findById(member.getUserId()).orElse(null);
+            EsSubscription follow = member.getUserId() == null ? null : followsByUser.get(member.getUserId());
+            if (follow == null && member.getEmailNormalized() != null) {
+                follow = followsByEmail.get(member.getEmailNormalized());
+            }
+            String label = PersonNames.display(user == null ? null : user.getDisplayName(),
+                    user == null ? null : user.getFirstName(), user == null ? null : user.getLastName(),
+                    follow == null ? null : follow.getContactFirstName(),
+                    follow == null ? null : follow.getContactLastName(), member.getEmail());
             registrants.add(new SmallGroupSeriesComparison.Registrant(member.getEmailNormalized(), member.getUserId(),
                     member.getMembershipStatus().name(), member.getEmail(), label));
         }

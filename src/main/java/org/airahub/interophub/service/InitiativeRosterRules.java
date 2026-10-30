@@ -117,16 +117,8 @@ public final class InitiativeRosterRules {
     }
 
     public static ContactName splitContactName(String raw) {
-        String trimmed = trimToNull(raw);
-        if (trimmed == null) {
-            return new ContactName(null, null);
-        }
-        String collapsed = trimmed.replaceAll("\\s+", " ");
-        int space = collapsed.lastIndexOf(' ');
-        if (space < 0) {
-            return new ContactName(limit(collapsed, 100), null);
-        }
-        return new ContactName(limit(collapsed.substring(0, space), 100), limit(collapsed.substring(space + 1), 100));
+        PersonNames.Names names = PersonNames.splitFullName(raw);
+        return new ContactName(names.firstName(), names.lastName());
     }
 
     private static String limit(String value, int max) {

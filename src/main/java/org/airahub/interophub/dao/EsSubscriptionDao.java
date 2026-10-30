@@ -121,6 +121,41 @@ public class EsSubscriptionDao extends GenericDao<EsSubscription, Long> {
         }
     }
 
+    public List<EsSubscription> findByEmailNormalized(String emailNormalized) {
+        if (emailNormalized == null || emailNormalized.isBlank()) {
+            return List.of();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.emailNormalized = :email order by s.createdAt desc",
+                    EsSubscription.class)
+                    .setParameter("email", emailNormalized)
+                    .setMaxResults(20)
+                    .getResultList();
+        }
+    }
+
+    /** Read-only search of topic follows by name, email, or organization. */
+    public List<EsSubscription> searchTopicContacts(String query, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        String pattern = "%" + query.trim().toLowerCase() + "%";
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsSubscription s where s.subscriptionType = :type and ("
+                            + " lower(s.email) like :p or lower(coalesce(s.contactFirstName, '')) like :p"
+                            + " or lower(coalesce(s.contactLastName, '')) like :p"
+                            + " or lower(coalesce(s.contactOrganization, '')) like :p)"
+                            + " order by s.createdAt desc",
+                    EsSubscription.class)
+                    .setParameter("type", EsSubscription.SubscriptionType.TOPIC)
+                    .setParameter("p", pattern)
+                    .setMaxResults(Math.max(1, limit))
+                    .getResultList();
+        }
+    }
+
     /**
      * Distinct Topic Space ids where the given user has an active (SUBSCRIBED,
      * CHAMPION, or SUPPORT) TOPIC subscription. Drives per-space Dandelion

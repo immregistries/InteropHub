@@ -23,8 +23,9 @@ public final class SmallGroupSeriesComparison {
     private SmallGroupSeriesComparison() {
     }
 
+    /** Only an approved registration counts as registered. A request is still listed, separately. */
     public static boolean registeredStatus(String status) {
-        return "REQUESTED".equals(status) || "APPROVED".equals(status);
+        return "APPROVED".equals(status);
     }
 
     public static boolean samePerson(String emailA, Long userA, String emailB, Long userB) {

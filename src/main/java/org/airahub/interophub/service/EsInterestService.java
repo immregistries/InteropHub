@@ -169,7 +169,11 @@ public class EsInterestService {
         topicMeetingMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
         commentDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
         meetingAttendanceDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
-        initiativeMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId);
+        User account = userDao.findById(userId).orElse(null);
+        PersonNames.Names names = account == null ? new PersonNames.Names(null, null)
+                : PersonNames.accountNames(account.getDisplayName(), account.getFirstName(), account.getLastName());
+        initiativeMemberDao.updateUserIdWhereNullByEmailNormalized(emailNormalized, userId, names.firstName(),
+                names.lastName());
     }
 
     /**

@@ -39,8 +39,8 @@ public final class InitiativeFollowRules {
         return Optional.of(new FollowRequest(
                 topicId,
                 email.trim(),
-                firstName,
-                lastName,
+                PersonNames.nameOrNull(firstName),
+                PersonNames.nameOrNull(lastName),
                 organization,
                 "Joined the " + name + " initiative.",
                 false));

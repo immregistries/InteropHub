@@ -22,7 +22,9 @@ import org.airahub.interophub.model.Organization;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.InitiativeImport;
 import org.airahub.interophub.service.InitiativeRosterRules;
+import org.airahub.interophub.service.InitiativeTimelineText;
 import org.airahub.interophub.service.OrganizationDirectory;
+import org.airahub.interophub.service.PersonNames;
 
 final class InitiativePageRenderer {
 
@@ -202,7 +204,7 @@ final class InitiativePageRenderer {
             out.println("          </div>");
         }
         out.println("        </div>");
-        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("        <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\">");
         out.println("          <caption class=\"aira-visually-hidden\">Organizations</caption><thead><tr>");
         out.println("            <th scope=\"col\" class=\"aira-table__cell--primary\">Organization</th>");
         out.println("            <th scope=\"col\">Type</th><th scope=\"col\">Status</th>");
@@ -247,7 +249,7 @@ final class InitiativePageRenderer {
         if (!canEdit) {
             return;
         }
-        dialogStart(out, "add-organization", "Add organization", input);
+        dialogStart(out, "add-organization", "Add organization", input, true);
         out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
                 + InitiativeHtml.esc(postUrl) + "\">");
         out.println("          <h3 class=\"aira-dialog__title\" id=\"add-organization-title\">Add organization</h3>");
@@ -273,8 +275,8 @@ final class InitiativePageRenderer {
 
     static void organizationDetail(PrintWriter out, String contextPath, EsInitiative initiative,
             EsInitiativeOrganization participation, Organization organization, List<EsInitiativeMember> contacts,
-            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean canEdit,
-            FormInput input) {
+            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, Map<Long, User> users, User viewer,
+            boolean canEdit, FormInput input) {
         String listUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/organizations";
         String postUrl = listUrl + "/" + participation.getEsInitiativeOrganizationId();
         String name = organization == null ? "Organization" : organization.getOrganizationName();
@@ -332,7 +334,7 @@ final class InitiativePageRenderer {
             out.println("            <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-person\">Add person</button>");
             out.println("          </div>");
         }
-        out.println("        </div><div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("        </div><div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\">");
         out.println("          <caption class=\"aira-visually-hidden\">Contacts</caption>");
         out.println("          <thead><tr><th scope=\"col\" class=\"aira-table__cell--primary\">Name</th><th scope=\"col\">Status</th><th scope=\"col\">Role</th></tr></thead><tbody>");
         if (contacts.isEmpty()) {
@@ -342,20 +344,21 @@ final class InitiativePageRenderer {
         for (EsInitiativeMember contact : contacts) {
             out.println("            <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
                     + InitiativeHtml.esc(peopleUrl + contact.getEsInitiativeMemberId()) + "\">"
-                    + InitiativeHtml.esc(contact.displayName()) + "</a></th>");
+                    + InitiativeHtml.esc(personLabel(contact, users)) + "</a></th>");
             out.println("              <td>" + badge(contact.getMemberStatus().name(), contact.getMemberStatus().getLabel())
                     + "</td>");
             out.println("              <td>" + InitiativeHtml.esc(contact.getInitiativeRole()) + "</td></tr>");
         }
         out.println("          </tbody></table></div></section>");
         if (canEdit && organization != null) {
-            dialogStart(out, "add-person", "Add person", input);
+            dialogStart(out, "add-person", "Add person", input, true);
             out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
                     + InitiativeHtml.esc(postUrl) + "\">");
             out.println("          <h3 class=\"aira-dialog__title\" id=\"add-person-title\">Add person</h3>");
             formError(out, input, "add-member");
             out.println("          <input type=\"hidden\" name=\"action\" value=\"add-member\" />");
-            personIdentity(out, input, "add-member", "contact");
+            out.println("          <input type=\"hidden\" name=\"personIntent\" value=\"contact\" />");
+            personSearch(out, contextPath, initiative.getInitiativeCode(), "contact", input, "add-member", true);
             out.println("          <div class=\"aira-field\"><span class=\"aira-label\">Organization</span>");
             out.println("            <p>" + InitiativeHtml.esc(name) + "</p>");
             out.println("            <input type=\"hidden\" name=\"organizationId\" value=\""
@@ -374,7 +377,7 @@ final class InitiativePageRenderer {
     static void people(PrintWriter out, String contextPath, EsInitiative initiative, List<EsInitiativeMember> members,
             List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations,
             java.util.Set<Long> missingFollow, String statusFilter, String organizationFilter, String typeFilter,
-            boolean canEdit, FormInput input) {
+            boolean canEdit, Map<Long, User> users, FormInput input) {
         header(out, initiative);
         String pageUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people";
         String postUrl = pageUrl + filterQuery("status", statusFilter, "organization", organizationFilter, "type", typeFilter);
@@ -412,7 +415,7 @@ final class InitiativePageRenderer {
             out.println("          <button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"add-person\">Add person</button>");
             out.println("        </div>");
         }
-        out.println("      </div><div class=\"aira-table-wrap\"><table class=\"aira-table\">");
+        out.println("      </div><div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\">");
         out.println("        <caption class=\"aira-visually-hidden\">People</caption><thead><tr>");
         out.println("          <th scope=\"col\" class=\"aira-table__cell--primary\">Name</th>");
         out.println("          <th scope=\"col\">Organization</th><th scope=\"col\">Type</th><th scope=\"col\">Status</th>");
@@ -430,7 +433,7 @@ final class InitiativePageRenderer {
             String type = organization == null ? "" : OrganizationDirectory.label(organization.getOrganizationType());
             out.println("          <tr><th scope=\"row\" class=\"aira-table__cell--primary\"><a class=\"aira-inline-link\" href=\""
                     + InitiativeHtml.esc(pageUrl + "/" + member.getEsInitiativeMemberId()) + "\">"
-                    + InitiativeHtml.esc(member.displayName()) + "</a></th>");
+                    + InitiativeHtml.esc(personLabel(member, users)) + "</a></th>");
             if (organization != null && participation != null) {
                 out.println("            <td><a class=\"aira-inline-link\" href=\""
                         + InitiativeHtml.esc(contextPath + "/es/initiatives/" + initiative.getInitiativeCode()
@@ -449,7 +452,7 @@ final class InitiativePageRenderer {
             if (canEdit) {
                 out.println("            <td class=\"aira-table__cell--actions\"><button class=\"aira-button aira-button--small aira-button--secondary\" type=\"button\" data-dialog-open=\"change-member-status\" data-record-id=\""
                         + member.getEsInitiativeMemberId() + "\" data-status=\"" + member.getMemberStatus().name()
-                        + "\" data-dialog-title=\"" + InitiativeHtml.esc("Change status for " + member.displayName())
+                        + "\" data-dialog-title=\"" + InitiativeHtml.esc("Change status for " + personLabel(member, users))
                         + "\">Change status</button></td>");
             }
             out.println("          </tr>");
@@ -458,13 +461,14 @@ final class InitiativePageRenderer {
         if (!canEdit) {
             return;
         }
-        dialogStart(out, "add-person", "Add person", input);
+        dialogStart(out, "add-person", "Add person", input, true);
         out.println("        <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\""
                 + InitiativeHtml.esc(postUrl) + "\">");
         out.println("          <h3 class=\"aira-dialog__title\" id=\"add-person-title\">Add person</h3>");
         formError(out, input, "add-member");
         out.println("          <input type=\"hidden\" name=\"action\" value=\"add-member\" />");
-        personIdentity(out, input, "add-member", "person");
+        out.println("          <input type=\"hidden\" name=\"personIntent\" value=\"create\" />");
+        personSearch(out, contextPath, initiative.getInitiativeCode(), "person", input, "add-member", false);
         organizationField(out, contextPath, initiative.getInitiativeCode(), "add-person", input, "add-member", "", null);
         personRoleStatus(out, input, "add-member", "person", EsInitiativeMember.MemberStatus.PROSPECT.name());
         dialogActions(out, "add-person", "Add person");
@@ -474,15 +478,15 @@ final class InitiativePageRenderer {
 
     static void personDetail(PrintWriter out, String contextPath, EsInitiative initiative, EsInitiativeMember member,
             List<EsInitiativeOrganization> participations, Map<Long, Organization> organizations,
-            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, User viewer, boolean missingFollow,
-            boolean canEdit, FormInput input) {
+            List<EsInitiativeTimelineEntry> timeline, Map<Long, String> userNames, Map<Long, User> users, User viewer,
+            boolean missingFollow, boolean canEdit, FormInput input) {
         String listUrl = contextPath + "/es/initiatives/" + initiative.getInitiativeCode() + "/people";
         String postUrl = listUrl + "/" + member.getEsInitiativeMemberId();
         Organization organization = organizationFor(member, participations, organizations);
         out.println("      <div class=\"aira-page-header\"><div>");
         out.println("        <p class=\"aira-meta\"><a class=\"aira-inline-link\" href=\"" + InitiativeHtml.esc(listUrl)
                 + "\">People</a></p>");
-        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(member.displayName()) + "</h1>");
+        out.println("        <h1 class=\"aira-page-title\">" + InitiativeHtml.esc(personLabel(member, users)) + "</h1>");
         out.println("      </div></div>");
         out.println("      <div class=\"aira-cluster\">");
         out.println("        " + badge(member.getMemberStatus().name(), member.getMemberStatus().getLabel()));
@@ -494,8 +498,6 @@ final class InitiativePageRenderer {
         }
         out.println("      </div>");
         if (canEdit) {
-            String currentName = ((member.getContactFirstName() == null ? "" : member.getContactFirstName()) + " "
-                    + (member.getContactLastName() == null ? "" : member.getContactLastName())).trim();
             out.println("      <form class=\"aira-form aira-form--inline\" method=\"post\" action=\""
                     + InitiativeHtml.esc(postUrl) + "\">");
             formError(out, input, "member-status");
@@ -520,9 +522,14 @@ final class InitiativePageRenderer {
             out.println("        <input type=\"hidden\" name=\"memberId\" value=\"" + member.getEsInitiativeMemberId()
                     + "\" />");
             out.println("        <div class=\"aira-field-row\">");
-            out.println("          <div class=\"aira-field\"><label for=\"editPersonName\">Name</label>");
-            out.println("            <input class=\"aira-input\" id=\"editPersonName\" name=\"name\" type=\"text\" maxlength=\"200\" value=\""
-                    + InitiativeHtml.esc(input.value("edit-member", "name", currentName)) + "\" /></div>");
+            out.println("          <div class=\"aira-field\"><label for=\"editPersonFirst\">First name</label>");
+            out.println("            <input class=\"aira-input\" id=\"editPersonFirst\" name=\"firstName\" type=\"text\" maxlength=\"100\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-member", "firstName", member.getContactFirstName()))
+                    + "\" /></div>");
+            out.println("          <div class=\"aira-field\"><label for=\"editPersonLast\">Last name</label>");
+            out.println("            <input class=\"aira-input\" id=\"editPersonLast\" name=\"lastName\" type=\"text\" maxlength=\"100\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-member", "lastName", member.getContactLastName()))
+                    + "\" /></div>");
             out.println("          <div class=\"aira-field\"><label for=\"editPersonEmail\">Email</label>");
             out.println("            <input class=\"aira-input\" id=\"editPersonEmail\" name=\"email\" type=\"email\" value=\""
                     + InitiativeHtml.esc(input.value("edit-member", "email", member.getEmail())) + "\" /></div>");
@@ -782,8 +789,13 @@ final class InitiativePageRenderer {
     }
 
     static void dialogStart(PrintWriter out, String id, String title, FormInput input) {
+        dialogStart(out, id, title, input, false);
+    }
+
+    static void dialogStart(PrintWriter out, String id, String title, FormInput input, boolean popover) {
         String open = id.equals(input.openDialog()) ? " data-open-on-load" : "";
-        out.println("      <dialog class=\"aira-dialog\" id=\"" + id + "\" aria-labelledby=\"" + id + "-title\"" + open
+        String type = popover ? "aira-dialog aira-dialog--popover-visible" : "aira-dialog";
+        out.println("      <dialog class=\"" + type + "\" id=\"" + id + "\" aria-labelledby=\"" + id + "-title\"" + open
                 + ">");
     }
 
@@ -796,16 +808,47 @@ final class InitiativePageRenderer {
         out.println("          </div>");
     }
 
-    static void personIdentity(PrintWriter out, FormInput input, String action, String prefix) {
-        out.println("          <div class=\"aira-field-row\">");
-        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Name\">Name</label>");
-        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Name\" name=\"name\" type=\"text\" maxlength=\"200\" value=\""
-                + InitiativeHtml.esc(input.value(action, "name", "")) + "\" /></div>");
-        out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "Email\">Email</label>");
-        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Email\" name=\"email\" type=\"email\" value=\""
+    static void personSearch(PrintWriter out, String contextPath, String code, String prefix, FormInput input,
+            String action, boolean allowRoster) {
+        String suggest = contextPath + "/es/initiatives/" + code + "/people-search";
+        boolean showNew = input.failed(action) && "NEW".equals(input.value(action, "personSource", ""));
+        out.println("          <div data-people-search data-suggest-url=\"" + InitiativeHtml.esc(suggest) + "\""
+                + (allowRoster ? " data-people-allow-roster" : "") + ">");
+        out.println("            <div class=\"aira-field aira-dialog-search\">");
+        out.println("              <label for=\"" + prefix + "Person\">Person</label>");
+        out.println("              <input class=\"aira-input\" id=\"" + prefix + "Person\" data-people-query type=\"search\" autocomplete=\"off\" placeholder=\"Name, email, or organization\" />");
+        out.println("              <div class=\"aira-search-popover\" hidden data-people-popover><div class=\"aira-search-listbox\" role=\"listbox\" data-people-list></div></div>");
+        out.println("            </div>");
+        out.println("            <p class=\"aira-meta\" data-people-chosen hidden></p>");
+        out.println("            <input type=\"hidden\" name=\"personSource\" data-people-source value=\""
+                + InitiativeHtml.esc(input.value(action, "personSource", "")) + "\" />");
+        out.println("            <input type=\"hidden\" name=\"memberId\" data-people-member value=\""
+                + InitiativeHtml.esc(input.value(action, "memberId", "")) + "\" />");
+        out.println("            <input type=\"hidden\" name=\"userId\" data-people-user value=\""
+                + InitiativeHtml.esc(input.value(action, "userId", "")) + "\" />");
+        out.println("            <div data-people-new" + (showNew ? "" : " hidden") + ">");
+        out.println("              <div class=\"aira-field-row\">");
+        out.println("                <div class=\"aira-field\"><label for=\"" + prefix + "First\">First name</label>");
+        out.println("                  <input class=\"aira-input\" id=\"" + prefix + "First\" name=\"firstName\" type=\"text\" maxlength=\"100\" value=\""
+                + InitiativeHtml.esc(input.value(action, "firstName", "")) + "\" /></div>");
+        out.println("                <div class=\"aira-field\"><label for=\"" + prefix + "Last\">Last name</label>");
+        out.println("                  <input class=\"aira-input\" id=\"" + prefix + "Last\" name=\"lastName\" type=\"text\" maxlength=\"100\" value=\""
+                + InitiativeHtml.esc(input.value(action, "lastName", "")) + "\" /></div>");
+        out.println("              </div>");
+        out.println("              <div class=\"aira-field\"><label for=\"" + prefix + "Email\">Email</label>");
+        out.println("                <input class=\"aira-input\" id=\"" + prefix + "Email\" name=\"email\" type=\"email\" value=\""
                 + InitiativeHtml.esc(input.value(action, "email", "")) + "\" /></div>");
-        out.println("          </div>");
-        out.println("          <p class=\"aira-meta\">Enter a name or an email address.</p>");
+        out.println("            </div></div>");
+    }
+
+    static String personLabel(EsInitiativeMember member, Map<Long, User> users) {
+        if (member == null) {
+            return "Unnamed contact";
+        }
+        User account = users == null || member.getUserId() == null ? null : users.get(member.getUserId());
+        return PersonNames.display(account == null ? null : account.getDisplayName(),
+                account == null ? null : account.getFirstName(), account == null ? null : account.getLastName(),
+                member.getContactFirstName(), member.getContactLastName(), member.getEmail());
     }
 
     private static void personRoleStatus(PrintWriter out, FormInput input, String action, String prefix,
@@ -971,7 +1014,7 @@ final class InitiativePageRenderer {
         boolean showNew = input.failed(action) && postedId.isBlank()
                 && (!newName.isBlank() || !newType.isBlank() || !website.isBlank());
         String shownNewName = showNew && newName.isBlank() ? query : newName;
-        out.println("          <div class=\"initiative-org-field\" data-org-typeahead data-suggest-url=\""
+        out.println("          <div class=\"aira-dialog-search\" data-org-typeahead data-suggest-url=\""
                 + InitiativeHtml.esc(suggest) + "\">");
         out.println("            <div class=\"aira-field\"><label for=\"" + prefix + "-organization-query\">Organization</label>");
         out.println("              <input class=\"aira-input\" id=\"" + prefix + "-organization-query\" name=\"organizationQuery\" data-org-query type=\"text\" autocomplete=\"off\" value=\""
@@ -1019,34 +1062,43 @@ final class InitiativePageRenderer {
             Long subjectId, FormInput input) {
         if (entries.isEmpty()) {
             out.println("        <p class=\"aira-meta\">No history yet.</p>");
+        } else if (entries.size() > InitiativeTimelineText.PREVIEW_COUNT) {
+            out.println("        <p><button class=\"aira-button aira-button--small aira-button--ghost\" type=\"button\" data-timeline-more>Show all</button></p>");
         }
-        for (EsInitiativeTimelineEntry entry : entries) {
+        String editDialogId = "edit-comment-" + type.name() + "-" + subjectId;
+        int firstVisible = InitiativeTimelineText.firstVisible(entries.size(), false);
+        for (int index = 0; index < entries.size(); index++) {
+            EsInitiativeTimelineEntry entry = entries.get(index);
             String who = userNames.getOrDefault(entry.getCreatedByUserId(), "Someone");
-            String when = entry.getCreatedAt() == null ? "" : DATE_FORMAT.format(entry.getCreatedAt());
-            boolean editing = input.failed("edit-comment")
-                    && String.valueOf(entry.getEsInitiativeTimelineEntryId()).equals(input.posted("entryId"));
-            out.println("        <article>");
-            out.println("          <p class=\"aira-meta\">" + InitiativeHtml.esc(when) + " · " + InitiativeHtml.esc(who) + "</p>");
-            out.println("          <p>" + InitiativeHtml.esc(entryText(entry)) + "</p>");
-            if (canComment && viewer != null && InitiativeRosterRules.canEditEntry(entry.getEntryType(),
-                    entry.getCreatedByUserId(), viewer.getUserId())) {
-                out.println("          <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""
-                        + InitiativeHtml.esc(postUrl) + "\">");
-                if (editing) {
-                    formError(out, input, "edit-comment");
-                }
-                out.println("            <input type=\"hidden\" name=\"action\" value=\"edit-comment\" />");
-                out.println("            <input type=\"hidden\" name=\"entryId\" value=\""
-                        + entry.getEsInitiativeTimelineEntryId() + "\" />");
-                out.println("            <div class=\"aira-field\"><label for=\"edit-note-"
-                        + entry.getEsInitiativeTimelineEntryId() + "\">Edit comment</label>");
-                out.println("              <textarea class=\"aira-textarea\" id=\"edit-note-"
-                        + entry.getEsInitiativeTimelineEntryId() + "\" name=\"note\" required>"
-                        + InitiativeHtml.esc(editing ? input.posted("note") : entry.getNoteText()) + "</textarea></div>");
-                out.println("            <div class=\"aira-form-actions\"><button class=\"aira-button aira-button--secondary\" type=\"submit\">Save comment</button></div>");
-                out.println("          </form>");
+            boolean ownComment = canComment && viewer != null && InitiativeRosterRules.canEditEntry(entry.getEntryType(),
+                    entry.getCreatedByUserId(), viewer.getUserId());
+            String hidden = index < firstVisible ? " hidden data-timeline-older" : "";
+            out.println("        <p class=\"aira-meta\"" + hidden + ">" + InitiativeHtml.esc(InitiativeTimelineText.line(
+                    entry.getCreatedAt(), who, entry.getEntryType(), entry.getFromValue(), entry.getToValue(),
+                    entry.getNoteText(), entry.getEditedAt() != null)));
+            if (ownComment) {
+                out.println("          <button class=\"aira-button aira-button--link\" type=\"button\" data-dialog-open=\""
+                        + editDialogId + "\" data-record-id=\"" + entry.getEsInitiativeTimelineEntryId()
+                        + "\" data-comment=\"" + InitiativeHtml.esc(entry.getNoteText()).replace("\r", "&#13;").replace("\n", "&#10;")
+                        + "\">Edit</button>");
             }
-            out.println("        </article>");
+            out.println("        </p>");
+        }
+        if (canComment && entries.stream().anyMatch(entry -> viewer != null && InitiativeRosterRules.canEditEntry(
+                entry.getEntryType(), entry.getCreatedByUserId(), viewer.getUserId()))) {
+            dialogStart(out, editDialogId, "Edit comment", input);
+            out.println("        <form method=\"post\" action=\"" + InitiativeHtml.esc(postUrl) + "\">");
+            out.println("          <h3 class=\"aira-dialog__title\" id=\"" + editDialogId + "-title\">Edit comment</h3>");
+            formError(out, input, "edit-comment");
+            out.println("          <input type=\"hidden\" name=\"action\" value=\"edit-comment\" />");
+            out.println("          <input data-record-id type=\"hidden\" name=\"entryId\" value=\""
+                    + InitiativeHtml.esc(input.value("edit-comment", "entryId", "")) + "\" />");
+            out.println("          <div class=\"aira-field\"><label for=\"" + editDialogId + "-note\">Comment</label>");
+            out.println("            <textarea class=\"aira-textarea\" id=\"" + editDialogId
+                    + "-note\" name=\"note\" data-comment-note required>"
+                    + InitiativeHtml.esc(input.value("edit-comment", "note", "")) + "</textarea></div>");
+            dialogActions(out, editDialogId, "Save comment");
+            out.println("        </form></dialog>");
         }
         if (canComment) {
             out.println("        <form class=\"aira-form aira-form--narrow\" method=\"post\" action=\""

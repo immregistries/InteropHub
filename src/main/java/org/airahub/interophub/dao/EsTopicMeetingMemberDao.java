@@ -24,6 +24,22 @@ public class EsTopicMeetingMemberDao extends GenericDao<EsTopicMeetingMember, Lo
         }
     }
 
+    /** Read-only email search across series registrants. */
+    public List<EsTopicMeetingMember> searchByEmail(String query, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        String pattern = "%" + query.trim().toLowerCase() + "%";
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsTopicMeetingMember m where lower(m.email) like :p order by m.createdAt desc",
+                    EsTopicMeetingMember.class)
+                    .setParameter("p", pattern)
+                    .setMaxResults(Math.max(1, limit))
+                    .getResultList();
+        }
+    }
+
     public Optional<EsTopicMeetingMember> findByMeetingIdAndEmailNormalized(Long esTopicMeetingId,
             String emailNormalized) {
         if (esTopicMeetingId == null || emailNormalized == null || emailNormalized.isBlank()) {

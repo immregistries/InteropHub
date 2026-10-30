@@ -201,6 +201,10 @@ public final class InitiativeImport {
             Set<String> onInitiative, Set<String> knownEmails, Set<String> emailsInFile) {
         String contact = cell(dataRow.cells(), mapping.contact());
         String email = cell(dataRow.cells(), mapping.email());
+        if (email.isBlank() && PersonNames.looksLikeEmail(contact)) {
+            email = contact.trim();
+            contact = "";
+        }
         String organization = cell(dataRow.cells(), mapping.organization());
         String rawType = cell(dataRow.cells(), mapping.organizationType());
         String notes = cell(dataRow.cells(), mapping.notes());

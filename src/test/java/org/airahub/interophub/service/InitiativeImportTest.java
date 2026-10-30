@@ -49,6 +49,25 @@ class InitiativeImportTest {
     }
 
     @Test
+    void anEmailInTheContactColumnIsNotUsedAsAName() {
+        InitiativeImport.ParsedSheet sheet = InitiativeImport.parse("interest.csv",
+                """
+                Point of Contact,Email,Organization,Organization Type
+                ada@example.org,,HLN,Consultant
+                Ada Lovelace,ada.lovelace@example.org,HLN,Consultant
+                """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        InitiativeImport.Preview preview = InitiativeImport.preview(sheet, InitiativeImport.suggest(sheet.headers()),
+                List.of(), List.of());
+        InitiativeImport.PreviewRow emailOnly = preview.rows().get(0);
+        assertEquals("ada@example.org", emailOnly.email());
+        assertTrue(emailOnly.contactName() == null || emailOnly.contactName().isBlank());
+        PersonNames.Names split = PersonNames.splitFullName(preview.rows().get(1).contactName());
+        assertEquals("Ada", split.firstName());
+        assertEquals("Lovelace", split.lastName());
+        assertEquals(new PersonNames.Names(null, null), PersonNames.splitFullName("ada@example.org"));
+    }
+
+    @Test
     void xlsxPreviewShowsNewOrganizationsPeopleAndProblemsBeforeCommit() throws Exception {
         byte[] bytes;
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {

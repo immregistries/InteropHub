@@ -44,7 +44,8 @@ public class EsInitiativeMember {
         STAFF_ADDED("Added by staff"),
         APPLIED("Applied"),
         FOLLOWER_IMPORT("Imported from followers"),
-        SPREADSHEET_IMPORT("Imported from a spreadsheet");
+        SPREADSHEET_IMPORT("Imported from a spreadsheet"),
+        SMALL_GROUP("Added from a Small Group");
 
         private final String label;
 
@@ -267,15 +268,7 @@ public class EsInitiativeMember {
     }
 
     public String displayName() {
-        String first = contactFirstName == null ? "" : contactFirstName.trim();
-        String last = contactLastName == null ? "" : contactLastName.trim();
-        String name = (first + " " + last).trim();
-        if (!name.isEmpty()) {
-            return name;
-        }
-        if (email != null && !email.isBlank()) {
-            return email.trim();
-        }
-        return "Unnamed contact";
+        return org.airahub.interophub.service.PersonNames.display(null, null, null, contactFirstName, contactLastName,
+                email);
     }
 }

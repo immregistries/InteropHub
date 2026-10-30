@@ -67,7 +67,7 @@ class SmallGroupRulesTest {
     }
 
     @Test
-    void seriesComparisonTreatsRequestedAndApprovedAsRegistered() {
+    void seriesComparisonCountsOnlyApprovedRegistrations() {
         SmallGroupSeriesComparison.Person registered = new SmallGroupSeriesComparison.Person(1L, "ada@example.org", 10L);
         SmallGroupSeriesComparison.Person missing = new SmallGroupSeriesComparison.Person(2L, "bea@example.org", null);
         SmallGroupSeriesComparison.Person byAccount = new SmallGroupSeriesComparison.Person(3L, null, 30L);
@@ -78,7 +78,7 @@ class SmallGroupRulesTest {
                 new SmallGroupSeriesComparison.Registrant("dee@example.org", 40L, "APPROVED", "dee@example.org", "Dee"));
         SmallGroupSeriesComparison.Result result = SmallGroupSeriesComparison.compare(
                 List.of(registered, missing, byAccount), registrants);
-        assertEquals(List.of(missing), result.participantsNotRegistered());
+        assertEquals(List.of(registered, missing), result.participantsNotRegistered());
         assertEquals(1, result.registrantsNotParticipants().size());
         assertEquals("dee@example.org", result.registrantsNotParticipants().get(0).email());
         assertEquals("/registerForMeeting/fall/packet%20group",

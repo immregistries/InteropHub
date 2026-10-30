@@ -1,5 +1,4 @@
-/* Drag state and the in-place title/phase editor. Compact row metrics are a
-   temporary stand-in for aira-table--compact; see aira-css-proposed-changes.md. */
+/* Drag state and the in-place title/phase editor. */
 
 .initiative-checklist-row.is-drop-target,
 .initiative-checklist-add.is-drop-target,
@@ -42,18 +41,12 @@
   display: none;
 }
 
-.initiative-checklist .aira-table > :is(thead, tbody) > tr > :is(th, td) {
-  padding: 0.15rem 0.45rem;
-  vertical-align: middle;
-}
-
-.initiative-checklist .aira-select,
-.initiative-checklist .aira-input {
-  min-height: 1.5rem;
-  padding-top: 0.05rem;
-  padding-bottom: 0.05rem;
-}
-
 .initiative-checklist .aira-select {
   width: 9.5rem;
+}
+
+/* Two type-aheads in one dialog both use aira-dialog-search, which stacks at
+   the overlay level. The open menu has to sit above the field that follows it. */
+.aira-dialog-search:has(.aira-search-popover:not([hidden])) {
+  z-index: calc(var(--aira-z-overlay) + 1);
 }

@@ -15,18 +15,9 @@
 
     var timer = null;
 
-    function setOpen(open) {
-      field.classList.toggle('is-open', open);
-      var dialog = field.closest('dialog');
-      if (dialog) {
-        dialog.style.overflow = open ? 'visible' : '';
-      }
-    }
-
     function closeList() {
       popover.hidden = true;
       list.innerHTML = '';
-      setOpen(false);
     }
 
     function setNewRequired(required) {
@@ -102,7 +93,6 @@
       });
       list.appendChild(add);
       popover.hidden = false;
-      setOpen(true);
     }
 
     input.addEventListener('input', function () {

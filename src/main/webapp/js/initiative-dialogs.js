@@ -27,6 +27,11 @@
         if (heading && title) {
           heading.textContent = title;
         }
+        var comment = button.getAttribute('data-comment');
+        var note = dialog.querySelector('[data-comment-note]');
+        if (note && comment != null) {
+          note.value = comment;
+        }
       }
       if (!dialog.open) {
         dialog.showModal();
@@ -75,6 +80,43 @@
         option.hidden = !show;
         option.disabled = !show;
       });
+    });
+  });
+
+  document.querySelectorAll('[data-timeline-more]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var section = button.closest('section');
+      if (!section) {
+        return;
+      }
+      section.querySelectorAll('[data-timeline-older]').forEach(function (row) {
+        row.hidden = false;
+      });
+      button.hidden = true;
+    });
+  });
+
+  document.querySelectorAll('[data-inline-role]').forEach(function (form) {
+    var display = form.querySelector('[data-inline-display]');
+    var editor = form.querySelector('input[name="role"]');
+    if (!display || !editor) {
+      return;
+    }
+    display.addEventListener('click', function () {
+      display.hidden = true;
+      editor.hidden = false;
+      editor.focus();
+      editor.select();
+    });
+    editor.addEventListener('keydown', function (event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        form.submit();
+      } else if (event.key === 'Escape') {
+        editor.hidden = true;
+        display.hidden = false;
+        editor.value = display.textContent === 'Add role' ? '' : display.textContent;
+      }
     });
   });
 

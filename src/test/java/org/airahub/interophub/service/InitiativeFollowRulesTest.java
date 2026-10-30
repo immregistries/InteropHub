@@ -51,6 +51,18 @@ class InitiativeFollowRulesTest {
         assertTrue(InitiativeFollowRules.plan("Pilot", 3L, "INVITED", "JOINED", "  ",
                 "A", "B", null, null).isEmpty());
     }
+
+    @Test
+    void anEmailIsNeverStoredAsAFollowName() {
+        InitiativeFollowRules.FollowRequest follow = InitiativeFollowRules.plan(
+                "Pilot", 3L, "INVITED", "JOINED", "ada@example.org", "ada@example.org", " ", null, null).orElseThrow();
+        assertEquals(null, follow.firstName());
+        assertEquals(null, follow.lastName());
+        InitiativeFollowRules.FollowRequest smallGroup = SmallGroupParticipantRules.topicFollow(
+                "Packet group", 9L, "ada@example.org", "ada@example.org", null, null, null).orElseThrow();
+        assertEquals(null, smallGroup.firstName());
+        assertEquals(null, smallGroup.lastName());
+    }
 }
 
 class OrganizationDirectoryTest {

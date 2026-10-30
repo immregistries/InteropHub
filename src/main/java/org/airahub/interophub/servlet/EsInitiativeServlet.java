@@ -45,6 +45,9 @@ import org.airahub.interophub.service.InitiativeImport;
 import org.airahub.interophub.service.InitiativeRosterRules;
 import org.airahub.interophub.service.InitiativeService;
 import org.airahub.interophub.service.OrganizationDirectory;
+import org.airahub.interophub.service.PeopleDirectory;
+import org.airahub.interophub.service.PeopleSearch;
+import org.airahub.interophub.service.PeopleToBringIn;
 import org.airahub.interophub.service.PublicUrlService;
 import org.airahub.interophub.service.SmallGroupSeriesComparison;
 import org.airahub.interophub.service.SmallGroupService;
@@ -60,6 +63,7 @@ public class EsInitiativeServlet extends HttpServlet {
     private final InitiativeService initiatives = new InitiativeService();
     private final ChecklistService checklists = new ChecklistService();
     private final SmallGroupService smallGroups = new SmallGroupService();
+    private final PeopleDirectory peopleDirectory = new PeopleDirectory();
     private final PublicUrlService publicUrls = new PublicUrlService();
 
     @Override
@@ -101,6 +105,10 @@ public class EsInitiativeServlet extends HttpServlet {
         }
         if (parts.length > 1 && "organization-suggest".equals(parts[1])) {
             suggest(request, response, initiative, level);
+            return;
+        }
+        if (parts.length > 1 && "people-search".equals(parts[1])) {
+            searchPeople(request, response, initiative, level);
             return;
         }
         if (parts.length == 3 && "checklist".equals(parts[1]) && "download".equals(parts[2])) {
@@ -298,17 +306,22 @@ public class EsInitiativeServlet extends HttpServlet {
                         param(request, "organizationType"));
                 yield null;
             }
-            case "add-member" -> initiatives.addMember(user, initiative, param(request, "name"), param(request, "email"),
-                    longParam(request, "organizationId"), param(request, "newOrganizationName"),
-                    param(request, "newOrganizationType"), param(request, "newOrganizationWebsite"),
-                    param(request, "initiativeRole"),
-                    enumParam(EsInitiativeMember.MemberStatus.class, param(request, "memberStatus")),
-                    param(request, "note"));
+            case "add-member" -> {
+                String intent = "contact".equals(param(request, "personIntent")) ? "contact" : "create";
+                InitiativeService.PersonPlacement placed = initiatives.placePerson(user, initiative, intent,
+                        longParam(request, "memberId"), longParam(request, "userId"), param(request, "email"),
+                        param(request, "firstName"), param(request, "lastName"), longParam(request, "organizationId"),
+                        param(request, "newOrganizationName"), param(request, "newOrganizationType"),
+                        param(request, "newOrganizationWebsite"), param(request, "initiativeRole"),
+                        enumParam(EsInitiativeMember.MemberStatus.class, param(request, "memberStatus")),
+                        EsInitiativeMember.MemberSource.STAFF_ADDED, param(request, "note"));
+                yield placed.warning();
+            }
             case "edit-member" -> {
-                initiatives.updateMember(user, initiative, longParam(request, "memberId"), param(request, "name"),
-                        param(request, "email"), longParam(request, "organizationId"), param(request, "newOrganizationName"),
-                        param(request, "newOrganizationType"), param(request, "newOrganizationWebsite"),
-                        param(request, "initiativeRole"));
+                initiatives.updateMember(user, initiative, longParam(request, "memberId"), param(request, "firstName"),
+                        param(request, "lastName"), param(request, "email"), longParam(request, "organizationId"),
+                        param(request, "newOrganizationName"), param(request, "newOrganizationType"),
+                        param(request, "newOrganizationWebsite"), param(request, "initiativeRole"));
                 yield null;
             }
             case "member-status" -> initiatives.changeMemberStatus(user, initiative, longParam(request, "memberId"),
@@ -527,9 +540,10 @@ public class EsInitiativeServlet extends HttpServlet {
         List<EsInitiativeTimelineEntry> timeline = initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.ORGANIZATION,
                 participation.getEsInitiativeOrganizationId());
         String name = organization == null ? "Organization" : organization.getOrganizationName();
+        Map<Long, User> contactUsers = memberUsers(contacts);
         page(request, response, name + " - " + initiative.getInitiativeName() + " - InteropHub", initiative,
                 "organizations", input, out -> InitiativePageRenderer.organizationDetail(out, request.getContextPath(),
-                        initiative, participation, organization, contacts, timeline, names(timeline), user,
+                        initiative, participation, organization, contacts, timeline, names(timeline), contactUsers, user,
                         InitiativeAccess.canEditRoster(level), input));
     }
 
@@ -557,10 +571,11 @@ public class EsInitiativeServlet extends HttpServlet {
                 missing.add(member.getEsInitiativeMemberId());
             }
         }
+        Map<Long, User> peopleUsers = memberUsers(visible);
         page(request, response, initiative.getInitiativeName() + " people - InteropHub", initiative, "people", input,
                 out -> InitiativePageRenderer.people(out, request.getContextPath(), initiative, visible, participations,
                         organizations, missing, statusFilter, organizationFilter, typeFilter,
-                        InitiativeAccess.canEditRoster(level), input));
+                        InitiativeAccess.canEditRoster(level), peopleUsers, input));
     }
 
     private void renderPerson(HttpServletRequest request, HttpServletResponse response, User user,
@@ -584,10 +599,12 @@ public class EsInitiativeServlet extends HttpServlet {
         List<EsInitiativeTimelineEntry> timeline = initiatives.timeline(EsInitiativeTimelineEntry.SubjectType.MEMBER,
                 member.getEsInitiativeMemberId());
         EsInitiativeMember shown = member;
-        page(request, response, member.displayName() + " - " + initiative.getInitiativeName() + " - InteropHub",
+        Map<Long, User> personUsers = memberUsers(List.of(member));
+        page(request, response, InitiativePageRenderer.personLabel(member, personUsers) + " - "
+                + initiative.getInitiativeName() + " - InteropHub",
                 initiative, "people", input, out -> InitiativePageRenderer.personDetail(out, request.getContextPath(),
                         initiative, shown, participations, indexOrganizations(participations), timeline, names(timeline),
-                        user, missingFollow, InitiativeAccess.canEditRoster(level), input));
+                        personUsers, user, missingFollow, InitiativeAccess.canEditRoster(level), input));
     }
 
     private void renderSettings(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
@@ -639,6 +656,51 @@ public class EsInitiativeServlet extends HttpServlet {
         }
         json.append("]}");
         response.getWriter().print(json);
+    }
+
+    private void searchPeople(HttpServletRequest request, HttpServletResponse response, EsInitiative initiative,
+            InitiativeAccess.Level level) throws IOException {
+        response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store");
+        if (!InitiativeAccess.canEditRoster(level)) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.getWriter().print("{\"results\":[]}");
+            return;
+        }
+        List<PeopleSearch.Hit> hits = peopleDirectory.search(initiative.getEsInitiativeId(), param(request, "q"));
+        StringBuilder json = new StringBuilder("{\"results\":[");
+        for (int i = 0; i < hits.size(); i++) {
+            PeopleSearch.Hit hit = hits.get(i);
+            if (i > 0) {
+                json.append(',');
+            }
+            json.append("{\"source\":\"").append(hit.source().name()).append("\",\"sourceLabel\":\"")
+                    .append(InitiativeHtml.json(hit.sourceLabel())).append("\",\"name\":\"")
+                    .append(InitiativeHtml.json(hit.name())).append("\",\"email\":\"")
+                    .append(InitiativeHtml.json(hit.email())).append("\",\"organization\":\"")
+                    .append(InitiativeHtml.json(hit.organization())).append("\",\"firstName\":\"")
+                    .append(InitiativeHtml.json(hit.firstName())).append("\",\"lastName\":\"")
+                    .append(InitiativeHtml.json(hit.lastName())).append("\"");
+            json.append(",\"memberId\":").append(hit.memberId() == null ? "null" : hit.memberId());
+            json.append(",\"userId\":").append(hit.userId() == null ? "null" : hit.userId());
+            json.append('}');
+        }
+        json.append("]}");
+        response.getWriter().print(json);
+    }
+
+    private Map<Long, User> memberUsers(List<EsInitiativeMember> members) {
+        Set<Long> ids = new HashSet<>();
+        for (EsInitiativeMember member : members) {
+            if (member.getUserId() != null) {
+                ids.add(member.getUserId());
+            }
+        }
+        Map<Long, User> users = new HashMap<>();
+        for (User account : initiatives.usersByIds(ids)) {
+            users.put(account.getUserId(), account);
+        }
+        return users;
     }
 
     private InitiativeRosterRules.Representation representation(EsInitiative initiative) {
@@ -698,8 +760,7 @@ public class EsInitiativeServlet extends HttpServlet {
         AiraPage page = InteropAiraPageFactory.base(request, title)
                 .applicationSubtitle("Initiatives")
                 .mainClass("aira-main")
-                .addLocalStylesheet("/css/initiative-org.css")
-                .addLocalStylesheet("/css/initiative-checklist.css?v=4")
+                .addLocalStylesheet("/css/initiative-checklist.css?v=6")
                 .context(InteropAiraPageFactory.topicsMeetingsContext("InteropHub", null, false, false))
                 .build();
         String kind = null;
@@ -724,9 +785,11 @@ public class EsInitiativeServlet extends HttpServlet {
             out.println("    </div>");
             out.println(InteropAiraPageFactory.headerSearchScriptTag(request.getContextPath()));
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
-                    + "/js/initiative-dialogs.js?v=2\"></script>");
+                    + "/js/initiative-dialogs.js?v=3\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
                     + "/js/initiative-org-typeahead.js\"></script>");
+            out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
+                    + "/js/initiative-people-search.js\"></script>");
             out.println("    <script src=\"" + InitiativeHtml.esc(request.getContextPath())
                     + "/js/initiative-checklist.js?v=4\"></script>");
             page.writeEnd(out);
@@ -865,10 +928,10 @@ public class EsInitiativeServlet extends HttpServlet {
             case "comment", "edit-comment" -> "CHECKLIST_ITEM".equals(param(request, "subjectType"))
                     ? "item-" + param(request, "subjectId") + "-dialog" : null;
             case "create-small-group" -> "new-small-group";
-            case "add-participant" -> "add-participant";
-            case "add-new-participant" -> "add-new-participant";
+            case "add-participant", "add-registrant", "add-new-participant" -> "add-participant";
             case "remove-participant" -> "remove-participant";
             case "group-status" -> "group-status";
+            case "save-small-group" -> "edit-details";
             default -> null;
         };
     }
@@ -1259,21 +1322,12 @@ public class EsInitiativeServlet extends HttpServlet {
             members.put(member.getEsInitiativeMemberId(), member);
         }
         List<SmallGroupPageRenderer.ParticipantRow> participants = new ArrayList<>();
-        Set<Long> activeMemberIds = new HashSet<>();
         for (EsSmallGroupParticipant row : rows) {
             if (row.getParticipantStatus() != EsSmallGroupParticipant.Status.ACTIVE) {
                 continue;
             }
-            activeMemberIds.add(row.getEsInitiativeMemberId());
             participants.add(new SmallGroupPageRenderer.ParticipantRow(row, members.get(row.getEsInitiativeMemberId())));
         }
-        List<EsInitiativeMember> rosterChoices = new ArrayList<>();
-        for (EsInitiativeMember member : members.values()) {
-            if (!activeMemberIds.contains(member.getEsInitiativeMemberId())) {
-                rosterChoices.add(member);
-            }
-        }
-        rosterChoices.sort((left, right) -> left.displayName().compareToIgnoreCase(right.displayName()));
         List<EsSmallGroup> earlier = new ArrayList<>();
         for (EsSmallGroup candidate : smallGroups.list(initiative.getEsInitiativeId())) {
             if (!group.getEsSmallGroupId().equals(candidate.getEsSmallGroupId())) {
@@ -1303,9 +1357,37 @@ public class EsInitiativeServlet extends HttpServlet {
         int availableVersion = checklist == null ? 0
                 : checklists.currentTemplate(checklist.getTemplateKind()).map(EsChecklistTemplate::getVersionNo).orElse(0);
         ChecklistHints.Facts facts = smallGroups.facts(initiative, group);
+        Map<Long, String> organizationNames = new HashMap<>();
+        Map<Long, Organization> directory = indexOrganizations(initiatives.organizations(initiative.getEsInitiativeId()));
+        for (EsInitiativeOrganization participation : initiatives.organizations(initiative.getEsInitiativeId())) {
+            Organization organization = directory.get(participation.getOrganizationId());
+            if (organization != null) {
+                organizationNames.put(participation.getEsInitiativeOrganizationId(), organization.getOrganizationName());
+            }
+        }
+        List<EsInitiativeMember> participantMembers = new ArrayList<>();
+        List<EsSmallGroupParticipant> activeRows = new ArrayList<>();
+        for (SmallGroupPageRenderer.ParticipantRow row : participants) {
+            activeRows.add(row.participant());
+            if (row.member() != null) {
+                participantMembers.add(row.member());
+            }
+        }
+        int bringPage = 1;
+        try {
+            if (param(request, "bringPage") != null) {
+                bringPage = Integer.parseInt(param(request, "bringPage"));
+            }
+        } catch (NumberFormatException ignored) {
+            bringPage = 1;
+        }
+        PeopleToBringIn.Page bringIn = smallGroups.bringIn(initiative, group, param(request, "bringIn"), bringPage);
         page(request, response, group.getSmallGroupName() + " - InteropHub", initiative, "small-groups", input,
                 out -> SmallGroupPageRenderer.page(out, request.getContextPath(), base, initiative, group, topic, topics,
-                        series, participants, rosterChoices, smallGroups.comparison(group), registrationUrl, earlier,
+                        series, participants, memberUsers(new ArrayList<>(members.values())), organizationNames,
+                        smallGroups.registeredParticipantIds(group, activeRows),
+                        smallGroups.followingParticipantIds(group, participantMembers), bringIn,
+                        param(request, "bringIn"), registrationUrl, earlier,
                         canEdit, smallGroups.anchors(initiative, group), checklist, items, managers, names, itemTimeline,
                         checklistEntries, groupEntries, user, facts, upgrade, availableVersion,
                         "1".equals(param(request, "removed")), "1".equals(param(request, "hideDone")),
@@ -1367,14 +1449,11 @@ public class EsInitiativeServlet extends HttpServlet {
                         param(request, "note"));
                 yield null;
             }
-            case "add-participant" -> smallGroups.addParticipant(user, initiative, group, longParam(request, "memberId"),
-                    param(request, "role"));
-            case "add-new-participant" -> smallGroups.addNewPerson(user, initiative, group, param(request, "name"),
-                    param(request, "email"), longParam(request, "organizationId"), param(request, "newOrganizationName"),
-                    param(request, "newOrganizationType"), param(request, "newOrganizationWebsite"),
-                    param(request, "role"));
-            case "add-registrant" -> smallGroups.addRegistrant(user, initiative, group, param(request, "email"),
-                    longParam(request, "userId"), param(request, "label"));
+            case "add-participant", "add-registrant", "add-new-participant" -> smallGroups.addFromSearch(user, initiative,
+                    group, longParam(request, "memberId"), longParam(request, "userId"), param(request, "email"),
+                    param(request, "firstName"), param(request, "lastName"), longParam(request, "organizationId"),
+                    param(request, "newOrganizationName"), param(request, "newOrganizationType"),
+                    param(request, "newOrganizationWebsite"), param(request, "role"));
             case "remove-participant" -> {
                 smallGroups.removeParticipant(user, initiative, group, longParam(request, "participantId"),
                         param(request, "note"));

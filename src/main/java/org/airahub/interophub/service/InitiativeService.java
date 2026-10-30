@@ -19,6 +19,7 @@ import org.airahub.interophub.dao.EsInitiativeManagerDao;
 import org.airahub.interophub.dao.EsInitiativeMemberDao;
 import org.airahub.interophub.dao.EsInitiativeOrganizationDao;
 import org.airahub.interophub.dao.EsInitiativeTimelineEntryDao;
+import org.airahub.interophub.dao.EsSmallGroupDao;
 import org.airahub.interophub.dao.EsSubscriptionDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.OrganizationDao;
@@ -53,6 +54,7 @@ public class InitiativeService {
     private final EsInitiativeMemberDao memberDao;
     private final EsInitiativeTimelineEntryDao timelineDao;
     private final EsChecklistDao checklistDao;
+    private final EsSmallGroupDao smallGroupDao;
     private final EsChecklistItemDao checklistItemDao;
     private final OrganizationDao organizationDao;
     private final EsTopicDao topicDao;
@@ -69,6 +71,7 @@ public class InitiativeService {
         this.memberDao = new EsInitiativeMemberDao();
         this.timelineDao = new EsInitiativeTimelineEntryDao();
         this.checklistDao = new EsChecklistDao();
+        this.smallGroupDao = new EsSmallGroupDao();
         this.checklistItemDao = new EsChecklistItemDao();
         this.organizationDao = new OrganizationDao();
         this.topicDao = new EsTopicDao();
@@ -435,31 +438,68 @@ public class InitiativeService {
     /**
      * @return a warning when the member was saved but the primary-topic follow did not
      */
-    public String addMember(User actor, EsInitiative initiative, String name, String email, Long organizationId,
-            String newName, String newType, String newWebsite, String role, EsInitiativeMember.MemberStatus status,
-            String note) {
-        InitiativeRosterRules.ContactName contact = InitiativeRosterRules.splitContactName(name);
-        String normalized = normalizeOptionalEmail(email);
-        if (contact.firstName() == null && contact.lastName() == null && normalized == null) {
-            throw new IllegalArgumentException("Enter a name or an email address.");
-        }
-        if (normalized != null && memberDao.findByInitiativeAndEmail(initiative.getEsInitiativeId(), normalized)
-                .isPresent()) {
-            throw new IllegalArgumentException("Someone with that email is already on this roster.");
-        }
+    public String addMember(User actor, EsInitiative initiative, String firstName, String lastName, String email,
+            Long linkedUserId, Long organizationId, String newName, String newType, String newWebsite, String role,
+            EsInitiativeMember.MemberStatus status, EsInitiativeMember.MemberSource source, String note) {
+        return placePerson(actor, initiative, "create", null, linkedUserId, email, firstName, lastName, organizationId,
+                newName, newType, newWebsite, role, status, source, note).warning();
+    }
+
+    /**
+     * Finds or creates a roster row from a people-search choice.
+     * {@code intent} is {@code create} (a duplicate is an error), {@code contact}
+     * (an existing person is attached to the organization), or {@code participant}
+     * (an existing person is returned for the Small Group).
+     */
+    public PersonPlacement placePerson(User actor, EsInitiative initiative, String intent, Long memberId, Long userId,
+            String email, String firstName, String lastName, Long organizationId, String newName, String newType,
+            String newWebsite, String role, EsInitiativeMember.MemberStatus status,
+            EsInitiativeMember.MemberSource source, String note) {
+        PreparedPerson prepared = preparePerson(email, firstName, lastName, userId);
+        EsInitiativeMember existing = findExistingMember(initiative, memberId, prepared.userId(), prepared.normalized());
         EsInitiativeOrganization participation = resolveParticipation(actor, initiative, organizationId, newName,
                 newType, newWebsite);
+        if (existing != null) {
+            PersonNames.Names filled = PersonNames.fillBlanks(existing.getContactFirstName(),
+                    existing.getContactLastName(), prepared.names().firstName(), prepared.names().lastName());
+            existing.setContactFirstName(filled.firstName());
+            existing.setContactLastName(filled.lastName());
+            if (prepared.normalized() != null && existing.getEmailNormalized() == null) {
+                applyEmail(existing, prepared.normalized(), prepared.rawEmail());
+            } else {
+                applyEmail(existing, existing.getEmailNormalized(), existing.getEmail());
+            }
+            if ("contact".equals(intent) && participation != null
+                    && existing.getEsInitiativeOrganizationId() == null) {
+                existing.setEsInitiativeOrganizationId(participation.getEsInitiativeOrganizationId());
+            }
+            memberDao.save(existing);
+            if ("create".equals(intent)) {
+                throw new IllegalArgumentException("That person is already on this roster.");
+            }
+            if ("contact".equals(intent) && participation != null
+                    && !participation.getEsInitiativeOrganizationId().equals(existing.getEsInitiativeOrganizationId())) {
+                throw new IllegalArgumentException("That person is already on this roster.");
+            }
+            return new PersonPlacement(existing, null, false);
+        }
+        if (prepared.names().firstName() == null && prepared.names().lastName() == null
+                && prepared.normalized() == null) {
+            throw new IllegalArgumentException("Enter a first name, a last name, or an email address.");
+        }
         EsInitiativeMember.MemberStatus chosen = status == null ? EsInitiativeMember.MemberStatus.PROSPECT : status;
+        EsInitiativeMember.MemberSource chosenSource = source == null ? EsInitiativeMember.MemberSource.STAFF_ADDED
+                : source;
         EsInitiativeMember member = new EsInitiativeMember();
         member.setEsInitiativeId(initiative.getEsInitiativeId());
-        member.setContactFirstName(contact.firstName());
-        member.setContactLastName(contact.lastName());
-        applyEmail(member, normalized, email);
+        member.setContactFirstName(prepared.names().firstName());
+        member.setContactLastName(prepared.names().lastName());
+        applyEmail(member, prepared.normalized(), prepared.rawEmail());
         member.setEsInitiativeOrganizationId(
                 participation == null ? null : participation.getEsInitiativeOrganizationId());
         member.setInitiativeRole(limit(trimToNull(role), 200));
         member.setMemberStatus(chosen);
-        member.setMemberSource(EsInitiativeMember.MemberSource.STAFF_ADDED);
+        member.setMemberSource(chosenSource);
         member.setStatusChangedAt(LocalDateTime.now());
         member.setStatusChangedByUserId(actor.getUserId());
         member.setCreatedByUserId(actor.getUserId());
@@ -473,16 +513,17 @@ public class InitiativeService {
                     InitiativeRosterRules.planStatusUpdate(null, chosen.name(), note),
                     EsInitiativeMember.MemberStatus::labelOf);
         }
-        return followIfJoined(actor, initiative, member, null, organizationName(participation));
+        return new PersonPlacement(member,
+                followIfJoined(actor, initiative, member, null, organizationName(participation)), true);
     }
 
-    public void updateMember(User actor, EsInitiative initiative, Long memberId, String name, String email,
-            Long organizationId, String newName, String newType, String newWebsite, String role) {
+    public void updateMember(User actor, EsInitiative initiative, Long memberId, String firstName, String lastName,
+            String email, Long organizationId, String newName, String newType, String newWebsite, String role) {
         EsInitiativeMember member = requireMember(initiative, memberId);
-        InitiativeRosterRules.ContactName contact = InitiativeRosterRules.splitContactName(name);
-        String normalized = normalizeOptionalEmail(email);
-        if (contact.firstName() == null && contact.lastName() == null && normalized == null) {
-            throw new IllegalArgumentException("Enter a name or an email address.");
+        PreparedPerson prepared = preparePerson(email, firstName, lastName, member.getUserId());
+        String normalized = prepared.normalized();
+        if (prepared.names().firstName() == null && prepared.names().lastName() == null && normalized == null) {
+            throw new IllegalArgumentException("Enter a first name, a last name, or an email address.");
         }
         if (normalized != null) {
             memberDao.findByInitiativeAndEmail(initiative.getEsInitiativeId(), normalized).ifPresent(existing -> {
@@ -495,7 +536,9 @@ public class InitiativeService {
                 newType, newWebsite);
         Long subjectId = member.getEsInitiativeMemberId();
         recordField(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.MEMBER, subjectId, actor,
-                "Name", member.displayName(), displayContact(contact, normalized));
+                "Name", member.displayName(),
+                PersonNames.display(null, null, null, prepared.names().firstName(), prepared.names().lastName(),
+                        prepared.rawEmail()));
         recordField(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.MEMBER, subjectId, actor,
                 "Email", member.getEmail(), trimToNull(email));
         recordField(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.MEMBER, subjectId, actor,
@@ -505,9 +548,9 @@ public class InitiativeService {
         recordField(initiative.getEsInitiativeId(), EsInitiativeTimelineEntry.SubjectType.MEMBER, subjectId, actor,
                 "Organization", previousOrg, nextOrg);
 
-        member.setContactFirstName(contact.firstName());
-        member.setContactLastName(contact.lastName());
-        applyEmail(member, normalized, email);
+        member.setContactFirstName(prepared.names().firstName());
+        member.setContactLastName(prepared.names().lastName());
+        applyEmail(member, normalized, prepared.rawEmail());
         member.setEsInitiativeOrganizationId(
                 participation == null ? null : participation.getEsInitiativeOrganizationId());
         member.setInitiativeRole(limit(trimToNull(role), 200));
@@ -630,7 +673,7 @@ public class InitiativeService {
                 }
                 continue;
             }
-            InitiativeRosterRules.ContactName contact = InitiativeRosterRules.splitContactName(row.contactName());
+            PersonNames.Names contact = PersonNames.splitFullName(row.contactName());
             String normalized = EsNormalizer.normalizeEmail(row.email());
             if (normalized != null && memberDao.findByInitiativeAndEmail(initiative.getEsInitiativeId(), normalized)
                     .isPresent()) {
@@ -782,13 +825,31 @@ public class InitiativeService {
             member.setEmail(null);
             member.setEmailNormalized(null);
             member.setUserId(null);
+            PersonNames.Names cleared = PersonNames.fillBlanks(member.getContactFirstName(), member.getContactLastName(),
+                    null, null);
+            member.setContactFirstName(cleared.firstName());
+            member.setContactLastName(cleared.lastName());
             return;
         }
-        member.setEmail(rawEmail.trim());
+        member.setEmail(rawEmail == null ? normalized : rawEmail.trim());
         member.setEmailNormalized(normalized);
         userDao.findByEmailNormalized(normalized)
                 .filter(user -> user.getStatus() != User.UserStatus.DELETED)
-                .ifPresentOrElse(user -> member.setUserId(user.getUserId()), () -> member.setUserId(null));
+                .ifPresentOrElse(user -> {
+                    member.setUserId(user.getUserId());
+                    PersonNames.Names account = PersonNames.accountNames(user.getDisplayName(), user.getFirstName(),
+                            user.getLastName());
+                    PersonNames.Names filled = PersonNames.fillBlanks(member.getContactFirstName(),
+                            member.getContactLastName(), account.firstName(), account.lastName());
+                    member.setContactFirstName(filled.firstName());
+                    member.setContactLastName(filled.lastName());
+                }, () -> {
+                    member.setUserId(null);
+                    PersonNames.Names filled = PersonNames.fillBlanks(member.getContactFirstName(),
+                            member.getContactLastName(), null, null);
+                    member.setContactFirstName(filled.firstName());
+                    member.setContactLastName(filled.lastName());
+                });
     }
 
     private String normalizeOptionalEmail(String email) {
@@ -845,6 +906,9 @@ public class InitiativeService {
                     .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
                     .isPresent();
             case MEMBER -> memberDao.findById(subjectId)
+                    .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
+                    .isPresent();
+            case SMALL_GROUP -> smallGroupDao.findById(subjectId)
                     .filter(item -> initiative.getEsInitiativeId().equals(item.getEsInitiativeId()))
                     .isPresent();
             case CHECKLIST -> checklistDao.findById(subjectId)
@@ -929,13 +993,80 @@ public class InitiativeService {
                 .orElse(null);
     }
 
-    private String displayContact(InitiativeRosterRules.ContactName contact, String email) {
-        String name = ((contact.firstName() == null ? "" : contact.firstName()) + " "
-                + (contact.lastName() == null ? "" : contact.lastName())).trim();
-        if (!name.isEmpty()) {
-            return name;
+    private PreparedPerson preparePerson(String email, String firstName, String lastName, Long userId) {
+        String rawEmail = trimToNull(email);
+        String postedFirst = firstName;
+        String postedLast = lastName;
+        if (rawEmail == null && PersonNames.looksLikeEmail(postedFirst)) {
+            rawEmail = postedFirst.trim();
+            postedFirst = null;
         }
-        return email;
+        if (rawEmail == null && PersonNames.looksLikeEmail(postedLast)) {
+            rawEmail = postedLast.trim();
+            postedLast = null;
+        }
+        User account = userId == null ? null
+                : userDao.findById(userId).filter(user -> user.getStatus() != User.UserStatus.DELETED).orElse(null);
+        String normalized = normalizeOptionalEmail(rawEmail);
+        if (account == null && normalized != null) {
+            account = userDao.findByEmailNormalized(normalized)
+                    .filter(user -> user.getStatus() != User.UserStatus.DELETED).orElse(null);
+        }
+        if (account != null && normalized == null) {
+            rawEmail = account.getEmail();
+            normalized = account.getEmailNormalized();
+        }
+        PersonNames.Names names = new PersonNames.Names(PersonNames.nameOrNull(postedFirst),
+                PersonNames.nameOrNull(postedLast));
+        if (account != null) {
+            PersonNames.Names accountNames = PersonNames.accountNames(account.getDisplayName(), account.getFirstName(),
+                    account.getLastName());
+            if (accountNames.firstName() != null || accountNames.lastName() != null) {
+                names = accountNames;
+            }
+        }
+        if (names.firstName() == null && names.lastName() == null) {
+            names = namesFromFollows(normalized);
+        }
+        return new PreparedPerson(names, normalized, rawEmail, account == null ? null : account.getUserId());
+    }
+
+    private PersonNames.Names namesFromFollows(String emailNormalized) {
+        if (emailNormalized == null) {
+            return new PersonNames.Names(null, null);
+        }
+        for (EsSubscription subscription : subscriptionDao.findByEmailNormalized(emailNormalized)) {
+            String first = PersonNames.nameOrNull(subscription.getContactFirstName());
+            String last = PersonNames.nameOrNull(subscription.getContactLastName());
+            if (first != null || last != null) {
+                return new PersonNames.Names(first, last);
+            }
+        }
+        return new PersonNames.Names(null, null);
+    }
+
+    private EsInitiativeMember findExistingMember(EsInitiative initiative, Long memberId, Long userId,
+            String emailNormalized) {
+        if (memberId != null) {
+            return requireMember(initiative, memberId);
+        }
+        if (emailNormalized != null) {
+            Optional<EsInitiativeMember> byEmail = memberDao.findByInitiativeAndEmail(initiative.getEsInitiativeId(),
+                    emailNormalized);
+            if (byEmail.isPresent()) {
+                return byEmail.get();
+            }
+        }
+        if (userId != null) {
+            return memberDao.findByInitiativeAndUser(initiative.getEsInitiativeId(), userId).orElse(null);
+        }
+        return null;
+    }
+
+    public record PersonPlacement(EsInitiativeMember member, String warning, boolean created) {
+    }
+
+    private record PreparedPerson(PersonNames.Names names, String normalized, String rawEmail, Long userId) {
     }
 
     private String displayUser(User user) {

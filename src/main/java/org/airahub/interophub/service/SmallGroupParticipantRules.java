@@ -57,8 +57,8 @@ public final class SmallGroupParticipantRules {
         return Optional.of(new InitiativeFollowRules.FollowRequest(
                 topicId,
                 email.trim(),
-                firstName,
-                lastName,
+                PersonNames.nameOrNull(firstName),
+                PersonNames.nameOrNull(lastName),
                 organization,
                 "Taking part in the " + name + " small group.",
                 false));

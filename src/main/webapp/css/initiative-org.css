@@ -1,9 +1,0 @@
-/* Lifts the organization type-ahead menu above the fields that follow it.
-   A modal dialog clips overflow, so the script sets overflow:visible while the menu is open. */
-.initiative-org-field {
-  position: relative;
-}
-
-.initiative-org-field.is-open {
-  z-index: var(--aira-z-overlay);
-}

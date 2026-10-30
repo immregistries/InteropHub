@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.airahub.interophub.config.HibernateUtil;
 import org.airahub.interophub.model.EsInitiativeMember;
+import org.airahub.interophub.service.PersonNames;
 
 public class EsInitiativeMemberDao extends GenericDao<EsInitiativeMember, Long> {
 
@@ -41,21 +42,47 @@ public class EsInitiativeMemberDao extends GenericDao<EsInitiativeMember, Long> 
         }
     }
 
-    public int updateUserIdWhereNullByEmailNormalized(String emailNormalized, Long userId) {
+    public Optional<EsInitiativeMember> findByInitiativeAndUser(Long esInitiativeId, Long userId) {
+        if (esInitiativeId == null || userId == null) {
+            return Optional.empty();
+        }
+        try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery(
+                    "from EsInitiativeMember m where m.esInitiativeId = :id and m.userId = :userId",
+                    EsInitiativeMember.class)
+                    .setParameter("id", esInitiativeId)
+                    .setParameter("userId", userId)
+                    .setMaxResults(1)
+                    .uniqueResultOptional();
+        }
+    }
+
+    /**
+     * Links the account and fills blank roster names. An email stored in a name
+     * field is treated as blank.
+     */
+    public int updateUserIdWhereNullByEmailNormalized(String emailNormalized, Long userId, String firstName,
+            String lastName) {
         if (emailNormalized == null || userId == null) {
             return 0;
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             org.hibernate.Transaction tx = session.beginTransaction();
             try {
-                int updated = session.createMutationQuery(
-                        "update EsInitiativeMember m set m.userId = :uid"
-                                + " where m.emailNormalized = :email and m.userId is null")
-                        .setParameter("uid", userId)
+                List<EsInitiativeMember> rows = session.createQuery(
+                        "from EsInitiativeMember m where m.emailNormalized = :email and m.userId is null",
+                        EsInitiativeMember.class)
                         .setParameter("email", emailNormalized)
-                        .executeUpdate();
+                        .getResultList();
+                for (EsInitiativeMember member : rows) {
+                    member.setUserId(userId);
+                    PersonNames.Names names = PersonNames.fillBlanks(member.getContactFirstName(),
+                            member.getContactLastName(), firstName, lastName);
+                    member.setContactFirstName(names.firstName());
+                    member.setContactLastName(names.lastName());
+                }
                 tx.commit();
-                return updated;
+                return rows.size();
             } catch (Exception ex) {
                 tx.rollback();
                 throw ex;
