@@ -42,7 +42,7 @@
 | 1.31 | Moved to Gate 2 | No `topics:write` route exists until H2 |
 | 1.34 | Pass | Personal access token shown once, revoked, then refused |
 | 1.35 | Moved to Gate 2 (2.32) | `/guide/open` is in H2 |
-| 1.36 | Partly | The `app_registry` rows are created idempotently by `unapplied_updates.sql`, so a refresh restores them; not yet observed through an actual refresh |
+| 1.36 | Pass | Confirmed 2026-10-30 by a full restore of the production backup: `unapplied_updates.sql` and the dev setup applied cleanly and the app started |
 | 1.37 | Pass | `prompt=login` ends the session and returns as the other user |
 
 ### 3.3 E1
@@ -58,7 +58,6 @@
 ## Carried forward
 
 - 1.31 and 2.32 run at Gate 2.
-- 1.36: confirm on the next real database refresh that the apps, columns, and dev setup data all come back.
 - Local Tomcat runs E1's build; redeploy from `main` after this merge.
 
 ## Approval

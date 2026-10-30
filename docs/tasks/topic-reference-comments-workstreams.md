@@ -147,7 +147,7 @@ Kept current by stream G.
 | Gate 1 | Passed 2026-10-30 | Approved by the product owner. | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Done 2026-10-30, merged | Merged as `aecf429`; 361 tests pass. API checks by H2 and end-to-end browser checks by G pass. |
-| Gate 2 | Local part approved 2026-10-30 | `gates/gate-2.md`. Production part waits for P3. |
+| Gate 2 | Local part approved 2026-10-30 | `gates/gate-2.md`. Production part waits for P3. Release 0.10.0 (`f6ef4d5`) requested in AART #3957. |
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
 | H3 | Not started | |
 | P2 | Not started | |
@@ -188,3 +188,4 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | Contract 3.4 step 4: a disallowed origin on the token exchange gets `403 forbidden` before the code checks, and the code is not consumed (found by T2; matches test check 1.23). |
 | 2026-10-30 | All guide API timestamps are UTC, converted from the database's local `LocalDateTime` through the JVM default zone, by one shared helper (H1.1); H2 uses it for `since`. A signed-in user with a bad `return_to` now stays on the error page instead of going to Welcome (H1). |
 | 2026-10-30 | The local database refresh also runs every `db/scripts/*_dev_setup.sql` file after `unapplied_updates.sql` (H1.1). Dev setup scripts are idempotent, never applied to production, and may be emptied or removed at any time. Check 1.31 moves to Gate 2. H1's origin check already matched the 403 correction. |
+| 2026-10-30 | Release 0.10.0 goes to production with E1, H1, and H2 (AART #3957). No topic page link yet; the pilot is reached by its URL until H3's panel ships. Rehearsed first: a full restore of the latest production backup plus `unapplied_updates.sql` and the dev setup ran cleanly, and the app started against it (closes check 1.36). |
