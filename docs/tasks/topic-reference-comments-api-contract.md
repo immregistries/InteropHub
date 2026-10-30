@@ -1,6 +1,6 @@
 # Topic Reference Comments: API Contract
 
-**Status:** Approved by the product owner 2026-10-30 (Gate 0), except Section 8, which waits for H0
+**Status:** Approved by the product owner 2026-10-30 (Gate 0). Section 8 and the refinements in 3.1 and 3.3 were added by G the same day from the H0 result.
 **Implements:** `docs/topic-reference-comments-design.md`, Sections 4 and 9
 **Primary purpose:** The single agreement between the guide (`guide.js` in `content-publishing-templates`) and InteropHub. Both sides are built against this document and tested against it. A change here is recorded in the workstreams Decisions Log and announced to both streams.
 
@@ -54,8 +54,8 @@ Every error response uses one shape:
 |---|---|---|
 | 400 | `invalid_request` | Malformed JSON, missing body, unknown query value |
 | 400 | `invalid_field` | A field fails validation (`field` names it) |
-| 401 | `invalid_token` | No bearer token, unknown, expired, or revoked token. Response carries `WWW-Authenticate: Bearer error="invalid_token"`. |
-| 403 | `insufficient_scope` | Token lacks the scope. Adds `"requiredScope": "comments"`. `WWW-Authenticate: Bearer error="insufficient_scope", scope="comments"`. |
+| 401 | `invalid_token` | No bearer token, unknown, expired, or revoked token. Response carries `WWW-Authenticate: Bearer realm="interophub", error="invalid_token"`. The body is the same for every cause, so it does not reveal whether a token exists. |
+| 403 | `insufficient_scope` | Token lacks the scope. Adds `"requiredScope": "comments"`. `WWW-Authenticate: Bearer realm="interophub", error="insufficient_scope", scope="comments"`. |
 | 403 | `forbidden` | The user may not do this (not an author, not the commenter, cannot view the topic) |
 | 403 | `edit_window_closed` | Commenter edit or withdraw after the 14-day window |
 | 404 | `not_found` | Unknown document key, comment, or flag, or a comment that is deleted |
@@ -75,7 +75,8 @@ Every error response uses one shape:
 | Guide token | `POST /api/guide/token` | `comments` only | 30 days from issue, not extended by use | `ihg_` + 43 base64url characters (32 random bytes) |
 | Personal access token | Account page | chosen by the user from Section 3.2 | user chooses 30, 90, or 365 days | `ihp_` + 43 base64url characters |
 
-- Both are stored only as the SHA-256 hash of the full raw string in `app_user_token.token_hash`, with `app_id` of the `topic-reference` app, a `scopes` column (comma-separated), and a `label`. Guide tokens get the label `Guide sign-in: <origin>`.
+- Both are stored only as the SHA-256 hash of the full raw string (UTF-8) in `app_user_token.token_hash`, with a `scopes` column (comma-separated) and a `label`. Guide tokens get the label `Guide sign-in: <origin>`.
+- **`app_id` tells the kinds apart**, as well as the prefix. Guide tokens use the `topic-reference` app. Personal access tokens use a second `app_registry` row, `app_code = interophub-api`, created by the same database update, not visible to users, with no redirect allowlist. The bearer filter accepts tokens of these two apps only.
 - The prefixes make leaked tokens easy to recognize and let the filter tell the kinds apart without a lookup.
 - `last_used_at` is updated at most once per minute per token.
 - Sent as `Authorization: Bearer <raw token>` on every API and MCP call. Tokens are never accepted in a query string.
@@ -92,7 +93,18 @@ A scope only narrows what the user may already do. Each endpoint below names its
 
 ### 3.3 The bearer-token filter
 
-One filter serves `/api/guide/*`, `/api/guides`, `/api/topic-spaces/*`, `/api/topics/*`, and `/mcp`. It resolves the token to a user and a scope set, rejects with `401`/`403` as in Section 2, and makes the user and the `app_user_token_id` available to the servlet. Servlets check the scope their operation needs. The existing session cookie is **not** accepted on these paths.
+One filter serves `/api/guide/*`, `/api/guides`, `/api/topic-spaces/*`, `/api/topics/*`, and `/mcp`. It does authentication only:
+
+1. Requires exactly one `Authorization: Bearer <token>` header (scheme compared ignoring case). Never reads a token from the query string or body.
+2. Hashes the token and finds an `app_user_token` row of the `topic-reference` or `interophub-api` app that is not revoked and not expired, whose user is active.
+3. On any failure: `401 invalid_token` as in Section 2, with the same body for every cause.
+4. On success: sets request attributes for the user, the `token_id`, the token kind (`guide` or `personal`), and the scope set. The raw token is not put on the request. Updates `last_used_at` (at most once a minute).
+5. Lets `OPTIONS` preflight requests through without a token, to the CORS handling in Section 4.
+6. Lets `POST /api/guide/token` through without a token, since that call is how a guide gets one. `DELETE /api/guide/token` does need the token.
+
+**Scope checks are not in the filter.** The filter cannot see which MCP tool a request calls without consuming the body. Each API servlet, and the MCP `tools/call` dispatcher for each tool, calls one shared helper such as `requireScope(request, "comments")`, which returns `403 insufficient_scope`. Servlets behind the filter also refuse with `401` if the user attribute is missing, so a missing filter mapping cannot leave an endpoint open.
+
+The existing session cookie is **not** accepted on these paths.
 
 ### 3.4 Sign-in round trip (authorization code with PKCE)
 
@@ -493,11 +505,28 @@ Any of `title`, `repositoryUrl`, `urls`, `isActive`. `urls`, when sent, **replac
 
 ## 8. MCP
 
-Endpoint: `POST {hub}/mcp`, streamable HTTP, `Authorization: Bearer <personal access token>`. Guide tokens are refused (`403 forbidden`), since they belong to a browser.
+Endpoint: `{hub}/mcp`, `Authorization: Bearer <personal access token>`. Guide tokens are refused (`403 forbidden`), since they belong to a browser.
 
-Tools are those in design 9.3 and 9.4. Each one calls the same service method as its HTTP endpoint above, needs the same scope, and returns the same JSON objects (threads, flags, documents) as its result content. Argument names are `snake_case` as in the design; result fields are `camelCase` as here. `close(ids)` closes each in turn and reports per-ID success or error.
+### 8.1 Transport (from H0, 2026-10-30)
 
-Transport details (library or hand-written, session handling, protocol version) are settled by the H0 experiment and added here before H4 starts.
+Hand-written in InteropHub, with no MCP library (Decisions Log, 2026-10-30). Streamable HTTP, session-based, as proven with Claude Code in H0:
+
+| Request | Response |
+|---|---|
+| `POST` `initialize` | `200` JSON. Negotiates protocol `2025-11-25`; also accepts `2025-03-26` and `2025-06-18`; answers `2025-11-25` to anything else. Sets `Mcp-Session-Id` (random UUID) bound to the token's user. |
+| `POST` `notifications/initialized` and other notifications | `202`, empty body |
+| `POST` `tools/list`, `tools/call`, `ping` | `200`, `Content-Type: application/json`, one JSON-RPC response. No SSE. |
+| `GET` | `405`, `Allow: POST, DELETE`. No standalone event stream. |
+| `DELETE` with the session ID | `204`, session dropped |
+| Missing `Mcp-Session-Id` after `initialize` | `400` |
+| Unknown or expired session (12 hours idle), or a session of another user | `404` |
+| Unsupported `MCP-Protocol-Version` header | `400`. If absent, the version from `initialize` is used. |
+
+Sessions are held in memory; a restart drops them and clients re-initialize.
+
+### 8.2 Tools
+
+Tools are those in design 9.3 and 9.4. Each tool is one class that calls the same service method as its HTTP endpoint above, needs the same scope (checked in the `tools/call` dispatcher), and returns the same JSON objects (threads, flags, documents) as text content in its result. Argument names are `snake_case` as in the design; result fields are `camelCase` as here. A tool error is returned as a tool result with `isError: true` and the Section 2 error object as text, never a stack trace. `close(ids)` closes each in turn and reports per-ID success or error.
 
 ## 9. Data Model Additions to the Design
 
@@ -514,8 +543,9 @@ The contract needs these on top of design Section 8. H1 to H3 own the schema.
 
 | Section | InteropHub step | Guide step |
 |---|---|---|
-| 3.1–3.4, 3.6, 4, PAT creation on the account page | H1 | T2 |
+| 3.1–3.4, 4, PAT creation on the account page | H1 | T2 |
 | 3.5 sign-out, `prompt=login` | H1 | T2 ("Not you?" may slip to T3) |
+| 3.6 `/guide/open`, approved URL prefixes | H2 (they need the guide registration tables) | T2 |
 | 5.1, 5.3, 5.4, 5.5, `text` in 5.6, 5.7 | H2 | T2 |
 | 7 | H2 (HTTP and registration page) | T4 (setup tooling) |
 | 5.6 author fields, 5.8, 6 | H3 | T3 |

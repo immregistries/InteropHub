@@ -68,8 +68,8 @@ No agent commits, pushes, tags, or merges without the product owner's instructio
 | Step | Work | Design |
 |---|---|---|
 | H0 | **MCP experiment.** A throwaway remote MCP endpoint over streamable HTTP inside InteropHub with one read-only tool and bearer-token auth, reached from Claude Code. Decide the library or a hand-written implementation. Not merged. | 9.3 |
-| H1 | **Sign-in foundation.** PKCE columns and `response_mode=fragment` on the login flow, `POST /api/guide/token` with CORS, `app_user_token` scopes, bearer-token filter, account page token management, the `topic-reference` entry in `app_registry`, the approved URL prefix setting, `/guide/open`. | 4, 9.4 (prefix rule) |
-| H2 | **Registration and comments.** `es_guide_document`, `es_guide_document_url` with allowlist upkeep, registration page, `es_guide_comment` and audit, comments API for adding, replying, editing within 14 days, withdrawing, and listing with `since`. Visibility rules. | 6.1, 6.2, 6.4, 8, 9.1, 9.4, 10 |
+| H1 | **Sign-in foundation.** PKCE columns and `response_mode=fragment` on the login flow, `prompt=login`, `POST` and `DELETE /api/guide/token` with CORS, `app_user_token` scopes, bearer-token filter, account page token management, the `topic-reference` and `interophub-api` entries in `app_registry`, the dev test setup script. | 4 |
+| H2 | **Registration and comments.** `es_guide_document`, `es_guide_document_url` with allowlist upkeep, the approved URL prefix setting and its admin page, `/guide/open`, registration page, `es_guide_comment` and audit, comments API for adding, replying, editing within 14 days, withdrawing, and listing with `since`. Visibility rules. | 6.1, 6.2, 6.4, 8, 9.1, 9.4, 10 |
 | H3 | **Author review.** States, disposition lookup table, change notes, closing, deleting, re-attaching, review flags, comment management page, topic page panel. | 6.3, 7, 8, 10 |
 | H4 | **MCP server.** Remote MCP endpoint with the comment, review flag, and guide registration tools, calling the same services as the API. MCP user guide. | 9.3, 9.4 |
 
@@ -135,13 +135,14 @@ Kept current by stream G.
 
 | Step | Status | Notes |
 |---|---|---|
-| G0 contract | Approved 2026-10-30 | Section 8 (MCP) waits for H0. | `topic-reference-comments-api-contract.md` |
+| G0 contract | Approved 2026-10-30 | Section 8 (MCP) completed from H0 the same day. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
-| H0 MCP experiment | Prompt ready | `prompts/H0-mcp-experiment.md`. Worktree branch `experiment/h0-mcp`. |
+| H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
+| Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
-| H1 | Not started | |
 | E1 | In progress | `prompts/E1-topic-edit-service.md`. Branch `feature/e1-topic-edit-service`. |
 | P1 | In progress | `prompts/P1-pilot-anchors.md`. |
+| H1 | Prompt ready | `prompts/H1-sign-in-foundation.md`. Branch `feature/h1-sign-in`. |
 | Gate 1 | | |
 | T2 | Not started | |
 | H2 | Not started | |
@@ -167,3 +168,6 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | Contract details fixed in T1: commentable blocks carry `data-anchor` and `data-block-index` (0-based within the area); a block's snippet is its text with whitespace collapsed, trimmed, first 120 characters. |
 | 2026-10-30 | API contract and test plan approved. Choices confirmed: no automatic sign-in redirect when a guide token expires (the reader selects "Sign in to comment"; without an InteropHub session they get the email prompt, magic link, and registration if needed, then return to the guide); withdrawn comments show as withdrawn to everyone; deletes are soft (old deletes may be cleaned up later); review flags are visible to all viewers, one per area, a new one replaces the old; PAT lifetimes 30/90/365 days; localhost approved by a dev rule in code; any registered guide origin may call the API; threads returned with replies, and the poll also returns active flags. |
 | 2026-10-30 | Added "Signed in as …", Sign out, and "Not you?" to the guide. "Not you?" re-runs sign-in with `prompt=login`, which ends the InteropHub session and asks for an email. Low priority; may slip from T2/H1 to T3. Security is deliberately light: the aim is knowing who people are, in an open process. |
+| 2026-10-30 | Gate 0 passed. The MCP server is hand-written in InteropHub (H0). The official Java SDK 2.1.0 also ran, but adds 3.8 MB, forces reactor-core 3.7 beside the Azure client's reactor-netty 1.0, mismatches Jackson annotations, has no logging binding, skips the protocol-version check, and leaks stack traces in errors. Revisit only if MCP needs server-initiated requests or resumable streams. Contract Section 8 records the transport. |
+| 2026-10-30 | Personal access tokens use their own `app_registry` row, `interophub-api`; guide tokens use `topic-reference`. The bearer filter does authentication only; each servlet and the MCP dispatcher check scopes. |
+| 2026-10-30 | `/guide/open` and the approved URL prefix setting move from H1 to H2, since both need the guide registration tables. H1 is sign-in and tokens only. Test check 1.35 becomes 2.32. |

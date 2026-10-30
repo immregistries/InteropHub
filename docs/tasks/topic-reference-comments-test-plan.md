@@ -87,13 +87,12 @@ Run the guide side with a small test page, since T2 does not exist yet. G writes
 | 1.26 | Request without `code_challenge`, or with `plain`, for `topic-reference` | 3.4 step 2 | Refused |
 | 1.27 | `topic-reference` code at `/api/auth/exchange`; another app's code at `/api/guide/token` | 3.4 | Both refused |
 | 1.28 | Existing external app login (`/api/auth/exchange` for an existing app) | 3.4 | Unchanged |
-| 1.29 | Token in the database | 3.1 | Hashed, `ihg_` prefix on the raw value, scopes `comments`, expires in 30 days, label names the origin |
-| 1.30 | Bearer filter: no token, bad token, revoked token, expired token (set `expires_at` in the past) | 2, 3.3 | `401 invalid_token` with `WWW-Authenticate` |
+| 1.29 | Token in the database | 3.1 | Hashed, `ihg_` prefix on the raw value, `topic-reference` app, scopes `comments`, expires in 30 days, label names the origin. A PAT is on the `interophub-api` app with `ihp_`. |
+| 1.30 | Bearer filter: no token, bad token, revoked token, expired token (set `expires_at` in the past), token of another app, inactive user | 2, 3.3 | `401 invalid_token` with `WWW-Authenticate`, identical body each time |
 | 1.31 | Guide token on an endpoint that needs `topics:write` | 2, 3.2 | `403 insufficient_scope` with `requiredScope` |
 | 1.32 | Session cookie only, no bearer, on `/api/guide/*` | 3.3 | `401` |
 | 1.33 | `DELETE /api/guide/token` with a guide token; then use it; same with a PAT | 3.5 | `204`, then `401`; PAT gets `403` |
 | 1.34 | Account page: list guide sign-ins, revoke one, create a PAT with chosen scopes and shown once | 3.1 | Works; revoked token gets `401` |
-| 1.35 | `/guide/open?doc=…&anchor=…` and `&comment=…` | 3.6 | `302` to the URL with `?interophub=signin#…`; unknown doc gets not-found page |
 | 1.36 | `topic-reference` entry in `app_registry` comes from `db/unapplied_updates.sql` and survives a DB refresh | Release practice | Present after `interophub-dev-db-restore` |
 | 1.37 | `/home?…&prompt=login` with an existing session | 3.4 step 2 | Session ended, email requested, returns to the page as the newly signed-in user |
 
@@ -144,6 +143,7 @@ Pilot built with T2 and the `comments` setting pointing at local InteropHub, ser
 | 2.29 | Local mode still works for a guide with no `comments` setting | As in T1 |
 | 2.30 | T2's mock server tests in the templates repository | Pass |
 | 2.31 | Rail shows "Signed in as …"; Sign out; Not you? (if built in T2) | Sign out forgets the token; Not you? lands on the email prompt and returns as the other user |
+| 2.32 | `/guide/open?doc=…&anchor=…` and `&comment=…` | 3.6 | `302` to the URL with `?interophub=signin#…`; unknown doc gets not-found page |
 
 ### 4.3 Production (P3)
 

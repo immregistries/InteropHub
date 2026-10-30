@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide Sign-in Test</title>
+<!--
+  Test page for the Topic Reference sign-in round trip (API contract 3.4 and 3.5).
+  Not part of the application. Serve this directory from an approved origin, e.g.
+    python -m http.server 8001 --directory src/test/resources
+  and open http://localhost:8001/guide-signin-test.html#some-anchor
+  Serve it again on port 8002 to check that an unapproved origin is refused.
+-->
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; margin: 2rem auto; max-width: 52rem; padding: 0 1rem; }
+  label { display: block; margin: .5rem 0; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: .3rem; }
+  button { margin: .25rem .5rem .25rem 0; padding: .4rem .8rem; }
+  pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .ok { color: #116611; } .bad { color: #aa1111; }
+</style>
+</head>
+<body>
+<h1>Guide Sign-in Test</h1>
+<p>Origin: <code id="origin"></code>. Return URL: <code id="return-to"></code>.</p>
+
+<label>Hub base URL <input type="text" id="hub" value="http://localhost:8080/hub"></label>
+<label><input type="checkbox" id="prompt-login"> Add <code>prompt=login</code> (switch account)</label>
+
+<button id="start">Sign in</button>
+<button id="signout">Sign out (DELETE /api/guide/token)</button>
+<button id="forget">Forget stored token</button>
+
+<h2>Stored token</h2>
+<pre id="token">none</pre>
+<h2>Log</h2>
+<pre id="log"></pre>
+
+<script>
+(function () {
+  var FLOW_KEY = "guideSigninTest.flow";
+  var TOKEN_KEY = "guideSigninTest.token";
+  var logEl = document.getElementById("log");
+  var hubEl = document.getElementById("hub");
+
+  function log(message, cls) {
+    var line = document.createElement("div");
+    if (cls) { line.className = cls; }
+    line.textContent = new Date().toISOString().slice(11, 19) + "  " + message;
+    logEl.appendChild(line);
+  }
+  function hub() { return hubEl.value.replace(/\/+$/, ""); }
+  function returnTo() { return location.origin + location.pathname; }
+  function base64url(bytes) {
+    var text = "";
+    bytes.forEach(function (b) { text += String.fromCharCode(b); });
+    return btoa(text).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+  function randomString(length, alphabet) {
+    var bytes = crypto.getRandomValues(new Uint8Array(length));
+    return Array.prototype.map.call(bytes, function (b) { return alphabet[b % alphabet.length]; }).join("");
+  }
+  function showToken() {
+    var raw = localStorage.getItem(TOKEN_KEY);
+    document.getElementById("token").textContent = raw ? JSON.stringify(JSON.parse(raw), null, 2) : "none";
+  }
+
+  async function start() {
+    var verifier = randomString(64, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~");
+    var digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    var challenge = base64url(new Uint8Array(digest));
+    var state = base64url(crypto.getRandomValues(new Uint8Array(24)));
+    var returnLocation = location.href.replace(/[?&]interophub=signin/, "");
+    sessionStorage.setItem(FLOW_KEY, JSON.stringify({
+      codeVerifier: verifier, state: state, returnLocation: returnLocation, hub: hub()
+    }));
+    var params = new URLSearchParams({
+      app_code: "topic-reference",
+      return_to: returnTo(),
+      state: state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+      response_mode: "fragment",
+      requested_url: returnTo()
+    });
+    if (document.getElementById("prompt-login").checked) { params.set("prompt", "login"); }
+    location.assign(hub() + "/home?" + params.toString());
+  }
+
+  async function finish(fragment) {
+    var flow = JSON.parse(sessionStorage.getItem(FLOW_KEY) || "null");
+    sessionStorage.removeItem(FLOW_KEY);
+    if (!flow) { log("Returned with a code but no stored flow.", "bad"); return; }
+    hubEl.value = flow.hub;
+    if (fragment.get("state") !== flow.state) {
+      log("state mismatch: sign-in did not complete.", "bad");
+      history.replaceState(null, "", flow.returnLocation);
+      return;
+    }
+    log("state matches; exchanging code.");
+    var response = await fetch(flow.hub + "/api/guide/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: fragment.get("code"), codeVerifier: flow.codeVerifier, returnTo: returnTo() })
+    }).catch(function (error) { log("Token call failed (CORS or network): " + error, "bad"); return null; });
+    history.replaceState(null, "", flow.returnLocation);
+    log("Fragment removed; location restored to " + location.href);
+    if (!response) { return; }
+    var body = await response.text();
+    log("POST /api/guide/token -> " + response.status + " " + body, response.ok ? "ok" : "bad");
+    if (response.ok) {
+      var data = JSON.parse(body);
+      localStorage.setItem(TOKEN_KEY, JSON.stringify(data));
+      showToken();
+    }
+  }
+
+  async function signOut() {
+    var stored = JSON.parse(localStorage.getItem(TOKEN_KEY) || "null");
+    if (!stored) { log("No stored token."); return; }
+    var response = await fetch(hub() + "/api/guide/token", {
+      method: "DELETE",
+      headers: { "Authorization": "Bearer " + stored.accessToken }
+    }).catch(function (error) { log("Sign-out failed (CORS or network): " + error, "bad"); return null; });
+    if (!response) { return; }
+    log("DELETE /api/guide/token -> " + response.status + " " + (await response.text()), response.status === 204 ? "ok" : "bad");
+    localStorage.removeItem(TOKEN_KEY);
+    showToken();
+  }
+
+  document.getElementById("origin").textContent = location.origin;
+  document.getElementById("return-to").textContent = returnTo();
+  document.getElementById("start").addEventListener("click", start);
+  document.getElementById("signout").addEventListener("click", signOut);
+  document.getElementById("forget").addEventListener("click", function () {
+    localStorage.removeItem(TOKEN_KEY); showToken(); log("Stored token forgotten.");
+  });
+  showToken();
+
+  var fragment = new URLSearchParams(location.hash.slice(1));
+  if (fragment.has("code")) {
+    finish(fragment);
+  } else if (/[?&]interophub=signin/.test(location.search)) {
+    if (localStorage.getItem(TOKEN_KEY)) {
+      history.replaceState(null, "", location.href.replace(/[?&]interophub=signin/, ""));
+      log("Marker seen; token already held, marker removed.");
+    } else {
+      log("Marker seen; starting sign-in.");
+      start();
+    }
+  }
+})();
+</script>
+</body>
+</html>
