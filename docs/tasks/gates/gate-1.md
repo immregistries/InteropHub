@@ -3,7 +3,7 @@
 **Date:** 2026-10-30
 **Run by:** Stream G
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 3
-**Result:** Pass, pending product owner approval
+**Result:** Pass, approved by the product owner 2026-10-30
 
 ## Summary
 
@@ -63,4 +63,4 @@
 
 ## Approval
 
-Product owner: _pending_
+Product owner: approved 2026-10-30.

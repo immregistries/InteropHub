@@ -144,7 +144,7 @@ Kept current by stream G.
 | P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
 | H1 | Done 2026-10-30, merged | Merged as `07efc1c`. Commit `0d2aa3b`. 1.31 and 1.35 move to Gate 2. |
-| Gate 1 | Passed by G, awaiting product owner | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
+| Gate 1 | Passed 2026-10-30 | Approved by the product owner. | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Prompt ready | `prompts/H2-registration-and-comments.md`. Branch `feature/h2-comments`, from `main` after E1 and H1 merge. |
 | Gate 2 | | |
