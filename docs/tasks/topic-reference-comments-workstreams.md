@@ -143,10 +143,10 @@ Kept current by stream G.
 | E1 | Runtime checks on Tomcat | Code accepted; `mvn test` 338 passing. `prompts/E1.1-review-fixes-and-runtime.md`: three small fixes, then checks 1.40 to 1.44 when Tomcat is free. |
 | P1 | Done 2026-10-30 | Pilot commit `97b36c9` in contextual-conditions: 27 anchors, templates `v0.5.1`, explicit `{#related-representations}` ID. Gate check 1.11 passed. |
 | T1.1 | Released `v0.5.1` 2026-10-30 | Commit `deb15bd`. Reading copy no longer gets extra blank lines; duplicate-ID error explains the fix. |
-| H1 | Reviewed 2026-10-30, fixes requested | Gate checks 1.20 to 1.30, 1.32 to 1.34, 1.37 pass; 1.31 waits for a `topics:write` route (H2). `prompts/H1.1-review-fixes.md`: UTC timestamp helper, dev setup after refresh (approved), rebase, commit on branch. |
+| H1 | Done 2026-10-30, waiting to merge | Commit `0d2aa3b` on `feature/h1-sign-in`. Gate checks 1.20 to 1.30, 1.32 to 1.34, 1.37 pass; 1.31 moves to Gate 2. UTC via `ApiTime`; refresh runs `*_dev_setup.sql`. |
 | Gate 1 | | |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
-| H2 | Not started | |
+| H2 | Prompt ready | `prompts/H2-registration-and-comments.md`. Branch `feature/h2-comments`, from `main` after E1 and H1 merge. |
 | Gate 2 | | |
 | T3 | Prompt ready | `prompts/T3-author-review.md`. Starts when Codex usage resets; builds against the mock, so it does not wait for Gate 1 or H2. Includes the T2 follow-ups. |
 | H3 | Not started | |
