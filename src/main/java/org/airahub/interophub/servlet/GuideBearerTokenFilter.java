@@ -24,7 +24,7 @@ import org.airahub.interophub.service.GuideRequestAuth;
 import org.airahub.interophub.service.GuideTokenLookup;
 
 /**
- * Authentication for {@code /api/guide/*}. Scope checks stay in each servlet.
+ * Authentication for {@code /api/guide/*} and {@code /api/guides}. Scope checks stay in each servlet.
  * {@code OPTIONS} and {@code POST /api/guide/token} do not require a bearer token.
  */
 public class GuideBearerTokenFilter implements Filter {

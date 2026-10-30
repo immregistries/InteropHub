@@ -711,3 +711,174 @@ SELECT 'interophub-api', 'InteropHub API', NULL,
   'AIRA', 1, 0, 0
 FROM DUAL
 WHERE NOT EXISTS (SELECT 1 FROM app_registry WHERE app_code = 'interophub-api');
+
+-- =============================================================================
+-- H2 guide registration and comments.
+-- SET NAMES so the en dash in the Question Answered label survives the client.
+SET NAMES utf8mb4;
+-- A registered guide accepts comments on one topic. Published URLs become
+-- topic-reference redirect allowlist rows. owns_allowlist marks rows this
+-- registration inserted; rows that already existed are linked and left alone.
+-- Author columns (disposition, change note, disposed, closed) are stored now
+-- so H3 adds no tables. es_guide_review_flag is created for the same reason;
+-- H2 does not expose flag endpoints. Review-flag reads on the comment list
+-- use the table when rows exist.
+-- =============================================================================
+
+CREATE TABLE es_guide_url_prefix (
+  guide_url_prefix_id BIGINT NOT NULL AUTO_INCREMENT,
+  url_prefix VARCHAR(255) NOT NULL,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_by_user_id BIGINT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  disabled_at DATETIME(6) NULL,
+  disabled_by_user_id BIGINT NULL,
+  PRIMARY KEY (guide_url_prefix_id),
+  UNIQUE KEY uq_es_guide_url_prefix (url_prefix),
+  CONSTRAINT fk_es_guide_url_prefix_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_url_prefix_disabled_by
+    FOREIGN KEY (disabled_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO es_guide_url_prefix (url_prefix, is_enabled)
+VALUES ('https://immregistries.github.io/', 1);
+
+CREATE TABLE es_guide_disposition (
+  disposition_code VARCHAR(32) NOT NULL,
+  label VARCHAR(80) NOT NULL,
+  display_order INT NOT NULL,
+  PRIMARY KEY (disposition_code),
+  UNIQUE KEY uq_es_guide_disposition_order (display_order)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+INSERT INTO es_guide_disposition (disposition_code, label, display_order) VALUES
+  ('PERSUASIVE', 'Persuasive', 1),
+  ('PERSUASIVE_MOD', 'Persuasive with Modification', 2),
+  ('NOT_PERSUASIVE', 'Not Persuasive', 3),
+  ('NOT_PERSUASIVE_MOD', 'Not Persuasive with Modification', 4),
+  ('NOT_RELATED', 'Not Related', 5),
+  ('FUTURE_USE', 'Considered for Future Use', 6),
+  ('QUESTION_ANSWERED', 'Considered – Question Answered', 7);
+
+CREATE TABLE es_guide_document (
+  guide_document_id BIGINT NOT NULL AUTO_INCREMENT,
+  document_key VARCHAR(100) NOT NULL,
+  es_topic_id BIGINT NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  repository_url VARCHAR(500) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_by_user_id BIGINT NOT NULL,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (guide_document_id),
+  UNIQUE KEY uq_es_guide_document_key (document_key),
+  KEY ix_es_guide_document_topic (es_topic_id),
+  CONSTRAINT fk_es_guide_document_topic
+    FOREIGN KEY (es_topic_id) REFERENCES es_topic (es_topic_id),
+  CONSTRAINT fk_es_guide_document_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_guide_document_url (
+  guide_document_url_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_document_id BIGINT NOT NULL,
+  url VARCHAR(255) NOT NULL,
+  label VARCHAR(40) NOT NULL,
+  sort_order INT NOT NULL,
+  allow_id BIGINT UNSIGNED NULL,
+  owns_allowlist TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (guide_document_url_id),
+  UNIQUE KEY uq_es_guide_document_url (url),
+  UNIQUE KEY uq_es_guide_document_url_label (guide_document_id, label),
+  KEY ix_es_guide_document_url_document (guide_document_id, sort_order),
+  KEY ix_es_guide_document_url_allow (allow_id),
+  CONSTRAINT fk_es_guide_document_url_document
+    FOREIGN KEY (guide_document_id) REFERENCES es_guide_document (guide_document_id),
+  CONSTRAINT fk_es_guide_document_url_allow
+    FOREIGN KEY (allow_id) REFERENCES app_redirect_allowlist (allow_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_guide_comment (
+  guide_comment_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_document_id BIGINT NOT NULL,
+  parent_comment_id BIGINT NULL,
+  anchor_id VARCHAR(100) NULL,
+  block_index INT NULL,
+  block_snippet VARCHAR(120) NULL,
+  comment_text TEXT NULL,
+  state VARCHAR(16) NOT NULL,
+  disposition_code VARCHAR(32) NULL,
+  change_note VARCHAR(500) NULL,
+  user_id BIGINT NOT NULL,
+  source_note VARCHAR(200) NULL,
+  created_at DATETIME(6) NOT NULL,
+  edited_at DATETIME(6) NULL,
+  updated_at DATETIME(6) NOT NULL,
+  deleted_at DATETIME(6) NULL,
+  deleted_by_user_id BIGINT NULL,
+  withdrawn_at DATETIME(6) NULL,
+  disposed_at DATETIME(6) NULL,
+  disposed_by_user_id BIGINT NULL,
+  closed_at DATETIME(6) NULL,
+  closed_by_user_id BIGINT NULL,
+  PRIMARY KEY (guide_comment_id),
+  KEY ix_es_guide_comment_document (guide_document_id, created_at),
+  KEY ix_es_guide_comment_parent (parent_comment_id, created_at),
+  KEY ix_es_guide_comment_updated (guide_document_id, updated_at),
+  CONSTRAINT fk_es_guide_comment_document
+    FOREIGN KEY (guide_document_id) REFERENCES es_guide_document (guide_document_id),
+  CONSTRAINT fk_es_guide_comment_parent
+    FOREIGN KEY (parent_comment_id) REFERENCES es_guide_comment (guide_comment_id),
+  CONSTRAINT fk_es_guide_comment_user
+    FOREIGN KEY (user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_comment_deleted_by
+    FOREIGN KEY (deleted_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_comment_disposition
+    FOREIGN KEY (disposition_code) REFERENCES es_guide_disposition (disposition_code),
+  CONSTRAINT fk_es_guide_comment_disposed_by
+    FOREIGN KEY (disposed_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_comment_closed_by
+    FOREIGN KEY (closed_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_guide_comment_audit (
+  guide_comment_audit_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_comment_id BIGINT NOT NULL,
+  changed_by_user_id BIGINT NOT NULL,
+  changed_at DATETIME(6) NOT NULL,
+  field_name VARCHAR(32) NOT NULL,
+  old_value TEXT NULL,
+  new_value TEXT NULL,
+  app_user_token_id BIGINT UNSIGNED NULL,
+  PRIMARY KEY (guide_comment_audit_id),
+  KEY ix_es_guide_comment_audit_comment (guide_comment_id, changed_at),
+  CONSTRAINT fk_es_guide_comment_audit_comment
+    FOREIGN KEY (guide_comment_id) REFERENCES es_guide_comment (guide_comment_id),
+  CONSTRAINT fk_es_guide_comment_audit_user
+    FOREIGN KEY (changed_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_comment_audit_token
+    FOREIGN KEY (app_user_token_id) REFERENCES app_user_token (token_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE es_guide_review_flag (
+  review_flag_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_document_id BIGINT NOT NULL,
+  anchor_id VARCHAR(100) NOT NULL,
+  note VARCHAR(500) NOT NULL,
+  created_by_user_id BIGINT NOT NULL,
+  created_at DATETIME(6) NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  cleared_at DATETIME(6) NULL,
+  cleared_by_user_id BIGINT NULL,
+  active_anchor VARCHAR(100) GENERATED ALWAYS AS (CASE WHEN cleared_at IS NULL THEN anchor_id ELSE NULL END) STORED,
+  PRIMARY KEY (review_flag_id),
+  UNIQUE KEY uq_es_guide_review_flag_active (guide_document_id, active_anchor),
+  KEY ix_es_guide_review_flag_document (guide_document_id, cleared_at),
+  CONSTRAINT fk_es_guide_review_flag_document
+    FOREIGN KEY (guide_document_id) REFERENCES es_guide_document (guide_document_id),
+  CONSTRAINT fk_es_guide_review_flag_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT fk_es_guide_review_flag_cleared_by
+    FOREIGN KEY (cleared_by_user_id) REFERENCES auth_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

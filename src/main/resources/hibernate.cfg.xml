@@ -118,5 +118,12 @@
     <mapping class="org.airahub.interophub.model.Supporter"/>
     <mapping class="org.airahub.interophub.model.EsTopicSupporter"/>
     <mapping class="org.airahub.interophub.model.DigestRunState"/>
+    <mapping class="org.airahub.interophub.model.EsGuideUrlPrefix"/>
+    <mapping class="org.airahub.interophub.model.EsGuideDisposition"/>
+    <mapping class="org.airahub.interophub.model.EsGuideDocument"/>
+    <mapping class="org.airahub.interophub.model.EsGuideDocumentUrl"/>
+    <mapping class="org.airahub.interophub.model.EsGuideComment"/>
+    <mapping class="org.airahub.interophub.model.EsGuideCommentAudit"/>
+    <mapping class="org.airahub.interophub.model.EsGuideReviewFlag"/>
   </session-factory>
 </hibernate-configuration>
