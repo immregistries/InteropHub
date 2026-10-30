@@ -85,9 +85,10 @@ identity must not be mistaken for dev mode.
 | Fresh write SAS (upload) | `201 Created` (historical; SAS retired October 2026) |
 | Managed identity PUT from `testSabbia` (2026-10-14) | `201 Created` |
 | Managed identity DELETE from `testSabbia` (2026-10-14) | `202 Accepted` |
+| App upload via `/admin/es/artifact-test` on production (2026-10-19) | stored as `BLOB`; anonymous `GET` `200` |
 | Account `allowSharedKeyAccess` | `true` |
 | Minimum TLS | `TLS1_2` |
-| Container contents | empty (test blobs removed) |
+| Container contents | empty after 2026-08-12 validation; holds application files since 2026-10-19 |
 
 Account-level public access is the single documented exception for this account: keep every other container at `Private`, and do not flip account-wide settings without re-reading this file.
 
@@ -107,6 +108,8 @@ Superseded handoff examples (byte-array `upload()`, `download()` proxying, `gene
   reads are unaffected) and rotate both account keys. This finally invalidates
   the exposed validation-era SAS tokens, which otherwise stay valid until
   2027-01-01.
+- [ ] Confirm `HUB_ARTIFACTS_SAS_TOKEN` is removed from the Tomcat environment.
 - [ ] Confirm the Tomcat boot log reports `artifact write path: enabled` after
-  each production deploy.
+  each production deploy. (Writes are known to work as of 2026-10-19, but the
+  log check itself is not recorded.)
 - [ ] Optional: Azure Blob soft delete as an infrastructure-only safeguard (app does not expose recovery).

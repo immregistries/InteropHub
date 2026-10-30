@@ -1,5 +1,16 @@
 # Artifact Storage: Managed Identity Migration
 
+## Status (2026-10-30): Phases 1–2 complete, Phase 3 largely done
+
+- **Production writes and reads proven (2026-10-19).** A new image uploaded
+  through `/admin/es/artifact-test` on production was stored as `BLOB` and
+  is anonymously readable; the IVC archive migration also moved 57 files to
+  Blob. See *Production verification* in
+  `artifact-storage-deployment-handoff.md`.
+- **Still unrecorded from Phase 3:** removal of `HUB_ARTIFACTS_SAS_TOKEN` from
+  the Tomcat environment and the boot-log check.
+- **Phase 5 follow-ups remain** (`allowSharedKeyAccess: false`, key rotation).
+
 ## Status (2026-10-14): Phase 1 complete, Phase 2 implemented
 
 - **Phase 1 done.** Assignment `a2482ee2-46aa-46ad-9447-420c5e93ba5c`:
@@ -22,8 +33,9 @@
   diagnostic shows the versioned and unversioned requests side by side so
   the two are not confused. The account accepts writes with an account
   key, and an object in the container is anonymously readable (`GET` →
-  `200`), so the Blob read model is sound. **Anonymous read of a stored object is
-  still unproven in production**: the container was left empty, and the
+  `200`), so the Blob read model is sound. **Anonymous read of a stored object was
+  still unproven in production** at that point (proven 2026-10-19; see the
+  2026-10-30 status above): the container was left empty, and the
   `WELCOME_BLOB_DEMO` object the v0.8 migration points at returns `404`. Before
   migrating file content, prove that an uploaded object is anonymously
   readable (`PUT` with the managed identity, then `GET` the same URL without
@@ -398,13 +410,13 @@ Branch on `isLocalhostMode()` and state the actual reason.
 2. Remove `HUB_ARTIFACTS_SAS_TOKEN` from the Tomcat environment. Remove it —
    do not leave it present but unused.
 3. Confirm the boot log reports `artifact write path: enabled`.
-4. Open `/welcome` **signed out** and confirm the image still renders.
+4. Open the demo image's file URL **signed out** and confirm it still renders.
    Anonymous read is untouched, and this is the check that would catch an
    accidental account-level change.
 5. Upload one image through `/admin/es/artifact-test`; replace it; confirm the
    object key and direct Blob URL are unchanged.
 6. Confirm writes are disabled locally: the admin page shows the disabled
-   notice and `/welcome` still renders the same image.
+   notice and still renders the same image.
 
 Keep the existing SAS valid through step 5 so a rollback is a configuration
 change rather than a redeploy.

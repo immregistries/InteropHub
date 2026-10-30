@@ -6,7 +6,7 @@ shared local/Blob document and image storage and meeting agenda attachments desc
 `azure-blob-storage-handoff-reaction.md`.
 
 Task 1a adds no bundle or meeting feature. Its admin demonstration uploads
-a Welcome image and a separate document, proving server-side writes and anonymous
+an image and a separate document, proving server-side writes and anonymous
 stable file URLs before those features depend on storage. Task 1b adds selected-item
 meeting attachments without introducing bundles or Topic Resources.
 
@@ -15,7 +15,7 @@ whoever holds Azure access for the storage account.
 
 ## October 2026 status: task 1a implemented
 
-**Task 1a now supplies shared local/Blob file metadata, local uploads, and anonymous stable InteropHub file URLs.** Production Blob verification remains blocked by provisioning permissions. The original Azure instructions below are historical step 1 instructions, not the current local deployment procedure.
+**Task 1a now supplies shared local/Blob file metadata, local uploads, and anonymous stable InteropHub file URLs.** Production Blob writes and anonymous reads were verified on 2026-10-19 (see *Production verification* below). The original Azure instructions below are historical step 1 instructions, not the current local deployment procedure.
 
 ### October 2026 status: managed identity replaces the write SAS
 
@@ -49,12 +49,29 @@ What this changes for deployment:
 - If `testSabbia` is ever rebuilt or replaced, its system-assigned principal
   changes and the container grant above must be recreated before uploads work.
 
+### Production verification (2026-10-19, confirmed 2026-10-30)
+
+- Chris uploaded `sig.png` to the `WELCOME_DEMO` slot through
+  `/admin/es/artifact-test` on production. It was a new file (`revision 0`),
+  not a replacement, and its `hub_stored_file` row records `BLOB`. New files
+  follow `INTEROPHUB_ARTIFACTS_DEFAULT_BACKEND`, so production routes new
+  uploads to Blob. The SAS was already out of the code in that release, so
+  the write came from the managed identity.
+- From a local machine that never had the bytes, its stable URL
+  (`/hub/files/c97997c3-3587-40c5-b532-c129b24bd9b5`) answers `302` to the
+  Blob URL, which answers `200` (`image/png`, 3,601 bytes,
+  `Cache-Control: no-cache`) to an anonymous `GET`.
+- All 59 `hub_stored_file` rows in the 2026-10-30 production snapshot are
+  `BLOB`; none are `LOCAL`.
+- Not yet recorded: removal of `HUB_ARTIFACTS_SAS_TOKEN` from the Tomcat
+  environment, and the boot-log `artifact write path: enabled` check.
+
 The SAS-based sections under "Historical Blob-only step 1 instructions" below
 must not be followed. `allowSharedKeyAccess` stays `true` for now as a
 deferred hardening follow-up; the exposed validation-era SAS tokens remain
 technically valid until it is disabled or the account keys are rotated.
 
-The demo is a consumer of shared file storage. `hub_stored_file` holds backend-aware records; `es_artifact_demo` now associates slots with those records. The migration explicitly maps old objects to `BLOB` and preserves the old image as `WELCOME_BLOB_DEMO`. New slots are `WELCOME_DEMO` (local Welcome image) and `DOCUMENT_DEMO` (local document proof). Welcome prefers the local image and otherwise uses the preserved Blob image. Step 2 removes temporary demo structures only after retaining shared records and references.
+The demo is a consumer of shared file storage. `hub_stored_file` holds backend-aware records; `es_artifact_demo` now associates slots with those records. The migration explicitly maps old objects to `BLOB` and preserves the old image as `WELCOME_BLOB_DEMO`. New slots are `WELCOME_DEMO` (image proof) and `DOCUMENT_DEMO` (document proof); the slot keys keep their original names, and both follow the default backend for new uploads. The image was shown on the Welcome page during verification; since 2026-10-30 it appears only on the admin test page. Step 2 removes temporary demo structures only after retaining shared records and references.
 
 Local setup uses `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY=C:\dev\immregistries\InteropHub-artifacts`. The directory must already exist. Restart the Tomcat service after setting/changing the environment variable; replacing the WAR alone cannot refresh the service's inherited environment.
 
@@ -65,7 +82,7 @@ Local setup uses `INTEROPHUB_ARTIFACTS_LOCAL_DIRECTORY=C:\dev\immregistries\Inte
 - [ ] Include the folder and database in coordinated backup/restore procedures, monitor free disk space, and verify files survive restart and WAR redeployment. Before adding nodes, arrange a shared durable root or transition to Blob.
 - [ ] Apply task 1a's schema update from `db/unapplied_updates.sql` according to the [database release practice](../database-release-practice.md). It is apply-once and requires the original step 1 table. Before production application, check the migration's historical Blob endpoint/container literals against the location actually used by the old demo. Do not reapply to an already-migrated database.
 - [ ] Deploy the task 1a WAR with new uploads explicitly local. No Azure credentials or account changes are required for local upload/read verification. Adding a SAS later must not silently change new-upload routing.
-- [ ] Verify the admin demo and signed-in/signed-out Welcome page use stable InteropHub file URLs. Exercise PDF and downloadable TXT/DOC/DOCX/PPT/PPTX through the separate document form. Existing Blob replacements remain production-only and require a matching write credential.
+- [ ] Verify the admin demo uses stable InteropHub file URLs, and that the image URL also loads signed out (private window). Exercise PDF and downloadable TXT/DOC/DOCX/PPT/PPTX through the separate document form. Existing Blob replacements remain production-only and require a matching write credential.
 - [ ] Verify the 25 MiB per-file cap, with bounded multipart overhead at Tomcat and any reverse proxy. A file of 26,214,401 bytes is rejected; audio/video and disallowed active formats are rejected. Local files stream with correct metadata, `nosniff`, and cache revalidation.
 - [ ] Replace a file and confirm the stable URL presents fresh content without exposing a partial upload. Simulate disk/permission failure and confirm an explicit failure and retention of the previous good content.
  - [ ] Check blank local configuration disables only local support; an invalid configured root reports an actionable error. A missing managed identity must not disable working local uploads. A recorded backend outage must not trigger silent fallback to a different object.
@@ -201,7 +218,7 @@ Do not generate, configure, or rotate a SAS from these sections.
 | Configuration | `org.airahub.interophub.config.ArtifactStorageConfig` |
 | Blob writes | `org.airahub.interophub.service.ArtifactBlobStorageService` |
 | Admin test page | `AdminEsArtifactTestServlet` → `/admin/es/artifact-test` |
-| Welcome page display | `WelcomeServlet` (anonymous and signed-in branches) |
+| Welcome page display | `WelcomeServlet` (removed 2026-10-30; the image now shows only on the admin test page) |
 | Temporary table | `es_artifact_demo` in `db/unapplied_updates.sql` |
 
 `es_artifact_demo` exists only to remember the current object key. Step 2
@@ -334,17 +351,17 @@ will refuse to start rather than silently create the table. That is intentional.
    Tomcat with the write SAS.*
 3. The image appears on the page, with its object key and direct Blob URL. →
    *Proves: the anonymously readable URL is correct.*
-4. Open `/welcome` while signed in. The image appears. → *Proves: read works
-   for authenticated pages.*
-5. Open `/welcome` in a private window, signed out. The image still appears. →
-   *Proves: anonymous read by exact Blob URL.*
+4. Open the image's file URL from the admin page while signed in. The image
+   appears. → *Proves: read works for authenticated sessions.*
+5. Open the same file URL in a private window, signed out. The image still
+   appears. → *Proves: anonymous read by exact Blob URL.*
 6. Upload a **different** image on the admin page. The URL is unchanged, and
-   both pages show the new image after a refresh. → *Proves: stable object keys
+   it shows the new image after a refresh. → *Proves: stable object keys
    plus `Cache-Control: no-cache` revalidation.*
 7. Try an oversized file and a non-image file. Both are rejected with a clear
    message. → *Proves: server-side validation.*
-8. On a local machine, `/welcome` shows the same image and the admin page shows
-   the "uploads disabled" notice. → *Proves: development is read-only.*
+8. On a local machine, the admin page shows the same image and the
+   "uploads disabled" notice. → *Proves: development is read-only.*
 
 If step 2 fails, the likely causes in order: SAS not reaching Tomcat, SAS
 expired or wrong permissions, or account public-access settings changed. The

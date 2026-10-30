@@ -33,8 +33,8 @@ public class AdminEsArtifactTestServlet extends HttpServlet {
         AdminShellRenderer.render(request, response, "Artifact Storage Test - InteropHub",
                 AdminSection.TOPIC_SPACES, ACTIVE_HREF, out -> {
                     out.println("<section class=\"aira-panel\"><h2 class=\"aira-section-title\">Artifact Storage Test</h2>");
-                    out.println("<p>Upload a local Welcome image or a document. File URLs remain stable on replacement. "
-                            + "Existing Blob content keeps its recorded backend.</p>");
+                    out.println("<p>Upload a test image or a document. New uploads go to the configured default backend; "
+                            + "replacements keep their recorded backend. File URLs remain stable on replacement.</p>");
                     if (saved) {
                         out.println("<div class=\"aira-alert aira-alert--success\">File uploaded.</div>");
                     }
@@ -43,12 +43,12 @@ public class AdminEsArtifactTestServlet extends HttpServlet {
                     }
                     out.println("</section>");
                     renderSlot(out, request.getContextPath(), csrf, EsArtifactDemo.SLOT_WELCOME_DEMO,
-                            "Welcome image (local)", demos);
+                            "Image demonstration", demos);
                     renderSlot(out, request.getContextPath(), csrf, EsArtifactDemo.SLOT_DOCUMENT_DEMO,
-                            "Document demonstration (local)", demos);
+                            "Document demonstration", demos);
                     if (demos.stream().anyMatch(d -> EsArtifactDemo.SLOT_LEGACY_BLOB.equals(d.getSlotKey()))) {
                         renderSlot(out, request.getContextPath(), csrf, EsArtifactDemo.SLOT_LEGACY_BLOB,
-                                "Existing Blob Welcome image", demos);
+                                "Legacy Blob image", demos);
                     }
                 });
     }
@@ -86,7 +86,7 @@ public class AdminEsArtifactTestServlet extends HttpServlet {
             String name = StoredFileValidation.filename(part.getSubmittedFileName());
             if (!EsArtifactDemo.SLOT_DOCUMENT_DEMO.equals(slot)
                     && !name.toLowerCase(Locale.ROOT).matches(".*\\.(png|jpe?g|webp|gif)$")) {
-                throw new IllegalArgumentException("The Welcome slot accepts raster images only.");
+                throw new IllegalArgumentException("The image slot accepts raster images only.");
             }
             try (InputStream content = part.getInputStream()) {
                 storage.upload(existing, content, name, part.getContentType(),
