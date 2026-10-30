@@ -146,8 +146,8 @@ Kept current by stream G.
 | H1 | Done 2026-10-30, merged | Merged as `07efc1c`. Commit `0d2aa3b`. 1.31 and 1.35 move to Gate 2. |
 | Gate 1 | Passed 2026-10-30 | Approved by the product owner. | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
-| H2 | Committed, runtime checks pending | `93e6cf7` on `feature/h2-comments`; `mvn test` passes. G spot-checked scopes, CORS, visibility, page access. Deploying to run Gate 2 checks 2.1 to 2.10, 1.31, 2.32; G runs the pilot browser checks. |
-| Gate 2 | | |
+| H2 | Done 2026-10-30, merged locally | Merged as `aecf429`; 361 tests pass. API checks by H2 and end-to-end browser checks by G pass. |
+| Gate 2 | Local part passed by G | `gates/gate-2.md`. Production part waits for P3. |
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
 | H3 | Not started | |
 | P2 | Not started | |
@@ -164,7 +164,7 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 | Item | When | Notes |
 |---|---|---|
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
-| T3 follow-ups, for T4 | T4 | (1) Re-attach lists only explicit anchors; add headings (they are anchors too, contract 1.1) and `document-start`. (2) `tests/mock_hub.py` is packed into very long lines; reformat it like `guide.js`. (3) The mock answers an edit of someone else's text with `edit_window_closed`; it should be `forbidden` (contract 5.6). (4) `validate.ps1` exits 1 under Windows PowerShell 5.1 because unittest writes its progress dots to stderr; have the unittest step not treat stderr as failure. |
+| T3 follow-ups, for T4 | T4 | (1) Re-attach lists only explicit anchors; add headings (they are anchors too, contract 1.1) and `document-start`. (2) `tests/mock_hub.py` is packed into very long lines; reformat it like `guide.js`. (3) The mock answers an edit of someone else's text with `edit_window_closed`; it should be `forbidden` (contract 5.6). (4) `validate.ps1` exits 1 under Windows PowerShell 5.1 because unittest writes its progress dots to stderr; have the unittest step not treat stderr as failure. (5) "Show closed" shows for a reader whose account cannot view comments; hide it. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
 ## 8. Decisions Log
