@@ -138,9 +138,9 @@ Kept current by stream G.
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) waits for H0. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
 | H0 MCP experiment | Prompt ready | `prompts/H0-mcp-experiment.md`. Worktree branch `experiment/h0-mcp`. |
-| T1 | Prompt ready | `prompts/T1-anchors.md`. Started before Gate 0 (decision 2026-10-30). |
+| T1 | Fixes requested | First pass reviewed 2026-10-30: approach accepted. Follow-up `prompts/T1-anchors-fixes.md` (reserved names, build-time ID check, fenced code, changelog, legacy proof). |
 | H1 | Not started | |
-| E1 | Not started | Topic tools open question 1 answered 2026-10-30. |
+| E1 | Prompt ready | `prompts/E1-topic-edit-service.md`. Branch `feature/e1-topic-edit-service`. |
 | Gate 1 | | |
 | T2 | Not started | |
 | H2 | Not started | |
