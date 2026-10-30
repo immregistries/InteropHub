@@ -188,8 +188,8 @@ Settled with Nathan on 2026-10-30:
 1. Champions and support subscribers keep edit rights to their topics.
 2. Space admins get an "Add topic" page in this task (Section 8).
 3. Priorities (`priorityIis`, `priorityEhr`, `priorityCdc`) are left out of the API and the new page for now. New topics get `0`.
+4. One topic rule, no narrower variant. Champions and support subscribers may do everything to their topic that a space admin can. `canEditTopic` becomes the combined rule for all callers (resources, communication bundles, topic page, and topic-level checks that use `canAdministerSpace` today). Creating topics stays a space-level right.
 
 ## 12. Open Questions
 
-1. Should the other callers of `canEditTopic` (resources, communication bundles) get the wider rule, or keep the space-admin rule under a new name?
-2. Should `create_topic` and the Add topic page accept `topicCode` as given, or should InteropHub propose one from the name and space?
+1. Should `create_topic` and the Add topic page accept `topicCode` as given, or should InteropHub propose one from the name and space?

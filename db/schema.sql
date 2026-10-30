@@ -112,7 +112,7 @@ CREATE TABLE `app_login_event` (
   `user_id` bigint NOT NULL,
   `user_ip` varchar(45) DEFAULT NULL,
   PRIMARY KEY (`event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=215 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=223 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -209,7 +209,7 @@ CREATE TABLE `auth_login_code` (
   KEY `ix_login_code_user` (`user_id`,`issued_at`),
   KEY `ix_login_code_expires` (`expires_at`),
   CONSTRAINT `fk_login_code_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=246 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=254 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -237,7 +237,7 @@ CREATE TABLE `auth_magic_link` (
   KEY `ix_magic_user` (`user_id`,`issued_at`),
   KEY `ix_magic_expires` (`expires_at`),
   CONSTRAINT `fk_magic_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=262 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=272 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -265,7 +265,7 @@ CREATE TABLE `auth_magic_link_send_event` (
   `user_agent` varchar(300) DEFAULT NULL,
   `user_id` bigint NOT NULL,
   PRIMARY KEY (`send_event_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=613 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=637 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -289,7 +289,7 @@ CREATE TABLE `auth_session` (
   KEY `ix_session_user` (`user_id`,`expires_at`),
   KEY `ix_session_expires` (`expires_at`),
   CONSTRAINT `fk_session_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=217 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=224 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -321,7 +321,7 @@ CREATE TABLE `auth_user` (
   UNIQUE KEY `uq_auth_user_email_norm` (`email_normalized`),
   KEY `ix_auth_user_status` (`status`),
   KEY `ix_auth_user_delete_after` (`delete_after_at`)
-) ENGINE=InnoDB AUTO_INCREMENT=95 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=96 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -395,7 +395,7 @@ CREATE TABLE `dandelion_sync_queue` (
   PRIMARY KEY (`sync_queue_id`),
   KEY `ix_dd_sync_queue_space_status` (`es_topic_space_id`,`status`,`entity_type`,`created_at`),
   CONSTRAINT `fk_dd_sync_queue_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1437 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1555 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -434,7 +434,7 @@ CREATE TABLE `email_send_log` (
   `subject` varchar(500) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`email_log_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=956 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1097 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -477,7 +477,7 @@ CREATE TABLE `es_agenda_item_presenter` (
   `updated_at` datetime(6) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`es_agenda_item_presenter_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=86 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -495,7 +495,7 @@ CREATE TABLE `es_artifact_demo` (
   UNIQUE KEY `uq_es_artifact_demo_slot` (`slot_key`),
   KEY `fk_es_artifact_demo_file` (`stored_file_id`),
   CONSTRAINT `fk_es_artifact_demo_file` FOREIGN KEY (`stored_file_id`) REFERENCES `hub_stored_file` (`stored_file_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -568,6 +568,122 @@ CREATE TABLE `es_campaign_topic` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `es_checklist`
+--
+
+DROP TABLE IF EXISTS `es_checklist`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_checklist` (
+  `es_checklist_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `es_small_group_id` bigint DEFAULT NULL,
+  `template_kind` varchar(32) NOT NULL,
+  `applied_es_checklist_template_id` bigint NOT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  `initiative_only_id` bigint GENERATED ALWAYS AS ((case when (`es_small_group_id` is null) then `es_initiative_id` else NULL end)) STORED,
+  PRIMARY KEY (`es_checklist_id`),
+  UNIQUE KEY `uq_es_checklist_initiative` (`initiative_only_id`),
+  UNIQUE KEY `uq_es_checklist_small_group` (`es_small_group_id`),
+  KEY `idx_es_checklist_template` (`applied_es_checklist_template_id`),
+  KEY `fk_es_checklist_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_checklist_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_checklist_small_group` FOREIGN KEY (`es_small_group_id`) REFERENCES `es_small_group` (`es_small_group_id`),
+  CONSTRAINT `fk_es_checklist_template` FOREIGN KEY (`applied_es_checklist_template_id`) REFERENCES `es_checklist_template` (`es_checklist_template_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_checklist_item`
+--
+
+DROP TABLE IF EXISTS `es_checklist_item`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_checklist_item` (
+  `es_checklist_item_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_checklist_id` bigint NOT NULL,
+  `item_key` varchar(80) NOT NULL,
+  `item_origin` varchar(32) NOT NULL,
+  `in_current_template` tinyint(1) NOT NULL DEFAULT '1',
+  `is_removed` tinyint(1) NOT NULL DEFAULT '0',
+  `is_locally_edited` tinyint(1) NOT NULL DEFAULT '0',
+  `phase_label` varchar(200) NOT NULL,
+  `title` varchar(500) NOT NULL,
+  `guidance` text,
+  `due_anchor` varchar(40) DEFAULT NULL,
+  `due_offset_days` int DEFAULT NULL,
+  `due_date_override` date DEFAULT NULL,
+  `check_code` varchar(80) DEFAULT NULL,
+  `display_order` int NOT NULL,
+  `item_status` varchar(32) NOT NULL,
+  `status_changed_at` datetime(6) DEFAULT NULL,
+  `status_changed_by_user_id` bigint DEFAULT NULL,
+  `assigned_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_checklist_item_id`),
+  UNIQUE KEY `uq_es_checklist_item_key` (`es_checklist_id`,`item_key`),
+  KEY `idx_es_checklist_item_order` (`es_checklist_id`,`display_order`),
+  KEY `fk_es_checklist_item_status_user` (`status_changed_by_user_id`),
+  KEY `fk_es_checklist_item_assignee` (`assigned_user_id`),
+  CONSTRAINT `fk_es_checklist_item_assignee` FOREIGN KEY (`assigned_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_checklist_item_checklist` FOREIGN KEY (`es_checklist_id`) REFERENCES `es_checklist` (`es_checklist_id`),
+  CONSTRAINT `fk_es_checklist_item_status_user` FOREIGN KEY (`status_changed_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_checklist_template`
+--
+
+DROP TABLE IF EXISTS `es_checklist_template`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_checklist_template` (
+  `es_checklist_template_id` bigint NOT NULL AUTO_INCREMENT,
+  `template_kind` varchar(32) NOT NULL,
+  `version_no` int NOT NULL,
+  `title` varchar(200) NOT NULL,
+  `source_markdown` mediumtext NOT NULL,
+  `is_current` tinyint(1) NOT NULL DEFAULT '0',
+  `uploaded_by_user_id` bigint DEFAULT NULL,
+  `uploaded_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_checklist_template_id`),
+  UNIQUE KEY `uq_es_checklist_template_version` (`template_kind`,`version_no`),
+  KEY `idx_es_checklist_template_current` (`template_kind`,`is_current`),
+  KEY `fk_es_checklist_template_user` (`uploaded_by_user_id`),
+  CONSTRAINT `fk_es_checklist_template_user` FOREIGN KEY (`uploaded_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_checklist_template_item`
+--
+
+DROP TABLE IF EXISTS `es_checklist_template_item`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_checklist_template_item` (
+  `es_checklist_template_item_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_checklist_template_id` bigint NOT NULL,
+  `item_key` varchar(80) NOT NULL,
+  `phase_label` varchar(200) NOT NULL,
+  `title` varchar(500) NOT NULL,
+  `guidance` text,
+  `due_anchor` varchar(40) DEFAULT NULL,
+  `due_offset_days` int DEFAULT NULL,
+  `check_code` varchar(80) DEFAULT NULL,
+  `display_order` int NOT NULL,
+  PRIMARY KEY (`es_checklist_template_item_id`),
+  UNIQUE KEY `uq_es_checklist_template_item_key` (`es_checklist_template_id`,`item_key`),
+  KEY `idx_es_checklist_template_item_order` (`es_checklist_template_id`,`display_order`),
+  CONSTRAINT `fk_es_checklist_template_item_template` FOREIGN KEY (`es_checklist_template_id`) REFERENCES `es_checklist_template` (`es_checklist_template_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=76 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `es_comment`
 --
 
@@ -632,7 +748,7 @@ CREATE TABLE `es_communication_bundle` (
   CONSTRAINT `chk_bundle_communication_date` CHECK ((((`communication_month` is null) and (`communication_year` is null)) or ((`communication_month` is not null) and (`communication_year` is not null) and (`communication_month` between 1 and 12) and (`communication_year` between 1 and 9999)))),
   CONSTRAINT `chk_bundle_single_guard` CHECK (((`single_instance_guard` is null) or (`single_instance_guard` = 1))),
   CONSTRAINT `chk_bundle_status` CHECK ((`status` in (_utf8mb4'DRAFT',_utf8mb4'PUBLISHED',_utf8mb4'RETIRED')))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -658,7 +774,7 @@ CREATE TABLE `es_communication_bundle_audit` (
   CONSTRAINT `fk_bundle_audit_resource` FOREIGN KEY (`topic_resource_id`) REFERENCES `es_topic_resource` (`topic_resource_id`),
   CONSTRAINT `fk_bundle_audit_user` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `chk_bundle_audit_subject` CHECK (((`bundle_id` is not null) or (`topic_resource_id` is not null)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -687,7 +803,7 @@ CREATE TABLE `es_communication_bundle_component_value` (
   CONSTRAINT `fk_bundle_value_component` FOREIGN KEY (`component_id`, `template_id`) REFERENCES `es_communication_bundle_template_component` (`component_id`, `template_id`),
   CONSTRAINT `fk_bundle_value_updater` FOREIGN KEY (`updated_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `chk_bundle_component_value` CHECK (((`content_text` is null) or (`content_json` is null)))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -746,7 +862,7 @@ CREATE TABLE `es_communication_bundle_resource_placement` (
   CONSTRAINT `fk_bundle_placement_creator` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_bundle_placement_resource` FOREIGN KEY (`topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource` (`topic_resource_id`, `es_topic_id`),
   CONSTRAINT `fk_bundle_placement_version` FOREIGN KEY (`resource_version_id`, `topic_resource_id`, `es_topic_id`) REFERENCES `es_topic_resource_version` (`resource_version_id`, `topic_resource_id`, `es_topic_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -798,6 +914,181 @@ CREATE TABLE `es_communication_bundle_template_component` (
   CONSTRAINT `chk_bundle_component_cardinality` CHECK ((`cardinality` in (_utf8mb4'SINGLE',_utf8mb4'REPEATING'))),
   CONSTRAINT `chk_bundle_component_kind` CHECK ((`component_kind` in (_utf8mb4'TEXT',_utf8mb4'STRUCTURED_LIST',_utf8mb4'RESOURCE',_utf8mb4'RESOURCE_COLLECTION')))
 ) ENGINE=InnoDB AUTO_INCREMENT=15 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative`
+--
+
+DROP TABLE IF EXISTS `es_initiative`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative` (
+  `es_initiative_id` bigint NOT NULL AUTO_INCREMENT,
+  `initiative_code` varchar(80) NOT NULL,
+  `initiative_name` varchar(200) NOT NULL,
+  `summary` text,
+  `description` text,
+  `primary_es_topic_id` bigint NOT NULL,
+  `status` varchar(32) NOT NULL,
+  `visibility` varchar(32) NOT NULL,
+  `join_policy` varchar(32) NOT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_initiative_id`),
+  UNIQUE KEY `uq_es_initiative_code` (`initiative_code`),
+  KEY `idx_es_initiative_topic` (`primary_es_topic_id`),
+  KEY `fk_es_initiative_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_primary_topic` FOREIGN KEY (`primary_es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative_link`
+--
+
+DROP TABLE IF EXISTS `es_initiative_link`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative_link` (
+  `es_initiative_link_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `link_label` varchar(200) NOT NULL,
+  `link_url` varchar(1000) NOT NULL,
+  `display_order` int NOT NULL DEFAULT '0',
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_initiative_link_id`),
+  KEY `idx_es_initiative_link_initiative` (`es_initiative_id`,`display_order`),
+  KEY `fk_es_initiative_link_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_link_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_link_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative_manager`
+--
+
+DROP TABLE IF EXISTS `es_initiative_manager`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative_manager` (
+  `es_initiative_manager_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `user_id` bigint NOT NULL,
+  `manager_role` varchar(32) NOT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_initiative_manager_id`),
+  UNIQUE KEY `uq_es_initiative_manager_user` (`es_initiative_id`,`user_id`),
+  KEY `idx_es_initiative_manager_user` (`user_id`),
+  KEY `fk_es_initiative_manager_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_manager_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_manager_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_initiative_manager_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative_member`
+--
+
+DROP TABLE IF EXISTS `es_initiative_member`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative_member` (
+  `es_initiative_member_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `user_id` bigint DEFAULT NULL,
+  `email` varchar(254) DEFAULT NULL,
+  `email_normalized` varchar(254) DEFAULT NULL,
+  `contact_first_name` varchar(100) DEFAULT NULL,
+  `contact_last_name` varchar(100) DEFAULT NULL,
+  `es_initiative_organization_id` bigint DEFAULT NULL,
+  `initiative_role` varchar(200) DEFAULT NULL,
+  `member_status` varchar(32) NOT NULL,
+  `member_source` varchar(32) NOT NULL,
+  `status_changed_at` datetime(6) DEFAULT NULL,
+  `status_changed_by_user_id` bigint DEFAULT NULL,
+  `joined_at` datetime(6) DEFAULT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_initiative_member_id`),
+  UNIQUE KEY `uq_es_initiative_member_email` (`es_initiative_id`,`email_normalized`),
+  KEY `idx_es_initiative_member_email` (`email_normalized`),
+  KEY `idx_es_initiative_member_user` (`user_id`),
+  KEY `idx_es_initiative_member_org` (`es_initiative_organization_id`),
+  KEY `fk_es_initiative_member_status_user` (`status_changed_by_user_id`),
+  KEY `fk_es_initiative_member_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_member_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_member_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_initiative_member_org` FOREIGN KEY (`es_initiative_organization_id`) REFERENCES `es_initiative_organization` (`es_initiative_organization_id`),
+  CONSTRAINT `fk_es_initiative_member_status_user` FOREIGN KEY (`status_changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_member_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative_organization`
+--
+
+DROP TABLE IF EXISTS `es_initiative_organization`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative_organization` (
+  `es_initiative_organization_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `organization_id` bigint NOT NULL,
+  `participation_status` varchar(32) NOT NULL,
+  `status_changed_at` datetime(6) DEFAULT NULL,
+  `status_changed_by_user_id` bigint DEFAULT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_initiative_organization_id`),
+  UNIQUE KEY `uq_es_initiative_organization` (`es_initiative_id`,`organization_id`),
+  KEY `idx_es_initiative_organization_org` (`organization_id`),
+  KEY `fk_es_initiative_org_status_user` (`status_changed_by_user_id`),
+  KEY `fk_es_initiative_org_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_org_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_initiative_org_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_initiative_org_organization` FOREIGN KEY (`organization_id`) REFERENCES `organization` (`organization_id`),
+  CONSTRAINT `fk_es_initiative_org_status_user` FOREIGN KEY (`status_changed_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_initiative_timeline_entry`
+--
+
+DROP TABLE IF EXISTS `es_initiative_timeline_entry`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_initiative_timeline_entry` (
+  `es_initiative_timeline_entry_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `subject_type` varchar(32) NOT NULL,
+  `subject_id` bigint NOT NULL,
+  `entry_type` varchar(32) NOT NULL,
+  `from_value` text,
+  `to_value` text,
+  `note_text` text,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `edited_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`es_initiative_timeline_entry_id`),
+  KEY `idx_es_initiative_timeline_subject` (`subject_type`,`subject_id`,`created_at`),
+  KEY `idx_es_initiative_timeline_initiative` (`es_initiative_id`,`created_at`),
+  KEY `fk_es_initiative_timeline_user` (`created_by_user_id`),
+  CONSTRAINT `fk_es_initiative_timeline_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_initiative_timeline_user` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -953,7 +1244,7 @@ CREATE TABLE `es_meeting` (
   KEY `fk_es_meeting_notes_published_by` (`notes_published_by_user_id`),
   CONSTRAINT `fk_es_meeting_notes_published_by` FOREIGN KEY (`notes_published_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_topic_space` FOREIGN KEY (`es_topic_space_id`) REFERENCES `es_topic_space` (`es_topic_space_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=123 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=122 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1034,7 +1325,7 @@ CREATE TABLE `es_meeting_agenda_attachment` (
   CONSTRAINT `fk_meeting_attachment_item` FOREIGN KEY (`es_meeting_agenda_item_id`) REFERENCES `es_meeting_agenda_item` (`es_meeting_agenda_item_id`),
   CONSTRAINT `fk_meeting_attachment_remover` FOREIGN KEY (`removed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_meeting_attachment_uploader` FOREIGN KEY (`attached_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=64 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=58 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1062,7 +1353,7 @@ CREATE TABLE `es_meeting_agenda_item` (
   `title` varchar(200) NOT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_agenda_item_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=514 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=526 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1102,7 +1393,7 @@ CREATE TABLE `es_meeting_attendance` (
   CONSTRAINT `fk_attendance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_attendance_observed_by` FOREIGN KEY (`observed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_attendance_removed_by` FOREIGN KEY (`removed_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=304 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=328 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1138,7 +1429,7 @@ CREATE TABLE `es_meeting_communication` (
   `timezone_id` varchar(64) DEFAULT NULL,
   `updated_at` datetime(6) NOT NULL,
   PRIMARY KEY (`es_meeting_communication_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=21 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=24 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1184,7 +1475,7 @@ CREATE TABLE `es_meeting_role_assignment` (
   CONSTRAINT `fk_es_mra_assigned_by` FOREIGN KEY (`assigned_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_mra_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_mra_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1208,7 +1499,7 @@ CREATE TABLE `es_meeting_rsvp` (
   KEY `fk_es_meeting_rsvp_user` (`user_id`),
   CONSTRAINT `fk_es_meeting_rsvp_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_meeting_rsvp_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1232,7 +1523,7 @@ CREATE TABLE `es_meeting_status_history` (
   KEY `fk_es_msh_changed_by` (`changed_by_user_id`),
   CONSTRAINT `fk_es_msh_changed_by` FOREIGN KEY (`changed_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_msh_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=63 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=67 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1256,7 +1547,7 @@ CREATE TABLE `es_meeting_user_view` (
   KEY `ix_es_meeting_user_view_meeting_recent` (`es_meeting_id`,`last_viewed_at`),
   CONSTRAINT `fk_es_meeting_user_view_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_meeting_user_view_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=152 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=166 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1316,6 +1607,68 @@ CREATE TABLE `es_recorded_outcome` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
+-- Table structure for table `es_small_group`
+--
+
+DROP TABLE IF EXISTS `es_small_group`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_small_group` (
+  `es_small_group_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_initiative_id` bigint NOT NULL,
+  `es_topic_id` bigint NOT NULL,
+  `es_topic_meeting_id` bigint DEFAULT NULL,
+  `small_group_name` varchar(200) NOT NULL,
+  `description` text,
+  `status` varchar(32) NOT NULL,
+  `cycle_start_date` date DEFAULT NULL,
+  `working_day_date` date DEFAULT NULL,
+  `closeout_date` date DEFAULT NULL,
+  `break_note` text,
+  `primary_product_areas` varchar(80) DEFAULT NULL,
+  `charter_url` varchar(2048) DEFAULT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_small_group_id`),
+  KEY `idx_es_small_group_initiative` (`es_initiative_id`,`cycle_start_date`),
+  KEY `idx_es_small_group_topic` (`es_topic_id`),
+  KEY `idx_es_small_group_series` (`es_topic_meeting_id`),
+  KEY `fk_es_small_group_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_small_group_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_small_group_initiative` FOREIGN KEY (`es_initiative_id`) REFERENCES `es_initiative` (`es_initiative_id`),
+  CONSTRAINT `fk_es_small_group_series` FOREIGN KEY (`es_topic_meeting_id`) REFERENCES `es_topic_meeting` (`es_topic_meeting_id`),
+  CONSTRAINT `fk_es_small_group_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `es_small_group_participant`
+--
+
+DROP TABLE IF EXISTS `es_small_group_participant`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `es_small_group_participant` (
+  `es_small_group_participant_id` bigint NOT NULL AUTO_INCREMENT,
+  `es_small_group_id` bigint NOT NULL,
+  `es_initiative_member_id` bigint NOT NULL,
+  `participant_role` varchar(200) DEFAULT NULL,
+  `participant_status` varchar(32) NOT NULL,
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`es_small_group_participant_id`),
+  UNIQUE KEY `uq_es_small_group_participant` (`es_small_group_id`,`es_initiative_member_id`),
+  KEY `idx_es_small_group_participant_member` (`es_initiative_member_id`),
+  KEY `fk_es_small_group_participant_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_es_small_group_participant_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`),
+  CONSTRAINT `fk_es_small_group_participant_group` FOREIGN KEY (`es_small_group_id`) REFERENCES `es_small_group` (`es_small_group_id`),
+  CONSTRAINT `fk_es_small_group_participant_member` FOREIGN KEY (`es_initiative_member_id`) REFERENCES `es_initiative_member` (`es_initiative_member_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
 -- Table structure for table `es_subscription`
 --
 
@@ -1344,7 +1697,7 @@ CREATE TABLE `es_subscription` (
   PRIMARY KEY (`es_subscription_id`),
   KEY `fk_es_subscription_managed_added_by` (`managed_added_by_user_id`),
   CONSTRAINT `fk_es_subscription_managed_added_by` FOREIGN KEY (`managed_added_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1618 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=1635 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1640,7 +1993,7 @@ CREATE TABLE `es_topic_meeting_member` (
   `updated_at` datetime(6) NOT NULL,
   `user_id` bigint DEFAULT NULL,
   PRIMARY KEY (`es_topic_meeting_member_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=101 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=102 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1780,7 +2133,7 @@ CREATE TABLE `es_topic_note` (
   CONSTRAINT `fk_es_topic_note_finalized_by` FOREIGN KEY (`finalized_by_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_topic_note_meeting` FOREIGN KEY (`es_meeting_id`) REFERENCES `es_meeting` (`es_meeting_id`),
   CONSTRAINT `fk_es_topic_note_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=32 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=38 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1806,7 +2159,7 @@ CREATE TABLE `es_topic_note_editor_history` (
   CONSTRAINT `fk_es_tneh_new_editor` FOREIGN KEY (`new_editor_user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_es_tneh_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
   CONSTRAINT `fk_es_tneh_previous_editor` FOREIGN KEY (`previous_editor_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=35 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=41 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1830,7 +2183,7 @@ CREATE TABLE `es_topic_note_revision` (
   KEY `fk_es_tnr_saved_by` (`saved_by_user_id`),
   CONSTRAINT `fk_es_tnr_note` FOREIGN KEY (`es_topic_note_id`) REFERENCES `es_topic_note` (`es_topic_note_id`),
   CONSTRAINT `fk_es_tnr_saved_by` FOREIGN KEY (`saved_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=98 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=114 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -1911,7 +2264,7 @@ CREATE TABLE `es_topic_resource` (
   CONSTRAINT `chk_topic_resource_source` CHECK ((((`stored_file_id` is not null) and (`external_url` is null) and (`resource_type` <> _utf8mb4'EXTERNAL_LINK')) or ((`stored_file_id` is null) and (`external_url` is not null) and (`resource_type` = _utf8mb4'EXTERNAL_LINK')))),
   CONSTRAINT `chk_topic_resource_status` CHECK ((`status` in (_utf8mb4'ACTIVE',_utf8mb4'ARCHIVED'))),
   CONSTRAINT `chk_topic_resource_type` CHECK ((`resource_type` in (_utf8mb4'IMAGE',_utf8mb4'PDF',_utf8mb4'DOCUMENT',_utf8mb4'PRESENTATION',_utf8mb4'EXTERNAL_LINK')))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2080,7 +2433,7 @@ CREATE TABLE `es_topic_user_view` (
   KEY `ix_es_topic_user_view_topic_recent` (`es_topic_id`,`last_viewed_at`),
   CONSTRAINT `fk_es_topic_user_view_topic` FOREIGN KEY (`es_topic_id`) REFERENCES `es_topic` (`es_topic_id`),
   CONSTRAINT `fk_es_topic_user_view_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=123 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=149 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2137,7 +2490,7 @@ CREATE TABLE `hub_stored_file` (
   UNIQUE KEY `uq_hub_stored_file_public_id` (`public_id`),
   KEY `fk_hub_stored_file_uploader` (`uploaded_by_user_id`),
   CONSTRAINT `fk_hub_stored_file_uploader` FOREIGN KEY (`uploaded_by_user_id`) REFERENCES `auth_user` (`user_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=64 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=66 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2219,7 +2572,33 @@ CREATE TABLE `legal_term_acceptance` (
   CONSTRAINT `fk_term_acceptance_term` FOREIGN KEY (`term_id`) REFERENCES `legal_term` (`term_id`),
   CONSTRAINT `fk_term_acceptance_user` FOREIGN KEY (`user_id`) REFERENCES `auth_user` (`user_id`),
   CONSTRAINT `fk_term_acceptance_workspace` FOREIGN KEY (`workspace_id`) REFERENCES `connect_workspace` (`workspace_id`)
-) ENGINE=InnoDB AUTO_INCREMENT=253 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=256 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Table structure for table `organization`
+--
+
+DROP TABLE IF EXISTS `organization`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `organization` (
+  `organization_id` bigint NOT NULL AUTO_INCREMENT,
+  `organization_name` varchar(200) NOT NULL,
+  `organization_type` varchar(40) NOT NULL,
+  `website_url` varchar(500) DEFAULT NULL,
+  `external_system` varchar(64) DEFAULT NULL,
+  `external_id` varchar(128) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_by_user_id` bigint DEFAULT NULL,
+  `created_at` datetime(6) NOT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`organization_id`),
+  KEY `idx_organization_name` (`organization_name`),
+  KEY `idx_organization_active_name` (`is_active`,`organization_name`),
+  KEY `fk_organization_created_by` (`created_by_user_id`),
+  CONSTRAINT `fk_organization_created_by` FOREIGN KEY (`created_by_user_id`) REFERENCES `auth_user` (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -2488,4 +2867,4 @@ CREATE TABLE `workspace_system_contact` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2026-10-16 13:49:06
+-- Dump completed on 2026-10-30  0:30:15
