@@ -152,7 +152,7 @@ Kept current by stream G.
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
 | P3 | In progress 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pending. |
 | H3 | In progress 2026-11-02 | `prompts/H3-author-review.md`, Cursor, branch `feature/h3-author-review`. |
-| P2 | In progress 2026-11-02 | `prompts/P2-process-guidance.md`, Codex in `content-publishing-process`. MCP section marked pending H4. |
+| P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Three decks flagged for review by `check_products.py`. Not yet tagged. |
 | Gate 3 | | |
 | H4 | Not started | |
 | E2 | Not started | |
