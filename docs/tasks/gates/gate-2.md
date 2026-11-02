@@ -3,7 +3,7 @@
 **Date:** 2026-10-30
 **Run by:** Stream G, with H2's API checks
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 4
-**Result:** Local part passes, approved by the product owner 2026-10-30. Production part (4.3, P3) not yet run.
+**Result:** Local part passes, approved by the product owner 2026-10-30. Production part (4.3) passes, run 2026-11-02.
 
 ## Summary
 
@@ -13,7 +13,7 @@
 | T3 author review (templates `v0.7.0`) | Pass | Browser checks against the mock by G (counts toward Gate 3) |
 | H2 registration and comments API | Pass | `feature/h2-comments` (`93e6cf7`), merged into `main` as `aecf429`; `mvn test` 361 run, 0 failures, 3 skipped |
 | End to end on local InteropHub | Pass | Pilot built on `v0.7.0` in InteropHub mode, served at `http://localhost:8001/`, against `feature/h2-comments` on Tomcat |
-| Production (P3) | Not run | Needs an InteropHub release and the pilot published in InteropHub mode |
+| Production (P3) | Pass | InteropHub 0.10.0 on production; pilot `v0.2.0` at `/latest/` in InteropHub mode |
 
 ## 4.1 API checks (run by H2 with curl)
 
@@ -52,12 +52,22 @@ Times shown in the guide matched local time for comments stored in UTC (`ApiTime
 
 ## 4.3 Production
 
-To do with P3: release InteropHub with the H1 and H2 database changes, register the pilot on production, publish the pilot with templates `v0.7.0` and the `comments` setting, then repeat 2.20 to 2.22 and 2.28 with two real accounts.
+Run 2026-11-02 against https://informatics.immregistries.org/hub with the pilot registered on production (topic 7, `/latest/` and `/main/`) and published as contextual-conditions `v0.2.0` with the `comments` setting. Two real accounts: the product owner's main account (an author of topic 7) in Chrome, driven by G, and a second account in an incognito window, used by the product owner.
+
+| # | Result | Note |
+|---|---|---|
+| 2.20 | Pass | New tab, guide not yet signed in: document, "Sign in to comment", no redirect |
+| 2.21 | Pass | Product owner signed in from the guide and posted three comments; later, "Sign in to comment" with an InteropHub session signed in immediately, no email |
+| 2.22 | Pass | Second account replied to two comments; both replies appeared in G's open page without reload (background refresh), nested correctly. The author account sees only Delete on another person's reply |
+| 2.28 | Pass | `/hub/guide/open?doc=contextual-conditions&comment=3` landed on `/latest/#comment-3`, scrolled and highlighted, still signed in |
 
 ## Follow-ups
+
+- Just after the sign-in redirect returns to the guide, the rail briefly shows the local-mode text "Comments are saved in this browser. Download them to share." before the signed-in view (T4, cosmetic).
+- The registration page's "Check without saving" clears the form after a passed check (in H3).
 
 - "Show closed" appears for a reader who cannot view comments (T4, cosmetic).
 
 ## Approval
 
-Product owner: local part approved 2026-10-30. Production part pending P3.
+Product owner: local part approved 2026-10-30. Production part run 2026-11-02; approval pending.
