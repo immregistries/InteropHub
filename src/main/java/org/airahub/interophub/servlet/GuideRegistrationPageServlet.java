@@ -33,6 +33,11 @@ public class GuideRegistrationPageServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (!CsrfTokenSupport.isValid(request)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                    "Invalid request token. Reload the page and try again.");
+            return;
+        }
         Viewer viewer = viewer(request, response);
         if (viewer == null) {
             return;
@@ -120,6 +125,8 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             String repositoryUrl = posted != null ? posted.repositoryUrl
                     : (creating || editing.repositoryUrl == null ? "" : editing.repositoryUrl);
             out.println("      <form class=\"aira-stack\" method=\"post\" action=\"" + action + "\">");
+            out.println("        <input type=\"hidden\" name=\"csrfToken\" value=\""
+                    + escape(CsrfTokenSupport.getOrCreateToken(request)) + "\">");
             out.println("        <input type=\"hidden\" name=\"mode\" value=\"" + (creating ? "create" : "update") + "\">");
             field(out, "documentKey", "Document key", documentKey, !creating);
             field(out, "title", "Title", title, false);

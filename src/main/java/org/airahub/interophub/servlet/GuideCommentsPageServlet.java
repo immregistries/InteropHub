@@ -37,6 +37,11 @@ public class GuideCommentsPageServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (!CsrfTokenSupport.isValid(request)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                    "Invalid request token. Reload the page and try again.");
+            return;
+        }
         Viewer viewer = viewer(request, response);
         if (viewer == null) {
             return;
@@ -151,9 +156,10 @@ public class GuideCommentsPageServlet extends HttpServlet {
                 if (threads.isEmpty()) {
                     out.println("      <p class=\"aira-meta\">No comments in this view.</p>");
                 }
+                String csrf = CsrfTokenSupport.getOrCreateToken(request);
                 for (int i = 0; i < threads.length(); i++) {
                     thread(out, action, document.documentKey, show, catalog.getJSONArray("dispositions"),
-                            threads.getJSONObject(i));
+                            threads.getJSONObject(i), csrf);
                 }
             }
             out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/es/topic-manage/"
@@ -165,7 +171,7 @@ public class GuideCommentsPageServlet extends HttpServlet {
     }
 
     private static void thread(PrintWriter out, String action, String documentKey, String show, JSONArray dispositions,
-            JSONObject thread) {
+            JSONObject thread, String csrf) {
         String state = thread.optString("state", "");
         String updatedAt = thread.optString("updatedAt", "");
         long id = thread.getLong("id");
@@ -188,13 +194,14 @@ public class GuideCommentsPageServlet extends HttpServlet {
         out.println("          <p><a class=\"aira-inline-link\" href=\"" + guideLink(action, documentKey, id)
                 + "\">Open in the guide</a></p>");
         if ("OPEN".equals(state) || "DISPOSED".equals(state)) {
-            dispositionForm(out, action, documentKey, show, dispositions, thread, id, updatedAt);
+            dispositionForm(out, action, documentKey, show, dispositions, thread, id, updatedAt, csrf);
             actionForm(out, action, documentKey, show, id, updatedAt, "close", "Close",
-                    "Closing hides this comment in the guide until it is reopened. Replies are refused while it is closed.");
+                    "Closing hides this comment in the guide until it is reopened. Replies are refused while it is closed.",
+                    csrf);
         } else if ("CLOSED".equals(state)) {
-            actionForm(out, action, documentKey, show, id, updatedAt, "reopen", "Reopen", null);
+            actionForm(out, action, documentKey, show, id, updatedAt, "reopen", "Reopen", null, csrf);
         }
-        deleteForm(out, action, documentKey, show, id, true);
+        deleteForm(out, action, documentKey, show, id, true, csrf);
         JSONArray replies = thread.optJSONArray("replies");
         if (replies != null) {
             for (int i = 0; i < replies.length(); i++) {
@@ -207,7 +214,7 @@ public class GuideCommentsPageServlet extends HttpServlet {
                         : reply.optString("text", "")) + "</p>");
                 out.println("            <p class=\"aira-meta\">" + escape(reply.getJSONObject("author").optString("displayName", ""))
                         + " · " + escape(date(reply.optString("createdAt", null))) + "</p>");
-                deleteForm(out, action, documentKey, show, reply.getLong("id"), false);
+                deleteForm(out, action, documentKey, show, reply.getLong("id"), false, csrf);
                 out.println("          </article>");
             }
         }
@@ -216,11 +223,11 @@ public class GuideCommentsPageServlet extends HttpServlet {
     }
 
     private static void dispositionForm(PrintWriter out, String action, String documentKey, String show,
-            JSONArray dispositions, JSONObject thread, long id, String updatedAt) {
+            JSONArray dispositions, JSONObject thread, long id, String updatedAt, String csrf) {
         String current = thread.isNull("disposition") ? "" : thread.getJSONObject("disposition").optString("code", "");
         String note = thread.isNull("changeNote") ? "" : thread.optString("changeNote", "");
         out.println("          <form class=\"aira-stack\" method=\"post\" action=\"" + action + "\">");
-        hidden(out, documentKey, show, id, updatedAt);
+        hidden(out, documentKey, show, id, updatedAt, csrf);
         out.println("            <div class=\"aira-field\">");
         out.println("              <label class=\"aira-label\" for=\"disposition-" + id + "\">Disposition</label>");
         out.println("              <select class=\"aira-select\" id=\"disposition-" + id + "\" name=\"dispositionCode\">");
@@ -244,14 +251,14 @@ public class GuideCommentsPageServlet extends HttpServlet {
         out.println("            </p>");
         out.println("          </form>");
         if (!current.isEmpty()) {
-            actionForm(out, action, documentKey, show, id, updatedAt, "clear", "Clear disposition", null);
+            actionForm(out, action, documentKey, show, id, updatedAt, "clear", "Clear disposition", null, csrf);
         }
     }
 
     private static void actionForm(PrintWriter out, String action, String documentKey, String show, long id,
-            String updatedAt, String intent, String label, String help) {
+            String updatedAt, String intent, String label, String help, String csrf) {
         out.println("          <form method=\"post\" action=\"" + action + "\">");
-        hidden(out, documentKey, show, id, updatedAt);
+        hidden(out, documentKey, show, id, updatedAt, csrf);
         if (help != null) {
             out.println("            <p class=\"aira-field-help\">" + escape(help) + "</p>");
         }
@@ -261,11 +268,11 @@ public class GuideCommentsPageServlet extends HttpServlet {
     }
 
     private static void deleteForm(PrintWriter out, String action, String documentKey, String show, long id,
-            boolean thread) {
+            boolean thread, String csrf) {
         out.println("          <details>");
         out.println("            <summary>Delete</summary>");
         out.println("            <form class=\"aira-stack aira-stack--compact\" method=\"post\" action=\"" + action + "\">");
-        hidden(out, documentKey, show, id, null);
+        hidden(out, documentKey, show, id, null, csrf);
         out.println("              <p>" + (thread
                 ? "Delete this comment and its replies? They stay in the audit record and disappear from the guide."
                 : "Delete this reply? It stays in the audit record and disappears from the guide.") + "</p>");
@@ -274,7 +281,8 @@ public class GuideCommentsPageServlet extends HttpServlet {
         out.println("          </details>");
     }
 
-    private static void hidden(PrintWriter out, String documentKey, String show, long id, String updatedAt) {
+    private static void hidden(PrintWriter out, String documentKey, String show, long id, String updatedAt, String csrf) {
+        out.println("            <input type=\"hidden\" name=\"csrfToken\" value=\"" + escape(csrf) + "\">");
         out.println("            <input type=\"hidden\" name=\"document\" value=\"" + escape(documentKey) + "\">");
         out.println("            <input type=\"hidden\" name=\"show\" value=\"" + escape(show) + "\">");
         out.println("            <input type=\"hidden\" name=\"id\" value=\"" + id + "\">");
