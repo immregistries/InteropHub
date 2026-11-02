@@ -151,8 +151,8 @@ Kept current by stream G.
 | Gate 2 | Local part approved 2026-10-30 | `gates/gate-2.md`. Release 0.10.0 deployed to production 2026-11-02 (AART #3957); database frozen as `db/v0.10_initiatives_and_topic_reference_comments.sql` (`9008a2d`). Production: product owner signed in and commented on the live pilot (2.21 passes); second-account checks (2.22, 2.28) still to run. AART #3957 closed. |
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
 | P3 | In progress 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pending. |
-| H3 | Prompt written 2026-11-02 | `prompts/H3-author-review.md`, for a fresh Cursor thread. |
-| P2 | Prompt written 2026-11-02 | `prompts/P2-process-guidance.md`, for Codex in `content-publishing-process`. MCP section marked pending H4. |
+| H3 | In progress 2026-11-02 | `prompts/H3-author-review.md`, Cursor, branch `feature/h3-author-review`. |
+| P2 | In progress 2026-11-02 | `prompts/P2-process-guidance.md`, Codex in `content-publishing-process`. MCP section marked pending H4. |
 | Gate 3 | | |
 | H4 | Not started | |
 | E2 | Not started | |
