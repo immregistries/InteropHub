@@ -72,6 +72,11 @@ public class GuideApiServlet extends HttpServlet {
         handle(request, response, () -> post(request, response));
     }
 
+    @Override
+    protected void doDelete(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        handle(request, response, () -> delete(request, response));
+    }
+
     private void handle(HttpServletRequest request, HttpServletResponse response, Action action) throws IOException {
         try {
             action.run();
@@ -104,7 +109,15 @@ public class GuideApiServlet extends HttpServlet {
             if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
                 return;
             }
-            write(response, HttpServletResponse.SC_OK, comments.comment(user(request), commentId(parts[4])));
+            write(response, HttpServletResponse.SC_OK, comments.comment(user(request), positiveId(parts[4], "That comment was not found.")));
+            return;
+        }
+        if (parts.length == 5 && "review-flags".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_OK,
+                    comments.reviewFlags(user(request), parts[3], request.getParameter("includeCleared")));
             return;
         }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
@@ -137,7 +150,37 @@ public class GuideApiServlet extends HttpServlet {
             if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
                 return;
             }
-            write(response, HttpServletResponse.SC_OK, comments.withdraw(user(request), tokenId(request), commentId(parts[4])));
+            write(response, HttpServletResponse.SC_OK, comments.withdraw(user(request), tokenId(request),
+                    positiveId(parts[4], "That comment was not found.")));
+            return;
+        }
+        if (parts.length == 5 && "review-flags".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
+                return;
+            }
+            GuideCommentService.FlagResult flagged = comments.flag(user(request), parts[3], jsonBody(request));
+            write(response, flagged.status(), flagged.flag());
+            return;
+        }
+        GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
+    }
+
+    private void delete(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        String[] parts = parts(request);
+        if (parts.length == 5 && "comments".equals(parts[3])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
+                return;
+            }
+            comments.delete(user(request), tokenId(request), positiveId(parts[4], "That comment was not found."));
+            response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+            return;
+        }
+        if (parts.length == 6 && "review-flags".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
+                return;
+            }
+            comments.clearFlag(user(request), parts[3], positiveId(parts[5], "That flag was not found."));
+            response.setStatus(HttpServletResponse.SC_NO_CONTENT);
             return;
         }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
@@ -169,7 +212,8 @@ public class GuideApiServlet extends HttpServlet {
                 return;
             }
             write(response, HttpServletResponse.SC_OK,
-                    comments.patchText(user(request), tokenId(request), commentId(parts[4]), jsonBody(request)));
+                    comments.patch(user(request), tokenId(request), positiveId(parts[4], "That comment was not found."),
+                            jsonBody(request)));
             return;
         }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
@@ -257,7 +301,7 @@ public class GuideApiServlet extends HttpServlet {
         throw GuideApiException.invalidRequest("dryRun must be true or false.");
     }
 
-    private static long commentId(String raw) {
+    private static long positiveId(String raw, String missing) {
         try {
             long id = Long.parseLong(raw);
             if (id <= 0) {
@@ -265,7 +309,7 @@ public class GuideApiServlet extends HttpServlet {
             }
             return id;
         } catch (NumberFormatException ex) {
-            throw GuideApiException.notFound("That comment was not found.");
+            throw GuideApiException.notFound(missing);
         }
     }
 

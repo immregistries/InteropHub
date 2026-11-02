@@ -8,6 +8,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
 import org.airahub.interophub.model.User;
@@ -22,14 +23,17 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * Comment reads and the commenter actions in contract 5.1 and 5.3–5.7.
- * Author disposition, close, re-attach, and delete stay refused until H3.
+ * Comment reads and writes for contract 5.1 and 5.3–5.8, and review flags in Section 6.
  */
 public class GuideCommentService {
     static final int EDIT_WINDOW_DAYS = 14;
+    public static final int PANEL_LIMIT = 5;
     private static final int MAX_TEXT = 4000;
+    private static final int MAX_NOTE = 500;
     private static final Pattern ANCHOR = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9_-]*$");
     private static final Set<String> STATES = Set.of("OPEN", "DISPOSED", "CLOSED", "WITHDRAWN");
+    private static final Set<String> PATCH_FIELDS = Set.of(
+            "text", "expectedUpdatedAt", "dispositionCode", "changeNote", "state", "anchor", "blockIndex", "snippet");
     private static final List<String> AUTHOR_FIELDS = List.of(
             "dispositionCode", "changeNote", "state", "anchor", "blockIndex", "snippet");
 
@@ -131,44 +135,124 @@ public class GuideCommentService {
         return threadJson(loaded, parent == null ? row.id : parent.id, user);
     }
 
-    public JSONObject patchText(User user, Long tokenId, long id, JSONObject body) {
-        refuseAuthorFields(body);
-        refuseUnknown(body, Set.of("text", "expectedUpdatedAt"));
+    public JSONObject patch(User user, Long tokenId, long id, JSONObject body) {
+        refuseUnknown(body, PATCH_FIELDS);
         CommentRow row = live(store.comment(id));
         CommentRow parent = parentOf(row);
         CommentRow thread = parent == null ? row : parent;
         Loaded loaded = requireComment(user, thread);
-        LocalDateTime now = LocalDateTime.now();
-        String replacement = null;
-        if (body.has("text")) {
-            replacement = requiredText(body);
+        if (parent != null) {
+            for (String field : AUTHOR_FIELDS) {
+                if (body.has(field)) {
+                    throw GuideApiException.invalidField(field, "That field is not accepted on a reply.");
+                }
+            }
+        } else if (hasAuthorField(body) && !loaded.canEdit) {
+            throw GuideApiException.forbidden("Only an author can change that.");
         }
+        PatchPlan plan = readPatch(body, parent == null);
+        validatePatch(plan, row, parent, user);
         checkExpected(body, thread, loaded, user);
-        if (replacement == null) {
+        List<AuditRow> audits = applyPatch(plan, row, user, tokenId);
+        if (audits.isEmpty()) {
             return threadJson(loaded, thread.id, user);
         }
-        if (!sameUser(row.userId, user)) {
-            throw GuideApiException.forbidden("You cannot change another person's comment.");
+        if (parent != null) {
+            parent.updatedAt = row.updatedAt;
         }
-        if (parent == null && ("WITHDRAWN".equals(row.state) || "CLOSED".equals(row.state))) {
-            throw GuideApiException.invalidState("This comment cannot be edited in its current state.");
+        store.updateComment(row, parent, audits);
+        return threadJson(loaded, thread.id, user);
+    }
+
+    public void delete(User user, Long tokenId, long id) {
+        CommentRow row = live(store.comment(id));
+        CommentRow parent = parentOf(row);
+        CommentRow thread = parent == null ? row : parent;
+        Loaded loaded = requireComment(user, thread);
+        if (!loaded.canEdit) {
+            throw GuideApiException.forbidden("Only an author can delete a comment.");
         }
-        if (parent != null && row.withdrawn()) {
-            throw GuideApiException.invalidState("This reply cannot be edited after it is withdrawn.");
+        LocalDateTime now = LocalDateTime.now();
+        List<CommentRow> targets = new ArrayList<>();
+        targets.add(row);
+        if (parent == null) {
+            for (CommentRow reply : replies(store.comments(row.documentId), row.id)) {
+                if (!reply.deleted()) {
+                    targets.add(reply);
+                }
+            }
         }
-        if (!withinWindow(row.createdAt, now)) {
-            throw GuideApiException.editWindowClosed();
+        List<AuditRow> audits = new ArrayList<>();
+        for (CommentRow target : targets) {
+            target.deletedAt = now;
+            target.deletedByUserId = user.getUserId();
+            target.updatedAt = now;
+            audits.add(auditFor(target.id, user, tokenId, now, "deleted", "false", "true"));
         }
-        String text = replacement;
-        String old = row.text;
-        row.text = text;
-        row.editedAt = now;
-        row.updatedAt = now;
         if (parent != null) {
             parent.updatedAt = now;
+            targets.add(parent);
         }
-        store.updateComment(row, parent, List.of(audit(user, tokenId, now, "text", old, text)));
-        return threadJson(loaded, thread.id, user);
+        store.updateComments(targets, audits);
+    }
+
+    public JSONObject reviewFlags(User user, String documentKey, String includeCleared) {
+        Loaded loaded = requireView(user, documentKey);
+        boolean include = includeCleared(includeCleared);
+        List<FlagRow> rows = store.flags(loaded.document.id, include);
+        Map<Long, Person> people = store.people(userIds(List.of(), rows));
+        JSONObject json = new JSONObject();
+        json.put("serverTime", ApiTime.format(ApiTime.now()));
+        json.put("reviewFlags", flags(rows, loaded.document.documentKey, people));
+        return json;
+    }
+
+    public FlagResult flag(User user, String documentKey, JSONObject body) {
+        refuseUnknown(body, Set.of("anchor", "note"));
+        Loaded loaded = requireComment(user, documentKey);
+        if (!loaded.canEdit) {
+            throw GuideApiException.forbidden("Only an author can flag an area for review.");
+        }
+        String anchor = requiredAnchor(body);
+        String note = requiredNote(body);
+        LocalDateTime now = LocalDateTime.now();
+        FlagRow existing = store.activeFlag(loaded.document.id, anchor);
+        if (existing != null) {
+            if (!note.equals(existing.note)) {
+                existing.note = note;
+                existing.updatedAt = now;
+                store.saveFlag(existing);
+            }
+            return new FlagResult(200, flagJson(existing, loaded.document.documentKey, user));
+        }
+        FlagRow row = new FlagRow();
+        row.documentId = loaded.document.id;
+        row.anchor = anchor;
+        row.note = note;
+        row.createdByUserId = user.getUserId();
+        row.createdAt = now;
+        row.updatedAt = now;
+        store.insertFlag(row);
+        return new FlagResult(201, flagJson(row, loaded.document.documentKey, user));
+    }
+
+    public void clearFlag(User user, String documentKey, long id) {
+        Loaded loaded = requireComment(user, documentKey);
+        if (!loaded.canEdit) {
+            throw GuideApiException.forbidden("Only an author can clear a review flag.");
+        }
+        FlagRow row = store.flag(id);
+        if (row == null || row.documentId != loaded.document.id) {
+            throw GuideApiException.notFound("That flag was not found.");
+        }
+        if (row.cleared()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        row.clearedAt = now;
+        row.clearedByUserId = user.getUserId();
+        row.updatedAt = now;
+        store.saveFlag(row);
     }
 
     public JSONObject withdraw(User user, Long tokenId, long id) {
@@ -349,8 +433,9 @@ public class GuideCommentService {
             json.put("createdBy", GuideResponses.person(people.get(flag.createdByUserId)));
             json.put("createdAt", ApiTime.format(flag.createdAt));
             json.put("updatedAt", ApiTime.format(flag.updatedAt));
-            json.put("clearedAt", JSONObject.NULL);
-            json.put("clearedBy", JSONObject.NULL);
+            json.put("clearedAt", time(flag.clearedAt));
+            json.put("clearedBy", flag.clearedByUserId == null
+                    ? JSONObject.NULL : GuideResponses.person(people.get(flag.clearedByUserId)));
             array.put(json);
         }
         return array;
@@ -380,12 +465,264 @@ public class GuideCommentService {
         }
     }
 
-    private static void refuseAuthorFields(JSONObject body) {
-        for (String field : AUTHOR_FIELDS) {
-            if (body.has(field)) {
-                throw GuideApiException.invalidField(field, "That field is not accepted on this request.");
+    private PatchPlan readPatch(JSONObject body, boolean topLevel) {
+        PatchPlan plan = new PatchPlan();
+        if (body.has("text")) {
+            plan.text = requiredText(body);
+            plan.textSet = true;
+        }
+        if (topLevel && body.has("dispositionCode")) {
+            plan.dispositionSet = true;
+            plan.dispositionCode = dispositionCode(body);
+        }
+        if (topLevel && body.has("changeNote")) {
+            plan.changeNoteSet = true;
+            plan.changeNote = changeNoteValue(body);
+        }
+        if (topLevel && body.has("state")) {
+            plan.stateSet = true;
+            plan.requestedState = requestedState(body);
+        }
+        boolean reattach = topLevel && (body.has("anchor") || body.has("blockIndex") || body.has("snippet"));
+        if (reattach) {
+            if (!body.has("anchor") || body.isNull("anchor")) {
+                throw GuideApiException.invalidField("anchor", "An anchor is required to re-attach a comment.");
+            }
+            plan.anchor = requiredAnchor(body);
+            plan.anchorSet = true;
+            if (body.has("blockIndex")) {
+                plan.blockIndex = requiredBlockIndex(body);
+                plan.blockIndexSet = true;
+            }
+            if (body.has("snippet")) {
+                plan.snippet = optionalSnippet(body);
+                plan.snippetSet = true;
             }
         }
+        return plan;
+    }
+
+    private void validatePatch(PatchPlan plan, CommentRow row, CommentRow parent, User user) {
+        if (plan.textSet) {
+            if (!sameUser(row.userId, user)) {
+                throw GuideApiException.forbidden("You cannot change another person's comment.");
+            }
+            if (parent == null && ("WITHDRAWN".equals(row.state) || "CLOSED".equals(row.state))) {
+                throw GuideApiException.invalidState("This comment cannot be edited in its current state.");
+            }
+            if (parent != null && row.withdrawn()) {
+                throw GuideApiException.invalidState("This reply cannot be edited after it is withdrawn.");
+            }
+            if (!withinWindow(row.createdAt, LocalDateTime.now())) {
+                throw GuideApiException.editWindowClosed();
+            }
+        }
+        if (parent != null) {
+            return;
+        }
+        boolean closedOrWithdrawn = "CLOSED".equals(row.state) || "WITHDRAWN".equals(row.state);
+        if (plan.dispositionSet && closedOrWithdrawn) {
+            throw GuideApiException.invalidState("A disposition cannot be changed in this comment's current state.");
+        }
+        boolean setting = plan.dispositionSet && plan.dispositionCode != null;
+        boolean clearing = plan.dispositionSet && plan.dispositionCode == null;
+        boolean dispositionRemains = setting || (row.dispositionCode != null && !clearing);
+        if (setting && plan.changeNote == null && !plan.changeNoteSet && (row.changeNote == null || row.changeNote.isBlank())) {
+            throw GuideApiException.invalidField("changeNote", "A change note is required when setting a disposition.");
+        }
+        if (setting && plan.changeNoteSet && plan.changeNote == null) {
+            throw GuideApiException.invalidField("changeNote", "A change note is required when setting a disposition.");
+        }
+        if (plan.changeNoteSet && plan.changeNote != null && !dispositionRemains) {
+            throw GuideApiException.invalidField("changeNote", "A change note can only be set with a disposition.");
+        }
+        if (plan.changeNoteSet && plan.changeNote == null && dispositionRemains) {
+            throw GuideApiException.invalidField("changeNote", "A change note is required when a disposition is set.");
+        }
+        if (plan.stateSet) {
+            if ("CLOSED".equals(plan.requestedState)) {
+                if (!"OPEN".equals(row.state) && !"DISPOSED".equals(row.state)) {
+                    throw GuideApiException.invalidState("This comment cannot be closed in its current state.");
+                }
+            } else if (!"CLOSED".equals(row.state)) {
+                throw GuideApiException.invalidState("Only a closed comment can be reopened.");
+            }
+        }
+    }
+
+    private List<AuditRow> applyPatch(PatchPlan plan, CommentRow row, User user, Long tokenId) {
+        String newText = plan.textSet ? plan.text : row.text;
+        String newAnchor = plan.anchorSet ? plan.anchor : row.anchor;
+        Integer newBlock = plan.blockIndexSet ? plan.blockIndex : row.blockIndex;
+        String newSnippet = plan.snippetSet ? plan.snippet : row.snippet;
+        String newDisposition = row.dispositionCode;
+        String newNote = row.changeNote;
+        String newState = row.state;
+        if (plan.dispositionSet) {
+            if (plan.dispositionCode == null) {
+                newDisposition = null;
+                newNote = null;
+                if ("DISPOSED".equals(newState)) {
+                    newState = "OPEN";
+                }
+            } else {
+                newDisposition = plan.dispositionCode;
+                if (plan.changeNoteSet && plan.changeNote != null) {
+                    newNote = plan.changeNote;
+                }
+                if ("OPEN".equals(newState)) {
+                    newState = "DISPOSED";
+                }
+            }
+        } else if (plan.changeNoteSet) {
+            newNote = plan.changeNote;
+        }
+        if (plan.stateSet) {
+            newState = "CLOSED".equals(plan.requestedState)
+                    ? "CLOSED"
+                    : (newDisposition != null ? "DISPOSED" : "OPEN");
+        }
+        boolean textChanged = plan.textSet && !Objects.equals(row.text, newText);
+        boolean anchorChanged = plan.anchorSet && !Objects.equals(row.anchor, newAnchor);
+        boolean blockChanged = plan.blockIndexSet && !Objects.equals(row.blockIndex, newBlock);
+        boolean snippetChanged = plan.snippetSet && !Objects.equals(row.snippet, newSnippet);
+        boolean dispositionChanged = !Objects.equals(row.dispositionCode, newDisposition);
+        boolean noteChanged = !Objects.equals(row.changeNote, newNote);
+        boolean stateChanged = !Objects.equals(row.state, newState);
+        if (!textChanged && !anchorChanged && !blockChanged && !snippetChanged
+                && !dispositionChanged && !noteChanged && !stateChanged) {
+            return List.of();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        List<AuditRow> audits = new ArrayList<>();
+        if (textChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "text", row.text, newText));
+            row.text = newText;
+            row.editedAt = now;
+        }
+        if (anchorChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "anchor", row.anchor, newAnchor));
+            row.anchor = newAnchor;
+        }
+        if (blockChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "blockIndex",
+                    row.blockIndex == null ? null : Integer.toString(row.blockIndex),
+                    newBlock == null ? null : Integer.toString(newBlock)));
+            row.blockIndex = newBlock;
+        }
+        if (snippetChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "snippet", row.snippet, newSnippet));
+            row.snippet = newSnippet;
+        }
+        if (dispositionChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "dispositionCode", row.dispositionCode, newDisposition));
+            row.dispositionCode = newDisposition;
+            if (newDisposition == null) {
+                row.disposedAt = null;
+                row.disposedByUserId = null;
+            } else {
+                row.disposedAt = now;
+                row.disposedByUserId = user.getUserId();
+            }
+        }
+        if (noteChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "changeNote", row.changeNote, newNote));
+            row.changeNote = newNote;
+        }
+        if (stateChanged) {
+            audits.add(auditFor(row.id, user, tokenId, now, "state", row.state, newState));
+            if ("CLOSED".equals(newState)) {
+                row.closedAt = now;
+                row.closedByUserId = user.getUserId();
+            } else if ("CLOSED".equals(row.state)) {
+                row.closedAt = null;
+                row.closedByUserId = null;
+            }
+            row.state = newState;
+        }
+        row.updatedAt = now;
+        return audits;
+    }
+
+    private JSONObject flagJson(FlagRow flag, String documentKey, User actor) {
+        Map<Long, Person> people = store.people(userIds(List.of(), List.of(flag)));
+        if (actor != null && actor.getUserId() != null && !people.containsKey(actor.getUserId())) {
+            Person person = store.personOf(actor);
+            if (person != null) {
+                people.put(actor.getUserId(), person);
+            }
+        }
+        return flags(List.of(flag), documentKey, people).getJSONObject(0);
+    }
+
+    private String dispositionCode(JSONObject body) {
+        if (body.isNull("dispositionCode")) {
+            return null;
+        }
+        if (!(body.get("dispositionCode") instanceof String raw)) {
+            throw GuideApiException.invalidField("dispositionCode", "Disposition must be one of the guide's dispositions.");
+        }
+        String code = raw.trim();
+        for (Disposition disposition : store.dispositions()) {
+            if (code.equals(disposition.code)) {
+                return code;
+            }
+        }
+        throw GuideApiException.invalidField("dispositionCode", "Disposition must be one of the guide's dispositions.");
+    }
+
+    private static String changeNoteValue(JSONObject body) {
+        if (body.isNull("changeNote")) {
+            return null;
+        }
+        if (!(body.get("changeNote") instanceof String raw)) {
+            throw GuideApiException.invalidField("changeNote", "Change note must be 1 to 500 characters.");
+        }
+        String note = raw.trim();
+        if (note.isEmpty() || note.length() > MAX_NOTE) {
+            throw GuideApiException.invalidField("changeNote", "Change note must be 1 to 500 characters.");
+        }
+        return note;
+    }
+
+    private static String requestedState(JSONObject body) {
+        if (body.isNull("state") || !(body.get("state") instanceof String raw)) {
+            throw GuideApiException.invalidField("state", "State must be CLOSED or OPEN.");
+        }
+        if (!"CLOSED".equals(raw) && !"OPEN".equals(raw)) {
+            throw GuideApiException.invalidField("state", "State must be CLOSED or OPEN.");
+        }
+        return raw;
+    }
+
+    private static String requiredNote(JSONObject body) {
+        if (!body.has("note") || body.isNull("note") || !(body.get("note") instanceof String raw)) {
+            throw GuideApiException.invalidField("note", "Note must be 1 to 500 characters.");
+        }
+        String note = raw.trim();
+        if (note.isEmpty() || note.length() > MAX_NOTE) {
+            throw GuideApiException.invalidField("note", "Note must be 1 to 500 characters.");
+        }
+        return note;
+    }
+
+    private static boolean includeCleared(String value) {
+        if (value == null || value.isBlank() || "false".equals(value)) {
+            return false;
+        }
+        if ("true".equals(value)) {
+            return true;
+        }
+        throw GuideApiException.invalidRequest("includeCleared must be true or false.");
+    }
+
+    private static boolean hasAuthorField(JSONObject body) {
+        for (String field : AUTHOR_FIELDS) {
+            if (body.has(field)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void refuseUnknown(JSONObject body, Set<String> allowed) {
@@ -513,6 +850,9 @@ public class GuideCommentService {
         }
         for (FlagRow flag : flags) {
             ids.add(flag.createdByUserId);
+            if (flag.clearedByUserId != null) {
+                ids.add(flag.clearedByUserId);
+            }
         }
         return ids;
     }
@@ -648,7 +988,34 @@ public class GuideCommentService {
         return audit;
     }
 
+    private static AuditRow auditFor(long commentId, User user, Long tokenId, LocalDateTime at,
+            String field, String oldValue, String newValue) {
+        AuditRow audit = audit(user, tokenId, at, field, oldValue, newValue);
+        audit.commentId = commentId;
+        return audit;
+    }
+
     public record Posted(long id, JSONObject thread) {
+    }
+
+    public record FlagResult(int status, JSONObject flag) {
+    }
+
+    private static final class PatchPlan {
+        boolean textSet;
+        String text;
+        boolean dispositionSet;
+        String dispositionCode;
+        boolean changeNoteSet;
+        String changeNote;
+        boolean stateSet;
+        String requestedState;
+        boolean anchorSet;
+        String anchor;
+        boolean blockIndexSet;
+        Integer blockIndex;
+        boolean snippetSet;
+        String snippet;
     }
 
     private record Loaded(DocumentRow document, TopicRow topic, boolean canView, boolean canEdit) {
@@ -675,11 +1042,23 @@ public class GuideCommentService {
 
         List<FlagRow> activeFlags(long documentId);
 
+        List<FlagRow> flags(long documentId, boolean includeCleared);
+
+        FlagRow flag(long id);
+
+        FlagRow activeFlag(long documentId, String anchor);
+
+        void insertFlag(FlagRow row);
+
+        void saveFlag(FlagRow row);
+
         CommentRow comment(long id);
 
         void insertComment(CommentRow row, CommentRow parent, List<AuditRow> audits);
 
         void updateComment(CommentRow row, CommentRow parent, List<AuditRow> audits);
+
+        void updateComments(List<CommentRow> rows, List<AuditRow> audits);
 
         String topicUrl(long topicId);
     }

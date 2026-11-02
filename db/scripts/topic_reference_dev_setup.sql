@@ -181,3 +181,88 @@ FROM DUAL
 WHERE @pilot_document_id IS NOT NULL
   AND @pilot_allow_id IS NOT NULL
   AND NOT EXISTS (SELECT 1 FROM es_guide_document_url WHERE url = 'http://localhost:8001/');
+
+-- H3: one comment in each state, a reply, and one active flag, so the topic
+-- page panel and the comment management page have something to show after a
+-- refresh. source_note marks the rows so this stays idempotent.
+SET @reader_id = (SELECT user_id FROM auth_user WHERE email_normalized = 'reader.guide-test@example.invalid');
+
+INSERT INTO es_guide_comment
+  (guide_document_id, anchor_id, block_index, block_snippet, comment_text, state, user_id, source_note,
+   created_at, updated_at)
+SELECT @pilot_document_id, 'secure-transport', 0, 'Each connection is authenticated with mutual TLS.',
+  'Should this say which certificate authorities are acceptable?', 'OPEN', @reader_id, 'dev-setup:open',
+  NOW(6), NOW(6)
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @reader_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_comment
+    WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:open'
+  );
+
+INSERT INTO es_guide_comment
+  (guide_document_id, anchor_id, block_index, block_snippet, comment_text, state, disposition_code, change_note,
+   user_id, source_note, created_at, updated_at, disposed_at, disposed_by_user_id)
+SELECT @pilot_document_id, 'consent-requirements', 0, 'Consent is recorded before the exchange.',
+  'Please name the consent framework.', 'DISPOSED', 'PERSUASIVE',
+  'Language updated to point to the trust framework.', @reader_id, 'dev-setup:disposed',
+  NOW(6), NOW(6), NOW(6), @author_id
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @reader_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_comment
+    WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:disposed'
+  );
+
+INSERT INTO es_guide_comment
+  (guide_document_id, anchor_id, block_index, block_snippet, comment_text, state, disposition_code, change_note,
+   user_id, source_note, created_at, updated_at, disposed_at, disposed_by_user_id, closed_at, closed_by_user_id)
+SELECT @pilot_document_id, 'secure-transport', 1, 'Certificates are rotated on a schedule.',
+  'How often is rotation required?', 'CLOSED', 'QUESTION_ANSWERED', 'Answered in the operations section.',
+  @reader_id, 'dev-setup:closed', NOW(6), NOW(6), NOW(6), @author_id, NOW(6), @author_id
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @reader_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_comment
+    WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:closed'
+  );
+
+INSERT INTO es_guide_comment
+  (guide_document_id, anchor_id, block_index, block_snippet, comment_text, state, user_id, source_note,
+   created_at, updated_at, withdrawn_at)
+SELECT @pilot_document_id, 'consent-requirements', 1, 'A patient may decline.',
+  'Withdrawn example for local review.', 'WITHDRAWN', @reader_id, 'dev-setup:withdrawn',
+  NOW(6), NOW(6), NOW(6)
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @reader_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_comment
+    WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:withdrawn'
+  );
+
+SET @open_comment_id = (
+  SELECT guide_comment_id FROM es_guide_comment
+  WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:open'
+);
+
+INSERT INTO es_guide_comment
+  (guide_document_id, parent_comment_id, comment_text, state, user_id, source_note, created_at, updated_at)
+SELECT @pilot_document_id, @open_comment_id, 'The framework already lists them.', 'OPEN', @author_id,
+  'dev-setup:reply', NOW(6), NOW(6)
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @open_comment_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_comment
+    WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:reply'
+  );
+
+INSERT INTO es_guide_review_flag
+  (guide_document_id, anchor_id, note, created_by_user_id, created_at, updated_at)
+SELECT @pilot_document_id, 'consent-requirements', 'Please review: rewrote the consent requirements.',
+  @author_id, NOW(6), NOW(6)
+FROM DUAL
+WHERE @pilot_document_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_review_flag
+    WHERE guide_document_id = @pilot_document_id AND anchor_id = 'consent-requirements' AND cleared_at IS NULL
+  );

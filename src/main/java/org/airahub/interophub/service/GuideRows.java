@@ -109,6 +109,7 @@ public final class GuideRows {
     }
 
     public static final class AuditRow {
+        Long commentId;
         long userId;
         Long tokenId;
         LocalDateTime at;
@@ -118,12 +119,19 @@ public final class GuideRows {
     }
 
     public static final class FlagRow {
-        long id;
+        Long id;
+        long documentId;
         String anchor;
         String note;
         long createdByUserId;
         LocalDateTime createdAt;
         LocalDateTime updatedAt;
+        LocalDateTime clearedAt;
+        Long clearedByUserId;
+
+        boolean cleared() {
+            return clearedAt != null;
+        }
     }
 
     public static final class AllowInsert {
