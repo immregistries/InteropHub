@@ -137,7 +137,8 @@ Kept current by stream G.
 |---|---|---|
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) completed from H0 the same day. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
-| H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
+| H0 MCP experiment | Done 2026-10-30 | Registration page "Check without saving" clears the form after a passed check | H3 | Found registering the pilot on production. Included in the H3 prompt (task 6). |
+| Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | Done 2026-10-30, merged | Merged as `baab8ec`. Runtime checks 1.40 to 1.44 pass; import regression found and fixed (`9dbfdb3`). |
@@ -147,9 +148,10 @@ Kept current by stream G.
 | Gate 1 | Passed 2026-10-30 | Approved by the product owner. | `gates/gate-1.md`. Merged `main`: 352 tests pass. |
 | T2 | Released `v0.6.0` 2026-10-30 | Commit `c3e201c`. G ran the browser checks against the mock: sign-in, post, reply nesting, second user's comment appears without reload, edit, withdraw, revoked token returns to "Sign in to comment" without redirect, comment text never rendered as HTML. G fixed two bugs before release: local-only buttons not hidden (CSS `display` beat `[hidden]`), and the mock offering edit/withdraw on withdrawn comments. Follow-ups for T3: see Housekeeping. |
 | H2 | Done 2026-10-30, merged | Merged as `aecf429`; 361 tests pass. API checks by H2 and end-to-end browser checks by G pass. |
-| Gate 2 | Local part approved 2026-10-30 | `gates/gate-2.md`. Production part waits for P3. Release 0.10.0 (`f6ef4d5`) requested in AART #3957. |
+| Gate 2 | Local part approved 2026-10-30 | `gates/gate-2.md`. Release 0.10.0 deployed to production 2026-11-02 (AART #3957); database frozen as `db/v0.10_initiatives_and_topic_reference_comments.sql` (`9008a2d`). Production part (4.3) in progress with P3. |
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
-| H3 | Not started | |
+| P3 | In progress 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pending. |
+| H3 | Prompt written 2026-11-02 | `prompts/H3-author-review.md`, for a fresh Cursor thread. |
 | P2 | Not started | |
 | Gate 3 | | |
 | H4 | Not started | |
@@ -165,6 +167,7 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 |---|---|---|
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
 | T3 follow-ups, for T4 | T4 | (1) Re-attach lists only explicit anchors; add headings (they are anchors too, contract 1.1) and `document-start`. (2) `tests/mock_hub.py` is packed into very long lines; reformat it like `guide.js`. (3) The mock answers an edit of someone else's text with `edit_window_closed`; it should be `forbidden` (contract 5.6). (4) `validate.ps1` exits 1 under Windows PowerShell 5.1 because unittest writes its progress dots to stderr; have the unittest step not treat stderr as failure. (5) "Show closed" shows for a reader whose account cannot view comments; hide it. |
+| Registration page "Check without saving" clears the form after a passed check | H3 | Found registering the pilot on production. Included in the H3 prompt (task 6). |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
 ## 8. Decisions Log
