@@ -3,7 +3,7 @@
 **Date:** 2026-10-30
 **Run by:** Stream G, with H2's API checks
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 4
-**Result:** Local part passes, approved by the product owner 2026-10-30. Production part (4.3) passes, run 2026-11-02.
+**Result:** Local part passes, approved by the product owner 2026-10-30. Production part (4.3) passes, run 2026-11-02. **Gate 2 passed**, approved by the product owner 2026-11-02.
 
 ## Summary
 
@@ -58,7 +58,7 @@ Run 2026-11-02 against https://informatics.immregistries.org/hub with the pilot 
 |---|---|---|
 | 2.20 | Pass | New tab, guide not yet signed in: document, "Sign in to comment", no redirect |
 | 2.21 | Pass | Product owner signed in from the guide and posted three comments; later, "Sign in to comment" with an InteropHub session signed in immediately, no email |
-| 2.22 | Pass | Second account replied to two comments; both replies appeared in G's open page without reload (background refresh), nested correctly. The author account sees only Delete on another person's reply |
+| 2.22 | Pass | Second account replied to two comments; both replies appeared in G's open page without reload (background refresh), nested correctly. The author account sees only Delete on another person's reply; the second account (not a topic 7 author) sees only Edit and Withdraw on its own replies and no author controls |
 | 2.28 | Pass | `/hub/guide/open?doc=contextual-conditions&comment=3` landed on `/latest/#comment-3`, scrolled and highlighted, still signed in |
 
 ## Follow-ups
@@ -70,4 +70,4 @@ Run 2026-11-02 against https://informatics.immregistries.org/hub with the pilot 
 
 ## Approval
 
-Product owner: local part approved 2026-10-30. Production part run 2026-11-02; approval pending.
+Product owner: local part approved 2026-10-30. Production part approved 2026-11-02. Gate 2 passed.
