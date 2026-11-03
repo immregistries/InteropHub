@@ -114,10 +114,71 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
 
     @Override
     public List<FlagRow> activeFlags(long documentId) {
+        return flags(documentId, false);
+    }
+
+    @Override
+    public List<FlagRow> flags(long documentId, boolean includeCleared) {
         try (Session session = open()) {
-            return flagDao.findActiveByDocumentId(session, documentId).stream()
+            return flagDao.findByDocumentId(session, documentId, includeCleared).stream()
                     .map(HibernateGuideCommentStore::toFlag)
                     .toList();
+        }
+    }
+
+    @Override
+    public FlagRow flag(long id) {
+        try (Session session = open()) {
+            return flagDao.findById(session, id).map(HibernateGuideCommentStore::toFlag).orElse(null);
+        }
+    }
+
+    @Override
+    public FlagRow activeFlag(long documentId, String anchor) {
+        try (Session session = open()) {
+            return flagDao.findActiveByAnchor(session, documentId, anchor).map(HibernateGuideCommentStore::toFlag).orElse(null);
+        }
+    }
+
+    @Override
+    public void insertFlag(FlagRow row) {
+        Transaction transaction = null;
+        try (Session session = open()) {
+            transaction = session.beginTransaction();
+            EsGuideReviewFlag entity = new EsGuideReviewFlag();
+            entity.setGuideDocumentId(row.documentId);
+            entity.setAnchorId(row.anchor);
+            entity.setNote(row.note);
+            entity.setCreatedByUserId(row.createdByUserId);
+            entity.setCreatedAt(row.createdAt);
+            entity.setUpdatedAt(row.updatedAt);
+            session.persist(entity);
+            session.flush();
+            row.id = entity.getReviewFlagId();
+            transaction.commit();
+        } catch (RuntimeException ex) {
+            rollback(transaction);
+            throw ex;
+        }
+    }
+
+    @Override
+    public void saveFlag(FlagRow row) {
+        Transaction transaction = null;
+        try (Session session = open()) {
+            transaction = session.beginTransaction();
+            EsGuideReviewFlag entity = session.get(EsGuideReviewFlag.class, row.id);
+            if (entity == null) {
+                throw GuideApiException.notFound("That flag was not found.");
+            }
+            entity.setNote(row.note);
+            entity.setUpdatedAt(row.updatedAt);
+            entity.setClearedAt(row.clearedAt);
+            entity.setClearedByUserId(row.clearedByUserId);
+            transaction.commit();
+        } catch (RuntimeException ex) {
+            rollback(transaction);
+            throw ex;
         }
     }
 
@@ -171,6 +232,26 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
     }
 
     @Override
+    public void updateComments(List<CommentRow> rows, List<AuditRow> audits) {
+        Transaction transaction = null;
+        try (Session session = open()) {
+            transaction = session.beginTransaction();
+            for (CommentRow row : rows) {
+                EsGuideComment entity = session.get(EsGuideComment.class, row.id);
+                if (entity == null) {
+                    throw GuideApiException.notFound("That comment was not found.");
+                }
+                apply(entity, row);
+            }
+            writeAudits(session, null, audits);
+            transaction.commit();
+        } catch (RuntimeException ex) {
+            rollback(transaction);
+            throw ex;
+        }
+    }
+
+    @Override
     public String topicUrl(long topicId) {
         return publicUrlService.resolveExternalUrl("/es/topic/" + topicId);
     }
@@ -214,10 +295,18 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         entity.setBlockSnippet(row.snippet);
         entity.setCommentText(row.text);
         entity.setState(row.state);
+        entity.setDispositionCode(row.dispositionCode);
+        entity.setChangeNote(row.changeNote);
         entity.setSourceNote(row.sourceNote);
         entity.setEditedAt(row.editedAt);
         entity.setUpdatedAt(row.updatedAt);
+        entity.setDeletedAt(row.deletedAt);
+        entity.setDeletedByUserId(row.deletedByUserId);
         entity.setWithdrawnAt(row.withdrawnAt);
+        entity.setDisposedAt(row.disposedAt);
+        entity.setDisposedByUserId(row.disposedByUserId);
+        entity.setClosedAt(row.closedAt);
+        entity.setClosedByUserId(row.closedByUserId);
     }
 
     private static void touchParent(Session session, CommentRow parent) {
@@ -230,10 +319,10 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         }
     }
 
-    private void writeAudits(Session session, Long commentId, List<AuditRow> audits) {
+    private void writeAudits(Session session, Long defaultCommentId, List<AuditRow> audits) {
         for (AuditRow audit : audits) {
             EsGuideCommentAudit entity = new EsGuideCommentAudit();
-            entity.setGuideCommentId(commentId);
+            entity.setGuideCommentId(audit.commentId != null ? audit.commentId : defaultCommentId);
             entity.setChangedByUserId(audit.userId);
             entity.setChangedAt(audit.at);
             entity.setFieldName(audit.field);
@@ -274,11 +363,14 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
     private static FlagRow toFlag(EsGuideReviewFlag entity) {
         FlagRow row = new FlagRow();
         row.id = entity.getReviewFlagId();
+        row.documentId = entity.getGuideDocumentId();
         row.anchor = entity.getAnchorId();
         row.note = entity.getNote();
         row.createdByUserId = entity.getCreatedByUserId();
         row.createdAt = entity.getCreatedAt();
         row.updatedAt = entity.getUpdatedAt();
+        row.clearedAt = entity.getClearedAt();
+        row.clearedByUserId = entity.getClearedByUserId();
         return row;
     }
 

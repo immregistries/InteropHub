@@ -2,6 +2,7 @@ package org.airahub.interophub.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,6 +35,7 @@ import org.airahub.interophub.service.GuideRows.Person;
 import org.airahub.interophub.service.GuideRows.RegistrationPlan;
 import org.airahub.interophub.service.GuideRows.TopicRow;
 import org.airahub.interophub.servlet.GuideApiServlet;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
 
@@ -112,18 +114,18 @@ class GuideCommentsAndRegistrationTest {
         comments.row(id).state = "OPEN";
         comments.row(id).withdrawnAt = null;
         GuideApiException someoneElse = assertThrows(GuideApiException.class,
-                () -> comments.service.patchText(other, 10L, id, new JSONObject().put("text", "nope")));
+                () -> comments.service.patch(other, 10L, id, new JSONObject().put("text", "nope")));
         assertEquals("forbidden", someoneElse.getError());
 
         comments.row(id).createdAt = LocalDateTime.now().minusDays(15);
         GuideApiException window = assertThrows(GuideApiException.class,
-                () -> comments.service.patchText(reader, 9L, id, new JSONObject().put("text", "too late")));
+                () -> comments.service.patch(reader, 9L, id, new JSONObject().put("text", "too late")));
         assertEquals("edit_window_closed", window.getError());
 
-        GuideApiException authorField = assertThrows(GuideApiException.class, () -> comments.service.patchText(reader, 9L,
+        GuideApiException authorField = assertThrows(GuideApiException.class, () -> comments.service.patch(reader, 9L,
                 id, new JSONObject().put("dispositionCode", "PERSUASIVE").put("text", "no")));
-        assertEquals("invalid_field", authorField.getError());
-        assertEquals("dispositionCode", authorField.getField());
+        assertEquals("forbidden", authorField.getError());
+        assertEquals(403, authorField.getStatus());
         assertEquals("hello", comments.row(id).text);
     }
 
@@ -136,7 +138,7 @@ class GuideCommentsAndRegistrationTest {
         comments.view(2, 7);
         long id = comments.service.post(reader, 9L, "contextual-conditions", comment("first")).id();
         LocalDateTime start = comments.row(id).updatedAt.minusMinutes(1);
-        comments.service.patchText(reader, 9L, id, new JSONObject().put("text", "edited"));
+        comments.service.patch(reader, 9L, id, new JSONObject().put("text", "edited"));
         comments.service.post(reader, 9L, "contextual-conditions",
                 new JSONObject().put("parentCommentId", id).put("text", "reply"));
         comments.service.withdraw(reader, 9L, id);
@@ -262,7 +264,7 @@ class GuideCommentsAndRegistrationTest {
         comments.view(2, 7);
         long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
         int audits = comments.audits.size();
-        GuideApiException conflict = assertThrows(GuideApiException.class, () -> comments.service.patchText(reader, 9L,
+        GuideApiException conflict = assertThrows(GuideApiException.class, () -> comments.service.patch(reader, 9L,
                 id, new JSONObject().put("text", "changed").put("expectedUpdatedAt", "2020-01-01T00:00:00Z")));
         assertEquals("conflict", conflict.getError());
         assertTrue(conflict.getCurrentJson().contains("\"text\":\"hello\""));
@@ -297,6 +299,373 @@ class GuideCommentsAndRegistrationTest {
         assertTrue(body.contains("insufficient_scope"));
         assertTrue(body.contains("topics:write"));
         assertEquals(0, registration.persistCount);
+    }
+
+    @Test
+    void authorDispositionChangeNoteCloseAndReopen() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        String since = ApiTime.format(comments.row(id).updatedAt);
+
+        GuideApiException missingNote = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L,
+                id, new JSONObject().put("dispositionCode", "PERSUASIVE")));
+        assertEquals("invalid_field", missingNote.getError());
+        assertEquals("changeNote", missingNote.getField());
+        assertEquals("OPEN", comments.row(id).state);
+        assertNull(comments.row(id).dispositionCode);
+        int before = comments.audits.size();
+        comments.service.patch(author, 8L, id, new JSONObject()
+                .put("dispositionCode", "PERSUASIVE").put("changeNote", "First note"));
+        assertEquals(3, comments.audits.size() - before);
+
+        for (String code : List.of("PERSUASIVE", "PERSUASIVE_MOD", "NOT_PERSUASIVE", "NOT_PERSUASIVE_MOD",
+                "NOT_RELATED", "FUTURE_USE", "QUESTION_ANSWERED")) {
+            JSONObject disposed = comments.service.patch(author, 8L, id, new JSONObject()
+                    .put("dispositionCode", code).put("changeNote", "Noted for " + code));
+            assertEquals("DISPOSED", disposed.getString("state"));
+            assertEquals(code, disposed.getJSONObject("disposition").getString("code"));
+            assertEquals("Noted for " + code, disposed.getString("changeNote"));
+        }
+        JSONObject replaced = comments.service.patch(author, 8L, id,
+                new JSONObject().put("dispositionCode", "PERSUASIVE"));
+        assertEquals("PERSUASIVE", replaced.getJSONObject("disposition").getString("code"));
+        assertEquals("Noted for QUESTION_ANSWERED", replaced.getString("changeNote"));
+
+        JSONObject cleared = comments.service.patch(author, 8L, id,
+                new JSONObject().put("dispositionCode", JSONObject.NULL));
+        assertEquals("OPEN", cleared.getString("state"));
+        assertTrue(cleared.isNull("disposition"));
+        assertTrue(cleared.isNull("changeNote"));
+        assertNull(comments.row(id).disposedAt);
+
+        comments.service.patch(author, 8L, id, new JSONObject()
+                .put("dispositionCode", "PERSUASIVE").put("changeNote", "Kept"));
+        JSONObject closed = comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
+        assertEquals("CLOSED", closed.getString("state"));
+        assertTrue(closed.getJSONObject("permissions").getBoolean("canClose"));
+        assertFalse(closed.getJSONObject("permissions").getBoolean("canReply"));
+        assertFalse(closed.isNull("closedAt"));
+        GuideApiException replyClosed = assertThrows(GuideApiException.class, () -> comments.service.post(reader, 9L,
+                "contextual-conditions", new JSONObject().put("parentCommentId", id).put("text", "too late")));
+        assertEquals("invalid_state", replyClosed.getError());
+
+        JSONObject reopened = comments.service.patch(author, 8L, id, new JSONObject().put("state", "OPEN"));
+        assertEquals("DISPOSED", reopened.getString("state"));
+        assertTrue(reopened.isNull("closedAt"));
+        assertEquals("PERSUASIVE", reopened.getJSONObject("disposition").getString("code"));
+
+        comments.service.patch(author, 8L, id, new JSONObject().put("dispositionCode", JSONObject.NULL));
+        comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
+        JSONObject reopenedOpen = comments.service.patch(author, 8L, id, new JSONObject().put("state", "OPEN"));
+        assertEquals("OPEN", reopenedOpen.getString("state"));
+
+        JSONObject seen = comments.service.list(reader, "contextual-conditions", null, null, since);
+        assertEquals("OPEN", find(seen, id).getString("state"));
+        assertFalse(auditsFor(comments, id, "dispositionCode").isEmpty());
+        assertFalse(auditsFor(comments, id, "changeNote").isEmpty());
+        assertFalse(auditsFor(comments, id, "state").isEmpty());
+    }
+
+    @Test
+    void authorCanCloseOrReopenAClosedComment() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        assertTrue(find(comments.service.list(author, "contextual-conditions", null, null, null), id)
+                .getJSONObject("permissions").getBoolean("canClose"));
+
+        JSONObject disposed = comments.service.patch(author, 8L, id, new JSONObject()
+                .put("dispositionCode", "PERSUASIVE").put("changeNote", "Noted"));
+        assertTrue(disposed.getJSONObject("permissions").getBoolean("canClose"));
+        JSONObject closed = comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
+        assertTrue(closed.getJSONObject("permissions").getBoolean("canClose"));
+        assertFalse(find(comments.service.list(reader, "contextual-conditions", "CLOSED", null, null), id)
+                .getJSONObject("permissions").getBoolean("canClose"));
+
+        long withdrawnId = comments.service.post(reader, 9L, "contextual-conditions", comment("going")).id();
+        comments.service.withdraw(reader, 9L, withdrawnId);
+        JSONObject withdrawn = comments.service.list(author, "contextual-conditions", "WITHDRAWN", null, null);
+        assertFalse(find(withdrawn, withdrawnId).getJSONObject("permissions").getBoolean("canClose"));
+    }
+
+    @Test
+    void dispositionAndCloseAreRefusedOnClosedAndWithdrawn() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        comments.service.patch(author, 8L, id, new JSONObject()
+                .put("dispositionCode", "NOT_RELATED").put("changeNote", "Aside"));
+        comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
+
+        GuideApiException closedDisposition = assertThrows(GuideApiException.class, () -> comments.service.patch(author,
+                8L, id, new JSONObject().put("dispositionCode", "PERSUASIVE").put("changeNote", "No")));
+        assertEquals("invalid_state", closedDisposition.getError());
+        GuideApiException closedAgain = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED")));
+        assertEquals("invalid_state", closedAgain.getError());
+        GuideApiException badState = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, id, new JSONObject().put("state", "DISPOSED")));
+        assertEquals("invalid_field", badState.getError());
+        assertEquals("state", badState.getField());
+        assertEquals("NOT_RELATED", comments.row(id).dispositionCode);
+
+        long withdrawnId = comments.service.post(reader, 9L, "contextual-conditions", comment("going")).id();
+        comments.service.withdraw(reader, 9L, withdrawnId);
+        GuideApiException withdrawn = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L,
+                withdrawnId, new JSONObject().put("dispositionCode", "PERSUASIVE").put("changeNote", "No")));
+        assertEquals("invalid_state", withdrawn.getError());
+        GuideApiException closeWithdrawn = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, withdrawnId, new JSONObject().put("state", "CLOSED")));
+        assertEquals("invalid_state", closeWithdrawn.getError());
+        GuideApiException reopenWithdrawn = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, withdrawnId, new JSONObject().put("state", "OPEN")));
+        assertEquals("invalid_state", reopenWithdrawn.getError());
+        long stillOpen = comments.service.post(reader, 9L, "contextual-conditions", comment("still open")).id();
+        GuideApiException openAgain = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, stillOpen, new JSONObject().put("state", "OPEN")));
+        assertEquals("invalid_state", openAgain.getError());
+        comments.service.patch(author, 8L, stillOpen, new JSONObject()
+                .put("dispositionCode", "PERSUASIVE").put("changeNote", "Set"));
+        GuideApiException reopenDisposed = assertThrows(GuideApiException.class,
+                () -> comments.service.patch(author, 8L, stillOpen, new JSONObject().put("state", "OPEN")));
+        assertEquals("invalid_state", reopenDisposed.getError());
+    }
+
+    @Test
+    void reattachIsAllowedInEveryStateExceptDeleted() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long open = comments.service.post(reader, 9L, "contextual-conditions", comment("open")).id();
+        long disposed = comments.service.post(reader, 9L, "contextual-conditions", comment("disposed")).id();
+        comments.service.patch(author, 8L, disposed, new JSONObject()
+                .put("dispositionCode", "FUTURE_USE").put("changeNote", "Later"));
+        long closed = comments.service.post(reader, 9L, "contextual-conditions", comment("closed")).id();
+        comments.service.patch(author, 8L, closed, new JSONObject().put("state", "CLOSED"));
+        long withdrawn = comments.service.post(reader, 9L, "contextual-conditions", comment("withdrawn")).id();
+        comments.service.withdraw(reader, 9L, withdrawn);
+        for (long id : List.of(open, disposed, closed, withdrawn)) {
+            JSONObject moved = comments.service.patch(author, 8L, id, new JSONObject()
+                    .put("anchor", "consent-requirements").put("blockIndex", 2).put("snippet", "Rewritten block"));
+            assertEquals("consent-requirements", moved.getString("anchor"));
+            assertEquals(2, moved.getInt("blockIndex"));
+            assertEquals("Rewritten block", moved.getString("snippet"));
+            assertFalse(auditsFor(comments, id, "anchor").isEmpty());
+        }
+        comments.row(open).deletedAt = java.time.LocalDateTime.now();
+        GuideApiException deleted = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L, open,
+                new JSONObject().put("anchor", "other-anchor")));
+        assertEquals("not_found", deleted.getError());
+        GuideApiException anchorRequired = assertThrows(GuideApiException.class, () -> comments.service.patch(author,
+                8L, disposed, new JSONObject().put("snippet", "no anchor")));
+        assertEquals("invalid_field", anchorRequired.getError());
+        assertEquals("anchor", anchorRequired.getField());
+        assertEquals("Rewritten block", comments.row(disposed).snippet);
+    }
+
+    @Test
+    void repliesRefuseAuthorFieldsAndAMixedRefusalSavesNothing() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        long replyId = comments.service.post(reader, 9L, "contextual-conditions",
+                new JSONObject().put("parentCommentId", id).put("text", "a reply")).id();
+        int audits = comments.audits.size();
+        for (String field : List.of("dispositionCode", "changeNote", "state", "anchor", "blockIndex", "snippet")) {
+            JSONObject body = new JSONObject().put(field, "dispositionCode".equals(field) ? "PERSUASIVE" : "OPEN");
+            if ("blockIndex".equals(field)) {
+                body = new JSONObject().put(field, 1);
+            }
+            JSONObject sent = body;
+            GuideApiException refused = assertThrows(GuideApiException.class,
+                    () -> comments.service.patch(author, 8L, replyId, sent));
+            assertEquals("invalid_field", refused.getError());
+            assertEquals(field, refused.getField());
+        }
+        assertEquals("a reply", comments.row(replyId).text);
+        assertEquals(audits, comments.audits.size());
+
+        String anchor = comments.row(id).anchor;
+        GuideApiException mixed = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L, id,
+                new JSONObject().put("dispositionCode", "PERSUASIVE").put("anchor", "consent-requirements")
+                        .put("text", "rewritten by the author")));
+        assertEquals("forbidden", mixed.getError());
+        assertEquals("hello", comments.row(id).text);
+        assertEquals(anchor, comments.row(id).anchor);
+        assertNull(comments.row(id).dispositionCode);
+        assertEquals(audits, comments.audits.size());
+        GuideApiException noteAndMove = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L, id,
+                new JSONObject().put("dispositionCode", "PERSUASIVE").put("anchor", "consent-requirements")));
+        assertEquals("invalid_field", noteAndMove.getError());
+        assertEquals("changeNote", noteAndMove.getField());
+        assertEquals(anchor, comments.row(id).anchor);
+        assertNull(comments.row(id).dispositionCode);
+
+        GuideApiException noteOnly = assertThrows(GuideApiException.class, () -> comments.service.patch(author, 8L, id,
+                new JSONObject().put("changeNote", "Nothing to attach this to")));
+        assertEquals("invalid_field", noteOnly.getError());
+        assertEquals("changeNote", noteOnly.getField());
+    }
+
+    @Test
+    void deleteCascadesToRepliesAndShowsATombstone() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        long replyId = comments.service.post(reader, 9L, "contextual-conditions",
+                new JSONObject().put("parentCommentId", id).put("text", "a reply")).id();
+        long otherReply = comments.service.post(author, 8L, "contextual-conditions",
+                new JSONObject().put("parentCommentId", id).put("text", "another")).id();
+        String since = ApiTime.format(comments.row(id).updatedAt);
+        GuideApiException readerDelete = assertThrows(GuideApiException.class,
+                () -> comments.service.delete(reader, 9L, replyId));
+        assertEquals("forbidden", readerDelete.getError());
+        assertNull(comments.row(replyId).deletedAt);
+
+        comments.service.delete(author, 8L, otherReply);
+        JSONObject afterReply = comments.service.list(reader, "contextual-conditions", null, null, since);
+        JSONArray replies = find(afterReply, id).getJSONArray("replies");
+        boolean replyTombstone = false;
+        for (int i = 0; i < replies.length(); i++) {
+            if (replies.getJSONObject(i).getLong("id") == otherReply) {
+                replyTombstone = replies.getJSONObject(i).getBoolean("deleted");
+            }
+        }
+        assertTrue(replyTombstone);
+        assertEquals(author.getUserId(), comments.row(otherReply).deletedByUserId);
+        assertFalse(find(afterReply, id).getBoolean("deleted"));
+
+        comments.service.delete(author, 8L, id);
+        JSONObject afterThread = comments.service.list(reader, "contextual-conditions", null, null, since);
+        JSONObject tombstone = find(afterThread, id);
+        assertTrue(tombstone.getBoolean("deleted"));
+        assertFalse(tombstone.has("text"));
+        assertNotNull(comments.row(id).deletedAt);
+        assertNotNull(comments.row(replyId).deletedAt);
+        assertEquals(author.getUserId(), comments.row(id).deletedByUserId);
+        assertFalse(auditsFor(comments, id, "deleted").isEmpty());
+        assertFalse(auditsFor(comments, replyId, "deleted").isEmpty());
+        GuideApiException gone = assertThrows(GuideApiException.class,
+                () -> comments.service.delete(author, 8L, id));
+        assertEquals("not_found", gone.getError());
+    }
+
+    @Test
+    void reviewFlagsCreateRepeatClearAndStayOnePerAnchor() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        GuideCommentService.FlagResult created = comments.service.flag(author, "contextual-conditions",
+                new JSONObject().put("anchor", "consent-requirements").put("note", "Please review"));
+        assertEquals(201, created.status());
+        long id = created.flag().getLong("id");
+        GuideCommentService.FlagResult repeated = comments.service.flag(author, "contextual-conditions",
+                new JSONObject().put("anchor", "consent-requirements").put("note", "Please review the rewrite"));
+        assertEquals(200, repeated.status());
+        assertEquals(id, repeated.flag().getLong("id"));
+        assertEquals("Please review the rewrite", repeated.flag().getString("note"));
+        comments.service.flag(author, "contextual-conditions",
+                new JSONObject().put("anchor", "secure-transport").put("note", "Second area"));
+        JSONObject listed = comments.service.list(reader, "contextual-conditions", null, null, null);
+        assertEquals(2, listed.getJSONArray("reviewFlags").length());
+
+        comments.service.clearFlag(author, "contextual-conditions", id);
+        comments.service.clearFlag(author, "contextual-conditions", id);
+        JSONObject after = comments.service.list(reader, "contextual-conditions", null, null, null);
+        assertEquals(1, after.getJSONArray("reviewFlags").length());
+        assertEquals("secure-transport", after.getJSONArray("reviewFlags").getJSONObject(0).getString("anchor"));
+        JSONObject cleared = comments.service.reviewFlags(reader, "contextual-conditions", "true");
+        assertEquals(2, cleared.getJSONArray("reviewFlags").length());
+        int clearedCount = 0;
+        for (int i = 0; i < cleared.getJSONArray("reviewFlags").length(); i++) {
+            if (!cleared.getJSONArray("reviewFlags").getJSONObject(i).isNull("clearedAt")) {
+                clearedCount++;
+            }
+        }
+        assertEquals(1, clearedCount);
+        GuideApiException badQuery = assertThrows(GuideApiException.class,
+                () -> comments.service.reviewFlags(reader, "contextual-conditions", "yes"));
+        assertEquals("invalid_request", badQuery.getError());
+        GuideApiException again = assertThrows(GuideApiException.class,
+                () -> comments.service.flag(reader, "contextual-conditions",
+                        new JSONObject().put("anchor", "secure-transport").put("note", "no")));
+        assertEquals("forbidden", again.getError());
+        assertEquals(403, again.getStatus());
+    }
+
+    @Test
+    void readersAreForbiddenOnEveryAuthorAction() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        GuideCommentService.FlagResult flag = comments.service.flag(author, "contextual-conditions",
+                new JSONObject().put("anchor", "secure-transport").put("note", "Look here"));
+        assertForbidden(() -> comments.service.patch(reader, 9L, id,
+                new JSONObject().put("dispositionCode", "PERSUASIVE").put("changeNote", "No")));
+        assertForbidden(() -> comments.service.patch(reader, 9L, id, new JSONObject().put("changeNote", "No")));
+        assertForbidden(() -> comments.service.patch(reader, 9L, id, new JSONObject().put("state", "CLOSED")));
+        assertForbidden(() -> comments.service.patch(reader, 9L, id, new JSONObject().put("anchor", "other-anchor")));
+        assertForbidden(() -> comments.service.delete(reader, 9L, id));
+        assertForbidden(() -> comments.service.flag(reader, "contextual-conditions",
+                new JSONObject().put("anchor", "other-anchor").put("note", "No")));
+        assertForbidden(() -> comments.service.clearFlag(reader, "contextual-conditions", flag.flag().getLong("id")));
+        assertEquals("OPEN", comments.row(id).state);
+        assertNull(comments.row(id).deletedAt);
+        assertFalse(comments.flag(flag.flag().getLong("id")).cleared());
+    }
+
+    private static void assertForbidden(org.junit.jupiter.api.function.Executable action) {
+        GuideApiException forbidden = assertThrows(GuideApiException.class, action);
+        assertEquals("forbidden", forbidden.getError());
+        assertEquals(403, forbidden.getStatus());
+    }
+
+    private static MemoryComments guide() {
+        MemoryComments comments = new MemoryComments();
+        comments.addTopic(7, "CONTEXTUAL-CONDITIONS", "PUBLIC");
+        comments.addDocument("contextual-conditions", 7, true);
+        return comments;
+    }
+
+    private static List<AuditRow> auditsFor(MemoryComments comments, long commentId, String field) {
+        List<AuditRow> matched = new ArrayList<>();
+        for (AuditRow audit : comments.audits) {
+            if (audit.commentId != null && audit.commentId == commentId && field.equals(audit.field)) {
+                matched.add(audit);
+            }
+        }
+        return matched;
     }
 
     private static JSONObject comment(String text) {
@@ -382,7 +751,9 @@ class GuideCommentsAndRegistrationTest {
         final List<TopicRow> topics = new ArrayList<>();
         final List<CommentRow> rows = new ArrayList<>();
         final List<AuditRow> audits = new ArrayList<>();
+        final List<FlagRow> flags = new ArrayList<>();
         final Set<String> viewable = new java.util.HashSet<>();
+        final Set<String> editors = new java.util.HashSet<>();
         long nextId = 1;
         GuideCommentService.Store store() {
             return this;
@@ -411,6 +782,10 @@ class GuideCommentsAndRegistrationTest {
             viewable.add(userId + ":" + topicId);
         }
 
+        void edit(long userId, long topicId) {
+            editors.add(userId + ":" + topicId);
+        }
+
         CommentRow row(long id) {
             return comment(id);
         }
@@ -437,7 +812,8 @@ class GuideCommentsAndRegistrationTest {
 
         @Override
         public boolean canEdit(User user, TopicRow topic) {
-            return user != null && Boolean.TRUE.equals(user.getIsAdmin());
+            return user != null && (Boolean.TRUE.equals(user.getIsAdmin())
+                    || editors.contains(user.getUserId() + ":" + topic.id));
         }
 
         @Override
@@ -456,7 +832,14 @@ class GuideCommentsAndRegistrationTest {
 
         @Override
         public List<Disposition> dispositions() {
-            return List.of(new Disposition("PERSUASIVE", "Persuasive"));
+            return List.of(
+                    new Disposition("PERSUASIVE", "Persuasive"),
+                    new Disposition("PERSUASIVE_MOD", "Persuasive with Modification"),
+                    new Disposition("NOT_PERSUASIVE", "Not Persuasive"),
+                    new Disposition("NOT_PERSUASIVE_MOD", "Not Persuasive with Modification"),
+                    new Disposition("NOT_RELATED", "Not Related"),
+                    new Disposition("FUTURE_USE", "Considered for Future Use"),
+                    new Disposition("QUESTION_ANSWERED", "Considered – Question Answered"));
         }
 
         @Override
@@ -466,7 +849,36 @@ class GuideCommentsAndRegistrationTest {
 
         @Override
         public List<FlagRow> activeFlags(long documentId) {
-            return List.of();
+            return flags(documentId, false);
+        }
+
+        @Override
+        public List<FlagRow> flags(long documentId, boolean includeCleared) {
+            return flags.stream()
+                    .filter(flag -> flag.documentId == documentId && (includeCleared || !flag.cleared()))
+                    .toList();
+        }
+
+        @Override
+        public FlagRow flag(long id) {
+            return flags.stream().filter(flag -> flag.id != null && flag.id == id).findFirst().orElse(null);
+        }
+
+        @Override
+        public FlagRow activeFlag(long documentId, String anchor) {
+            return flags.stream()
+                    .filter(flag -> flag.documentId == documentId && anchor.equals(flag.anchor) && !flag.cleared())
+                    .findFirst().orElse(null);
+        }
+
+        @Override
+        public void insertFlag(FlagRow row) {
+            row.id = nextId++;
+            flags.add(row);
+        }
+
+        @Override
+        public void saveFlag(FlagRow row) {
         }
 
         @Override
@@ -483,6 +895,11 @@ class GuideCommentsAndRegistrationTest {
 
         @Override
         public void updateComment(CommentRow row, CommentRow parent, List<AuditRow> audits) {
+            this.audits.addAll(audits);
+        }
+
+        @Override
+        public void updateComments(List<CommentRow> rows, List<AuditRow> audits) {
             this.audits.addAll(audits);
         }
 

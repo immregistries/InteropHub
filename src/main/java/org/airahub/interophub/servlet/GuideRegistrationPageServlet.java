@@ -28,42 +28,46 @@ public class GuideRegistrationPageServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        show(request, response, null, null);
+        show(request, response, null, null, null);
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (!CsrfTokenSupport.isValid(request)) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN,
+                    "Invalid request token. Reload the page and try again.");
+            return;
+        }
         Viewer viewer = viewer(request, response);
         if (viewer == null) {
             return;
         }
         boolean dryRun = "check".equals(request.getParameter("intent"));
-        List<UrlInput> urls = postedUrls(request);
+        PostedForm posted = readPosted(request);
+        List<UrlInput> urls = postedUrls(posted);
         try {
             JSONObject result;
-            if ("create".equals(request.getParameter("mode"))) {
+            if (posted.creating) {
                 result = registration.create(viewer.user, null, "WEB", dryRun, viewer.topic.code,
-                        request.getParameter("documentKey"), request.getParameter("title"),
-                        request.getParameter("repositoryUrl"), urls);
+                        posted.documentKey, posted.title, posted.repositoryUrl, urls);
             } else {
-                boolean active = request.getParameter("active") != null;
-                result = registration.update(viewer.user, null, "WEB", dryRun, request.getParameter("documentKey"),
-                        true, request.getParameter("title"), true, request.getParameter("repositoryUrl"), true, urls,
-                        true, active);
+                result = registration.update(viewer.user, null, "WEB", dryRun, posted.documentKey,
+                        true, posted.title, true, posted.repositoryUrl, true, urls,
+                        true, posted.active);
             }
             String notice = dryRun
                     ? "Check passed. Nothing was saved."
                     : "Saved. Allowlist added " + result.getJSONObject("allowlistChanges").getJSONArray("added").length()
                             + " and removed "
                             + result.getJSONObject("allowlistChanges").getJSONArray("removed").length() + ".";
-            show(request, response, notice, null);
+            show(request, response, dryRun ? posted : null, notice, null);
         } catch (GuideApiException ex) {
-            show(request, response, null, ex.getMessage());
+            show(request, response, posted, null, ex.getMessage());
         }
     }
 
-    private void show(HttpServletRequest request, HttpServletResponse response, String notice, String error)
-            throws IOException {
+    private void show(HttpServletRequest request, HttpServletResponse response, PostedForm posted, String notice,
+            String error) throws IOException {
         Viewer viewer = viewer(request, response);
         if (viewer == null) {
             return;
@@ -79,11 +83,12 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         if (editing == null && !documents.isEmpty() && !"new".equals(request.getParameter("mode"))) {
             editing = documents.get(0);
         }
-        render(request, response, viewer, documents, editing, notice, error);
+        render(request, response, viewer, documents, editing, posted, notice, error);
     }
 
     private void render(HttpServletRequest request, HttpServletResponse response, Viewer viewer,
-            List<DocumentRow> documents, DocumentRow editing, String notice, String error) throws IOException {
+            List<DocumentRow> documents, DocumentRow editing, PostedForm posted, String notice, String error)
+            throws IOException {
         String contextPath = request.getContextPath();
         String action = contextPath + "/es/topic-guide/" + viewer.topic.id;
         AiraPage page = InteropAiraPageFactory.base(request, "Topic Reference - InteropHub")
@@ -114,19 +119,28 @@ public class GuideRegistrationPageServlet extends HttpServlet {
                 out.println("        <li><a class=\"aira-inline-link\" href=\"" + action + "?mode=new\">Register another guide</a></li>");
                 out.println("      </ul>");
             }
-            boolean creating = editing == null;
+            boolean creating = posted != null ? posted.creating : editing == null;
+            String documentKey = posted != null ? posted.documentKey : (creating ? "" : editing.documentKey);
+            String title = posted != null ? posted.title : (creating ? "" : editing.title);
+            String repositoryUrl = posted != null ? posted.repositoryUrl
+                    : (creating || editing.repositoryUrl == null ? "" : editing.repositoryUrl);
             out.println("      <form class=\"aira-stack\" method=\"post\" action=\"" + action + "\">");
+            out.println("        <input type=\"hidden\" name=\"csrfToken\" value=\""
+                    + escape(CsrfTokenSupport.getOrCreateToken(request)) + "\">");
             out.println("        <input type=\"hidden\" name=\"mode\" value=\"" + (creating ? "create" : "update") + "\">");
-            field(out, "documentKey", "Document key", creating ? "" : editing.documentKey, !creating);
-            field(out, "title", "Title", creating ? "" : editing.title, false);
-            field(out, "repositoryUrl", "Repository URL", creating || editing.repositoryUrl == null ? "" : editing.repositoryUrl, false);
+            field(out, "documentKey", "Document key", documentKey, !creating);
+            field(out, "title", "Title", title, false);
+            field(out, "repositoryUrl", "Repository URL", repositoryUrl, false);
             out.println("        <fieldset class=\"aira-stack\">");
             out.println("          <legend class=\"aira-label\">Published URLs</legend>");
             out.println("          <p class=\"aira-field-help\">The first URL is the one /guide/open uses. Leave unused rows blank.</p>");
             for (int i = 0; i < URL_ROWS; i++) {
                 String url = "";
                 String label = "";
-                if (!creating && i < editing.urls.size()) {
+                if (posted != null) {
+                    url = posted.urls[i];
+                    label = posted.labels[i];
+                } else if (!creating && i < editing.urls.size()) {
                     UrlBinding binding = editing.urls.get(i);
                     url = binding.url;
                     label = binding.label;
@@ -145,8 +159,9 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             out.println("        </fieldset>");
             if (!creating) {
                 out.println("        <div class=\"aira-field\">");
+                boolean active = posted != null ? posted.active : editing.active;
                 out.println("          <label class=\"aira-label\" for=\"active\"><input id=\"active\" name=\"active\" type=\"checkbox\" value=\"true\""
-                        + (editing.active ? " checked" : "") + "> Active</label>");
+                        + (active ? " checked" : "") + "> Active</label>");
                 out.println("        </div>");
             }
             out.println("        <p>");
@@ -202,17 +217,35 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         return new Viewer(user, viewable);
     }
 
-    private static List<UrlInput> postedUrls(HttpServletRequest request) {
+    private static PostedForm readPosted(HttpServletRequest request) {
+        PostedForm posted = new PostedForm();
+        posted.creating = "create".equals(request.getParameter("mode"));
+        posted.documentKey = emptyIfNull(trim(request.getParameter("documentKey")));
+        posted.title = emptyIfNull(trim(request.getParameter("title")));
+        posted.repositoryUrl = emptyIfNull(trim(request.getParameter("repositoryUrl")));
+        posted.active = request.getParameter("active") != null;
+        for (int i = 0; i < URL_ROWS; i++) {
+            posted.labels[i] = emptyIfNull(trim(request.getParameter("label" + i)));
+            posted.urls[i] = emptyIfNull(trim(request.getParameter("url" + i)));
+        }
+        return posted;
+    }
+
+    private static List<UrlInput> postedUrls(PostedForm posted) {
         List<UrlInput> urls = new ArrayList<>();
         for (int i = 0; i < URL_ROWS; i++) {
-            String url = trim(request.getParameter("url" + i));
-            String label = trim(request.getParameter("label" + i));
+            String url = trim(posted.urls[i]);
+            String label = trim(posted.labels[i]);
             if (url == null && label == null) {
                 continue;
             }
             urls.add(new UrlInput(url, label));
         }
         return urls;
+    }
+
+    private static String emptyIfNull(String value) {
+        return value == null ? "" : value;
     }
 
     private static Long topicId(String pathInfo) {
@@ -260,5 +293,15 @@ public class GuideRegistrationPageServlet extends HttpServlet {
     }
 
     private record Viewer(User user, TopicRow topic) {
+    }
+
+    private static final class PostedForm {
+        boolean creating;
+        String documentKey;
+        String title;
+        String repositoryUrl;
+        boolean active;
+        final String[] labels = new String[URL_ROWS];
+        final String[] urls = new String[URL_ROWS];
     }
 }

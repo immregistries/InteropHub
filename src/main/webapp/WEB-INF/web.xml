@@ -299,6 +299,15 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>GuideCommentsPageServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.GuideCommentsPageServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>GuideCommentsPageServlet</servlet-name>
+    <url-pattern>/es/topic-guide-comments/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>AdminGuideServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.AdminGuideServlet</servlet-class>
   </servlet>

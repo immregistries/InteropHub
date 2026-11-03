@@ -887,6 +887,7 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                         out.println("        </div>");
                         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic activity\">");
+                        TopicReferenceCommentsPanel.render(out, contextPath, viewer, topicEntity);
                         RecentlyViewedTopicsRenderer.render(out, topicId, recentlyViewedTopics, canInteract,
                                         otherTopicId -> contextPath + "/es/topic/" + otherTopicId);
                         if (canManageTopic) {
