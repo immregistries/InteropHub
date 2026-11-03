@@ -344,7 +344,7 @@ Rules:
 - `updatedAt` on a thread is the latest change to the comment **or any of its replies**. It drives `since`.
 - **Withdrawn** comments and replies keep their place but return `text: null`. The guide shows "Withdrawn by the commenter."
 - **Deleted** comments and replies are never returned by a normal listing. In a `since` listing (5.3) they appear as tombstones so the guide can remove them: `{ "id": 482, "deleted": true, "updatedAt": "…" }` for a thread, and the same shape inside `replies` for a reply. The row stays in the database, with its text, for the audit record; no API returns it.
-- `permissions` are computed for the caller, so the guide shows only controls that will work. The server checks again on every write.
+- `permissions` are computed for the caller, so the guide shows only controls that will work. The server checks again on every write. `canClose` covers both closing and reopening (5.6 `state`): for an author it is true on `OPEN`, `DISPOSED`, and `CLOSED`, and false on `WITHDRAWN`.
 - Replies are ordered by `createdAt`. Threads are ordered by `createdAt` of the top-level comment.
 
 ### 5.3 `GET /api/guide/{documentKey}/comments`
