@@ -137,8 +137,7 @@ Kept current by stream G.
 |---|---|---|
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) completed from H0 the same day. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
-| H0 MCP experiment | Done 2026-10-30 | Registration page "Check without saving" clears the form after a passed check | H3 | Found registering the pilot on production. Included in the H3 prompt (task 6). |
-| Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
+| H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | Done 2026-10-30, merged | Merged as `baab8ec`. Runtime checks 1.40 to 1.44 pass; import regression found and fixed (`9dbfdb3`). |
