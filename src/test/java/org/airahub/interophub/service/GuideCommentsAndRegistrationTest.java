@@ -347,6 +347,7 @@ class GuideCommentsAndRegistrationTest {
                 .put("dispositionCode", "PERSUASIVE").put("changeNote", "Kept"));
         JSONObject closed = comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
         assertEquals("CLOSED", closed.getString("state"));
+        assertTrue(closed.getJSONObject("permissions").getBoolean("canClose"));
         assertFalse(closed.getJSONObject("permissions").getBoolean("canReply"));
         assertFalse(closed.isNull("closedAt"));
         GuideApiException replyClosed = assertThrows(GuideApiException.class, () -> comments.service.post(reader, 9L,
@@ -368,6 +369,32 @@ class GuideCommentsAndRegistrationTest {
         assertFalse(auditsFor(comments, id, "dispositionCode").isEmpty());
         assertFalse(auditsFor(comments, id, "changeNote").isEmpty());
         assertFalse(auditsFor(comments, id, "state").isEmpty());
+    }
+
+    @Test
+    void authorCanCloseOrReopenAClosedComment() {
+        MemoryComments comments = guide();
+        User reader = user(2, false);
+        User author = user(5, false);
+        comments.view(2, 7);
+        comments.view(5, 7);
+        comments.edit(5, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("hello")).id();
+        assertTrue(find(comments.service.list(author, "contextual-conditions", null, null, null), id)
+                .getJSONObject("permissions").getBoolean("canClose"));
+
+        JSONObject disposed = comments.service.patch(author, 8L, id, new JSONObject()
+                .put("dispositionCode", "PERSUASIVE").put("changeNote", "Noted"));
+        assertTrue(disposed.getJSONObject("permissions").getBoolean("canClose"));
+        JSONObject closed = comments.service.patch(author, 8L, id, new JSONObject().put("state", "CLOSED"));
+        assertTrue(closed.getJSONObject("permissions").getBoolean("canClose"));
+        assertFalse(find(comments.service.list(reader, "contextual-conditions", "CLOSED", null, null), id)
+                .getJSONObject("permissions").getBoolean("canClose"));
+
+        long withdrawnId = comments.service.post(reader, 9L, "contextual-conditions", comment("going")).id();
+        comments.service.withdraw(reader, 9L, withdrawnId);
+        JSONObject withdrawn = comments.service.list(author, "contextual-conditions", "WITHDRAWN", null, null);
+        assertFalse(find(withdrawn, withdrawnId).getJSONObject("permissions").getBoolean("canClose"));
     }
 
     @Test

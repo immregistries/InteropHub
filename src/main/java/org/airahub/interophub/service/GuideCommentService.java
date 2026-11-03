@@ -408,7 +408,7 @@ public class GuideCommentService {
         permissions.put("canWithdraw", ownWindow);
         permissions.put("canReply", loaded.canView && loaded.document.active && openForReply);
         permissions.put("canDispose", loaded.canEdit && openForReply);
-        permissions.put("canClose", loaded.canEdit && openForReply);
+        permissions.put("canClose", loaded.canEdit && !"WITHDRAWN".equals(parent.state));
         permissions.put("canDelete", loaded.canEdit);
         permissions.put("canReattach", loaded.canEdit);
         return permissions;
