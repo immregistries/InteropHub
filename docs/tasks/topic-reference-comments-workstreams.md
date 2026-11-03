@@ -150,9 +150,9 @@ Kept current by stream G.
 | Gate 2 | Passed 2026-11-02 | Local part approved 2026-10-30; production part approved 2026-11-02. `gates/gate-2.md`. Release 0.10.0 deployed to production 2026-11-02 (AART #3957); database frozen as `db/v0.10_initiatives_and_topic_reference_comments.sql` (`9008a2d`). Production part (4.3) passes with two real accounts. AART #3957 closed. |
 | T3 | Released `v0.7.0` 2026-10-30 | Commit `405064d`. G ran author and reader checks against the mock: dispose (change note required), change and clear, close, Show closed, reopen, delete with in-page confirm, re-attach orphan, flag and clear; reader sees every result and has no author controls. Follow-ups for T4: see Housekeeping. |
 | P3 | Done 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pass (Gate 2, 4.3). |
-| H3 | Done 2026-11-03, not merged | Branch `feature/h3-author-review` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
+| H3 | Done 2026-11-03, merged | Merged as `0ed31dd` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); release 0.10.1 (`577037b`, code only) requested in AART #3962; 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
 | P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Tagged core release `v0.3.0`. Three decks flagged for review by `check_products.py`. |
-| Gate 3 | In progress | `gates/gate-3.md`. H3 checks pass; waiting on the merge and the real review round on the pilot. |
+| Gate 3 | In progress | `gates/gate-3.md`. H3 checks pass and H3 is merged; the real review round runs on production after 0.10.1 (AART #3962). |
 | H4 | Not started | |
 | E2 | Not started | |
 | T4 | Not started | |
