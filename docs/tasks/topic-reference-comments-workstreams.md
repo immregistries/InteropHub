@@ -153,7 +153,7 @@ Kept current by stream G.
 | P3 | Done 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pass (Gate 2, 4.3). |
 | H3 | Done 2026-11-03, merged | Merged as `0ed31dd` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); release 0.10.1 (`577037b`, code only) requested in AART #3962; 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
 | P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Tagged core release `v0.3.0`. Three decks flagged for review by `check_products.py`. |
-| Gate 3 | Blocked | `gates/gate-3.md`. 0.10.1 is on production (AART #3962, closed). The production round stopped at the first dispose: production's Apache refuses `PATCH` and `DELETE` (H3.3), which also breaks comment edit, delete, and guide sign-out shipped in 0.10.0. Needs an Apache configuration change, then the round reruns. |
+| Gate 3 | Blocked | `gates/gate-3.md`. 0.10.1 is on production (AART #3962). The production round stopped at the first dispose: production's Apache refuses `PATCH` and `DELETE` (H3.3), which also breaks comment edit, delete, and guide sign-out shipped in 0.10.0. Apache change requested 2026-11-04 on reopened AART #3962; then the round reruns. |
 | H4 | Not started | |
 | E2 | Not started | |
 | T4 | Not started | |
