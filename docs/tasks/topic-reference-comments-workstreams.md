@@ -137,7 +137,8 @@ Kept current by stream G.
 |---|---|---|
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) completed from H0 the same day. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
-| H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
+| H0 MCP experiment | Done 2026-10-30 | Guide shows no error when a write fails at the network level | T4 | Found in the Gate 3 production round (H3.3): the dispose form stays open and nothing says it was not saved. |
+| Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | Done 2026-10-30, merged | Merged as `baab8ec`. Runtime checks 1.40 to 1.44 pass; import regression found and fixed (`9dbfdb3`). |
@@ -152,7 +153,7 @@ Kept current by stream G.
 | P3 | Done 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pass (Gate 2, 4.3). |
 | H3 | Done 2026-11-03, merged | Merged as `0ed31dd` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); release 0.10.1 (`577037b`, code only) requested in AART #3962; 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
 | P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Tagged core release `v0.3.0`. Three decks flagged for review by `check_products.py`. |
-| Gate 3 | In progress | `gates/gate-3.md`. H3 checks pass and H3 is merged; the real review round runs on production after 0.10.1 (AART #3962). |
+| Gate 3 | Blocked | `gates/gate-3.md`. 0.10.1 is on production (AART #3962, closed). The production round stopped at the first dispose: production's Apache refuses `PATCH` and `DELETE` (H3.3), which also breaks comment edit, delete, and guide sign-out shipped in 0.10.0. Needs an Apache configuration change, then the round reruns. |
 | H4 | Not started | |
 | E2 | Not started | |
 | T4 | Not started | |
@@ -167,6 +168,7 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
 | T3 follow-ups, for T4 | T4 | (6) Rail briefly shows the local-mode text after the sign-in redirect. (1) Re-attach lists only explicit anchors; add headings (they are anchors too, contract 1.1) and `document-start`. (2) `tests/mock_hub.py` is packed into very long lines; reformat it like `guide.js`. (3) The mock answers an edit of someone else's text with `edit_window_closed`; it should be `forbidden` (contract 5.6). (4) `validate.ps1` exits 1 under Windows PowerShell 5.1 because unittest writes its progress dots to stderr; have the unittest step not treat stderr as failure. (5) "Show closed" shows for a reader whose account cannot view comments; hide it. |
 | Registration page "Check without saving" clears the form after a passed check | H3 | Found registering the pilot on production. Included in the H3 prompt (task 6). |
+| Guide shows no error when a write fails at the network level | T4 | Found in the Gate 3 production round (H3.3): the dispose form stays open and nothing says it was not saved. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
 ## 8. Decisions Log
@@ -191,4 +193,5 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | All guide API timestamps are UTC, converted from the database's local `LocalDateTime` through the JVM default zone, by one shared helper (H1.1); H2 uses it for `since`. A signed-in user with a bad `return_to` now stays on the error page instead of going to Welcome (H1). |
 | 2026-10-30 | The local database refresh also runs every `db/scripts/*_dev_setup.sql` file after `unapplied_updates.sql` (H1.1). Dev setup scripts are idempotent, never applied to production, and may be emptied or removed at any time. Check 1.31 moves to Gate 2. H1's origin check already matched the 403 correction. |
 | 2026-10-30 | Release 0.10.0 goes to production with E1, H1, and H2 (AART #3957). No topic page link yet; the pilot is reached by its URL until H3's panel ships. Rehearsed first: a full restore of the latest production backup plus `unapplied_updates.sql` and the dev setup ran cleanly, and the app started against it (closes check 1.36). |
+| 2026-11-04 | The existing production comments on the pilot are test comments, not review feedback. The Gate 3 round uses them as test data, labels change notes as tests, and changes no pilot text. |
 | 2026-11-03 | Contract 5.2: `canClose` covers closing and reopening; true for an author on `OPEN`, `DISPOSED`, and `CLOSED`, false on `WITHDRAWN` (found in Gate 3, fixed in H3.2). CSRF tokens are required on the guide registration and comment management page posts (H3). |

@@ -3,7 +3,7 @@
 **Date:** 2026-11-03
 **Run by:** Stream G, with H3's API checks
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 5
-**Result:** In progress. API and browser checks pass after H3.2. The real review round on the pilot is still to run.
+**Result:** Blocked on production. API and browser checks pass locally after H3.2. The production review round (started 2026-11-04 on 0.10.1) stopped at the first author action: production's Apache front end refuses `PATCH` and `DELETE` (finding H3.3).
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | H3 author review | Pass | `feature/h3-author-review` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); `mvn test` 373 tests, 0 failures; reviewed by G against contract 5.6, 5.8, 6 |
 | T3 guide author controls (templates `v0.7.0`, pilot on `v0.9.0`) | Pass | Browser checks by G against the H3 branch |
 | P2 process guidance | Pass | Check 3.10 below |
-| Real review round on the pilot | Not run | After H3 merges, on production or a local copy, with the product owner as Author |
+| Real review round on the pilot | Blocked | Production 0.10.1 (AART #3962). Every `PATCH` and `DELETE` is refused by Apache before it reaches Tomcat; finding H3.3 |
 
 ## API checks (run by H3 with curl against local Tomcat)
 
@@ -41,7 +41,22 @@ Pilot built with templates `v0.9.0` and `comments.hub` = `http://localhost:8080/
 | 3.9 | Pass (by H3, spot-checked) | Topic page panel and management page; reader gets the panel without "Manage comments" |
 | 3.10 | Pass | P2 reviewed by G against design 3 and 12, small fixes; `content-publishing-process` `d4b2609`, tagged `v0.3.0` |
 
+## Production review round (started 2026-11-04)
+
+Production 0.10.1 deployed (AART #3962). G signed in to the pilot at `/latest/` (`v0.3.0`) through the guide as the product owner's account, with author controls shown. All three existing threads (#1 `in-brief`, #2 `purpose`, #3 `longitudinal-record-boundary`) are test comments, not review feedback, so the round uses them as test data and changes no text (product owner, 2026-11-04). The `v0.3.0` reorganization orphaned none of them: the three anchors it removed (`authoritative-source`, `feedback-adjudication`, `related-representations`) had no comments.
+
+| # | Result | Note |
+|---|---|---|
+| 3.2 (no note) | Pass (client) | The guide refuses to save without a change note ("Please fill out this field") |
+| 3.1 | Blocked | "Save disposition" on #3 sends `PATCH /api/guide/comments/3`; Apache answers `403` with its own HTML page and no CORS headers; the browser reports a network failure; nothing saved; the guide shows no error |
+| 3.2 to 3.9 | Not run | Every remaining author action is a `PATCH` or `DELETE` except adding a flag |
+
+Reproduced with curl, no token needed (so it is not the app): `PATCH`, `DELETE`, and `PUT` to any path under `/hub/` (for example `/hub/api/guide/comments/3`, `/hub/`) get Apache's `403 Forbidden` page; `GET`, `POST`, and the `OPTIONS` preflight reach Tomcat (`401` / `204` with CORS headers).
+
 ## Findings
+
+- **H3.3 (production configuration, blocks Gate 3):** production's Apache refuses `PATCH` and `DELETE` under `/hub/`. Broken on production since 0.10.0: editing a comment (2.5), dispose, change, clear, close, reopen, re-attach (5.6), deleting comments (5.8), clearing review flags (6.2), and the guide's "Sign out" token revoke (`DELETE /api/guide/token`). Gate 2's production part did not run an edit, so it was missed there. Fix: allow `PATCH` and `DELETE` (at least under `/hub/api/`) in the Apache configuration; no code change. Then rerun the round.
+- **T4 follow-up:** when a write fails at the network level, the guide shows no message; the form stays open and nothing tells the user it was not saved. Show an error.
 
 - **H3.2 (bug, fixed in `ba1270a`):** `canClose` should be true for an author on `OPEN`, `DISPOSED`, and `CLOSED` (false only on `WITHDRAWN`), so the guide can reopen. Contract 5.2 is clarified: `canClose` covers both closing and reopening.
 - **Not a defect:** the T3 follow-up "re-attach lists only explicit anchors" is already fixed in templates `v0.9.0`.
