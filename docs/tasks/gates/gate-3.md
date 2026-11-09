@@ -3,7 +3,7 @@
 **Date:** 2026-11-03
 **Run by:** Stream G, with H3's API checks
 **Test plan:** `docs/tasks/topic-reference-comments-test-plan.md`, Section 5
-**Result:** Blocked on production. API and browser checks pass locally after H3.2. The production review round (started 2026-11-04 on 0.10.1) stopped at the first author action: production's Apache front end refuses `PATCH` and `DELETE` (finding H3.3).
+**Result:** Pass, pending product owner approval. API and browser checks pass locally after H3.2. The production round, blocked on 2026-11-04 by Apache (H3.3), was rerun on 2026-11-09 after the Apache fix and passes. One guide defect found (H3.4, fix assigned to T5 as its first task).
 
 ## Summary
 
@@ -12,7 +12,7 @@
 | H3 author review | Pass | `feature/h3-author-review` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); `mvn test` 373 tests, 0 failures; reviewed by G against contract 5.6, 5.8, 6 |
 | T3 guide author controls (templates `v0.7.0`, pilot on `v0.9.0`) | Pass | Browser checks by G against the H3 branch |
 | P2 process guidance | Pass | Check 3.10 below |
-| Real review round on the pilot | Blocked | Production 0.10.1 (AART #3962). Every `PATCH` and `DELETE` is refused by Apache before it reaches Tomcat; finding H3.3 |
+| Real review round on the pilot | Pass (2026-11-09 rerun) | Production 0.10.1 after the Apache change (AART #3962). Finding H3.4 below |
 
 ## API checks (run by H3 with curl against local Tomcat)
 
@@ -53,9 +53,30 @@ Production 0.10.1 deployed (AART #3962). G signed in to the pilot at `/latest/` 
 
 Reproduced with curl, no token needed (so it is not the app): `PATCH`, `DELETE`, and `PUT` to any path under `/hub/` (for example `/hub/api/guide/comments/3`, `/hub/`) get Apache's `403 Forbidden` page; `GET`, `POST`, and the `OPTIONS` preflight reach Tomcat (`401` / `204` with CORS headers).
 
+## Production review round, rerun (2026-11-09)
+
+Product owner confirmed `PATCH` and `DELETE` to `/hub/api/guide/comments/3` return the app's `401`, not Apache's `403`. G reran the round in Chrome as the product owner's account at `/latest/` (`v0.3.0`), signed in through the guide, on the existing test threads. Change notes are labeled as tests; no pilot text changed.
+
+| # | Result | Note |
+|---|---|---|
+| 3.1 | Pass | #3 disposed Persuasive with a change note; shows label, note, and "Disposed by … on …" (`PATCH` `200`) |
+| 3.2 | Pass | Changed to Not Related with a new note; cleared back to Open with no disposition |
+| 3.3 | Pass | Disposed again (Considered for Future Use), closed: hidden by default; "Show closed" shows it Closed with its disposition, no Reply |
+| 3.4 | Pass | Reopen returns Disposed with its disposition; Reply, Change, Clear, and Close are back |
+| 3.5 | Pass | Test reply #5 deleted after the in-page confirmation; gone after reload |
+| 3.6 | Not run on production | No orphans exist and the round changes no pilot text (decision 2026-11-04); passed locally |
+| 3.7 | Pass | Flag on `in-brief` with a test note: area highlighted, rail lists it; cleared, highlight and rail entry gone |
+| 3.8 | Not run on production | Needs a second account; passed locally (API and browser) |
+| 3.9 | Pass | Topic 7 page panel shows the disposition and the active flag; the flag link goes through `/guide/open` to `#in-brief`; "Open the guide" and "Manage comments" present |
+| 2.5 (regression) | Pass | Edited #2's text; shows "edited" |
+| Sign out | Pass | "Sign out" returns the rail to "Sign in to comment" |
+
+After a reload: #3 Disposed (Considered for Future Use), #2 edited, #5 gone, no flags, no orphans.
+
 ## Findings
 
 - **H3.3 (production configuration, blocks Gate 3):** production's Apache refuses `PATCH` and `DELETE` under `/hub/`. Broken on production since 0.10.0: editing a comment (2.5), dispose, change, clear, close, reopen, re-attach (5.6), deleting comments (5.8), clearing review flags (6.2), and the guide's "Sign out" token revoke (`DELETE /api/guide/token`). Gate 2's production part did not run an edit, so it was missed there. Fix: allow `PATCH` and `DELETE` (at least under `/hub/api/`) in the Apache configuration; no code change. Then rerun the round.
+- **H3.4 (guide bug, templates; assigned to T5 task 0):** the guide's background refresh re-renders threads and discards any open form on them. A dispose form with typed text was wiped after 20 seconds with no server change; a reply draft was wiped about 50 seconds in. An author writing a change note, or anyone writing a reply or edit, loses the text. Must be fixed before real review use; not a server defect.
 - **T4 follow-up:** when a write fails at the network level, the guide shows no message; the form stays open and nothing tells the user it was not saved. Show an error.
 
 - **H3.2 (bug, fixed in `ba1270a`):** `canClose` should be true for an author on `OPEN`, `DISPOSED`, and `CLOSED` (false only on `WITHDRAWN`), so the guide can reopen. Contract 5.2 is clarified: `canClose` covers both closing and reopening.
@@ -63,4 +84,4 @@ Reproduced with curl, no token needed (so it is not the app): `PATCH`, `DELETE`,
 
 ## Approval
 
-Pending.
+Pending product owner approval (G recommends: pass, with H3.4 fixed in templates before the first real review round).

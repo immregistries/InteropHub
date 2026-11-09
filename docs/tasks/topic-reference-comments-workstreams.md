@@ -61,7 +61,8 @@ No agent commits, pushes, tags, or merges without the product owner's instructio
 | T1 | **Anchors, local mode.** `<!-- anchor: name -->` in `build_guide.py`, headings as anchors, block position within areas, deep links to `#anchor` and `#comment-…`, placement and orphan rules in local comments, `check_content.py` validation, anchors dropped from Word and reading copy, fixture, guidance on anchor naming. Release tag. | 5, 11 |
 | T2 | **Live comments.** Storage interface with local and InteropHub backends, `comments` setting in `guide.json`, PKCE sign-in and token handling, "Sign in to comment" rail, first-comment notice, replies, back-off refreshing. Built and tested against a small stdlib mock server that follows the contract. Release tag. | 4.2–4.4, 6.1, 6.2, 6.4, 9.1, 9.2, 11 |
 | T3 | **Author review.** State, disposition, and change note display, "Show closed", author controls (dispose, close, delete, re-attach), review flag highlight and rail list. Release tag. | 6.3, 7, 11 |
-| T4 | **Setup and project template.** Registration step in `new_topic_reference.py` and setup guidance, template `AGENTS.md`, `review/README.md`, project change log, `import_guide_comments.py` migration option, `guidance/TopicReference.md`. Release tag. | 3.2, 9.4, 11 |
+| T4 | **Setup and project template.** Registration step in `new_topic_reference.py` and setup guidance, template `AGENTS.md`, `review/README.md`, project change log, `import_guide_comments.py` migration option, `guidance/TopicReference.md`. Setup asks the hosting mode (after T5). Release tag. | 3.2, 9.4, 11 |
+| T5 | **Hosted publishing.** `hosting` in `guide.json`, `publish_guide_to_hub.py`, private-repository workflow template, guidance on choosing a mode. Built against a mock upload endpoint. Release tag. | `topic-reference-private-hosting.md` 4 |
 
 ### Stream H: InteropHub comments (`InteropHub`)
 
@@ -72,6 +73,7 @@ No agent commits, pushes, tags, or merges without the product owner's instructio
 | H2 | **Registration and comments.** `es_guide_document`, `es_guide_document_url` with allowlist upkeep, the approved URL prefix setting and its admin page, `/guide/open`, registration page, `es_guide_comment` and audit, comments API for adding, replying, editing within 14 days, withdrawing, and listing with `since`. Visibility rules. | 6.1, 6.2, 6.4, 8, 9.1, 9.4, 10 |
 | H3 | **Author review.** States, disposition lookup table, change notes, closing, deleting, re-attaching, review flags, comment management page, topic page panel. | 6.3, 7, 8, 10 |
 | H4 | **MCP server.** Remote MCP endpoint with the comment, review flag, and guide registration tools, calling the same services as the API. MCP user guide. | 9.3, 9.4 |
+| H5 | **Private hosting.** `hosting` on the guide document, uploaded versions in the existing Blob storage (unguessable keys, streamed, never redirected), `/guide/view/{documentKey}/{label}/` behind the topic visibility check, upload API and form, self-registered view URLs. | `topic-reference-private-hosting.md` 3 |
 
 ### Stream E: Topic tools (`InteropHub`, own branch)
 
@@ -90,6 +92,7 @@ E1 changes `canEditTopic`, which also decides who is an author of a Topic Refere
 | P2 | `content-publishing-process`: review-round workflow, two records of feedback, anchor practice, agent instructions for the MCP server. | 12 |
 | P3 | Pilot project moves to InteropHub mode: submodule update, registration, `guide.json`, optional import of past comments, publish. | 13 |
 | P4 | Remaining projects, one at a time. | 13 |
+| P5 | First private project, `aira-resource-repository-reference` (topic 180, private space), goes Hosted: templates release with T5, `guide.json` `hosting` and `comments`, registration as `HUB`, upload, publish workflow with a repository secret. | `topic-reference-private-hosting.md` 6 |
 
 ## 5. Sequence and Gates
 
@@ -107,7 +110,11 @@ Gate 2  ---+--- P3 pilot goes live
            v
         T3 author review | H3 author review | P2 process guidance
            |
-Gate 3  ---+
+Gate 3  ---+        (H5 may start before Gate 3 passes)
+           v
+        H5 private hosting | T5 hosted publishing              (parallel)
+           |
+Gate 3H ---+--- P5 first private Topic Reference on production
            v
         H4 MCP server -> E2 topic tools | T4 setup and template
            |
@@ -120,6 +127,7 @@ Gate 4  ---+--- P4 remaining projects
 | **1** | T1 is released, and the pilot builds with anchors in local mode, comments placed by anchor, and deep links working. H1: on local InteropHub, a page served from `http://localhost:<port>` (approved in dev only) completes the sign-in round trip, gets a token, and is refused from an origin that is not approved. E1: topic tools open question 1 is answered and existing edit, import, and admin pages behave as before. |
 | **2** | On local InteropHub, two signed-in users comment and reply on the pilot guide and each sees the other's comments without reloading. Visibility follows the topic space. The edit window and withdraw work. Then the same on production with the pilot (P3). |
 | **3** | A real review round on the pilot: authors dispose with change notes, flag areas for review, close and delete comments, re-attach an orphan after an anchor is renamed. The topic page panel links into the guide. |
+| **3H** | `topic-reference-private-hosting.md` Section 6: hosted guide uploaded by script and by form, sign-in redirect for a signed-out reader, refusal without topic access, comments work, no anonymous URL serves the file. Then one real private guide on production. |
 | **4** | An agent works through a round using only the MCP server: lists comments, finds each in the content by anchor and snippet, edits, disposes, replies, flags, closes. An agent sets up a new Topic Reference repository in one session (topic tools task Section 6.1). |
 
 ## 6. Integration Testing Notes
@@ -137,8 +145,7 @@ Kept current by stream G.
 |---|---|---|
 | G0 contract | Approved 2026-10-30 | Section 8 (MCP) completed from H0 the same day. | `topic-reference-comments-api-contract.md` |
 | G0 test plan | Approved 2026-10-30 | `topic-reference-comments-test-plan.md` |
-| H0 MCP experiment | Done 2026-10-30 | Guide shows no error when a write fails at the network level | T4 | Found in the Gate 3 production round (H3.3): the dispose form stays open and nothing says it was not saved. |
-| Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
+| H0 MCP experiment | Done 2026-10-30 | Branch `experiment/h0-mcp`, not merged. Hand-written `/mcp` works with Claude Code 2.1.314; the SDK also works but brings dependency conflicts. Code kept as reference for H1 (filter) and H4. |
 | Gate 0 | Passed 2026-10-30 | Contract and test plan approved; MCP experiment works from Claude Code; library decision recorded. |
 | T1 | Released `v0.5.0` 2026-10-30 | Commit `8fb4298` in content-publishing-templates. Accepted by G: `validate.ps1` passes, no internal names. Legacy: paragraph comments stay attached; list-item and code-block comments become orphans, none lost. |
 | E1 | Done 2026-10-30, merged | Merged as `baab8ec`. Runtime checks 1.40 to 1.44 pass; import regression found and fixed (`9dbfdb3`). |
@@ -153,7 +160,11 @@ Kept current by stream G.
 | P3 | Done 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pass (Gate 2, 4.3). |
 | H3 | Done 2026-11-03, merged | Merged as `0ed31dd` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); release 0.10.1 (`577037b`, code only) requested in AART #3962; 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
 | P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Tagged core release `v0.3.0`. Three decks flagged for review by `check_products.py`. |
-| Gate 3 | Blocked | `gates/gate-3.md`. 0.10.1 is on production (AART #3962). The production round stopped at the first dispose: production's Apache refuses `PATCH` and `DELETE` (H3.3), which also breaks comment edit, delete, and guide sign-out shipped in 0.10.0. Apache change requested 2026-11-04 on reopened AART #3962; then the round reruns. |
+| Gate 3 | Passed by G 2026-11-09, awaiting approval | `gates/gate-3.md`. Apache fixed (AART #3962; `PATCH` and `DELETE` reach the app). Production round rerun 2026-11-09: 3.1 to 3.5, 3.7, 3.9, edit, and sign-out pass; 3.6 and 3.8 passed locally only. New guide bug H3.4 (refresh discards open forms), fixed as T5 task 0. |
+| H5 | Prompt written 2026-11-09 (Cursor) | `prompts/H5-private-hosting.md`; design `topic-reference-private-hosting.md`. |
+| T5 | Prompt written 2026-11-09 (Codex) | `prompts/T5-hosted-publishing.md`. |
+| P5 | Not started | After T5 is released and H5 is on production. |
+| Gate 3H | | |
 | H4 | Not started | |
 | E2 | Not started | |
 | T4 | Not started | |
@@ -168,6 +179,7 @@ Loose ends kept here so nobody has to remember them. G clears each item when it 
 | Claude Code MCP entry `interophub-dev` (local config for this repository) | At H4, or sooner if the connection errors are annoying | Points at H0's `/mcp` with a dev token. Fails to connect once the H0 WAR is gone. Remove with `claude mcp remove interophub-dev`; at H4, add it again with a real personal access token. |
 | T3 follow-ups, for T4 | T4 | (6) Rail briefly shows the local-mode text after the sign-in redirect. (1) Re-attach lists only explicit anchors; add headings (they are anchors too, contract 1.1) and `document-start`. (2) `tests/mock_hub.py` is packed into very long lines; reformat it like `guide.js`. (3) The mock answers an edit of someone else's text with `edit_window_closed`; it should be `forbidden` (contract 5.6). (4) `validate.ps1` exits 1 under Windows PowerShell 5.1 because unittest writes its progress dots to stderr; have the unittest step not treat stderr as failure. (5) "Show closed" shows for a reader whose account cannot view comments; hide it. |
 | Registration page "Check without saving" clears the form after a passed check | H3 | Found registering the pilot on production. Included in the H3 prompt (task 6). |
+| Guide refresh discards open forms (Gate 3 H3.4) | T5 task 0, released as templates `v0.13.1` | Then move the pilot (`contextual-conditions`) to `v0.13.1` before its first real review round. |
 | Guide shows no error when a write fails at the network level | T4 | Found in the Gate 3 production round (H3.3): the dispose form stays open and nothing says it was not saved. |
 | Branch `experiment/h0-mcp` and its worktree `InteropHub.worktrees/h0-mcp` | After H4 merges | Committed locally (`d65bced`), never pushed. Reference for H1 and H4. Delete the worktree and branch once H4 no longer needs it. Its report contains a dev-only token that dies with the next database rebuild. |
 
@@ -195,3 +207,5 @@ Record decisions made during implementation here, with the date, so later prompt
 | 2026-10-30 | Release 0.10.0 goes to production with E1, H1, and H2 (AART #3957). No topic page link yet; the pilot is reached by its URL until H3's panel ships. Rehearsed first: a full restore of the latest production backup plus `unapplied_updates.sql` and the dev setup ran cleanly, and the app started against it (closes check 1.36). |
 | 2026-11-04 | The existing production comments on the pilot are test comments, not review feedback. The Gate 3 round uses them as test data, labels change notes as tests, and changes no pilot text. |
 | 2026-11-03 | Contract 5.2: `canClose` covers closing and reopening; true for an author on `OPEN`, `DISPOSED`, and `CLOSED`, false on `WITHDRAWN` (found in Gate 3, fixed in H3.2). CSRF tokens are required on the guide registration and comment management page posts (H3). |
+| 2026-11-09 | Private hosting approved (`topic-reference-private-hosting.md`): three modes (Local, Public, Hosted). Hosted guides are stored in the existing Blob container with unguessable keys and streamed by InteropHub behind the topic visibility check, never redirected to Blob. The same-origin script risk is accepted; a separate host name is the later upgrade. H5 (Cursor) and T5 (Codex) run before H4, and H5 may start before Gate 3 passes. First private project: `aira-resource-repository-reference` (topic 180). |
+| 2026-11-09 | Production Apache now passes `PATCH` and `DELETE` to Tomcat (AART #3962); H3.3 resolved. |
