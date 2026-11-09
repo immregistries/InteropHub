@@ -182,7 +182,8 @@ final class HibernateGuideRegistrationStore implements GuideRegistrationService.
                 session.persist(allow);
                 session.flush();
                 for (UrlBinding binding : plan.urls) {
-                    if (binding.insertNew && insert.url.equals(binding.url)) {
+                    String owned = binding.ownedAllowUrl != null ? binding.ownedAllowUrl : binding.url;
+                    if (binding.insertNew && insert.url.equals(owned)) {
                         binding.allowId = allow.getAllowId();
                     }
                 }

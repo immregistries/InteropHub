@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.model.MagicLink;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.servlet.GuideBearerTokenFilter;
 import org.junit.jupiter.api.Test;
@@ -110,6 +111,30 @@ class GuideSignInFoundationTest {
         assertEquals(GuideTokenExchange.Status.OK, GuideTokenExchange.evaluate(
                 facts(true, GuideApps.TOPIC_REFERENCE, false, false, RETURN_TO, CHALLENGE, RETURN_TO, VERIFIER,
                         "http://localhost:8001", true)).status);
+    }
+
+    @Test
+    void guideReturnSurvivesTheMagicLinkAndRejectsOtherTargets() {
+        AuthFlowService auth = new AuthFlowService();
+        String guide = "/guide/view/guide-hosted-test/v0.3.0/?keep=1";
+        MagicLink link = new MagicLink();
+        assertEquals(guide, auth.guideViewReturnOnMagicLink(link, guide));
+        assertEquals(guide, link.getRequestedUrl());
+        assertNull(link.getReturnTo());
+
+        assertEquals("/guide/view/guide-hosted-test/latest/",
+                auth.guideViewReturnOnMagicLink(new MagicLink(), "%2Fguide%2Fview%2Fguide-hosted-test%2Flatest%2F"));
+
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "https://evil.example/guide/view/x/latest/"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "//evil.example/guide/view/x/latest/"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "/welcome"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "%2F%2Fevil.example"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "%2Fwelcome"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(),
+                "https%3A%2F%2Fevil.example%2Fguide%2Fview%2Fx%2Flatest%2F"));
+        assertNull(auth.guideViewReturnOnMagicLink(new MagicLink(), "/guide/view/doc/%2e%2e/%2e%2e/admin"));
+
+        assertEquals(RETURN_TO + "#code=abc&state=xyz", ExternalRedirect.build(RETURN_TO, "abc", "xyz", true));
     }
 
     @Test

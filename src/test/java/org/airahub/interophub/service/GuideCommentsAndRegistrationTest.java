@@ -242,8 +242,16 @@ class GuideCommentsAndRegistrationTest {
                 created.getJSONArray("urls").getJSONObject(0).getString("url"));
         assertEquals("https://hub.example/hub/guide/view/hosted-guide/main/",
                 created.getJSONArray("urls").getJSONObject(1).getString("url"));
-        assertTrue(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/latest/"));
-        assertTrue(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/main/"));
+        String prefix = "https://hub.example/hub/guide/view/hosted-guide/";
+        assertTrue(registration.allowEnabled(prefix));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/latest/"));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/main/"));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/"));
+        AuthFlowService auth = new AuthFlowService();
+        assertTrue(auth.returnToMatchesAllowlist(prefix,
+                "https://hub.example/hub/guide/view/hosted-guide/v0.3.0/"));
+        assertFalse(auth.returnToMatchesAllowlist(prefix,
+                "https://hub.example/hub/guide/view/other-guide/v0.3.0/"));
         assertFalse(created.toString().contains("public_id"));
 
         GuideOpenServlet open = new GuideOpenServlet(registration.service);
@@ -280,9 +288,15 @@ class GuideCommentsAndRegistrationTest {
                 captured.location);
 
         registration.service.update(author, 3L, "API", false, "hosted-guide", false, null, false, null, false,
-                List.of(), false, null, true, "EXTERNAL");
+                List.of(), true, false, false, null);
+        assertEquals("HUB", registration.document("hosted-guide").hosting);
+        assertFalse(registration.allowEnabled(prefix));
+
+        registration.service.update(author, 3L, "API", false, "hosted-guide", false, null, false, null, false,
+                List.of(), true, true, true, "EXTERNAL");
         assertEquals("EXTERNAL", registration.document("hosted-guide").hosting);
         assertTrue(registration.document("hosted-guide").urls.isEmpty());
+        assertFalse(registration.allowEnabled(prefix));
         assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/latest/"));
         assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/main/"));
     }
@@ -1105,7 +1119,8 @@ class GuideCommentsAndRegistrationTest {
                 row.enabled = insert.enabled;
                 allowlist.add(row);
                 for (var binding : plan.urls) {
-                    if (binding.insertNew && insert.url.equals(binding.url)) {
+                    String owned = binding.ownedAllowUrl != null ? binding.ownedAllowUrl : binding.url;
+                    if (binding.insertNew && insert.url.equals(owned)) {
                         binding.allowId = row.allowId;
                     }
                 }

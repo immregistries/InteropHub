@@ -63,6 +63,12 @@ public class GuideViewServlet extends HttpServlet {
         }
         Optional<User> authenticated = authFlowService.findAuthenticatedUser(request);
         if (authenticated.isEmpty()) {
+            String guidePath = "/guide/view/" + segments[0] + "/" + segments[1] + "/";
+            String query = request.getQueryString();
+            if (query != null && !query.isBlank()) {
+                guidePath = guidePath + "?" + query;
+            }
+            authFlowService.rememberGuideViewReturn(request, guidePath);
             response.sendRedirect(request.getContextPath() + "/home");
             return;
         }

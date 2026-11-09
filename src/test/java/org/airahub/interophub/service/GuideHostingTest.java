@@ -201,6 +201,7 @@ class GuideHostingTest {
         Captured signedOut = exchange(servlet, "/guide-hosted-test/latest/", auth);
         assertEquals(302, signedOut.status);
         assertEquals("/hub/home", signedOut.headers.get("Location"));
+        assertEquals("/guide/view/guide-hosted-test/latest/", auth.guideReturn);
 
         auth.user = Optional.of(user(2));
         Captured refused = exchange(servlet, "/guide-hosted-test/latest/", auth);
@@ -379,10 +380,16 @@ class GuideHostingTest {
 
     private static final class FakeAuth extends AuthFlowService {
         Optional<User> user = Optional.empty();
+        String guideReturn;
 
         @Override
         public Optional<User> findAuthenticatedUser(HttpServletRequest request) {
             return user;
+        }
+
+        @Override
+        public void rememberGuideViewReturn(HttpServletRequest request, String candidate) {
+            guideReturn = candidate;
         }
     }
 

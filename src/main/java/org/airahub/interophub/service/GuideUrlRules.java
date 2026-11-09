@@ -122,13 +122,21 @@ public final class GuideUrlRules {
         return normalized.url();
     }
 
-    /** The two view URLs registered when a document is hosted on InteropHub. */
-    public static String[][] hubViews(String publicBase, String documentKey) {
+    /**
+     * Allowlist prefix for every label of one hosted document. Not a guide URL,
+     * and not a prefix for every document.
+     */
+    public static String hubViewPrefix(String publicBase, String documentKey) {
         String base = publicBase == null ? "" : publicBase.trim();
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
-        String root = base + "/guide/view/" + documentKey + "/";
+        return base + "/guide/view/" + documentKey + "/";
+    }
+
+    /** The two view URLs registered when a document is hosted on InteropHub. */
+    public static String[][] hubViews(String publicBase, String documentKey) {
+        String root = hubViewPrefix(publicBase, documentKey);
         return new String[][] {{root + "latest/", "latest"}, {root + "main/", "main"}};
     }
 

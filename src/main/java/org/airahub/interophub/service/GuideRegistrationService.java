@@ -276,16 +276,30 @@ public class GuideRegistrationService {
         return binding;
     }
 
-    private static void disableRemoved(Map<String, UrlBinding> previous, Set<String> kept,
+    private static void disableRemoved(Map<String, UrlBinding> previous, List<UrlBinding> kept,
             Map<String, AllowRow> allowByUrl, RegistrationPlan plan) {
+        Set<Long> keptAllowIds = new LinkedHashSet<>();
+        for (UrlBinding binding : kept) {
+            if (binding.ownsAllowlist && binding.allowId != null) {
+                keptAllowIds.add(binding.allowId);
+            }
+        }
+        Set<Long> disabled = new LinkedHashSet<>();
         for (UrlBinding old : previous.values()) {
-            if (kept.contains(old.url) || !old.ownsAllowlist || old.allowId == null) {
+            if (!old.ownsAllowlist || old.allowId == null || keptAllowIds.contains(old.allowId)
+                    || !disabled.add(old.allowId)) {
                 continue;
             }
-            AllowRow allow = allowByUrl.get(old.url);
+            AllowRow allow = null;
+            for (AllowRow row : allowByUrl.values()) {
+                if (old.allowId.equals(row.allowId)) {
+                    allow = row;
+                    break;
+                }
+            }
             if (allow != null && allow.enabled) {
                 plan.toggles.add(new AllowToggle(old.allowId, false));
-                plan.removed.add(old.url);
+                plan.removed.add(allow.baseUrl);
             }
         }
     }
@@ -432,11 +446,51 @@ public class GuideRegistrationService {
             } else if (!GuideUrlRules.approved(normalized.url(), normalized.devApproved(), admin, prefixes)) {
                 throw GuideApiException.urlNotApproved();
             }
-            bindings.add(bindOne(normalized.url(), label, sort++, previous.get(normalized.url()),
-                    allowByUrl.get(normalized.url()), documentActive, plan));
+            if (GuideHtmlRules.HUB.equals(hosting)) {
+                UrlBinding binding = new UrlBinding(normalized.url(), label);
+                binding.sortOrder = sort++;
+                bindings.add(binding);
+            } else {
+                bindings.add(bindOne(normalized.url(), label, sort++, previous.get(normalized.url()),
+                        allowByUrl.get(normalized.url()), documentActive, plan));
+            }
         }
-        disableRemoved(previous, seenUrls, allowByUrl, plan);
+        if (GuideHtmlRules.HUB.equals(hosting) && !bindings.isEmpty()) {
+            attachHubPrefix(bindings.get(0), allowByUrl, documentActive, plan, documentKey, localhostMode);
+        }
+        disableRemoved(previous, bindings, allowByUrl, plan);
         return bindings;
+    }
+
+    /**
+     * One allowlist row for every label of this document. The latest guide URL
+     * owns it so leaving HUB, or becoming inactive, disables it with the other
+     * owned rows. latest and main stay the guide URLs.
+     */
+    private void attachHubPrefix(UrlBinding owner, Map<String, AllowRow> allowByUrl, boolean documentActive,
+            RegistrationPlan plan, String documentKey, boolean localhostMode) {
+        String prefix = GuideUrlRules.normalize(
+                GuideUrlRules.hubViewPrefix(store.publicBaseUrl(), documentKey), localhostMode).url();
+        AllowRow existing = allowByUrl.get(prefix);
+        owner.ownsAllowlist = true;
+        owner.ownedAllowUrl = prefix;
+        if (existing == null) {
+            owner.insertNew = true;
+            plan.inserts.add(new AllowInsert(prefix, documentActive));
+            if (documentActive) {
+                plan.added.add(prefix);
+            }
+            return;
+        }
+        owner.allowId = existing.allowId;
+        if (existing.enabled != documentActive) {
+            plan.toggles.add(new AllowToggle(existing.allowId, documentActive));
+            if (documentActive) {
+                plan.added.add(prefix);
+            } else {
+                plan.removed.add(prefix);
+            }
+        }
     }
 
     public record UrlInput(String url, String label) {

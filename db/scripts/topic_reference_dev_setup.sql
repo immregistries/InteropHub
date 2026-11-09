@@ -306,43 +306,37 @@ WHERE document_key = 'guide-hosted-test'
 
 SET @hosted_document_id = (SELECT guide_document_id FROM es_guide_document WHERE document_key = 'guide-hosted-test');
 
+-- One prefix covers every label. Per-label rows from the first H5 setup are turned off.
 INSERT INTO app_redirect_allowlist (app_id, base_url, is_enabled)
-SELECT @topic_reference_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/', 1
+SELECT @topic_reference_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/', 1
 FROM DUAL
 WHERE @topic_reference_id IS NOT NULL
   AND NOT EXISTS (
     SELECT 1 FROM app_redirect_allowlist
     WHERE app_id = @topic_reference_id
-      AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
+      AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/'
   );
 
-INSERT INTO app_redirect_allowlist (app_id, base_url, is_enabled)
-SELECT @topic_reference_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/', 1
-FROM DUAL
-WHERE @topic_reference_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM app_redirect_allowlist
-    WHERE app_id = @topic_reference_id
-      AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+UPDATE app_redirect_allowlist
+SET is_enabled = 0
+WHERE app_id = @topic_reference_id
+  AND base_url IN (
+    'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/',
+    'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
   );
 
-SET @hosted_latest_allow_id = (
+SET @hosted_prefix_allow_id = (
   SELECT allow_id FROM app_redirect_allowlist
   WHERE app_id = @topic_reference_id
-    AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
-);
-SET @hosted_main_allow_id = (
-  SELECT allow_id FROM app_redirect_allowlist
-  WHERE app_id = @topic_reference_id
-    AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+    AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/'
 );
 
 INSERT INTO es_guide_document_url
   (guide_document_id, url, label, sort_order, allow_id, owns_allowlist)
 SELECT @hosted_document_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/', 'latest', 0,
-  @hosted_latest_allow_id, 1
+  @hosted_prefix_allow_id, 1
 FROM DUAL
-WHERE @hosted_document_id IS NOT NULL AND @hosted_latest_allow_id IS NOT NULL
+WHERE @hosted_document_id IS NOT NULL AND @hosted_prefix_allow_id IS NOT NULL
   AND NOT EXISTS (
     SELECT 1 FROM es_guide_document_url
     WHERE url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
@@ -351,13 +345,25 @@ WHERE @hosted_document_id IS NOT NULL AND @hosted_latest_allow_id IS NOT NULL
 INSERT INTO es_guide_document_url
   (guide_document_id, url, label, sort_order, allow_id, owns_allowlist)
 SELECT @hosted_document_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/', 'main', 1,
-  @hosted_main_allow_id, 1
+  @hosted_prefix_allow_id, 0
 FROM DUAL
-WHERE @hosted_document_id IS NOT NULL AND @hosted_main_allow_id IS NOT NULL
+WHERE @hosted_document_id IS NOT NULL AND @hosted_prefix_allow_id IS NOT NULL
   AND NOT EXISTS (
     SELECT 1 FROM es_guide_document_url
     WHERE url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
   );
+
+UPDATE es_guide_document_url
+SET allow_id = @hosted_prefix_allow_id, owns_allowlist = 1
+WHERE guide_document_id = @hosted_document_id
+  AND url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
+  AND @hosted_prefix_allow_id IS NOT NULL;
+
+UPDATE es_guide_document_url
+SET allow_id = @hosted_prefix_allow_id, owns_allowlist = 0
+WHERE guide_document_id = @hosted_document_id
+  AND url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+  AND @hosted_prefix_allow_id IS NOT NULL;
 
 INSERT INTO es_guide_review_flag
   (guide_document_id, anchor_id, note, created_by_user_id, created_at, updated_at)

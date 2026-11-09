@@ -392,6 +392,42 @@ public class AuthFlowService {
         request.getSession(true).setAttribute(ATTR_INTERNAL_REQUESTED_URL, normalized);
     }
 
+    /**
+     * Remembers a hosted-guide path so the next magic link carries it. A new tab
+     * that opens the link still returns there. Any other value is dropped.
+     */
+    public void rememberGuideViewReturn(HttpServletRequest request, String candidate) {
+        if (request == null) {
+            return;
+        }
+        String accepted = GuideViewReturn.accept(candidate).orElse(null);
+        if (accepted == null) {
+            clearRememberedInternalRequestedUrl(request);
+            return;
+        }
+        request.getSession(true).setAttribute(ATTR_INTERNAL_REQUESTED_URL, accepted);
+    }
+
+    /** Stores an accepted guide path on the magic link and reads back where it will send the reader. */
+    String guideViewReturnOnMagicLink(MagicLink link, String candidate) {
+        if (link == null) {
+            return null;
+        }
+        GuideViewReturn.accept(candidate).ifPresent(link::setRequestedUrl);
+        if (resolveExternalAuthRequestForMagicLink(link) != null) {
+            return null;
+        }
+        return resolveInternalRedirectForMagicLink(link);
+    }
+
+    boolean returnToMatchesAllowlist(String baseUrl, String returnToUrl) {
+        try {
+            return matchesAllowedBase(baseUrl, returnToUrl);
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     public Optional<String> recallInternalRequestedUrl(HttpServletRequest request) {
         if (request == null) {
             return Optional.empty();

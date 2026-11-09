@@ -38,6 +38,8 @@ public final class GuideRows {
         Long allowId;
         boolean ownsAllowlist;
         boolean insertNew;
+        /** Allowlist base when it is not the guide URL itself. */
+        String ownedAllowUrl;
         boolean insertEnabled = true;
 
         UrlBinding() {

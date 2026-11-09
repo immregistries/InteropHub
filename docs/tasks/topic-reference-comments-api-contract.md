@@ -510,7 +510,7 @@ Any of `title`, `repositoryUrl`, `urls`, `isActive`. `urls`, when sent, **replac
 
 `hosting` on the document object (5.1) is `EXTERNAL` or `HUB`. `POST /api/guides` and `PATCH /api/guide/{documentKey}` accept it. Absent on create means `EXTERNAL`. `null` is refused.
 
-When `hosting` is `HUB`, omit `urls`. InteropHub registers these two guide URLs, replacing any external URLs, and maintains their allowlist rows through the rules in 7.3:
+When `hosting` is `HUB`, omit `urls`. InteropHub registers these two guide URLs, replacing any external URLs:
 
 ```text
 {hub}/guide/view/{documentKey}/latest/
@@ -519,13 +519,15 @@ When `hosting` is `HUB`, omit `urls`. InteropHub registers these two guide URLs,
 
 `latest` is first, so `/guide/open` uses it. These hub view URLs count as approved without an approved-prefix setting. Sending `urls` together with `HUB` is `400 invalid_field`, `field: urls`.
 
-Setting `hosting` back to `EXTERNAL` removes those view URLs. Send `urls` in the same request to replace them; omitting `urls` leaves the document with no guide URLs.
+The document's allowlist row is the prefix `{hub}/guide/view/{documentKey}/`, maintained through the rules in 7.3. Prefix matching accepts every label of that document, including a version tag, for guide sign-in. It is not `{hub}/guide/view/` for every document. The row is removed the same way as other owned allowlist rows when hosting returns to `EXTERNAL` or the document becomes inactive.
+
+Setting `hosting` back to `EXTERNAL` removes the view URLs and that prefix. Send `urls` in the same request to replace the view URLs; omitting `urls` leaves the document with no guide URLs.
 
 ```text
 GET {hub}/guide/view/{documentKey}/{label}/
 ```
 
-A URL without the trailing slash redirects to it. Any further path after the label is `404`. The response is HTML, not JSON. Signed-out readers are sent to sign-in and back to this URL. A signed-in reader who cannot view the topic, or an inactive document, a document that is not `HUB`, or an unknown label, gets the same not-found page as a private topic. An allowed response is the stored HTML with `Content-Type: text/html; charset=utf-8`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: same-origin`. InteropHub streams the file. It does not redirect to storage.
+A URL without the trailing slash redirects to it. Any further path after the label is `404`. The response is HTML, not JSON. Signed-out readers are sent to sign-in. The magic link carries the guide path, including its query, and after the link is used the reader lands on that same URL. Only a relative path under `/guide/view/` is carried; anything else is ignored and sign-in finishes on the normal page. A signed-in reader who cannot view the topic, or an inactive document, a document that is not `HUB`, or an unknown label, gets the same not-found page as a private topic. An allowed response is the stored HTML with `Content-Type: text/html; charset=utf-8`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: same-origin`. InteropHub streams the file. It does not redirect to storage.
 
 `label` is `latest`, `main`, or `v` followed by digits and dots, with an optional `-suffix` such as `v1.2.3` or `v1.2.3-rc1`.
 
