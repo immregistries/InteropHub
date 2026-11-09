@@ -160,9 +160,9 @@ Kept current by stream G.
 | P3 | Done 2026-11-02 | Pilot registered on production (topic 7, `/latest/` and `/main/`, allowlist rows added); `guide.json` `comments` set to the production hub (contextual-conditions `51b71e7`, templates `v0.9.0`); tagged `v0.2.0`. Two-account checks pass (Gate 2, 4.3). |
 | H3 | Done 2026-11-03, merged | Merged as `0ed31dd` (`18e1668`, CSRF `f64ff7f`, H3.2 `ba1270a`); release 0.10.1 (`577037b`, code only) requested in AART #3962; 373 tests pass. API and browser checks pass. `gates/gate-3.md`. |
 | P2 | Done 2026-11-02 | content-publishing-process `d4b2609`. Reviewed by G with small fixes (Gate 3 check 3.10 passes). MCP section marked pending H4; revisit after H4. Tagged core release `v0.3.0`. Three decks flagged for review by `check_products.py`. |
-| Gate 3 | Passed by G 2026-11-09, awaiting approval | `gates/gate-3.md`. Apache fixed (AART #3962; `PATCH` and `DELETE` reach the app). Production round rerun 2026-11-09: 3.1 to 3.5, 3.7, 3.9, edit, and sign-out pass; 3.6 and 3.8 passed locally only. New guide bug H3.4 (refresh discards open forms), fixed as T5 task 0. |
-| H5 | Prompt written 2026-11-09 (Cursor) | `prompts/H5-private-hosting.md`; design `topic-reference-private-hosting.md`. |
-| T5 | Prompt written 2026-11-09 (Codex) | `prompts/T5-hosted-publishing.md`. |
+| Gate 3 | Passed 2026-11-09 | Approved by the product owner. | `gates/gate-3.md`. Apache fixed (AART #3962; `PATCH` and `DELETE` reach the app). Production round rerun 2026-11-09: 3.1 to 3.5, 3.7, 3.9, edit, and sign-out pass; 3.6 and 3.8 passed locally only. New guide bug H3.4 (refresh discards open forms), fixed as T5 task 0. |
+| H5 | In progress 2026-11-09 (Cursor) | `prompts/H5-private-hosting.md`; design `topic-reference-private-hosting.md`. |
+| T5 | In progress 2026-11-09 (Codex) | `prompts/T5-hosted-publishing.md`. |
 | P5 | Not started | After T5 is released and H5 is on production. |
 | Gate 3H | | |
 | H4 | Not started | |
