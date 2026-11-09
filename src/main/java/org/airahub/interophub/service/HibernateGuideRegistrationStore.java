@@ -137,6 +137,15 @@ final class HibernateGuideRegistrationStore implements GuideRegistrationService.
     }
 
     @Override
+    public String publicBaseUrl() {
+        String base = publicUrlService.resolveExternalUrl("/");
+        if (base.endsWith("/")) {
+            return base.substring(0, base.length() - 1);
+        }
+        return base;
+    }
+
+    @Override
     public void persist(RegistrationPlan plan) {
         Transaction transaction = null;
         try (Session session = open()) {
@@ -150,6 +159,8 @@ final class HibernateGuideRegistrationStore implements GuideRegistrationService.
             document.setTitle(plan.document.title);
             document.setRepositoryUrl(plan.document.repositoryUrl);
             document.setActive(plan.document.active);
+            document.setHosting(plan.document.hosting == null || plan.document.hosting.isBlank()
+                    ? GuideHtmlRules.EXTERNAL : plan.document.hosting);
             document.setCreatedByUserId(plan.document.createdByUserId);
             document.setCreatedAt(plan.document.createdAt);
             document.setUpdatedAt(plan.document.updatedAt == null ? LocalDateTime.now() : plan.document.updatedAt);
@@ -241,6 +252,8 @@ final class HibernateGuideRegistrationStore implements GuideRegistrationService.
         row.title = entity.getTitle();
         row.repositoryUrl = entity.getRepositoryUrl();
         row.active = Boolean.TRUE.equals(entity.getActive());
+        row.hosting = entity.getHosting() == null || entity.getHosting().isBlank()
+                ? GuideHtmlRules.EXTERNAL : entity.getHosting();
         row.createdByUserId = entity.getCreatedByUserId();
         row.createdAt = entity.getCreatedAt();
         row.updatedAt = entity.getUpdatedAt();

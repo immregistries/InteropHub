@@ -32,6 +32,10 @@ public class EsGuideDocument {
     @Column(name = "is_active", nullable = false)
     private Boolean active;
 
+    /** EXTERNAL (published elsewhere) or HUB (served by InteropHub). */
+    @Column(name = "hosting", nullable = false, length = 16)
+    private String hosting;
+
     @Column(name = "created_by_user_id", nullable = false)
     private Long createdByUserId;
 
@@ -87,6 +91,14 @@ public class EsGuideDocument {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getHosting() {
+        return hosting;
+    }
+
+    public void setHosting(String hosting) {
+        this.hosting = hosting;
     }
 
     public Long getCreatedByUserId() {

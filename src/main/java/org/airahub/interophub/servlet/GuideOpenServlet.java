@@ -20,7 +20,7 @@ public class GuideOpenServlet extends HttpServlet {
         this(new GuideRegistrationService());
     }
 
-    GuideOpenServlet(GuideRegistrationService registration) {
+    public GuideOpenServlet(GuideRegistrationService registration) {
         this.registration = registration;
     }
 

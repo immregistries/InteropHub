@@ -1,21 +1,28 @@
 package org.airahub.interophub.servlet;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.GuideApiException;
+import org.airahub.interophub.service.GuideHostingService;
+import org.airahub.interophub.service.GuideHtmlRules;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRegistrationService.UrlInput;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.TopicRow;
 import org.airahub.interophub.service.GuideRows.UrlBinding;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.immregistries.aira.web.AiraPage;
 
@@ -25,6 +32,7 @@ public class GuideRegistrationPageServlet extends HttpServlet {
 
     private final AuthFlowService authFlowService = new AuthFlowService();
     private final GuideRegistrationService registration = new GuideRegistrationService();
+    private final GuideHostingService hosting = new GuideHostingService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -38,22 +46,29 @@ public class GuideRegistrationPageServlet extends HttpServlet {
                     "Invalid request token. Reload the page and try again.");
             return;
         }
+        if ("upload".equals(request.getParameter("intent"))) {
+            upload(request, response);
+            return;
+        }
         Viewer viewer = viewer(request, response);
         if (viewer == null) {
             return;
         }
         boolean dryRun = "check".equals(request.getParameter("intent"));
-        PostedForm posted = readPosted(request);
-        List<UrlInput> urls = postedUrls(posted);
+        PostedForm posted = null;
         try {
+            posted = readPosted(request);
+            List<UrlInput> urls = postedUrls(posted);
             JSONObject result;
+            boolean hub = GuideHtmlRules.HUB.equals(posted.hosting);
             if (posted.creating) {
                 result = registration.create(viewer.user, null, "WEB", dryRun, viewer.topic.code,
-                        posted.documentKey, posted.title, posted.repositoryUrl, urls);
+                        posted.documentKey, posted.title, posted.repositoryUrl, hub ? List.of() : urls,
+                        posted.hosting);
             } else {
                 result = registration.update(viewer.user, null, "WEB", dryRun, posted.documentKey,
-                        true, posted.title, true, posted.repositoryUrl, true, urls,
-                        true, posted.active);
+                        true, posted.title, true, posted.repositoryUrl, !hub, hub ? List.of() : urls,
+                        true, posted.active, true, posted.hosting);
             }
             String notice = dryRun
                     ? "Check passed. Nothing was saved."
@@ -83,6 +98,13 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         if (editing == null && !documents.isEmpty() && !"new".equals(request.getParameter("mode"))) {
             editing = documents.get(0);
         }
+        if (notice == null) {
+            if ("new".equals(request.getParameter("uploaded"))) {
+                notice = "Uploaded. The new label is ready to open.";
+            } else if ("replaced".equals(request.getParameter("uploaded"))) {
+                notice = "Replaced that label. The earlier upload is still listed.";
+            }
+        }
         render(request, response, viewer, documents, editing, posted, notice, error);
     }
 
@@ -102,7 +124,10 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             out.println("      <h1 class=\"aira-page-title\">Topic Reference</h1>");
             out.println("      <p class=\"aira-meta\">" + escape(viewer.topic.name) + " (" + escape(viewer.topic.code)
                     + ")</p>");
-            out.println("      <div class=\"aira-alert aira-alert--warning\"><p>" + warning(viewer.topic) + "</p></div>");
+            String shownHosting = posted != null ? posted.hosting
+                    : (editing == null || editing.hosting == null ? GuideHtmlRules.EXTERNAL : editing.hosting);
+            out.println("      <div class=\"aira-alert aira-alert--warning\"><p>" + warning(viewer.topic, shownHosting)
+                    + "</p></div>");
             if (notice != null) {
                 out.println("      <div class=\"aira-alert aira-alert--success\"><p>" + escape(notice) + "</p></div>");
             }
@@ -131,16 +156,24 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             field(out, "documentKey", "Document key", documentKey, !creating);
             field(out, "title", "Title", title, false);
             field(out, "repositoryUrl", "Repository URL", repositoryUrl, false);
+            out.println("        <div class=\"aira-field\">");
+            out.println("          <label class=\"aira-label\" for=\"hosting\">Hosting</label>");
+            out.println("          <select class=\"aira-select\" id=\"hosting\" name=\"hosting\">");
+            option(out, GuideHtmlRules.EXTERNAL, "External (published elsewhere)", shownHosting);
+            option(out, GuideHtmlRules.HUB, "Hosted on InteropHub", shownHosting);
+            out.println("          </select>");
+            out.println("          <p class=\"aira-field-help\">Hosted replaces the published URLs with this hub's latest and main view URLs. Switching back to external removes those view URLs; fill in the published URLs in the same save if you have them.</p>");
+            out.println("        </div>");
             out.println("        <fieldset class=\"aira-stack\">");
             out.println("          <legend class=\"aira-label\">Published URLs</legend>");
-            out.println("          <p class=\"aira-field-help\">The first URL is the one /guide/open uses. Leave unused rows blank.</p>");
+            out.println("          <p class=\"aira-field-help\">The first URL is the one /guide/open uses. Leave unused rows blank. These rows are ignored while hosting is Hosted on InteropHub.</p>");
             for (int i = 0; i < URL_ROWS; i++) {
                 String url = "";
                 String label = "";
                 if (posted != null) {
                     url = posted.urls[i];
                     label = posted.labels[i];
-                } else if (!creating && i < editing.urls.size()) {
+                } else if (!creating && !GuideHtmlRules.HUB.equals(editing.hosting) && i < editing.urls.size()) {
                     UrlBinding binding = editing.urls.get(i);
                     url = binding.url;
                     label = binding.label;
@@ -169,6 +202,9 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\" name=\"intent\" value=\"save\">Save</button>");
             out.println("        </p>");
             out.println("      </form>");
+            if (!creating && editing != null && GuideHtmlRules.HUB.equals(editing.hosting)) {
+                versions(out, request, action, editing.documentKey, viewer);
+            }
             out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/es/topic-manage/"
                     + viewer.topic.id + "/followers\">Back to topic management</a></p>");
             out.println("    </div>");
@@ -185,11 +221,104 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         out.println("        </div>");
     }
 
-    private static String warning(TopicRow topic) {
+    private static String warning(TopicRow topic, String hosting) {
+        if (GuideHtmlRules.HUB.equals(hosting)) {
+            return "This guide is hosted on InteropHub. Only signed-in people who can view the topic can read it.";
+        }
         String which = "PRIVATE".equals(topic.visibility)
-                ? "This topic is in a private Topic Space, so do not link it to a publicly published guide."
+                ? "This topic is in a private Topic Space, so do not link it to a publicly published guide. Choose Hosted on InteropHub instead."
                 : "This topic is in a public Topic Space, so do not link it to a guide that is kept private.";
         return escape(which) + " The reverse is also a setup mistake: a private topic should not be linked to a publicly published guide, and a public topic should not be linked to a private one. InteropHub cannot prevent either pairing.";
+    }
+
+    private static void option(PrintWriter out, String value, String label, String selected) {
+        out.println("            <option value=\"" + escape(value) + "\""
+                + (value.equals(selected) ? " selected" : "") + ">" + escape(label) + "</option>");
+    }
+
+    private void versions(PrintWriter out, HttpServletRequest request, String action, String documentKey, Viewer viewer) {
+        out.println("      <h2 class=\"aira-section-title\">Hosted versions</h2>");
+        out.println("      <form class=\"aira-stack\" method=\"post\" action=\"" + action
+                + "\" enctype=\"multipart/form-data\">");
+        out.println("        <input type=\"hidden\" name=\"csrfToken\" value=\""
+                + escape(CsrfTokenSupport.getOrCreateToken(request)) + "\">");
+        out.println("        <input type=\"hidden\" name=\"documentKey\" value=\"" + escape(documentKey) + "\">");
+        out.println("        <div class=\"aira-field\">");
+        out.println("          <label class=\"aira-label\" for=\"versionLabel\">Label</label>");
+        out.println("          <input class=\"aira-input\" id=\"versionLabel\" name=\"versionLabel\" type=\"text\" value=\"latest\" maxlength=\"64\">");
+        out.println("          <p class=\"aira-field-help\">latest, main, or a version such as v1.2.3. Uploading the same label again replaces what that label serves and keeps the earlier upload in the history.</p>");
+        out.println("        </div>");
+        out.println("        <div class=\"aira-field\">");
+        out.println("          <label class=\"aira-label\" for=\"html\">HTML file</label>");
+        out.println("          <input class=\"aira-input\" id=\"html\" name=\"html\" type=\"file\" accept=\"text/html,.html\" required>");
+        out.println("        </div>");
+        out.println("        <p><button class=\"aira-button aira-button--primary\" type=\"submit\" name=\"intent\" value=\"upload\">Upload</button></p>");
+        out.println("      </form>");
+        try {
+            JSONArray rows = hosting.list(viewer.user, documentKey).getJSONArray("versions");
+            if (rows.isEmpty()) {
+                out.println("      <p class=\"aira-meta\">No versions uploaded yet.</p>");
+                return;
+            }
+            out.println("      <ul class=\"aira-stack aira-stack--compact\">");
+            for (int i = 0; i < rows.length(); i++) {
+                JSONObject row = rows.getJSONObject(i);
+                int earlier = row.getJSONArray("earlier").length();
+                out.println("        <li><a class=\"aira-inline-link\" href=\"" + escape(row.getString("viewUrl")) + "\">"
+                        + escape(row.getString("label")) + "</a> · " + escape(row.optString("uploadedBy", ""))
+                        + " · " + escape(row.optString("uploadedAt", ""))
+                        + (earlier == 0 ? "" : " · " + earlier + (earlier == 1 ? " earlier upload" : " earlier uploads"))
+                        + "</li>");
+                JSONArray history = row.getJSONArray("earlier");
+                for (int h = 0; h < history.length(); h++) {
+                    JSONObject old = history.getJSONObject(h);
+                    out.println("        <li class=\"aira-meta\">Earlier " + escape(row.getString("label")) + " · "
+                            + escape(old.optString("uploadedBy", "")) + " · " + escape(old.optString("uploadedAt", ""))
+                            + "</li>");
+                }
+            }
+            out.println("      </ul>");
+        } catch (GuideApiException ex) {
+            out.println("      <div class=\"aira-alert aira-alert--error\"><p>" + escape(ex.getMessage()) + "</p></div>");
+        }
+    }
+
+    private void upload(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Viewer viewer = viewer(request, response);
+        if (viewer == null) {
+            return;
+        }
+        String documentKey = trim(request.getParameter("documentKey"));
+        String label = trim(request.getParameter("versionLabel"));
+        try {
+            Part part = request.getPart("html");
+            if (part == null || part.getSize() <= 0) {
+                show(request, response, null, null, "Choose an HTML file.");
+                return;
+            }
+            if (part.getSize() > GuideHtmlRules.MAX_BYTES) {
+                show(request, response, null, null, "The guide must be a non-empty HTML file of at most 20 MB.");
+                return;
+            }
+            byte[] html;
+            try (InputStream input = part.getInputStream()) {
+                html = input.readNBytes((int) GuideHtmlRules.MAX_BYTES + 1);
+            }
+            String type = part.getContentType();
+            String media = type == null ? "" : type.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+            if (media.isEmpty() || "application/octet-stream".equals(media)) {
+                type = "text/html";
+            }
+            GuideHostingService.UploadResult uploaded = hosting.upload(viewer.user, null, "WEB", documentKey, label,
+                    html, type);
+            String uploadedFlag = uploaded.status() == 201 ? "new" : "replaced";
+            response.sendRedirect(request.getContextPath() + "/es/topic-guide/" + viewer.topic.id + "?document="
+                    + documentKey + "&uploaded=" + uploadedFlag);
+        } catch (GuideApiException ex) {
+            show(request, response, null, null, ex.getMessage());
+        } catch (ServletException | IllegalStateException ex) {
+            show(request, response, null, null, "The guide could not be uploaded.");
+        }
     }
 
     private Viewer viewer(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -223,6 +352,7 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         posted.documentKey = emptyIfNull(trim(request.getParameter("documentKey")));
         posted.title = emptyIfNull(trim(request.getParameter("title")));
         posted.repositoryUrl = emptyIfNull(trim(request.getParameter("repositoryUrl")));
+        posted.hosting = GuideHtmlRules.hosting(request.getParameter("hosting"));
         posted.active = request.getParameter("active") != null;
         for (int i = 0; i < URL_ROWS; i++) {
             posted.labels[i] = emptyIfNull(trim(request.getParameter("label" + i)));
@@ -300,6 +430,7 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         String documentKey;
         String title;
         String repositoryUrl;
+        String hosting = GuideHtmlRules.EXTERNAL;
         boolean active;
         final String[] labels = new String[URL_ROWS];
         final String[] urls = new String[URL_ROWS];

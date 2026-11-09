@@ -38,6 +38,11 @@ public class GuideRegistrationService {
 
     public JSONObject create(User user, Long tokenId, String source, boolean dryRun, String topicCode,
             String documentKey, String title, String repositoryUrl, List<UrlInput> urls) {
+        return create(user, tokenId, source, dryRun, topicCode, documentKey, title, repositoryUrl, urls, null);
+    }
+
+    public JSONObject create(User user, Long tokenId, String source, boolean dryRun, String topicCode,
+            String documentKey, String title, String repositoryUrl, List<UrlInput> urls, String hosting) {
         requireSource(source);
         String key = GuideUrlRules.documentKey(documentKey);
         if (store.documentByKey(key) != null) {
@@ -52,7 +57,15 @@ public class GuideRegistrationService {
         }
         String normalizedTitle = GuideUrlRules.title(title);
         String repository = GuideUrlRules.repositoryUrl(repositoryUrl);
-        if (urls == null || urls.isEmpty()) {
+        String mode = GuideHtmlRules.hosting(hosting);
+        List<UrlInput> effectiveUrls = urls;
+        if (GuideHtmlRules.HUB.equals(mode)) {
+            if (urls != null && !urls.isEmpty()) {
+                throw GuideApiException.invalidField("urls",
+                        "A hosted guide uses its InteropHub view URLs. Omit urls when hosting is HUB.");
+            }
+            effectiveUrls = hubInputs(store.publicBaseUrl(), key);
+        } else if (effectiveUrls == null || effectiveUrls.isEmpty()) {
             throw GuideApiException.invalidField("urls", "Add at least one URL.");
         }
         DocumentRow document = new DocumentRow();
@@ -61,6 +74,7 @@ public class GuideRegistrationService {
         document.title = normalizedTitle;
         document.repositoryUrl = repository;
         document.active = true;
+        document.hosting = mode;
         document.createdByUserId = user.getUserId();
         LocalDateTime now = LocalDateTime.now();
         document.createdAt = now;
@@ -72,7 +86,7 @@ public class GuideRegistrationService {
         plan.userId = user.getUserId();
         plan.tokenId = tokenId;
         plan.source = source;
-        plan.urls = bindUrls(urls, null, true, plan, user);
+        plan.urls = bindUrls(effectiveUrls, null, true, plan, user, mode, key);
         document.urls = plan.urls;
         plan.changesJson = createChanges(document).toString();
         if (!dryRun) {
@@ -84,6 +98,13 @@ public class GuideRegistrationService {
     public JSONObject update(User user, Long tokenId, String source, boolean dryRun, String documentKey,
             boolean hasTitle, String title, boolean hasRepository, String repositoryUrl, boolean hasUrls,
             List<UrlInput> urls, boolean hasActive, Boolean active) {
+        return update(user, tokenId, source, dryRun, documentKey, hasTitle, title, hasRepository, repositoryUrl,
+                hasUrls, urls, hasActive, active, false, null);
+    }
+
+    public JSONObject update(User user, Long tokenId, String source, boolean dryRun, String documentKey,
+            boolean hasTitle, String title, boolean hasRepository, String repositoryUrl, boolean hasUrls,
+            List<UrlInput> urls, boolean hasActive, Boolean active, boolean hasHosting, String hosting) {
         requireSource(source);
         String key = GuideUrlRules.documentKey(documentKey);
         DocumentRow current = store.documentByKey(key);
@@ -107,6 +128,15 @@ public class GuideRegistrationService {
             }
             next.active = active;
         }
+        if (hasHosting) {
+            if (hosting == null || hosting.isBlank()) {
+                throw GuideApiException.invalidField("hosting", "Hosting must be EXTERNAL or HUB.");
+            }
+            next.hosting = GuideHtmlRules.hosting(hosting);
+        }
+        if (next.hosting == null || next.hosting.isBlank()) {
+            next.hosting = GuideHtmlRules.EXTERNAL;
+        }
         RegistrationPlan plan = new RegistrationPlan();
         plan.creating = false;
         plan.document = next;
@@ -114,10 +144,25 @@ public class GuideRegistrationService {
         plan.userId = user.getUserId();
         plan.tokenId = tokenId;
         plan.source = source;
-        plan.urls = hasUrls ? bindUrls(urls, current, next.active, plan, user) : retoggle(current, next.active, plan);
+        boolean becomingHub = GuideHtmlRules.HUB.equals(next.hosting);
+        if (becomingHub) {
+            if (hasUrls) {
+                throw GuideApiException.invalidField("urls",
+                        "A hosted guide uses its InteropHub view URLs. Omit urls when hosting is HUB.");
+            }
+            plan.urls = bindUrls(hubInputs(store.publicBaseUrl(), next.documentKey), current, next.active, plan, user,
+                    next.hosting, next.documentKey);
+        } else if (hasUrls) {
+            plan.urls = bindUrls(urls, current, next.active, plan, user, next.hosting, next.documentKey);
+        } else if (hasHosting && GuideHtmlRules.HUB.equals(current.hosting)) {
+            plan.urls = bindUrls(List.of(), current, next.active, plan, user, next.hosting, next.documentKey);
+        } else {
+            plan.urls = retoggle(current, next.active, plan);
+        }
         next.urls = plan.urls;
         next.updatedAt = LocalDateTime.now();
-        JSONObject changes = updateChanges(current, next, hasUrls);
+        boolean urlsReplaced = becomingHub || hasUrls || (hasHosting && GuideHtmlRules.HUB.equals(current.hosting));
+        JSONObject changes = updateChanges(current, next, urlsReplaced);
         plan.changesJson = changes.isEmpty() ? null : changes.toString();
         boolean writes = plan.changesJson != null || !plan.inserts.isEmpty() || !plan.toggles.isEmpty();
         if (!dryRun && writes) {
@@ -251,6 +296,7 @@ public class GuideRegistrationService {
         diff(changes, "title", null, document.title);
         diff(changes, "repositoryUrl", null, document.repositoryUrl);
         diff(changes, "isActive", null, document.active);
+        diff(changes, "hosting", null, document.hosting);
         diff(changes, "urls", null, urlArray(document.urls));
         return changes;
     }
@@ -260,6 +306,7 @@ public class GuideRegistrationService {
         diff(changes, "title", before.title, after.title);
         diff(changes, "repositoryUrl", before.repositoryUrl, after.repositoryUrl);
         diff(changes, "isActive", before.active, after.active);
+        diff(changes, "hosting", before.hosting, after.hosting);
         if (urlsReplaced && !sameUrls(before.urls, after.urls)) {
             diff(changes, "urls", urlArray(before.urls), urlArray(after.urls));
         }
@@ -306,6 +353,7 @@ public class GuideRegistrationService {
         copy.title = current.title;
         copy.repositoryUrl = current.repositoryUrl;
         copy.active = current.active;
+        copy.hosting = current.hosting;
         copy.createdByUserId = current.createdByUserId;
         copy.createdAt = current.createdAt;
         copy.updatedAt = current.updatedAt;
@@ -330,8 +378,16 @@ public class GuideRegistrationService {
         }
     }
 
+    private static List<UrlInput> hubInputs(String publicBase, String documentKey) {
+        List<UrlInput> inputs = new ArrayList<>();
+        for (String[] view : GuideUrlRules.hubViews(publicBase, documentKey)) {
+            inputs.add(new UrlInput(view[0], view[1]));
+        }
+        return inputs;
+    }
+
     private List<UrlBinding> bindUrls(List<UrlInput> inputs, DocumentRow current, boolean documentActive,
-            RegistrationPlan plan, User user) {
+            RegistrationPlan plan, User user, String hosting, String documentKey) {
         boolean admin = store.globalAdmin(user);
         List<AllowRow> allowlist = store.allowlist();
         Map<String, AllowRow> allowByUrl = new LinkedHashMap<>();
@@ -363,7 +419,17 @@ public class GuideRegistrationService {
             if (owner != null && (current == null || current.id == null || !owner.equals(current.id))) {
                 throw GuideApiException.duplicate("urls", "That URL is already registered.");
             }
-            if (!GuideUrlRules.approved(normalized.url(), normalized.devApproved(), admin, prefixes)) {
+            boolean ownHub = GuideUrlRules.isOwnHubView(normalized.url(), store.publicBaseUrl(), documentKey,
+                    localhostMode);
+            if (GuideHtmlRules.HUB.equals(hosting)) {
+                if (!ownHub) {
+                    throw GuideApiException.invalidField("urls",
+                            "A hosted guide can only use its InteropHub view URLs.");
+                }
+            } else if (ownHub) {
+                throw GuideApiException.invalidField("urls",
+                        "InteropHub view URLs are registered only when hosting is HUB.");
+            } else if (!GuideUrlRules.approved(normalized.url(), normalized.devApproved(), admin, prefixes)) {
                 throw GuideApiException.urlNotApproved();
             }
             bindings.add(bindOne(normalized.url(), label, sort++, previous.get(normalized.url()),
@@ -404,6 +470,8 @@ public class GuideRegistrationService {
         List<Disposition> dispositions();
 
         String topicUrl(long topicId);
+
+        String publicBaseUrl();
 
         void persist(RegistrationPlan plan);
     }

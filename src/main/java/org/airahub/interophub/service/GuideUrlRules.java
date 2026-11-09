@@ -122,6 +122,45 @@ public final class GuideUrlRules {
         return normalized.url();
     }
 
+    /** The two view URLs registered when a document is hosted on InteropHub. */
+    public static String[][] hubViews(String publicBase, String documentKey) {
+        String base = publicBase == null ? "" : publicBase.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        String root = base + "/guide/view/" + documentKey + "/";
+        return new String[][] {{root + "latest/", "latest"}, {root + "main/", "main"}};
+    }
+
+    public static String viewUrl(String publicBase, String documentKey, String label) {
+        String base = publicBase == null ? "" : publicBase.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base + "/guide/view/" + documentKey + "/" + label + "/";
+    }
+
+    /**
+     * True when {@code normalizedUrl} is this document's own latest or main view URL.
+     * Those count as approved without an approved-prefix setting.
+     */
+    public static boolean isOwnHubView(String normalizedUrl, String publicBase, String documentKey,
+            boolean localhostMode) {
+        if (normalizedUrl == null || publicBase == null || publicBase.isBlank() || documentKey == null) {
+            return false;
+        }
+        try {
+            for (String[] view : hubViews(publicBase, documentKey)) {
+                if (normalizedUrl.equals(normalize(view[0], localhostMode).url())) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException ex) {
+            return false;
+        }
+    }
+
     public static boolean approved(String normalizedUrl, boolean devApproved, boolean globalAdmin,
             Iterable<String> prefixes) {
         if (globalAdmin || devApproved) {

@@ -290,8 +290,22 @@
   </servlet-mapping>
 
   <servlet>
+    <servlet-name>GuideViewServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.GuideViewServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>GuideViewServlet</servlet-name>
+    <url-pattern>/guide/view/*</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
     <servlet-name>GuideRegistrationPageServlet</servlet-name>
     <servlet-class>org.airahub.interophub.servlet.GuideRegistrationPageServlet</servlet-class>
+    <multipart-config>
+      <max-file-size>20971520</max-file-size>
+      <max-request-size>22020096</max-request-size>
+      <file-size-threshold>0</file-size-threshold>
+    </multipart-config>
   </servlet>
   <servlet-mapping>
     <servlet-name>GuideRegistrationPageServlet</servlet-name>

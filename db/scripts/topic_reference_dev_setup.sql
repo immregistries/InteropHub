@@ -256,6 +256,109 @@ WHERE @pilot_document_id IS NOT NULL AND @open_comment_id IS NOT NULL AND @autho
     WHERE guide_document_id = @pilot_document_id AND source_note = 'dev-setup:reply'
   );
 
+-- H5: a HUB document on the private test topic. Author can edit it (space
+-- admin and champion). Reader can view it (space member) and cannot edit.
+-- Outsider is signed in and cannot view the private space. No guide HTML
+-- is inserted; Gate 3H uploads it.
+INSERT INTO es_topic_space_member (es_topic_space_id, user_id, role, created_at, updated_at)
+SELECT @private_space_id, @author_id, 'ADMIN', NOW(), NOW()
+FROM DUAL
+WHERE @private_space_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_topic_space_member
+    WHERE es_topic_space_id = @private_space_id AND user_id = @author_id
+  );
+
+INSERT INTO es_topic_space_member (es_topic_space_id, user_id, role, created_at, updated_at)
+SELECT @private_space_id, @reader_id, 'MEMBER', NOW(), NOW()
+FROM DUAL
+WHERE @private_space_id IS NOT NULL AND @reader_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_topic_space_member
+    WHERE es_topic_space_id = @private_space_id AND user_id = @reader_id
+  );
+
+INSERT INTO es_subscription
+  (created_at, email, email_normalized, es_topic_id, status, subscription_type, updated_at, user_id,
+   contact_first_name, contact_last_name, contact_organization)
+SELECT UTC_TIMESTAMP(6), 'author.guide-test@example.invalid', 'author.guide-test@example.invalid', @private_topic_id,
+  'CHAMPION', 'TOPIC', UTC_TIMESTAMP(6), @author_id, 'Guide', 'Author', 'Example Health Department'
+FROM DUAL
+WHERE @private_topic_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_subscription
+    WHERE email_normalized = 'author.guide-test@example.invalid'
+      AND es_topic_id = @private_topic_id
+      AND subscription_type = 'TOPIC'
+  );
+
+INSERT INTO es_guide_document
+  (document_key, es_topic_id, title, is_active, hosting, created_by_user_id, created_at, updated_at)
+SELECT 'guide-hosted-test', @private_topic_id, 'Guide Hosted Test', 1, 'HUB', @author_id, NOW(6), NOW(6)
+FROM DUAL
+WHERE @private_topic_id IS NOT NULL AND @author_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM es_guide_document WHERE document_key = 'guide-hosted-test');
+
+UPDATE es_guide_document
+SET hosting = 'HUB', is_active = 1, es_topic_id = @private_topic_id
+WHERE document_key = 'guide-hosted-test'
+  AND @private_topic_id IS NOT NULL;
+
+SET @hosted_document_id = (SELECT guide_document_id FROM es_guide_document WHERE document_key = 'guide-hosted-test');
+
+INSERT INTO app_redirect_allowlist (app_id, base_url, is_enabled)
+SELECT @topic_reference_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/', 1
+FROM DUAL
+WHERE @topic_reference_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM app_redirect_allowlist
+    WHERE app_id = @topic_reference_id
+      AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
+  );
+
+INSERT INTO app_redirect_allowlist (app_id, base_url, is_enabled)
+SELECT @topic_reference_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/', 1
+FROM DUAL
+WHERE @topic_reference_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM app_redirect_allowlist
+    WHERE app_id = @topic_reference_id
+      AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+  );
+
+SET @hosted_latest_allow_id = (
+  SELECT allow_id FROM app_redirect_allowlist
+  WHERE app_id = @topic_reference_id
+    AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
+);
+SET @hosted_main_allow_id = (
+  SELECT allow_id FROM app_redirect_allowlist
+  WHERE app_id = @topic_reference_id
+    AND base_url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+);
+
+INSERT INTO es_guide_document_url
+  (guide_document_id, url, label, sort_order, allow_id, owns_allowlist)
+SELECT @hosted_document_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/', 'latest', 0,
+  @hosted_latest_allow_id, 1
+FROM DUAL
+WHERE @hosted_document_id IS NOT NULL AND @hosted_latest_allow_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_document_url
+    WHERE url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/latest/'
+  );
+
+INSERT INTO es_guide_document_url
+  (guide_document_id, url, label, sort_order, allow_id, owns_allowlist)
+SELECT @hosted_document_id, 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/', 'main', 1,
+  @hosted_main_allow_id, 1
+FROM DUAL
+WHERE @hosted_document_id IS NOT NULL AND @hosted_main_allow_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM es_guide_document_url
+    WHERE url = 'http://localhost:8080/hub/guide/view/guide-hosted-test/main/'
+  );
+
 INSERT INTO es_guide_review_flag
   (guide_document_id, anchor_id, note, created_by_user_id, created_at, updated_at)
 SELECT @pilot_document_id, 'consent-requirements', 'Please review: rewrote the consent requirements.',
