@@ -109,8 +109,8 @@ production backup.
    `db/local_database_refresh.md`);
 4. applies `db/unapplied_updates.sql`, the schema/data changes not yet
    released to production;
-5. regenerates `db/schema.sql` (a reference snapshot; skip with
-   `--no-schema-export`).
+5. applies every `db/scripts/*_dev_setup.sql`, in name order (local-only
+   test data, never applied to production).
 
 Configure it once:
 

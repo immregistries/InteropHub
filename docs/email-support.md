@@ -31,7 +31,7 @@ The relevant Jakarta Mail classes used are:
 
 ### `hub_settings` — SMTP configuration
 
-All SMTP settings are stored in a single database row (one active row at a time). This table is created in `db/schema.sql`.
+All SMTP settings are stored in a single database row (one active row at a time). This table predates the surviving `db/v*.sql` migration files, so the DDL below is the reference; for the live definition, dump it from your local database (`mysqldump --no-data interophub hub_settings`).
 
 ```sql
 CREATE TABLE hub_settings (
@@ -342,7 +342,7 @@ Replace the username and password with your Mailtrap mailbox credentials from th
 | File | Purpose |
 |---|---|
 | `pom.xml` | Add `com.sun.mail:jakarta.mail:2.0.1` |
-| `db/schema.sql` | `hub_settings` and `auth_magic_link_send_event` DDL |
+| This document (DDL above) | `hub_settings` and `auth_magic_link_send_event` tables; these predate the surviving `db/v*.sql` files |
 | `db/v0.13_email_prospect_view.sql` | `v_email_prospect` view (optional, for funnel reporting) |
 | `model/HubSetting.java` | JPA entity for SMTP config |
 | `dao/HubSettingDao.java` | DAO for loading and saving settings |
