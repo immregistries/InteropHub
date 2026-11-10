@@ -164,7 +164,7 @@ Kept current by stream G.
 | H5 | Ready for Gate 3H 2026-11-09 (Cursor) | `8b16f3b` and H5.1 `6d7c459` on `feature/h5-private-hosting`; `mvn test` passes. Reviewed by G: storage, HTML rules, headers, CSRF, permissions, tests accepted; contract 7.4 approved. H5.1 accepted: signed-out readers return to the guide through the magic link (only relative `/guide/view/` paths, decoded and checked for `..`, `//`, schemes); one allowlist prefix per hosted document covers every label. Awaiting local deploy. H5.2 (topic page section) sent 2026-11-10: `prompts/H5.2-topic-reference-section.md`; ships with H5. |
 | T5 | Done 2026-11-10; released as templates `v0.15.0` | `prompts/T5-hosted-publishing.md`. Task 0 shipped in `v0.14.0`. Reviewed by G: `hosting` rules, `publish_guide_to_hub.py`, private hosted workflow, `new_topic_reference.py --hosting local|interophub --hub`. G aligned the mock with contract 7.4 (`uploadedBy` is a display name; listing is `{"versions": [...]}`), ran `validate.ps1` (67 tests, browser check), and ran the script against local H5 (Gate 3H 6.1 script half). A generated hosted project uses its project id as `comments.document`, so the hub document key must match (P5). |
 | P5 | Not started | After T5 is released and H5 is on production. |
-| Gate 3H | Local part passed 2026-11-10, including the script upload; awaiting product owner approval | `gates/gate-3h.md`. Production part with P5 after H5 (with H5.2) is released. |
+| Gate 3H | Local part passed 2026-11-10, including the script upload; approved by the product owner 2026-11-10 | `gates/gate-3h.md`. Production part with P5 after H5 (with H5.2) is released. |
 | H4 | Not started | |
 | E2 | Not started | |
 | T4 | Not started | |

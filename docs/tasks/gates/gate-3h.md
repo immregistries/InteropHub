@@ -5,7 +5,7 @@
 **Test plan:** `docs/tasks/topic-reference-private-hosting.md`, Section 6
 **Build under test:** `feature/h5-private-hosting` at `6d7c459` (H5 `8b16f3b` plus H5.1), deployed to local Tomcat; dev setup from `db/scripts/topic_reference_dev_setup.sql` (topic 186 `GUIDE-PRIVATE-TEST` in a private space, document `guide-hosted-test` set to `HUB`)
 **Guide under test:** templates fixture project built with templates `v0.14.0`, `"comments": {"mode": "interophub", "hub": "http://localhost:8080/hub", "document": "guide-hosted-test"}` (about 2.9 MB)
-**Result:** Local part passes (script half of 6.1 added 2026-11-10 with templates `v0.15.0`). The production part (with P5) follows the release.
+**Result:** Local part passes, approved by the product owner 2026-11-10 (script half of 6.1 added 2026-11-10 with templates `v0.15.0`). The production part (with P5) follows the release.
 
 ## Summary
 
