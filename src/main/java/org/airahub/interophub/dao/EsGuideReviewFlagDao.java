@@ -34,4 +34,24 @@ public class EsGuideReviewFlagDao extends GenericDao<EsGuideReviewFlag, Long> {
                 .getResultList();
         return rows.isEmpty() ? Optional.empty() : Optional.of(rows.get(0));
     }
+
+    public long countActive(Session session, Long documentId) {
+        Long count = session.createQuery(
+                "select count(f) from EsGuideReviewFlag f where f.guideDocumentId = :id and f.clearedAt is null",
+                Long.class)
+                .setParameter("id", documentId)
+                .uniqueResult();
+        return count == null ? 0L : count;
+    }
+
+    /** Newest active flags first, capped by the caller. */
+    public List<EsGuideReviewFlag> newestActive(Session session, Long documentId, int limit) {
+        return session.createQuery(
+                "from EsGuideReviewFlag f where f.guideDocumentId = :id and f.clearedAt is null"
+                        + " order by f.createdAt desc, f.reviewFlagId desc",
+                EsGuideReviewFlag.class)
+                .setParameter("id", documentId)
+                .setMaxResults(limit)
+                .getResultList();
+    }
 }

@@ -1,0 +1,37 @@
+/*
+ * Temporary stand-in for a proposed aira-stat (see docs/aira-web/aira-css-proposed-changes.md).
+ * aira-meta-chip is a side-by-side label and value. aira-figure is an image with a caption.
+ * Remove this file when aira-stat ships and point the topic page at that class.
+ */
+
+.aira-main a.topic-reference-stat {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.5rem;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--aira-border-subtle);
+  border-radius: var(--aira-radius-control);
+  background: var(--aira-surface);
+  color: var(--aira-text);
+  text-decoration: none;
+}
+
+.aira-main a.topic-reference-stat:hover,
+.aira-main a.topic-reference-stat:focus-visible {
+  background: var(--aira-row-hover);
+  text-decoration: none;
+}
+
+.topic-reference-stat__value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.topic-reference-stat__label {
+  color: var(--aira-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+}

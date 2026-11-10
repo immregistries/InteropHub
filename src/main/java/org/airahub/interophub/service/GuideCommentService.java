@@ -55,6 +55,11 @@ public class GuideCommentService {
                 topicUrl, null, null, null);
     }
 
+    /** Bounded totals for the topic page. Does not load every comment. */
+    public TopicReferenceDigest digest(long documentId) {
+        return store.digest(documentId);
+    }
+
     public JSONObject list(User user, String documentKey, String state, String anchor, String since) {
         Loaded loaded = requireView(user, documentKey);
         LocalDateTime now = ApiTime.now();
@@ -1039,6 +1044,8 @@ public class GuideCommentService {
         List<Disposition> dispositions();
 
         List<CommentRow> comments(long documentId);
+
+        TopicReferenceDigest digest(long documentId);
 
         List<FlagRow> activeFlags(long documentId);
 

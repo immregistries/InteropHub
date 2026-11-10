@@ -21,6 +21,45 @@ Entries below the revision history are the **active queue** — proposals not ye
 
 ---
 
+## Proposal: Linked stat figure (`aira-stat`)
+
+**Status:** Proposed
+**Found during:** Topic Reference section on the topic page (`EsTopicDetailServlet`).
+**Date:** 2026-11-10
+
+### Problem
+
+The section needs a row of four small figures: a number with a short label under it, and the whole figure is a link (Open, Disposed, Closed, Flags). `aira-meta-chip` is a side-by-side label and value, not a stacked figure. `aira-figure` is an image with a caption. `aira-chip` is a pill, not a count.
+
+### Current local workaround
+
+`css/topic-reference.css`, loaded by `EsTopicDetailServlet` next to `agenda.css`. The class is `topic-reference-stat` (with `__value` and `__label`). It is a temporary stand-in and should be deleted when `aira-stat` is available.
+
+### Proposed shared interface
+
+```html
+<a class="aira-stat" href="...">
+  <span class="aira-stat__value">3</span>
+  <span class="aira-stat__label">Open</span>
+</a>
+```
+
+A compact inline figure: value above the label, bordered, link-colored only through the existing link treatment (the figure text stays the body color). A row of them sits in `aira-cluster` and wraps on a narrow screen.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Any AIRA page that summarizes a queue (open items, flags, overdue tasks) wants the same linked count. It is not specific to Topic Reference.
+
+### Compatibility and migration impact
+
+Additive. Once it ships, the topic page switches `topic-reference-stat` to `aira-stat` and drops `css/topic-reference.css`.
+
+### Resolution
+
+Pending review in the AIRA Web project.
+
+---
+
 ## Proposal: Body row headers styled as data cells
 
 **Status:** Available in this project

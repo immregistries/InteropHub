@@ -15,6 +15,7 @@ import jakarta.servlet.http.Part;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.GuideApiException;
+import org.airahub.interophub.service.GuideDisplayDates;
 import org.airahub.interophub.service.GuideHostingService;
 import org.airahub.interophub.service.GuideHtmlRules;
 import org.airahub.interophub.service.GuideRegistrationService;
@@ -266,14 +267,15 @@ public class GuideRegistrationPageServlet extends HttpServlet {
                 int earlier = row.getJSONArray("earlier").length();
                 out.println("        <li><a class=\"aira-inline-link\" href=\"" + escape(row.getString("viewUrl")) + "\">"
                         + escape(row.getString("label")) + "</a> · " + escape(row.optString("uploadedBy", ""))
-                        + " · " + escape(row.optString("uploadedAt", ""))
+                        + " · " + escape(GuideDisplayDates.dayTime(row.optString("uploadedAt", "")))
                         + (earlier == 0 ? "" : " · " + earlier + (earlier == 1 ? " earlier upload" : " earlier uploads"))
                         + "</li>");
                 JSONArray history = row.getJSONArray("earlier");
                 for (int h = 0; h < history.length(); h++) {
                     JSONObject old = history.getJSONObject(h);
                     out.println("        <li class=\"aira-meta\">Earlier " + escape(row.getString("label")) + " · "
-                            + escape(old.optString("uploadedBy", "")) + " · " + escape(old.optString("uploadedAt", ""))
+                            + escape(old.optString("uploadedBy", "")) + " · "
+                            + escape(GuideDisplayDates.dayTime(old.optString("uploadedAt", "")))
                             + "</li>");
                 }
             }

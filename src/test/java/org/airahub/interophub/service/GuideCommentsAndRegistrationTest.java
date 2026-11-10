@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -982,6 +983,16 @@ class GuideCommentsAndRegistrationTest {
         @Override
         public String topicUrl(long topicId) {
             return "http://localhost:8080/hub/es/topic/" + topicId;
+        }
+
+        @Override
+        public TopicReferenceDigest digest(long documentId) {
+            Map<Long, String> names = new LinkedHashMap<>();
+            for (CommentRow row : comments(documentId)) {
+                names.putIfAbsent(row.userId, "User " + row.userId);
+            }
+            return TopicReferenceDigest.of(comments(documentId), flags(documentId, false), names,
+                    ApiTime.now().minusDays(30));
         }
     }
 
