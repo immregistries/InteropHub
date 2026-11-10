@@ -154,7 +154,8 @@ class EsMeetingWorkspaceServletTest {
                 assertTrue(html.contains("name=\"action\" value=\"endMeeting\""));
                 assertTrue(html.contains("Read only notes"));
                 assertTrue(html.contains("meeting-workspace-notes.js"));
-                assertTrue(!html.contains("Start session is only available after finalization."));
+                // Disabled controls explain themselves; enabled ones stay unannotated.
+                assertTrue(html.contains("Start session is only available after finalization."));
                 assertTrue(!html.contains("Ending the meeting will set close due date to 7 days from completion."));
                 assertTrue(!html.contains("Lifecycle transitions are server-enforced and role-aware."));
                 assertTrue(!html.contains("confirm('Start session now?')"));
@@ -429,6 +430,15 @@ class EsMeetingWorkspaceServletTest {
                 assertTrue(buttonIndex > 0);
                 String buttonTag = html.substring(html.lastIndexOf("<button", buttonIndex), buttonIndex);
                 assertTrue(buttonTag.contains("disabled"));
+                assertTrue(html.contains("Notes can be published once the meeting is completed."));
+        }
+
+        @Test
+        void notesNoticeBannerLinksToThePreselectedCommunicationForm() {
+                String banner = EsMeetingWorkspaceServlet.buildNotesNoticeBanner("/hub", 26L);
+                assertTrue(banner.contains("notes-available notice hasn't been scheduled yet"));
+                assertTrue(banner.contains(
+                                "href=\"/hub/es/meeting-communication?meetingId=26&amp;suggestType=NOTES_AVAILABLE\""));
         }
 
         @Test

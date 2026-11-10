@@ -234,6 +234,40 @@ class MeetingActionQueueServiceTest {
     }
 
     @Test
+    void publishNotesPointsAtCommunicationFormOncePublishedWithoutNotice() {
+        // Notes published but the notice was never scheduled: the workspace's Publish
+        // button is disabled by now, so the action must link to where the remaining
+        // step can actually be done.
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.minusDays(2));
+        meeting.setEsMeetingId(26L);
+        meeting.setStatus(EsMeeting.MeetingStatus.COMPLETED);
+        meeting.setCompletedAt(NOW.minusHours(30));
+        meeting.setNotesPublishedAt(NOW.minusHours(29));
+
+        Optional<MeetingAction> action = derive(meeting, MeetingActionType.PUBLISH_NOTES, List.of());
+
+        assertTrue(action.isPresent());
+        assertEquals("/es/meeting-communication?meetingId=26&suggestType=NOTES_AVAILABLE", action.get().getHref());
+        assertEquals("Notes are published. Schedule the notes-available notice.", action.get().getInstruction());
+        assertTrue(MeetingActionQueueService.isNotesAvailableNoticePending(meeting, List.of(), NOW_INSTANT));
+    }
+
+    @Test
+    void notesNoticeIsNotPendingBeforePublishingOrOnceScheduled() {
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.minusDays(2));
+        meeting.setStatus(EsMeeting.MeetingStatus.COMPLETED);
+        meeting.setCompletedAt(NOW.minusHours(30));
+        assertFalse(MeetingActionQueueService.isNotesAvailableNoticePending(meeting, List.of(), NOW_INSTANT));
+
+        meeting.setNotesPublishedAt(NOW.minusHours(29));
+        EsMeetingCommunication scheduled = communication(CommunicationType.NOTES_AVAILABLE, CommunicationStatus.SCHEDULED);
+        assertFalse(MeetingActionQueueService.isNotesAvailableNoticePending(meeting, List.of(scheduled), NOW_INSTANT));
+
+        meeting.setCloseDueAt(NOW.minusHours(1));
+        assertFalse(MeetingActionQueueService.isNotesAvailableNoticePending(meeting, List.of(), NOW_INSTANT));
+    }
+
+    @Test
     void publishNotesDoesNotLingerPastTheSevenDayEditWindow() {
         // Notes were never published, and the 7-day note-editing lock (closeDueAt) has
         // already closed - there's nothing more to prompt for on this meeting.

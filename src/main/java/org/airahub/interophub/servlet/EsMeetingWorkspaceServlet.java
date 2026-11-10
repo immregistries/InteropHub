@@ -28,6 +28,7 @@ import org.airahub.interophub.dao.EsAgendaItemPresenterDao;
 import org.airahub.interophub.dao.EsMeetingAgendaAttachmentDao;
 import org.airahub.interophub.dao.EsMeetingAgendaItemDao;
 import org.airahub.interophub.dao.EsMeetingAttendanceDao;
+import org.airahub.interophub.dao.EsMeetingCommunicationDao;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.dao.EsTopicDao;
 import org.airahub.interophub.dao.EsTopicMeetingDao;
@@ -48,6 +49,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AgendaActivityService;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.MeetingAuthorizationService;
+import org.airahub.interophub.service.MeetingActionQueueService;
 import org.airahub.interophub.service.MeetingAttachmentService;
 import org.airahub.interophub.service.MeetingLifecycleService;
 import org.airahub.interophub.service.MeetingRoleService;
@@ -83,6 +85,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     private final MeetingRoleService meetingRoleService;
     private final TopicNoteDocumentSupport topicNoteDocumentSupport;
     private final AgendaActivityService agendaActivityService;
+    private final EsMeetingCommunicationDao communicationDao;
 
     public EsMeetingWorkspaceServlet() {
         this.authFlowService = new AuthFlowService();
@@ -101,6 +104,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         this.meetingRoleService = new MeetingRoleService();
         this.topicNoteDocumentSupport = new TopicNoteDocumentSupport();
         this.agendaActivityService = new AgendaActivityService();
+        this.communicationDao = new EsMeetingCommunicationDao();
     }
 
     @Override
@@ -130,8 +134,11 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         Long selectedItemId = parseId(request.getParameter("itemId"));
         String feedbackMessage = resolveFeedbackMessage(request);
         String errorMessage = trimToNull(request.getParameter("err"));
-        String suggestBanner = buildSuggestBanner(request.getContextPath(), meetingId,
-                trimToNull(request.getParameter("suggest")));
+        boolean notesNoticePending = user != null
+                && meetingAuthorizationService.canControlMeeting(user.getUserId(), meeting)
+                && MeetingActionQueueService.isNotesAvailableNoticePending(meeting,
+                        communicationDao.findByMeetingId(meetingId), java.time.Instant.now());
+        String suggestBanner = notesNoticePending ? buildNotesNoticeBanner(request.getContextPath(), meetingId) : null;
         String csrfToken = CsrfTokenSupport.getOrCreateToken(request);
         WorkspaceView view = buildWorkspaceView(meeting, selectedItemId, user, feedbackMessage, errorMessage,
                 suggestBanner, csrfToken);
@@ -244,9 +251,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             }
             if ("publishNotes".equals(action)) {
                 meetingLifecycleService.publishNotesForReview(meetingId, user.getUserId());
-                redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId,
-                        "notesPublished=1&suggest=" + URLEncoder.encode("NOTES_AVAILABLE",
-                                java.nio.charset.StandardCharsets.UTF_8));
+                redirectWorkspace(response, request.getContextPath(), meetingId, selectedItemId, "notesPublished=1");
                 return;
             }
             if ("closeMeeting".equals(action)) {
@@ -526,6 +531,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <button class=\"aira-button aira-button--primary\" type=\"submit\""
                     + (view.canStartSession() ? "" : " disabled")
                     + ">Start session</button>");
+            renderDisabledReason(out, view.canStartSession(), view.startSessionHelpText());
             out.println("                </form>");
             boolean canMarkCovered = view.canEndMeeting() && view.selectedItem() != null
                     && view.selectedItem().agendaItemId() != null;
@@ -556,6 +562,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <button class=\"aira-button aira-button--danger\" type=\"submit\""
                     + (view.canEndMeeting() ? "" : " disabled")
                     + ">End meeting</button>");
+            renderDisabledReason(out, view.canEndMeeting(), view.endMeetingHelpText());
             out.println("                </form>");
             out.println("                <form method=\"post\" action=\""
                     + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
@@ -570,6 +577,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <button class=\"aira-button aira-button--secondary\" type=\"submit\""
                     + (view.canPublishNotes() ? "" : " disabled")
                     + ">Publish notes for review</button>");
+            renderDisabledReason(out, view.canPublishNotes(), view.publishNotesHelpText());
             out.println("                </form>");
             out.println("                <form method=\"post\" action=\""
                     + escapeHtml((contextPath == null ? "" : contextPath) + WORKSPACE_PATH)
@@ -584,6 +592,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
             out.println("                  <button class=\"aira-button aira-button--danger\" type=\"submit\""
                     + (view.canCloseMeeting() ? "" : " disabled")
                     + ">Close meeting</button>");
+            renderDisabledReason(out, view.canCloseMeeting(), view.closeMeetingHelpText());
             out.println("                </form>");
             out.println("              </div>");
             out.println("              <section data-meeting-attachments class=\"aira-stack aira-stack--compact\">"
@@ -954,19 +963,31 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
     }
 
     /**
-     * Suggests the matching community communication right after a status change
-     * that a comm type exists for - mirrors EsAgendaServlet's suggest-banner
-     * pattern for PROPOSED_AGENDA/FINAL_AGENDA, applied here to NOTES_AVAILABLE
-     * after publishing notes (docs/interophub-meeting-cadence-design.md Step 4:
-     * "one action, not separate content and communication actions").
+     * Prompts for the NOTES_AVAILABLE communication for as long as it's still
+     * owed (notes published, no active notice, edit window open - see
+     * MeetingActionQueueService.isNotesAvailableNoticePending), not just on the
+     * redirect right after publishing. Otherwise, once the user navigated away,
+     * the workspace offered no path to finish the home page's PUBLISH_NOTES
+     * action (docs/interophub-meeting-cadence-design.md Step 4: "one action,
+     * not separate content and communication actions").
      */
-    private static String buildSuggestBanner(String contextPath, Long meetingId, String suggestType) {
-        if (suggestType == null || meetingId == null || !"NOTES_AVAILABLE".equals(suggestType)) {
-            return null;
+    static String buildNotesNoticeBanner(String contextPath, Long meetingId) {
+        String link = (contextPath == null ? "" : contextPath)
+                + MeetingActionQueueService.notesAvailableCommunicationHref(meetingId);
+        return "Notes are published, but the notes-available notice hasn't been scheduled yet. <a href=\""
+                + escapeHtml(link) + "\">Send Notes Available communication</a>";
+    }
+
+    /**
+     * Explains a disabled meeting control in place, so a greyed-out button never
+     * leaves the user guessing why. Enabled buttons stay unannotated to keep the
+     * controls panel uncluttered.
+     */
+    private static void renderDisabledReason(PrintWriter out, boolean enabled, String reason) {
+        if (enabled || reason == null || reason.isBlank()) {
+            return;
         }
-        String link = (contextPath == null ? "" : contextPath) + "/es/meeting-communication?meetingId=" + meetingId
-                + "&suggestType=" + URLEncoder.encode(suggestType, java.nio.charset.StandardCharsets.UTF_8);
-        return "<a href=\"" + link + "\">Send Notes Available communication</a>";
+        out.println("                  <p class=\"aira-meta\">" + escapeHtml(reason) + "</p>");
     }
 
     private static void redirectWorkspace(HttpServletResponse response, String contextPath, Long meetingId,

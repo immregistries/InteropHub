@@ -117,7 +117,10 @@ final class MeetingActionQueueRenderer {
     private static String linkLabel(MeetingAction action) {
         return switch (action.getActionType()) {
             case PUBLISH_PROPOSED_AGENDA, FINALIZE_AGENDA -> "Open agenda";
-            case CLOSE_MEETING, PUBLISH_NOTES -> "Open meeting workspace";
+            case CLOSE_MEETING -> "Open meeting workspace";
+            case PUBLISH_NOTES -> action.getHref() != null && action.getHref().startsWith("/es/meeting-communication")
+                    ? "Schedule notice"
+                    : "Open meeting workspace";
         };
     }
 

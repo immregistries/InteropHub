@@ -286,10 +286,41 @@ public class MeetingActionQueueService {
         LocalDateTime dueAt = completedAtMeetingZone != null
                 ? completedAtMeetingZone.plusHours(24)
                 : LocalDateTime.ofInstant(nowInstant, meetingZone);
+        // Once notes are published, the only thing left is the communication - point
+        // straight at the form that schedules it, since the workspace's Publish button
+        // is (correctly) disabled by then and can't finish this action.
+        String instruction = notesPublished
+                ? "Notes are published. Schedule the notes-available notice."
+                : "Review the meeting notes, publish them, and send the notes-available notice.";
+        String href = notesPublished ? notesAvailableCommunicationHref(meeting.getEsMeetingId()) : workspaceHref(meeting);
         return Optional.of(new MeetingAction(
                 meeting.getEsMeetingId(), meeting.getMeetingName(), MeetingActionType.PUBLISH_NOTES,
-                "Review the meeting notes, publish them, and send the notes-available notice.",
-                workspaceHref(meeting), dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
+                instruction, href, dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
+    }
+
+    /**
+     * True when a completed meeting's notes are published but no active
+     * NOTES_AVAILABLE communication exists yet, and the 7-day edit window is
+     * still open - i.e. the PUBLISH_NOTES action's only remaining step is the
+     * communication. Shared with the meeting workspace so its "schedule the
+     * notice" prompt appears under exactly the same conditions as this queue.
+     */
+    public static boolean isNotesAvailableNoticePending(EsMeeting meeting,
+            List<EsMeetingCommunication> communications, Instant nowInstant) {
+        if (meeting == null || meeting.getStatus() != MeetingStatus.COMPLETED || meeting.getNotesPublishedAt() == null) {
+            return false;
+        }
+        if (hasActiveCommunication(communications, CommunicationType.NOTES_AVAILABLE)) {
+            return false;
+        }
+        ZoneId meetingZone = MeetingWindowRules.resolveMeetingZone(meeting.getTimezoneId());
+        LocalDateTime closeDueAtMeetingZone = toMeetingZone(meeting.getCloseDueAt(), meetingZone);
+        return closeDueAtMeetingZone == null || !isAtOrPast(closeDueAtMeetingZone, meetingZone, nowInstant);
+    }
+
+    /** Context-relative link to the communication form, preselected to NOTES_AVAILABLE. */
+    public static String notesAvailableCommunicationHref(Long meetingId) {
+        return "/es/meeting-communication?meetingId=" + meetingId + "&suggestType=NOTES_AVAILABLE";
     }
 
     /**
