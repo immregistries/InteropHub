@@ -29,7 +29,7 @@ You are working in `C:\dev\writing\content-publishing-templates`, on `main` at `
 5. **`new_topic_reference.py`:** for the private profile, an option to choose hosted or local (default local), which writes `hosting` and `comments` into `guide.json` accordingly and adds the workflow. If T4 is also touching this file later, keep the change small.
 6. **Mock.** Extend `tests/mock_hub.py` with the two versions endpoints (author and reader users as for T3; `409 invalid_state` for a document not set up for hosting; replacement returns `200`) and add tests to `tests/test_mock_hub.py`. Add tests for `publish_guide_to_hub.py` against the mock: success, replacement, reader `403`, missing token, wrong `hosting`, `--dry-run` sends nothing, and the token never appears in output.
 7. **Guidance.** A short section in `guidance/TopicReference.md`: the three ways a guide can be hosted (local, public pages with hub comments, hosted in the hub for private topics), how to choose, and how to publish a hosted guide (personal access token from the hub's account page, the secret, the script).
-8. **Release.** CHANGELOG entries for `v0.13.1` (task 0) and `v0.14.0` (the rest). Do not tag; G releases after review. Report back after task 0 so G can release it before you continue.
+8. **Release.** CHANGELOG entry for `v0.15.0` (task 0 already shipped in `v0.14.0`). Do not tag; G releases after review. Report back after task 0 so G can release it before you continue.
 
 ## Out of scope
 
