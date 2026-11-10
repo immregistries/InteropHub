@@ -109,11 +109,10 @@ public final class TopicReferenceSectionData {
         List<FlagLine> flagged = new ArrayList<>();
         for (FlagNote note : notes) {
             String anchor = note.anchor() == null ? "" : note.anchor();
-            String line = anchor.isBlank()
-                    ? excerpt(note.note()) + " · " + GuideDisplayDates.day(note.at())
-                    : anchor + " · " + excerpt(note.note()) + " · " + GuideDisplayDates.day(note.at());
+            String date = GuideDisplayDates.day(note.at());
+            String meta = anchor.isBlank() ? date : anchor + " · " + date;
             String href = anchor.isBlank() ? manage : open + "&anchor=" + encode(anchor);
-            flagged.add(new FlagLine(href, line));
+            flagged.add(new FlagLine(href, excerpt(note.note()), meta));
         }
         return new Guide(title == null || title.isBlank() ? documentKey : title,
                 hub ? "Hosted on InteropHub" : "Published externally",
@@ -212,30 +211,7 @@ public final class TopicReferenceSectionData {
     }
 
     static String activity(TopicReferenceDigest digest) {
-        if (digest.lastActivity() == null && digest.recentComments() == 0 && digest.recentReplies() == 0
-                && digest.recentPeople() == 0) {
-            return null;
-        }
-        StringBuilder line = new StringBuilder();
-        if (digest.lastActivity() != null) {
-            line.append("Last activity ").append(GuideDisplayDates.day(digest.lastActivity()));
-        }
-        if (digest.recentComments() != 0 || digest.recentReplies() != 0 || digest.recentPeople() != 0) {
-            if (line.length() > 0) {
-                line.append(" · ");
-            }
-            line.append(counted(digest.recentComments(), "comment", "comments"))
-                    .append(" and ")
-                    .append(counted(digest.recentReplies(), "reply", "replies"))
-                    .append(" from ")
-                    .append(counted(digest.recentPeople(), "person", "people"))
-                    .append(" in the last 30 days");
-        }
-        return line.toString();
-    }
-
-    private static String counted(int value, String one, String many) {
-        return value + " " + (value == 1 ? one : many);
+        return digest.lastActivity() == null ? null : "Last activity " + GuideDisplayDates.day(digest.lastActivity());
     }
 
     static String excerpt(String text) {
@@ -294,7 +270,7 @@ public final class TopicReferenceSectionData {
     public record Attention(String href, String excerpt, String meta) {
     }
 
-    public record FlagLine(String href, String text) {
+    public record FlagLine(String href, String note, String meta) {
     }
 
     public record Guide(String title, String hostingBadge, boolean externalOnPrivate, List<Link> links, Count open,

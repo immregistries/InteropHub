@@ -74,7 +74,7 @@ final class TopicReferenceSection {
     }
 
     private static void guide(PrintWriter out, Guide guide) {
-        out.println("              <div class=\"aira-stack aira-stack--compact\">");
+        out.println("              <div class=\"aira-stack aira-stack--compact topic-reference-guide\">");
         out.println("                <div class=\"aira-cluster aira-cluster--between\">");
         out.println("                  <div class=\"aira-stack aira-stack--compact\">");
         out.println("                    <div class=\"aira-cluster\">");
@@ -95,8 +95,8 @@ final class TopicReferenceSection {
             out.println("                    <p class=\"aira-meta\">This topic is private and this guide is published externally. Host it on InteropHub instead.</p>");
         }
         out.println("                  </div>");
-        out.println("                  <div class=\"aira-stack aira-stack--compact\">");
-        out.println("                    <div class=\"aira-cluster\">");
+        out.println("                  <div class=\"aira-stack aira-stack--compact topic-reference-stats\">");
+        out.println("                    <div class=\"aira-cluster topic-reference-stats__row\">");
         stat(out, guide.open());
         stat(out, guide.disposed());
         stat(out, guide.closed());
@@ -107,11 +107,9 @@ final class TopicReferenceSection {
         }
         out.println("                  </div>");
         out.println("                </div>");
+        if (!guide.needsAttention().isEmpty()) {
         out.println("                <div class=\"aira-stack aira-stack--compact\">");
         out.println("                  <h3 class=\"aira-subsection-title\">Needs attention</h3>");
-        if (guide.needsAttention().isEmpty()) {
-            out.println("                  <p class=\"aira-meta\">No comments are waiting for a disposition.</p>");
-        }
         for (Attention attention : guide.needsAttention()) {
             out.println("                  <a class=\"aira-recent-topic\" href=\"" + escape(attention.href()) + "\">");
             out.println("                    <span class=\"aira-recent-topic__title\">" + escape(attention.excerpt())
@@ -125,12 +123,15 @@ final class TopicReferenceSection {
                     + "\">View all " + guide.openTotal() + " open comments</a>");
         }
         out.println("                </div>");
+        }
         if (guide.flagTotal() > 0) {
             out.println("                <div class=\"aira-stack aira-stack--compact\">");
             out.println("                  <h3 class=\"aira-subsection-title\">Flagged for review</h3>");
             for (FlagLine flag : guide.flagged()) {
                 out.println("                  <a class=\"aira-recent-topic\" href=\"" + escape(flag.href()) + "\">");
-                out.println("                    <span class=\"aira-recent-topic__title\">" + escape(flag.text())
+                out.println("                    <span class=\"aira-recent-topic__title\">" + escape(flag.note())
+                        + "</span>");
+                out.println("                    <span class=\"aira-recent-topic__meta\">" + escape(flag.meta())
                         + "</span>");
                 out.println("                  </a>");
             }

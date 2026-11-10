@@ -4,10 +4,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.airahub.interophub.service.GuideRows.CommentRow;
 import org.airahub.interophub.service.GuideRows.FlagRow;
 
@@ -20,9 +18,6 @@ public record TopicReferenceDigest(
         int disposed,
         int closed,
         LocalDateTime lastActivity,
-        int recentComments,
-        int recentReplies,
-        int recentPeople,
         List<OpenThread> openThreads,
         List<FlagNote> flagNotes,
         int flagCount) {
@@ -42,7 +37,7 @@ public record TopicReferenceDigest(
     }
 
     public static TopicReferenceDigest empty() {
-        return new TopicReferenceDigest(0, 0, 0, null, 0, 0, 0, List.of(), List.of(), 0);
+        return new TopicReferenceDigest(0, 0, 0, null, List.of(), List.of(), 0);
     }
 
     /** The anchor the Flags figure opens, or null when there is nothing flagged. */
@@ -58,15 +53,12 @@ public record TopicReferenceDigest(
      * instead of calling this for a live document.
      */
     public static TopicReferenceDigest of(List<CommentRow> comments, List<FlagRow> flags,
-            Map<Long, String> authorNames, LocalDateTime since) {
+            Map<Long, String> authorNames) {
         List<CommentRow> rows = comments == null ? List.of() : comments;
         int open = 0;
         int disposed = 0;
         int closed = 0;
-        int recentComments = 0;
-        int recentReplies = 0;
         LocalDateTime lastActivity = null;
-        Set<Long> people = new HashSet<>();
         Map<Long, Integer> replies = new HashMap<>();
         List<CommentRow> threads = new ArrayList<>();
         for (CommentRow row : rows) {
@@ -75,15 +67,6 @@ public record TopicReferenceDigest(
             }
             if (row.updatedAt != null && (lastActivity == null || row.updatedAt.isAfter(lastActivity))) {
                 lastActivity = row.updatedAt;
-            }
-            boolean recent = since != null && row.updatedAt != null && !row.updatedAt.isBefore(since);
-            if (recent) {
-                people.add(row.userId);
-                if (row.parentId == null) {
-                    recentComments++;
-                } else {
-                    recentReplies++;
-                }
             }
             if (row.parentId != null) {
                 replies.merge(row.parentId, 1, Integer::sum);
@@ -128,8 +111,7 @@ public record TopicReferenceDigest(
         for (FlagRow flag : active) {
             notes.add(new FlagNote(flag.anchor, flag.note, flag.createdAt));
         }
-        return new TopicReferenceDigest(open, disposed, closed, lastActivity, recentComments, recentReplies,
-                people.size(), openThreads, notes, flagCount);
+        return new TopicReferenceDigest(open, disposed, closed, lastActivity, openThreads, notes, flagCount);
     }
 
     private static boolean live(CommentRow row) {

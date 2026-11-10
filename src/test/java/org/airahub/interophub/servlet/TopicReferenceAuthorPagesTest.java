@@ -113,7 +113,7 @@ class TopicReferenceAuthorPagesTest {
                 List.of(), List.of(
                         new VersionChoice("latest", LocalDateTime.of(2026, 11, 9, 12, 0)),
                         new VersionChoice("v1", LocalDateTime.of(2026, 11, 1, 12, 0))),
-                new TopicReferenceDigest(0, 0, 0, LocalDateTime.of(2026, 11, 9, 12, 0), 0, 0, 0, List.of(), List.of(), 0));
+                new TopicReferenceDigest(0, 0, 0, LocalDateTime.of(2026, 11, 9, 12, 0), List.of(), List.of(), 0));
         View editor = TopicReferenceSectionData.view(186L, true, "/hub", List.of(hosted), 2);
         String html = html(editor);
         assertTrue(html.contains("id=\"topic-reference-title\">Topic Reference"));
@@ -137,7 +137,8 @@ class TopicReferenceAuthorPagesTest {
         String readerHtml = html(TopicReferenceSectionData.view(7L, false, "/hub", List.of(external), 0));
         assertTrue(readerHtml.contains("Published externally"));
         assertTrue(readerHtml.contains("Host it on InteropHub instead"));
-        assertTrue(readerHtml.contains("No comments are waiting for a disposition."));
+        assertFalse(readerHtml.contains("Needs attention"));
+        assertFalse(readerHtml.contains("No comments are waiting for a disposition."));
         assertFalse(readerHtml.contains("Manage comments"));
         assertFalse(readerHtml.contains("Guide settings"));
     }
@@ -157,7 +158,7 @@ class TopicReferenceAuthorPagesTest {
                 new FlagNote("a-three", "flag-three", LocalDateTime.of(2026, 11, 7, 12, 0)),
                 new FlagNote("a-four", "flag-four", LocalDateTime.of(2026, 11, 6, 12, 0)));
         TopicReferenceDigest digest = new TopicReferenceDigest(6, 1, 2, LocalDateTime.of(2026, 11, 9, 12, 0),
-                8, 1, 3, threads, flags, 4);
+                threads, flags, 4);
         String html = html(TopicReferenceSectionData.view(186L, true, "/hub", List.of(
                 TopicReferenceSectionData.present("/hub", 186L, "guide-hosted", "Hosted guide", "HUB", false,
                         List.of(), List.of(), digest)), 0));

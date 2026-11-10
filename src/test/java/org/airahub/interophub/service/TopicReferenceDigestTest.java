@@ -15,8 +15,6 @@ import org.airahub.interophub.service.TopicReferenceSectionData.FlagLine;
 import org.junit.jupiter.api.Test;
 
 class TopicReferenceDigestTest {
-    private static final LocalDateTime SINCE = LocalDateTime.of(2026, 10, 11, 0, 0);
-
     @Test
     void countsSkipDeletedAndWithdrawnAndCapTheLists() {
         List<CommentRow> comments = List.of(
@@ -40,16 +38,12 @@ class TopicReferenceDigestTest {
                 flag(4L, "a-four", "flag-four", LocalDateTime.of(2026, 11, 6, 12, 0), false),
                 flag(5L, "a-cleared", "flag-cleared", LocalDateTime.of(2026, 11, 9, 18, 0), true));
 
-        TopicReferenceDigest digest = TopicReferenceDigest.of(comments, flags, Map.of(1L, "Ada", 2L, "Bea", 3L, "Cam"),
-                SINCE);
+        TopicReferenceDigest digest = TopicReferenceDigest.of(comments, flags, Map.of(1L, "Ada", 2L, "Bea", 3L, "Cam"));
 
         assertEquals(6, digest.open());
         assertEquals(1, digest.disposed());
         assertEquals(1, digest.closed());
         assertEquals(4, digest.flagCount());
-        assertEquals(8, digest.recentComments());
-        assertEquals(1, digest.recentReplies());
-        assertEquals(3, digest.recentPeople());
         assertEquals(LocalDateTime.of(2026, 11, 9, 16, 0), digest.lastActivity());
         assertEquals(List.of(1L, 2L, 3L, 4L, 5L), digest.openThreads().stream().map(OpenThread::id).toList());
         assertEquals(1, digest.openThreads().get(0).replies());
@@ -72,10 +66,10 @@ class TopicReferenceDigestTest {
         assertTrue(guide.needsAttention().stream().map(Attention::excerpt).noneMatch(text -> text.contains("open-six")));
         assertEquals(3, guide.flagged().size());
         assertEquals(4, guide.flagTotal());
-        assertEquals("a-one · flag-one · Nov 9, 2026", guide.flagged().get(0).text());
-        assertTrue(guide.flagged().stream().map(FlagLine::text).noneMatch(text -> text.contains("flag-four")));
-        assertEquals("Last activity Nov 9, 2026 · 8 comments and 1 reply from 3 people in the last 30 days",
-                guide.activity());
+        assertEquals("flag-one", guide.flagged().get(0).note());
+        assertEquals("a-one · Nov 9, 2026", guide.flagged().get(0).meta());
+        assertTrue(guide.flagged().stream().map(FlagLine::note).noneMatch(text -> text.contains("flag-four")));
+        assertEquals("Last activity Nov 9, 2026", guide.activity());
         assertEquals("/hub/es/topic-guide-comments/186?document=guide-hosted&show=OPEN", guide.open().href());
         assertTrue(guide.needsAttention().stream().map(Attention::excerpt)
                 .noneMatch(text -> text.contains("SHOULD-NOT-COUNT")));

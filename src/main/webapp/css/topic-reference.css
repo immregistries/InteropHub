@@ -35,3 +35,19 @@
   font-size: 0.75rem;
   font-weight: 600;
 }
+
+/* Counts sit flush right beside the guide links; they wrap to the left on narrow screens. */
+.topic-reference-stats {
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.topic-reference-stats__row {
+  justify-content: flex-end;
+}
+
+/* A rule between guides when a topic has more than one. */
+.topic-reference-guide + .topic-reference-guide {
+  border-top: 1px solid var(--aira-border-subtle);
+  padding-top: 1rem;
+}

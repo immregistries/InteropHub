@@ -115,16 +115,14 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
     }
 
     /**
-     * One session per guide: totals, last activity, the 30-day people count, five open threads,
+     * One session per guide: totals, last activity, five open threads,
      * their reply counts, those authors, and three flags plus the flag count.
      */
     @Override
     public TopicReferenceDigest digest(long documentId) {
-        LocalDateTime since = ApiTime.now().minusDays(30);
         try (Session session = open()) {
-            EsGuideCommentDao.SectionCounts counts = commentDao.sectionCounts(session, documentId, since);
+            EsGuideCommentDao.SectionCounts counts = commentDao.sectionCounts(session, documentId);
             LocalDateTime lastActivity = commentDao.lastActivity(session, documentId);
-            long people = commentDao.recentPeople(session, documentId, since);
             List<EsGuideComment> open = commentDao.openThreads(session, documentId, TopicReferenceDigest.LIST_LIMIT);
             Map<Long, Long> replies = commentDao.replyCounts(session, parentIds(open));
             Map<Long, String> names = names(session, open);
@@ -143,7 +141,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
                 notes.add(new TopicReferenceDigest.FlagNote(flag.getAnchorId(), flag.getNote(), flag.getCreatedAt()));
             }
             return new TopicReferenceDigest(counts.open, counts.disposed, counts.closed, lastActivity,
-                    counts.recentComments, counts.recentReplies, (int) people, threads, notes, (int) flagCount);
+                    threads, notes, (int) flagCount);
         }
     }
 

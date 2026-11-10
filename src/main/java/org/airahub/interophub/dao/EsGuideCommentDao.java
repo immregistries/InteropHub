@@ -32,20 +32,17 @@ public class EsGuideCommentDao extends GenericDao<EsGuideComment, Long> {
      */
     private static final String LIVE = "c.deletedAt is null and c.withdrawnAt is null and c.state <> 'WITHDRAWN'";
 
-    public SectionCounts sectionCounts(Session session, Long documentId, LocalDateTime since) {
+    public SectionCounts sectionCounts(Session session, Long documentId) {
         SectionCounts counts = session.createQuery(
                 "select new org.airahub.interophub.dao.EsGuideCommentDao$SectionCounts("
                         + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'OPEN' then 1 else 0 end),"
                         + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'DISPOSED' and c.closedAt is null then 1 else 0 end),"
-                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'CLOSED' then 1 else 0 end),"
-                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.updatedAt >= :since then 1 else 0 end),"
-                        + "sum(case when c.parentCommentId is not null and " + LIVE + " and c.updatedAt >= :since then 1 else 0 end))"
+                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'CLOSED' then 1 else 0 end))"
                         + " from EsGuideComment c where c.guideDocumentId = :id",
                 SectionCounts.class)
                 .setParameter("id", documentId)
-                .setParameter("since", since)
                 .uniqueResult();
-        return counts == null ? new SectionCounts(0L, 0L, 0L, 0L, 0L) : counts;
+        return counts == null ? new SectionCounts(0L, 0L, 0L) : counts;
     }
 
     public LocalDateTime lastActivity(Session session, Long documentId) {
@@ -54,17 +51,6 @@ public class EsGuideCommentDao extends GenericDao<EsGuideComment, Long> {
                 LocalDateTime.class)
                 .setParameter("id", documentId)
                 .uniqueResult();
-    }
-
-    public long recentPeople(Session session, Long documentId, LocalDateTime since) {
-        Long count = session.createQuery(
-                "select count(distinct c.userId) from EsGuideComment c where c.guideDocumentId = :id and "
-                        + LIVE + " and c.updatedAt >= :since",
-                Long.class)
-                .setParameter("id", documentId)
-                .setParameter("since", since)
-                .uniqueResult();
-        return count == null ? 0L : count;
     }
 
     public List<EsGuideComment> openThreads(Session session, Long documentId, int limit) {
@@ -101,15 +87,11 @@ public class EsGuideCommentDao extends GenericDao<EsGuideComment, Long> {
         public final int open;
         public final int disposed;
         public final int closed;
-        public final int recentComments;
-        public final int recentReplies;
 
-        public SectionCounts(Long open, Long disposed, Long closed, Long recentComments, Long recentReplies) {
+        public SectionCounts(Long open, Long disposed, Long closed) {
             this.open = number(open);
             this.disposed = number(disposed);
             this.closed = number(closed);
-            this.recentComments = number(recentComments);
-            this.recentReplies = number(recentReplies);
         }
 
         private static int number(Long value) {

@@ -991,8 +991,7 @@ class GuideCommentsAndRegistrationTest {
             for (CommentRow row : comments(documentId)) {
                 names.putIfAbsent(row.userId, "User " + row.userId);
             }
-            return TopicReferenceDigest.of(comments(documentId), flags(documentId, false), names,
-                    ApiTime.now().minusDays(30));
+            return TopicReferenceDigest.of(comments(documentId), flags(documentId, false), names);
         }
     }
 
