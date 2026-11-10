@@ -15,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +36,7 @@ import org.airahub.interophub.service.GuideRows.Person;
 import org.airahub.interophub.service.GuideRows.RegistrationPlan;
 import org.airahub.interophub.service.GuideRows.TopicRow;
 import org.airahub.interophub.servlet.GuideApiServlet;
+import org.airahub.interophub.servlet.GuideOpenServlet;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.jupiter.api.Test;
@@ -224,6 +226,80 @@ class GuideCommentsAndRegistrationTest {
                 "API", false, "CONTEXTUAL-CONDITIONS", "dev-off", "Dev", null,
                 List.of(new UrlInput("http://localhost:9/guide", "Local"))));
         assertEquals("invalid_field", devOff.getError());
+    }
+
+    @Test
+    void hostingSwitchesViewUrlsAndOpenKeepsTheCommentFragment() throws Exception {
+        MemoryRegistration registration = new MemoryRegistration();
+        registration.localhostMode = false;
+        registration.publicBase = "https://hub.example/hub";
+        registration.topic(7, "CONTEXTUAL-CONDITIONS");
+        User author = user(5, false);
+
+        JSONObject created = registration.service.create(author, 3L, "API", false, "CONTEXTUAL-CONDITIONS",
+                "hosted-guide", "Hosted", null, List.of(), "HUB");
+        assertEquals("HUB", created.getString("hosting"));
+        assertEquals("https://hub.example/hub/guide/view/hosted-guide/latest/",
+                created.getJSONArray("urls").getJSONObject(0).getString("url"));
+        assertEquals("https://hub.example/hub/guide/view/hosted-guide/main/",
+                created.getJSONArray("urls").getJSONObject(1).getString("url"));
+        String prefix = "https://hub.example/hub/guide/view/hosted-guide/";
+        assertTrue(registration.allowEnabled(prefix));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/latest/"));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/main/"));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/"));
+        AuthFlowService auth = new AuthFlowService();
+        assertTrue(auth.returnToMatchesAllowlist(prefix,
+                "https://hub.example/hub/guide/view/hosted-guide/v0.3.0/"));
+        assertFalse(auth.returnToMatchesAllowlist(prefix,
+                "https://hub.example/hub/guide/view/other-guide/v0.3.0/"));
+        assertFalse(created.toString().contains("public_id"));
+
+        GuideOpenServlet open = new GuideOpenServlet(registration.service);
+        Captured captured = new Captured();
+        HttpServletRequest request = (HttpServletRequest) Proxy.newProxyInstance(HttpServletRequest.class.getClassLoader(),
+                new Class<?>[] { HttpServletRequest.class },                 (proxy, method, args) -> switch (method.getName()) {
+                    case "getMethod" -> "GET";
+                    case "getParameter" -> switch ((String) args[0]) {
+                        case "doc" -> "hosted-guide";
+                        case "comment" -> "15";
+                        default -> null;
+                    };
+                    case "getContextPath" -> "";
+                    default -> defaultValue(method.getReturnType());
+                });
+        HttpServletResponse response = (HttpServletResponse) Proxy.newProxyInstance(
+                HttpServletResponse.class.getClassLoader(), new Class<?>[] { HttpServletResponse.class },
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "setStatus" -> {
+                        captured.status = (Integer) args[0];
+                        yield null;
+                    }
+                    case "setHeader" -> {
+                        if ("Location".equals(args[0])) {
+                            captured.location = (String) args[1];
+                        }
+                        yield null;
+                    }
+                    default -> defaultValue(method.getReturnType());
+                });
+        open.service(request, response);
+        assertEquals(302, captured.status);
+        assertEquals("https://hub.example/hub/guide/view/hosted-guide/latest/?interophub=signin#comment-15",
+                captured.location);
+
+        registration.service.update(author, 3L, "API", false, "hosted-guide", false, null, false, null, false,
+                List.of(), true, false, false, null);
+        assertEquals("HUB", registration.document("hosted-guide").hosting);
+        assertFalse(registration.allowEnabled(prefix));
+
+        registration.service.update(author, 3L, "API", false, "hosted-guide", false, null, false, null, false,
+                List.of(), true, true, true, "EXTERNAL");
+        assertEquals("EXTERNAL", registration.document("hosted-guide").hosting);
+        assertTrue(registration.document("hosted-guide").urls.isEmpty());
+        assertFalse(registration.allowEnabled(prefix));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/latest/"));
+        assertFalse(registration.allowEnabled("https://hub.example/hub/guide/view/hosted-guide/main/"));
     }
 
     @Test
@@ -741,6 +817,7 @@ class GuideCommentsAndRegistrationTest {
 
     private static final class Captured {
         int status;
+        String location;
         final java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
         PrintWriter writer;
     }
@@ -907,6 +984,15 @@ class GuideCommentsAndRegistrationTest {
         public String topicUrl(long topicId) {
             return "http://localhost:8080/hub/es/topic/" + topicId;
         }
+
+        @Override
+        public TopicReferenceDigest digest(long documentId) {
+            Map<Long, String> names = new LinkedHashMap<>();
+            for (CommentRow row : comments(documentId)) {
+                names.putIfAbsent(row.userId, "User " + row.userId);
+            }
+            return TopicReferenceDigest.of(comments(documentId), flags(documentId, false), names);
+        }
     }
 
     private static final class MemoryRegistration implements GuideRegistrationService.Store {
@@ -918,6 +1004,7 @@ class GuideCommentsAndRegistrationTest {
         final List<RegistrationPlan> changes = new ArrayList<>();
         boolean localhostMode;
         boolean globalAdmin;
+        String publicBase = "http://localhost:8080/hub";
         int persistCount;
         long nextId = 1;
         long nextAllow = 1;
@@ -1025,6 +1112,11 @@ class GuideCommentsAndRegistrationTest {
         }
 
         @Override
+        public String publicBaseUrl() {
+            return publicBase;
+        }
+
+        @Override
         public void persist(RegistrationPlan plan) {
             persistCount++;
             if (plan.document.id == null) {
@@ -1037,7 +1129,8 @@ class GuideCommentsAndRegistrationTest {
                 row.enabled = insert.enabled;
                 allowlist.add(row);
                 for (var binding : plan.urls) {
-                    if (binding.insertNew && insert.url.equals(binding.url)) {
+                    String owned = binding.ownedAllowUrl != null ? binding.ownedAllowUrl : binding.url;
+                    if (binding.insertNew && insert.url.equals(owned)) {
                         binding.allowId = row.allowId;
                     }
                 }

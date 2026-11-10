@@ -21,6 +21,7 @@ final class GuideResponses {
         json.put("documentKey", document.documentKey);
         json.put("title", document.title);
         json.put("isActive", document.active);
+        json.put("hosting", document.hosting == null || document.hosting.isBlank() ? "EXTERNAL" : document.hosting);
         if (canView && topic != null) {
             JSONObject topicJson = new JSONObject();
             topicJson.put("topicId", topic.id);

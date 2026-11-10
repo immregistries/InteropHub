@@ -1,6 +1,10 @@
 package org.airahub.interophub.dao;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.airahub.interophub.model.EsGuideComment;
 import org.hibernate.Session;
@@ -20,5 +24,78 @@ public class EsGuideCommentDao extends GenericDao<EsGuideComment, Long> {
                 EsGuideComment.class)
                 .setParameter("id", documentId)
                 .getResultList();
+    }
+
+    /**
+     * Topic page totals. A row counts only when it is not deleted and not withdrawn.
+     * That is the same rule as {@code TopicReferenceDigest.of}.
+     */
+    private static final String LIVE = "c.deletedAt is null and c.withdrawnAt is null and c.state <> 'WITHDRAWN'";
+
+    public SectionCounts sectionCounts(Session session, Long documentId) {
+        SectionCounts counts = session.createQuery(
+                "select new org.airahub.interophub.dao.EsGuideCommentDao$SectionCounts("
+                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'OPEN' then 1 else 0 end),"
+                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'DISPOSED' and c.closedAt is null then 1 else 0 end),"
+                        + "sum(case when c.parentCommentId is null and " + LIVE + " and c.state = 'CLOSED' then 1 else 0 end))"
+                        + " from EsGuideComment c where c.guideDocumentId = :id",
+                SectionCounts.class)
+                .setParameter("id", documentId)
+                .uniqueResult();
+        return counts == null ? new SectionCounts(0L, 0L, 0L) : counts;
+    }
+
+    public LocalDateTime lastActivity(Session session, Long documentId) {
+        return session.createQuery(
+                "select max(c.updatedAt) from EsGuideComment c where c.guideDocumentId = :id and " + LIVE,
+                LocalDateTime.class)
+                .setParameter("id", documentId)
+                .uniqueResult();
+    }
+
+    public List<EsGuideComment> openThreads(Session session, Long documentId, int limit) {
+        return session.createQuery(
+                "from EsGuideComment c where c.guideDocumentId = :id and c.parentCommentId is null and "
+                        + LIVE + " and c.state = 'OPEN' order by c.updatedAt desc, c.guideCommentId desc",
+                EsGuideComment.class)
+                .setParameter("id", documentId)
+                .setMaxResults(limit)
+                .getResultList();
+    }
+
+    public Map<Long, Long> replyCounts(Session session, Collection<Long> parentIds) {
+        if (parentIds == null || parentIds.isEmpty()) {
+            return Map.of();
+        }
+        List<Object[]> rows = session.createQuery(
+                "select c.parentCommentId, count(c) from EsGuideComment c where c.parentCommentId in :ids and "
+                        + LIVE + " group by c.parentCommentId",
+                Object[].class)
+                .setParameter("ids", parentIds)
+                .getResultList();
+        Map<Long, Long> counts = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            if (row[0] instanceof Long parentId && row[1] instanceof Number count) {
+                counts.put(parentId, count.longValue());
+            }
+        }
+        return counts;
+    }
+
+    /** Aggregate totals for one guide. Null sums become zero. */
+    public static final class SectionCounts {
+        public final int open;
+        public final int disposed;
+        public final int closed;
+
+        public SectionCounts(Long open, Long disposed, Long closed) {
+            this.open = number(open);
+            this.disposed = number(disposed);
+            this.closed = number(closed);
+        }
+
+        private static int number(Long value) {
+            return value == null ? 0 : value.intValue();
+        }
     }
 }

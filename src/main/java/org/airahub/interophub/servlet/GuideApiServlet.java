@@ -15,6 +15,8 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.GuideApiErrors;
 import org.airahub.interophub.service.GuideApiException;
 import org.airahub.interophub.service.GuideCommentService;
+import org.airahub.interophub.service.GuideHostingService;
+import org.airahub.interophub.service.GuideHtmlRules;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRegistrationService.UrlInput;
 import org.airahub.interophub.service.GuideRequestAuth;
@@ -29,20 +31,27 @@ import org.json.JSONObject;
  */
 public class GuideApiServlet extends HttpServlet {
     private static final Logger LOGGER = Logger.getLogger(GuideApiServlet.class.getName());
-    private static final Set<String> REGISTRATION_FIELDS = Set.of("title", "repositoryUrl", "urls", "isActive");
+    private static final Set<String> REGISTRATION_FIELDS = Set.of("title", "repositoryUrl", "urls", "isActive", "hosting");
 
     private final GuideCommentService comments;
     private final GuideRegistrationService registration;
     private final PublicUrlService publicUrls;
+    private final GuideHostingService hosting;
 
     public GuideApiServlet() {
-        this(new GuideCommentService(), new GuideRegistrationService(), new PublicUrlService());
+        this(new GuideCommentService(), new GuideRegistrationService(), new PublicUrlService(), new GuideHostingService());
     }
 
     public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration, PublicUrlService publicUrls) {
+        this(comments, registration, publicUrls, null);
+    }
+
+    public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration,
+            PublicUrlService publicUrls, GuideHostingService hosting) {
         this.comments = comments;
         this.registration = registration;
         this.publicUrls = publicUrls;
+        this.hosting = hosting;
     }
 
     @Override
@@ -120,6 +129,13 @@ public class GuideApiServlet extends HttpServlet {
                     comments.reviewFlags(user(request), parts[3], request.getParameter("includeCleared")));
             return;
         }
+        if (parts.length == 5 && "versions".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS, GuideScopes.TOPICS_READ)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_OK, hosting.list(user(request), parts[3]));
+            return;
+        }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
     }
 
@@ -131,9 +147,16 @@ public class GuideApiServlet extends HttpServlet {
             }
             JSONObject body = jsonBody(request);
             boolean dryRun = dryRun(request);
+            String hosting = null;
+            if (body.has("hosting")) {
+                if (body.isNull("hosting")) {
+                    throw GuideApiException.invalidField("hosting", "Hosting must be EXTERNAL or HUB.");
+                }
+                hosting = text(body, "hosting");
+            }
             JSONObject result = registration.create(user(request), tokenId(request), "API", dryRun,
                     text(body, "topicCode"), text(body, "documentKey"), text(body, "title"),
-                    text(body, "repositoryUrl"), urlInputs(body, true));
+                    text(body, "repositoryUrl"), urlInputs(body, true), hosting);
             write(response, dryRun ? HttpServletResponse.SC_OK : HttpServletResponse.SC_CREATED, result);
             return;
         }
@@ -160,6 +183,16 @@ public class GuideApiServlet extends HttpServlet {
             }
             GuideCommentService.FlagResult flagged = comments.flag(user(request), parts[3], jsonBody(request));
             write(response, flagged.status(), flagged.flag());
+            return;
+        }
+        if (parts.length == 6 && "versions".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.TOPICS_WRITE)) {
+                return;
+            }
+            byte[] html = request.getInputStream().readNBytes((int) GuideHtmlRules.MAX_BYTES + 1);
+            GuideHostingService.UploadResult uploaded = hosting.upload(user(request), tokenId(request), "API",
+                    parts[3], parts[5], html, request.getContentType());
+            write(response, uploaded.status(), uploaded.version());
             return;
         }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
@@ -203,7 +236,8 @@ public class GuideApiServlet extends HttpServlet {
                     body.has("title"), text(body, "title"),
                     body.has("repositoryUrl"), body.isNull("repositoryUrl") ? null : text(body, "repositoryUrl"),
                     body.has("urls"), body.has("urls") ? urlInputs(body, false) : List.of(),
-                    body.has("isActive"), active(body));
+                    body.has("isActive"), active(body),
+                    body.has("hosting"), body.has("hosting") ? text(body, "hosting") : null);
             write(response, HttpServletResponse.SC_OK, result);
             return;
         }

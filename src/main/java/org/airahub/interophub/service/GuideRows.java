@@ -38,6 +38,8 @@ public final class GuideRows {
         Long allowId;
         boolean ownsAllowlist;
         boolean insertNew;
+        /** Allowlist base when it is not the guide URL itself. */
+        String ownedAllowUrl;
         boolean insertEnabled = true;
 
         UrlBinding() {
@@ -63,6 +65,7 @@ public final class GuideRows {
         public String title;
         public String repositoryUrl;
         public boolean active;
+        public String hosting = "EXTERNAL";
         long createdByUserId;
         LocalDateTime createdAt;
         LocalDateTime updatedAt;
@@ -132,6 +135,18 @@ public final class GuideRows {
         boolean cleared() {
             return clearedAt != null;
         }
+    }
+
+    /** One hosted upload. {@code storedFileId} stays inside the service. */
+    public static final class HostedVersion {
+        public Long id;
+        public long documentId;
+        public String label;
+        public long storedFileId;
+        public long sizeBytes;
+        public long uploadedByUserId;
+        public String uploadedByName;
+        public LocalDateTime uploadedAt;
     }
 
     public static final class AllowInsert {

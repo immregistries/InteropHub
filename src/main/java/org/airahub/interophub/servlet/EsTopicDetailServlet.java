@@ -311,6 +311,7 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 .applicationSubtitle("Topic display")
                                 .mainClass("aira-main")
                                 .addLocalStylesheet("/css/agenda.css")
+                                .addLocalStylesheet("/css/topic-reference.css")
                                 .context(InteropAiraPageFactory.topicsMeetingsContext(
                                                 topicSpace.getSpaceName(),
                                                 topicSpace.getSpaceCode(),
@@ -540,6 +541,8 @@ public class EsTopicDetailServlet extends HttpServlet {
                         TopicOrientationResourceRenderer.overview(out, contextPath, orientation);
                         out.println("            </div>");
                         out.println("          </section>");
+
+                        TopicReferenceSection.render(out, contextPath, viewer, topicEntity, topicSpace);
 
                         if (!activeSupporters.isEmpty()) {
                                 out.println("          <section class=\"aira-section-card\" aria-labelledby=\"supporters-title\">");
@@ -887,7 +890,6 @@ public class EsTopicDetailServlet extends HttpServlet {
 
                         out.println("        </div>");
                         out.println("        <aside class=\"aira-right-rail\" aria-label=\"Topic activity\">");
-                        TopicReferenceCommentsPanel.render(out, contextPath, viewer, topicEntity);
                         RecentlyViewedTopicsRenderer.render(out, topicId, recentlyViewedTopics, canInteract,
                                         otherTopicId -> contextPath + "/es/topic/" + otherTopicId);
                         if (canManageTopic) {

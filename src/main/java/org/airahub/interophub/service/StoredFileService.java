@@ -6,6 +6,7 @@ import java.nio.channels.Channels;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.*;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.function.*;
 import java.util.logging.*;
@@ -253,6 +254,103 @@ public class StoredFileService {
         } catch (IOException ex) {
             LOGGER.log(Level.WARNING, "Replacement succeeded but previous local object needs cleanup: " + key, ex);
         }
+    }
+
+    /**
+     * Stores bytes the caller has already validated. Does not consult
+     * {@link StoredFileValidation}, so guide HTML can be stored without widening
+     * the general upload allowlist. {@code downloadOnly} writes the object as an
+     * attachment. The returned row's public id must not be shown to readers.
+     */
+    public StoredFile storePrepared(InputStream content, String filename, String contentType, Long uploader,
+            boolean downloadOnly, Function<StoredFile, StoredFile> register) throws IOException {
+        if (uploader == null) {
+            throw new IllegalArgumentException("An authenticated uploader is required.");
+        }
+        if (contentType == null || contentType.isBlank()) {
+            throw new IllegalArgumentException("A content type is required.");
+        }
+        if (register == null) {
+            throw new IllegalArgumentException("A registration callback is required.");
+        }
+        String problem = writeProblem(null);
+        if (problem != null) {
+            throw new IllegalStateException(problem);
+        }
+        String name = StoredFileValidation.filename(filename);
+        StoredFile candidate = new StoredFile();
+        candidate.setDownloadOnly(downloadOnly);
+        candidate.setPublicId(UUID.randomUUID().toString());
+        candidate.setBackend(config.defaultBackend());
+        if (candidate.getBackend() == Backend.BLOB) {
+            candidate.setBlobEndpoint(config.blobEndpoint());
+            candidate.setBlobContainer(config.container());
+        }
+        candidate.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        candidate.setStorageKey(UUID.randomUUID().toString());
+        candidate.setContentType(contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT));
+        candidate.setOriginalFilename(name);
+        Path staged = null;
+        boolean published = false;
+        boolean registered = false;
+        try {
+            if (candidate.getBackend() == Backend.LOCAL) {
+                staged = local.stage(content);
+            } else {
+                staged = Files.createTempFile("interophub-blob-upload-", ".tmp");
+                try (OutputStream output = Files.newOutputStream(staged)) {
+                    LocalFileStorageService.copyBounded(content, output);
+                }
+            }
+            candidate.setSizeBytes(Files.size(staged));
+            candidate.setUploadedByUserId(uploader);
+            candidate.setUploadedAt(LocalDateTime.now(ZoneOffset.UTC));
+            if (candidate.getBackend() == Backend.LOCAL) {
+                local.publish(staged, candidate.getStorageKey());
+            } else {
+                try (InputStream input = Files.newInputStream(staged)) {
+                    blob.store(candidate.getBlobEndpoint(), candidate.getBlobContainer(), candidate.getStorageKey(),
+                            input, candidate.getContentType(), name, inline(candidate));
+                }
+            }
+            published = true;
+            StoredFile result = register.apply(candidate);
+            if (result == null) {
+                throw new IllegalStateException("Prepared upload registration returned no stored file.");
+            }
+            registered = true;
+            return result;
+        } finally {
+            if (staged != null) {
+                try {
+                    Files.deleteIfExists(staged);
+                } catch (IOException ex) {
+                    LOGGER.log(Level.WARNING, "Upload staging file requires cleanup", ex);
+                }
+            }
+            if (published && !registered) {
+                LOGGER.severe("Prepared upload registration failed; reconcile unreferenced storage key "
+                        + candidate.getStorageKey());
+            }
+        }
+    }
+
+    /** Reads a stored object. The error text does not include a public id or Blob URL. */
+    public InputStream open(StoredFile file) throws IOException {
+        if (file == null) {
+            throw new IOException("The hosted guide could not be read.");
+        }
+        try {
+            if (file.getBackend() == Backend.LOCAL) {
+                return Channels.newInputStream(local.open(file.getStorageKey()));
+            }
+            if (file.getBackend() == Backend.BLOB) {
+                return blob.open(file.getBlobEndpoint(), file.getBlobContainer(), file.getStorageKey());
+            }
+        } catch (IOException ex) {
+            throw new IOException("The hosted guide could not be read.", ex);
+        }
+        throw new IOException("The hosted guide could not be read.");
     }
 
     public static boolean inline(StoredFile file) {

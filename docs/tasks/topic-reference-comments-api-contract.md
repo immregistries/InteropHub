@@ -85,8 +85,8 @@ Every error response uses one shape:
 
 | Scope | Allows |
 |---|---|
-| `comments` | Section 5 and Section 6 endpoints, and `GET /api/guide/{documentKey}` |
-| `topics:read` | `GET /api/guide/{documentKey}`, and the topic read endpoints in `docs/tasks/topic-mcp-tools.md` |
+| `comments` | Section 5 and Section 6 endpoints, `GET /api/guide/{documentKey}`, and `GET /api/guide/{documentKey}/versions` |
+| `topics:read` | `GET /api/guide/{documentKey}`, `GET /api/guide/{documentKey}/versions`, and the topic read endpoints in `docs/tasks/topic-mcp-tools.md` |
 | `topics:write` | Section 7 endpoints and the topic write endpoints. Implies `topics:read`. |
 
 A scope only narrows what the user may already do. Each endpoint below names its required scope; a token with any one of the listed scopes is accepted.
@@ -249,6 +249,7 @@ Returns the document, the caller's permissions, and the lookup values the guide 
   "documentKey": "contextual-conditions",
   "title": "Contextual Conditions",
   "isActive": true,
+  "hosting": "EXTERNAL",
   "topic": {
     "topicId": 7,
     "topicCode": "CONTEXTUAL-CONDITIONS",
@@ -280,6 +281,7 @@ Returns the document, the caller's permissions, and the lookup values the guide 
 }
 ```
 
+- `hosting` is `EXTERNAL` (published at the guide URLs) or `HUB` (served by InteropHub). Existing documents are `EXTERNAL`. See Section 7.4.
 - `canView`: `TopicSpaceAccessService.canViewTopic`.
 - `canComment`: `canView` and `isActive`.
 - `isAuthor`: `canEditTopic` (design 6.1, and the 2026-10-30 decision that champions and support subscribers count).
@@ -503,6 +505,86 @@ Any of `title`, `repositoryUrl`, `urls`, `isActive`. `urls`, when sent, **replac
 - Labels: 1 to 40 characters, unique within the document. Order is kept; the first URL is the default for `/guide/open`.
 - InteropHub adds an `app_redirect_allowlist` row for each URL and disables the row when the URL is removed or the document becomes inactive. It never changes rows it did not create.
 - Each change is recorded with the user and token, in `es_topic_change` once that table exists (topic tools task).
+
+### 7.4 Private hosting
+
+`hosting` on the document object (5.1) is `EXTERNAL` or `HUB`. `POST /api/guides` and `PATCH /api/guide/{documentKey}` accept it. Absent on create means `EXTERNAL`. `null` is refused.
+
+When `hosting` is `HUB`, omit `urls`. InteropHub registers these two guide URLs, replacing any external URLs:
+
+```text
+{hub}/guide/view/{documentKey}/latest/
+{hub}/guide/view/{documentKey}/main/
+```
+
+`latest` is first, so `/guide/open` uses it. These hub view URLs count as approved without an approved-prefix setting. Sending `urls` together with `HUB` is `400 invalid_field`, `field: urls`.
+
+The document's allowlist row is the prefix `{hub}/guide/view/{documentKey}/`, maintained through the rules in 7.3. Prefix matching accepts every label of that document, including a version tag, for guide sign-in. It is not `{hub}/guide/view/` for every document. The row is removed the same way as other owned allowlist rows when hosting returns to `EXTERNAL` or the document becomes inactive.
+
+Setting `hosting` back to `EXTERNAL` removes the view URLs and that prefix. Send `urls` in the same request to replace the view URLs; omitting `urls` leaves the document with no guide URLs.
+
+```text
+GET {hub}/guide/view/{documentKey}/{label}/
+```
+
+A URL without the trailing slash redirects to it. Any further path after the label is `404`. The response is HTML, not JSON. Signed-out readers are sent to sign-in. The magic link carries the guide path, including its query, and after the link is used the reader lands on that same URL. Only a relative path under `/guide/view/` is carried; anything else is ignored and sign-in finishes on the normal page. A signed-in reader who cannot view the topic, or an inactive document, a document that is not `HUB`, or an unknown label, gets the same not-found page as a private topic. An allowed response is the stored HTML with `Content-Type: text/html; charset=utf-8`, `Cache-Control: private, no-store`, `X-Robots-Tag: noindex`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: same-origin`. InteropHub streams the file. It does not redirect to storage.
+
+`label` is `latest`, `main`, or `v` followed by digits and dots, with an optional `-suffix` such as `v1.2.3` or `v1.2.3-rc1`.
+
+```http
+POST {hub}/api/guide/{documentKey}/versions/{label}
+Authorization: Bearer ihp_…
+Content-Type: text/html
+
+<!DOCTYPE html>
+<html>…one self-contained guide…</html>
+```
+
+Scope: `topics:write`. The caller must satisfy `canEditTopic`. The document must be active and `HUB`. The body is the HTML, at most 20 MB, and it must start like an HTML document after an optional BOM and whitespace. `POST` only. `201` when the label is new, `200` when it replaces the label. Older uploads are kept. The body is the version object:
+
+```json
+{
+  "label": "latest",
+  "sizeBytes": 409600,
+  "uploadedBy": "Sam Author",
+  "uploadedAt": "2026-11-09T18:04:05.123Z",
+  "viewUrl": "https://<host>/hub/guide/view/contextual-conditions/latest/"
+}
+```
+
+`uploadedBy` is the uploader's display name. `uploadedAt` is UTC. `viewUrl` is the URL in 7.4 above. The response does not include the stored file's `public_id` or a storage URL.
+
+```http
+GET {hub}/api/guide/{documentKey}/versions
+```
+
+Scope: `comments` or `topics:read`. Requires `canView`. `200`:
+
+```json
+{
+  "versions": [
+    {
+      "label": "latest",
+      "sizeBytes": 409600,
+      "uploadedBy": "Sam Author",
+      "uploadedAt": "2026-11-09T18:04:05.123Z",
+      "viewUrl": "https://<host>/hub/guide/view/contextual-conditions/latest/",
+      "historyCount": 2,
+      "earlier": [
+        {
+          "sizeBytes": 400000,
+          "uploadedBy": "Sam Author",
+          "uploadedAt": "2026-11-09T17:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+One object per label, the newest upload, plus `historyCount` (every upload of that label, including the newest) and `earlier` (the uploads that label no longer serves). `latest`, then `main`, then other labels in alphabetical order.
+
+Errors use Section 2. `400 invalid_field` names `label`, `type`, or `size`. `403 forbidden` when the caller cannot edit (upload) or view (list). `403 insufficient_scope` when the token lacks the scope. `404 not_found` for an unknown document key. `409 document_inactive` when uploading to an inactive document. `409 invalid_state` when uploading to a document that is not `HUB`. Each upload is recorded in `es_topic_change`.
 
 ## 8. MCP
 

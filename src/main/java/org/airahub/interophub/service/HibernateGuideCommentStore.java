@@ -1,5 +1,7 @@
 package org.airahub.interophub.service;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -109,6 +111,37 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
     public List<CommentRow> comments(long documentId) {
         try (Session session = open()) {
             return commentDao.findByDocumentId(session, documentId).stream().map(HibernateGuideCommentStore::toComment).toList();
+        }
+    }
+
+    /**
+     * One session per guide: totals, last activity, five open threads,
+     * their reply counts, those authors, and three flags plus the flag count.
+     */
+    @Override
+    public TopicReferenceDigest digest(long documentId) {
+        try (Session session = open()) {
+            EsGuideCommentDao.SectionCounts counts = commentDao.sectionCounts(session, documentId);
+            LocalDateTime lastActivity = commentDao.lastActivity(session, documentId);
+            List<EsGuideComment> open = commentDao.openThreads(session, documentId, TopicReferenceDigest.LIST_LIMIT);
+            Map<Long, Long> replies = commentDao.replyCounts(session, parentIds(open));
+            Map<Long, String> names = names(session, open);
+            List<EsGuideReviewFlag> flags = flagDao.newestActive(session, documentId, TopicReferenceDigest.FLAG_LIMIT);
+            long flagCount = flagDao.countActive(session, documentId);
+            List<TopicReferenceDigest.OpenThread> threads = new ArrayList<>();
+            for (EsGuideComment row : open) {
+                long id = row.getGuideCommentId() == null ? 0L : row.getGuideCommentId();
+                String author = names.getOrDefault(row.getUserId(), "Someone");
+                int replyCount = replies.getOrDefault(id, 0L).intValue();
+                threads.add(new TopicReferenceDigest.OpenThread(id, row.getCommentText(), author, row.getUpdatedAt(),
+                        replyCount));
+            }
+            List<TopicReferenceDigest.FlagNote> notes = new ArrayList<>();
+            for (EsGuideReviewFlag flag : flags) {
+                notes.add(new TopicReferenceDigest.FlagNote(flag.getAnchorId(), flag.getNote(), flag.getCreatedAt()));
+            }
+            return new TopicReferenceDigest(counts.open, counts.disposed, counts.closed, lastActivity,
+                    threads, notes, (int) flagCount);
         }
     }
 
@@ -376,6 +409,36 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
 
     private static Disposition toDisposition(EsGuideDisposition entity) {
         return new Disposition(entity.getDispositionCode(), entity.getLabel());
+    }
+
+    private static List<Long> parentIds(List<EsGuideComment> threads) {
+        List<Long> ids = new ArrayList<>();
+        for (EsGuideComment thread : threads) {
+            if (thread.getGuideCommentId() != null) {
+                ids.add(thread.getGuideCommentId());
+            }
+        }
+        return ids;
+    }
+
+    private static Map<Long, String> names(Session session, List<EsGuideComment> threads) {
+        List<Long> ids = new ArrayList<>();
+        for (EsGuideComment thread : threads) {
+            if (thread.getUserId() != null && !ids.contains(thread.getUserId())) {
+                ids.add(thread.getUserId());
+            }
+        }
+        Map<Long, String> names = new LinkedHashMap<>();
+        if (ids.isEmpty()) {
+            return names;
+        }
+        for (User user : session.createQuery("from User u where u.userId in :ids", User.class)
+                .setParameter("ids", ids)
+                .getResultList()) {
+            String name = user.getFullName();
+            names.put(user.getUserId(), name == null || name.isBlank() ? "Someone" : name);
+        }
+        return names;
     }
 
     private static Session open() {
