@@ -67,6 +67,9 @@ import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.EmailService;
 import org.airahub.interophub.service.EmailTemplates;
 import org.airahub.interophub.service.EsMeetingViewHistoryService;
+import org.airahub.interophub.model.EsMeetingCommunication;
+import org.airahub.interophub.service.MeetingActionQueueService;
+import org.airahub.interophub.service.MeetingAuthorizationService;
 import org.airahub.interophub.service.MeetingCommunicationService;
 import org.airahub.interophub.service.TopicNoteDocumentSupport;
 import org.airahub.interophub.service.TopicSpaceAccessService;
@@ -109,6 +112,7 @@ public class EsAgendaServlet extends HttpServlet {
     private final EmailService emailService;
     private final HubSettingDao hubSettingDao;
     private final MeetingCommunicationService meetingCommunicationService;
+    private final MeetingAuthorizationService meetingAuthorizationService;
     private final EsMeetingAttendanceDao attendanceDao;
     private final EsMeetingRsvpDao rsvpDao;
     private final TopicSpaceAccessService topicSpaceAccessService;
@@ -133,6 +137,7 @@ public class EsAgendaServlet extends HttpServlet {
         this.emailService = new EmailService();
         this.hubSettingDao = new HubSettingDao();
         this.meetingCommunicationService = new MeetingCommunicationService();
+        this.meetingAuthorizationService = new MeetingAuthorizationService();
         this.attendanceDao = new EsMeetingAttendanceDao();
         this.rsvpDao = new EsMeetingRsvpDao();
         this.topicSpaceAccessService = new TopicSpaceAccessService();
@@ -226,8 +231,21 @@ public class EsAgendaServlet extends HttpServlet {
 
         String savedMsg = request.getParameter("saved") != null ? "Changes saved." : null;
         String errorMsg = trimToNull(request.getParameter("err"));
-        String suggestBanner = buildSuggestBanner(contextPath, meeting.getEsMeetingId(),
-                trimToNull(request.getParameter("suggest")));
+        // Communication prompts are only for people who can actually send them. A
+        // just-requested suggestion (e.g. CANCELLED, right after cancelling) wins;
+        // otherwise keep prompting for an agenda notice that's still owed, so it
+        // doesn't vanish after the one redirect that follows the status change.
+        String suggestBanner = null;
+        if (user != null && meetingAuthorizationService.canManageMeetingCommunications(user.getUserId(), meeting)) {
+            String suggestType = trimToNull(request.getParameter("suggest"));
+            if (suggestType == null) {
+                EsMeetingCommunication.CommunicationType owed = MeetingActionQueueService.pendingAgendaNoticeType(
+                        meeting, meetingCommunicationService.findByMeetingId(meeting.getEsMeetingId()),
+                        java.time.Instant.now());
+                suggestType = owed == null ? null : owed.name();
+            }
+            suggestBanner = buildSuggestBanner(contextPath, meeting.getEsMeetingId(), suggestType);
+        }
 
         // Viewer's email for the Attendance section's "already registered" check.
         // For anonymous visitors this is set by EsMeetingAttendanceServlet

@@ -16,12 +16,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.EsMeetingCommunication;
-import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.MeetingCommunicationService;
 
 /**
  * Per-meeting list of communications and create form.
  * URL: /es/meeting-communication?meetingId=X
+ * Open to the meeting's workgroup leads, not just admins - see MeetingCommunicationAccess.
  */
 public class EsMeetingCommunicationServlet extends HttpServlet {
 
@@ -49,10 +49,6 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
-        if (adminUser.isEmpty())
-            return;
-
         String contextPath = request.getContextPath();
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
         if (meetingId == null) {
@@ -65,24 +61,30 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
             response.sendError(HttpServletResponse.SC_NOT_FOUND, "Meeting not found.");
             return;
         }
+        Optional<MeetingCommunicationAccess.Access> access = MeetingCommunicationAccess.require(request, response,
+                meeting);
+        if (access.isEmpty())
+            return;
+        boolean admin = access.get().admin();
 
         List<EsMeetingCommunication> communications = communicationService.findByMeetingId(meetingId);
         // Pre-select type if suggestType param is present
         String suggestType = trimToNull(request.getParameter("suggestType"));
 
         String title = escapeHtml(orEmpty(meeting.getMeetingName())) + " — Communications";
-        AdminShellRenderer.render(request, response, title + " - InteropHub", AdminSection.TOPIC_SPACES,
-                "/admin/es/meetings", out -> {
+        MeetingCommunicationAccess.render(request, response, access.get(), meeting, title + " - InteropHub",
+                out -> {
                     out.println("          <section class=\"aira-panel\">");
                     out.println(
                             "            <h2 class=\"aira-section-title\">Communications — "
                                     + escapeHtml(orEmpty(meeting.getMeetingName())) + "</h2>");
+                    // "All Communications" is the cross-meeting admin list - only offered to admins.
                     out.println("            <p>"
                             + "<a class=\"aira-inline-link\" href=\"" + contextPath + "/es/agenda?meetingId="
                             + meetingId + "\">&larr; Back to Meeting</a>"
-                            + " &nbsp;|&nbsp; "
-                            + "<a class=\"aira-inline-link\" href=\"" + contextPath
-                            + "/es/meeting-communications\">All Communications</a>"
+                            + (admin ? " &nbsp;|&nbsp; "
+                                    + "<a class=\"aira-inline-link\" href=\"" + contextPath
+                                    + "/es/meeting-communications\">All Communications</a>" : "")
                             + "</p>");
 
                     // Existing communications table
@@ -193,10 +195,6 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
-        if (adminUser.isEmpty())
-            return;
-
         String contextPath = request.getContextPath();
 
         Long meetingId = parseId(trimToNull(request.getParameter("meetingId")));
@@ -204,6 +202,15 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
             response.sendRedirect(contextPath + "/es/meeting-communications");
             return;
         }
+        EsMeeting meeting = meetingDao.findById(meetingId).orElse(null);
+        if (meeting == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Meeting not found.");
+            return;
+        }
+        Optional<MeetingCommunicationAccess.Access> access = MeetingCommunicationAccess.require(request, response,
+                meeting);
+        if (access.isEmpty())
+            return;
 
         String typeParam = trimToNull(request.getParameter("communicationType"));
         EsMeetingCommunication.CommunicationType communicationType = null;
@@ -221,7 +228,7 @@ public class EsMeetingCommunicationServlet extends HttpServlet {
         EsMeetingCommunication communication = new EsMeetingCommunication();
         communication.setEsMeetingId(meetingId);
         communication.setCommunicationType(communicationType);
-        communication.setCreatedByUserId(adminUser.get().getUserId());
+        communication.setCreatedByUserId(access.get().user().getUserId());
 
         String timezoneId = trimToNull(request.getParameter("timezoneId"));
         String effectiveTimezoneId = DEFAULT_TIMEZONE;

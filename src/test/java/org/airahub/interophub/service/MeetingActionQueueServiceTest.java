@@ -268,6 +268,43 @@ class MeetingActionQueueServiceTest {
     }
 
     @Test
+    void agendaActionsPointAtCommunicationFormOnceOnlyTheNoticeIsLeft() {
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.plusDays(10));
+        meeting.setTimezoneId("UTC");
+        meeting.setStatus(EsMeeting.MeetingStatus.PROPOSED);
+
+        MeetingAction proposed = derive(meeting, MeetingActionType.PUBLISH_PROPOSED_AGENDA, List.of()).orElseThrow();
+        assertEquals("/es/meeting-communication?meetingId=1&suggestType=PROPOSED_AGENDA", proposed.getHref());
+        assertEquals(CommunicationType.PROPOSED_AGENDA,
+                MeetingActionQueueService.pendingAgendaNoticeType(meeting, List.of(), NOW_INSTANT));
+        // FINALIZE_AGENDA isn't reached yet, so it still points at the agenda page.
+        MeetingAction finalize = derive(meeting, MeetingActionType.FINALIZE_AGENDA, List.of()).orElseThrow();
+        assertEquals("/es/agenda?meetingId=1", finalize.getHref());
+
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        finalize = derive(meeting, MeetingActionType.FINALIZE_AGENDA, List.of()).orElseThrow();
+        assertEquals("/es/meeting-communication?meetingId=1&suggestType=FINAL_AGENDA", finalize.getHref());
+        assertEquals(CommunicationType.FINAL_AGENDA,
+                MeetingActionQueueService.pendingAgendaNoticeType(meeting, List.of(), NOW_INSTANT));
+    }
+
+    @Test
+    void agendaNoticeIsNotPendingOnceSentOrAfterTheMeetingStarts() {
+        EsMeeting meeting = draftMeeting(NOW.minusDays(30), NOW.plusDays(10));
+        meeting.setTimezoneId("UTC");
+        meeting.setStatus(EsMeeting.MeetingStatus.FINALIZED);
+        EsMeetingCommunication sent = communication(CommunicationType.FINAL_AGENDA, CommunicationStatus.SENT);
+        assertEquals(null, MeetingActionQueueService.pendingAgendaNoticeType(meeting, List.of(sent), NOW_INSTANT));
+
+        meeting.setScheduledStart(NOW.minusHours(1));
+        assertEquals(null, MeetingActionQueueService.pendingAgendaNoticeType(meeting, List.of(), NOW_INSTANT));
+
+        meeting.setScheduledStart(NOW.plusDays(10));
+        meeting.setStatus(EsMeeting.MeetingStatus.DRAFT);
+        assertEquals(null, MeetingActionQueueService.pendingAgendaNoticeType(meeting, List.of(), NOW_INSTANT));
+    }
+
+    @Test
     void publishNotesDoesNotLingerPastTheSevenDayEditWindow() {
         // Notes were never published, and the 7-day note-editing lock (closeDueAt) has
         // already closed - there's nothing more to prompt for on this meeting.

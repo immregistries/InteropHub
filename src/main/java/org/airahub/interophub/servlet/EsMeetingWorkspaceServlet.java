@@ -135,7 +135,7 @@ public class EsMeetingWorkspaceServlet extends HttpServlet {
         String feedbackMessage = resolveFeedbackMessage(request);
         String errorMessage = trimToNull(request.getParameter("err"));
         boolean notesNoticePending = user != null
-                && meetingAuthorizationService.canControlMeeting(user.getUserId(), meeting)
+                && meetingAuthorizationService.canManageMeetingCommunications(user.getUserId(), meeting)
                 && MeetingActionQueueService.isNotesAvailableNoticePending(meeting,
                         communicationDao.findByMeetingId(meetingId), java.time.Instant.now());
         String suggestBanner = notesNoticePending ? buildNotesNoticeBanner(request.getContextPath(), meetingId) : null;

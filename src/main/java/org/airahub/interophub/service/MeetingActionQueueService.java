@@ -128,8 +128,14 @@ public class MeetingActionQueueService {
             if (!authorizationService.canControlMeeting(userId, meeting)) {
                 continue;
             }
+            // Every action but CLOSE_MEETING ends in sending a community notice, so only
+            // offer those to users who can actually send one - never a task they can't finish.
+            boolean canSendNotices = authorizationService.canManageMeetingCommunications(userId, meeting);
             List<EsMeetingCommunication> communications = communicationDao.findByMeetingId(meeting.getEsMeetingId());
             for (MeetingActionType type : MeetingActionType.values()) {
+                if (type != MeetingActionType.CLOSE_MEETING && !canSendNotices) {
+                    continue;
+                }
                 deriveAction(meeting, type, communications, nowInstant).ifPresent(visible::add);
             }
         }
@@ -212,10 +218,16 @@ public class MeetingActionQueueService {
             return Optional.empty();
         }
         LocalDateTime dueAt = dueNoEarlierThanCreated(meeting, meetingZone, 14);
+        // Already Proposed (only the notice is missing): link straight to the form that sends it.
+        boolean onlyNoticeLeft = status == MeetingStatus.PROPOSED;
         return Optional.of(new MeetingAction(
                 meeting.getEsMeetingId(), meeting.getMeetingName(), MeetingActionType.PUBLISH_PROPOSED_AGENDA,
-                "Publish the proposed agenda and send the proposed-agenda notice.",
-                agendaHref(meeting), dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
+                onlyNoticeLeft
+                        ? "The agenda is proposed. Schedule the proposed-agenda notice."
+                        : "Publish the proposed agenda and send the proposed-agenda notice.",
+                onlyNoticeLeft ? communicationHref(meeting.getEsMeetingId(), CommunicationType.PROPOSED_AGENDA)
+                        : agendaHref(meeting),
+                dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
     }
 
     private static Optional<MeetingAction> deriveFinalizeAgenda(EsMeeting meeting,
@@ -234,10 +246,41 @@ public class MeetingActionQueueService {
             return Optional.empty();
         }
         LocalDateTime dueAt = dueNoEarlierThanCreated(meeting, meetingZone, 3);
+        // Already Finalized (only the notice is missing): link straight to the form that sends it.
+        boolean onlyNoticeLeft = status == MeetingStatus.FINALIZED;
         return Optional.of(new MeetingAction(
                 meeting.getEsMeetingId(), meeting.getMeetingName(), MeetingActionType.FINALIZE_AGENDA,
-                "Finalize the agenda and send the final-agenda notice.",
-                agendaHref(meeting), dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
+                onlyNoticeLeft
+                        ? "The agenda is final. Schedule the final-agenda notice."
+                        : "Finalize the agenda and send the final-agenda notice.",
+                onlyNoticeLeft ? communicationHref(meeting.getEsMeetingId(), CommunicationType.FINAL_AGENDA)
+                        : agendaHref(meeting),
+                dueAt, isAtOrPast(dueAt, meetingZone, nowInstant), null, null));
+    }
+
+    /**
+     * The agenda notice still owed for a meeting whose agenda status already
+     * reached the matching stage - PROPOSED_AGENDA while Proposed, FINAL_AGENDA
+     * while Finalized - with no active notice of that type and the meeting not
+     * yet started. Null when nothing is owed. Shared with the agenda page so its
+     * "send the notice" prompt persists under exactly the conditions this queue
+     * keeps the matching action open.
+     */
+    public static CommunicationType pendingAgendaNoticeType(EsMeeting meeting,
+            List<EsMeetingCommunication> communications, Instant nowInstant) {
+        if (meeting == null || meeting.getScheduledStart() == null || meeting.getStatus() == null) {
+            return null;
+        }
+        CommunicationType owed = switch (meeting.getStatus()) {
+            case PROPOSED -> CommunicationType.PROPOSED_AGENDA;
+            case FINALIZED -> CommunicationType.FINAL_AGENDA;
+            default -> null;
+        };
+        if (owed == null || hasActiveCommunication(communications, owed)) {
+            return null;
+        }
+        ZoneId meetingZone = MeetingWindowRules.resolveMeetingZone(meeting.getTimezoneId());
+        return isAtOrPast(meeting.getScheduledStart(), meetingZone, nowInstant) ? null : owed;
     }
 
     private static Optional<MeetingAction> deriveCloseMeeting(EsMeeting meeting, ZoneId meetingZone, Instant nowInstant) {
@@ -320,7 +363,12 @@ public class MeetingActionQueueService {
 
     /** Context-relative link to the communication form, preselected to NOTES_AVAILABLE. */
     public static String notesAvailableCommunicationHref(Long meetingId) {
-        return "/es/meeting-communication?meetingId=" + meetingId + "&suggestType=NOTES_AVAILABLE";
+        return communicationHref(meetingId, CommunicationType.NOTES_AVAILABLE);
+    }
+
+    /** Context-relative link to the communication form, preselected to the given type. */
+    public static String communicationHref(Long meetingId, CommunicationType type) {
+        return "/es/meeting-communication?meetingId=" + meetingId + "&suggestType=" + type.name();
     }
 
     /**

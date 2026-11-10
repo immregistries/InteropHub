@@ -10,7 +10,9 @@ import java.util.Optional;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.dao.EsMeetingDao;
 import org.airahub.interophub.model.CommunicationPreview;
+import org.airahub.interophub.model.EsMeeting;
 import org.airahub.interophub.model.CommunicationRecipientGroupSummary;
 import org.airahub.interophub.model.CommunicationRenderedEmail;
 import org.airahub.interophub.model.EsMeetingCommunication;
@@ -31,25 +33,35 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
     private final MeetingCommunicationPreviewService previewService;
     private final MeetingCommunicationService communicationService;
     private final MeetingCommunicationSendService sendService;
+    private final EsMeetingDao meetingDao;
 
     public EsMeetingCommunicationPreviewServlet() {
         this.previewService = new MeetingCommunicationPreviewService();
         this.communicationService = new MeetingCommunicationService();
         this.sendService = new MeetingCommunicationSendService();
+        this.meetingDao = new EsMeetingDao();
     }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
-        if (adminUser.isEmpty())
-            return;
-
         String contextPath = request.getContextPath();
         Long id = parseId(trimToNull(request.getParameter("id")));
         if (id == null) {
             response.sendRedirect(contextPath + "/es/meeting-communications");
             return;
         }
+
+        // Authorize before building the preview: it renders sample emails with
+        // real recipient addresses, which only the meeting's leads may see.
+        EsMeeting meeting = findMeetingForCommunication(id);
+        if (meeting == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Communication not found.");
+            return;
+        }
+        Optional<MeetingCommunicationAccess.Access> access = MeetingCommunicationAccess.require(request, response,
+                meeting);
+        if (access.isEmpty())
+            return;
 
         CommunicationPreview preview;
         try {
@@ -66,8 +78,8 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
         boolean canCancel = isDraft || isScheduled;
         boolean canSchedule = isDraft && comm.getScheduledSendAt() != null;
 
-        AdminShellRenderer.render(request, response, "Communication Preview - InteropHub", AdminSection.TOPIC_SPACES,
-                "/admin/es/meetings", out -> {
+        MeetingCommunicationAccess.render(request, response, access.get(), meeting,
+                "Communication Preview - InteropHub", out -> {
                     out.println("          <section class=\"aira-panel\">");
                     out.println("            <h2 class=\"aira-section-title\">Communication Preview</h2>");
                     out.println("            <p>"
@@ -180,16 +192,22 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        Optional<User> adminUser = AdminAccessGuard.requireAdmin(request, response);
-        if (adminUser.isEmpty())
-            return;
-
         String contextPath = request.getContextPath();
         Long id = parseId(trimToNull(request.getParameter("id")));
         if (id == null) {
             response.sendRedirect(contextPath + "/es/meeting-communications");
             return;
         }
+        EsMeeting meeting = findMeetingForCommunication(id);
+        if (meeting == null) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Communication not found.");
+            return;
+        }
+        Optional<MeetingCommunicationAccess.Access> access = MeetingCommunicationAccess.require(request, response,
+                meeting);
+        if (access.isEmpty())
+            return;
+        User actingUser = access.get().user();
 
         String action = trimToNull(request.getParameter("action"));
         if ("schedule".equals(action)) {
@@ -197,10 +215,18 @@ public class EsMeetingCommunicationPreviewServlet extends HttpServlet {
         } else if ("sendNow".equals(action)) {
             sendService.sendNow(id);
         } else if ("cancel".equals(action)) {
-            communicationService.cancel(id, adminUser.get().getUserId(), "Cancelled by admin.");
+            communicationService.cancel(id, actingUser.getUserId(),
+                    access.get().admin() ? "Cancelled by admin." : "Cancelled by meeting lead.");
         }
 
         response.sendRedirect(contextPath + "/es/meeting-communication-preview?id=" + id);
+    }
+
+    private EsMeeting findMeetingForCommunication(Long communicationId) {
+        return communicationService.findById(communicationId)
+                .map(EsMeetingCommunication::getEsMeetingId)
+                .flatMap(meetingDao::findById)
+                .orElse(null);
     }
 
     // ---------------------------------------------------------------------------

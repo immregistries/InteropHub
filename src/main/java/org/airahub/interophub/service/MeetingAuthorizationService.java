@@ -31,6 +31,25 @@ public class MeetingAuthorizationService {
     }
 
     public boolean canControlMeeting(Long userId, EsMeeting meeting) {
+        if (isMeetingLead(userId, meeting)) {
+            return true;
+        }
+        return userId != null && meeting != null
+                && presenterDao.hasAcceptedPresenterForMeetingAndUserId(meeting.getEsMeetingId(), userId);
+    }
+
+    /**
+     * Who may create, schedule, send, and cancel a meeting's community
+     * communications: the workgroup's leads (admins, space admins, the meeting
+     * creator, designated/current chair and scribe, active series co-chairs).
+     * Deliberately narrower than {@link #canControlMeeting} - an accepted
+     * presenter can help run a meeting but shouldn't email its whole community.
+     */
+    public boolean canManageMeetingCommunications(Long userId, EsMeeting meeting) {
+        return isMeetingLead(userId, meeting);
+    }
+
+    private boolean isMeetingLead(Long userId, EsMeeting meeting) {
         if (userId == null || meeting == null) {
             return false;
         }
@@ -50,12 +69,9 @@ public class MeetingAuthorizationService {
                 || userId.equals(meeting.getCurrentScribeUserId())) {
             return true;
         }
-        if (cochairDao.findByTopicMeetingIdAndUserId(meeting.getEsTopicMeetingId(), userId)
+        return cochairDao.findByTopicMeetingIdAndUserId(meeting.getEsTopicMeetingId(), userId)
                 .map(c -> c.getStatus() == org.airahub.interophub.model.TopicMeetingCochairStatus.ACTIVE)
-                .orElse(false)) {
-            return true;
-        }
-        return presenterDao.hasAcceptedPresenterForMeetingAndUserId(meeting.getEsMeetingId(), userId);
+                .orElse(false);
     }
 
     public boolean canEditTopicNote(Long userId, EsTopicNote note) {
