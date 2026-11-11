@@ -3,6 +3,7 @@ package org.airahub.interophub.servlet;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +23,7 @@ import org.airahub.interophub.dao.UserDao;
 import org.airahub.interophub.model.EsTopicSpace;
 import org.airahub.interophub.model.EsTopicSpaceMember;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.TopicSpaceAutoMembershipService;
 
 public class AdminEsTopicSpaceServlet extends HttpServlet {
 
@@ -33,6 +35,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
     private final EsTopicDao topicDao;
     private final EsMeetingDao meetingDao;
     private final UserDao userDao;
+    private final TopicSpaceAutoMembershipService autoMembershipService;
 
     public AdminEsTopicSpaceServlet() {
         this.topicSpaceDao = new EsTopicSpaceDao();
@@ -40,6 +43,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         this.topicDao = new EsTopicDao();
         this.meetingDao = new EsMeetingDao();
         this.userDao = new UserDao();
+        this.autoMembershipService = new TopicSpaceAutoMembershipService();
     }
 
     @Override
@@ -87,6 +91,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             if (request.getParameter("memberSaved") != null) {
                 message = "Membership updated.";
             }
+            Integer autoAdded = parseIntOrNull(request.getParameter("autoAdded"));
+            if (autoAdded != null) {
+                message = (message == null ? "" : message + " ") + autoAdded
+                        + (autoAdded == 1 ? " existing user was" : " existing users were")
+                        + " added automatically by email domain.";
+            }
             renderDetails(request, response, topicSpace, message);
             return;
         }
@@ -105,11 +115,17 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         String action = trimToNull(request.getParameter("action"));
         if ("addMember".equalsIgnoreCase(action)) {
-            handleAddMember(request, response, contextPath);
+            handleAddMember(request, response, contextPath, adminUser.get());
             return;
         }
         if ("removeMember".equalsIgnoreCase(action)) {
-            handleRemoveMember(request, response, contextPath);
+            handleChangeMemberStatus(request, response, contextPath, adminUser.get(),
+                    EsTopicSpaceMember.MemberStatus.REMOVED);
+            return;
+        }
+        if ("restoreMember".equalsIgnoreCase(action)) {
+            handleChangeMemberStatus(request, response, contextPath, adminUser.get(),
+                    EsTopicSpaceMember.MemberStatus.ACTIVE);
             return;
         }
 
@@ -138,6 +154,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         String displayOrderRaw = trimToNull(request.getParameter("displayOrder"));
         boolean isActive = request.getParameter("isActive") != null;
         String visibilityRaw = trimToNull(request.getParameter("visibility"));
+        String autoDomainsRaw = trimToNull(request.getParameter("autoMemberEmailDomains"));
 
         try {
             topicSpace.setSpaceName(required(spaceName, "Topic Space name"));
@@ -154,12 +171,24 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 topicSpace.setVisibility(parseVisibility(required(visibilityRaw, "Visibility")));
             }
 
-            topicSpaceDao.saveOrUpdate(topicSpace);
-            if (creating) {
+            // Auto-membership only means something for a private space.
+            String autoDomains = TopicSpaceAutoMembershipService.normalizeDomainList(autoDomainsRaw);
+            if (autoDomains != null && topicSpace.getVisibility() != EsTopicSpace.Visibility.PRIVATE) {
+                throw new IllegalArgumentException("Automatic membership domains can only be set on a PRIVATE"
+                        + " Topic Space.");
+            }
+            topicSpace.setAutoMemberEmailDomains(autoDomains);
+
+            topicSpace = topicSpaceDao.saveOrUpdate(topicSpace);
+            String autoAddedParam = "";
+            if (autoDomains != null) {
+                autoAddedParam = "&autoAdded=" + autoMembershipService.backfillSpace(topicSpace);
+            }
+            if (creating && autoDomains == null) {
                 response.sendRedirect(contextPath + "/admin/es/topic-spaces?saved=1");
             } else {
                 response.sendRedirect(contextPath + "/admin/es/topic-spaces?esTopicSpaceId="
-                        + topicSpace.getEsTopicSpaceId() + "&saved=1");
+                        + topicSpace.getEsTopicSpaceId() + "&saved=1" + autoAddedParam);
             }
         } catch (Exception ex) {
             topicSpace.setSpaceCode(spaceCode);
@@ -167,6 +196,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             topicSpace.setDescription(description);
             topicSpace.setDisplayOrder(parseIntOrNull(displayOrderRaw));
             topicSpace.setIsActive(isActive);
+            topicSpace.setAutoMemberEmailDomains(autoDomainsRaw);
             if (creating && visibilityRaw != null) {
                 try {
                     topicSpace.setVisibility(parseVisibility(visibilityRaw));
@@ -177,8 +207,8 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         }
     }
 
-    private void handleAddMember(HttpServletRequest request, HttpServletResponse response, String contextPath)
-            throws IOException {
+    private void handleAddMember(HttpServletRequest request, HttpServletResponse response, String contextPath,
+            User adminUser) throws IOException {
         Long spaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         if (spaceId == null) {
             renderList(request, response, "Invalid Topic Space identifier.");
@@ -200,14 +230,24 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                 throw new IllegalArgumentException("No user was found for that email address.");
             }
 
-            if (memberDao.findBySpaceIdAndUserId(spaceId, user.getUserId()).isPresent()) {
+            EsTopicSpaceMember.MemberRole role = parseMemberRole(required(roleRaw, "Member role"));
+            EsTopicSpaceMember member = memberDao.findBySpaceIdAndUserId(spaceId, user.getUserId()).orElse(null);
+            if (member != null && member.getMemberStatus() != EsTopicSpaceMember.MemberStatus.REMOVED) {
                 throw new IllegalArgumentException("That user is already a member of this Topic Space.");
             }
 
-            EsTopicSpaceMember member = new EsTopicSpaceMember();
-            member.setEsTopicSpaceId(spaceId);
-            member.setUserId(user.getUserId());
-            member.setRole(parseMemberRole(required(roleRaw, "Member role")));
+            if (member == null) {
+                member = new EsTopicSpaceMember();
+                member.setEsTopicSpaceId(spaceId);
+                member.setUserId(user.getUserId());
+            } else {
+                // Re-adding someone who was removed: reuse their row and record who brought them back.
+                member.setMemberStatus(EsTopicSpaceMember.MemberStatus.ACTIVE);
+                member.setStatusChangedAt(LocalDateTime.now());
+                member.setStatusChangedByUserId(adminUser.getUserId());
+            }
+            member.setRole(role);
+            member.setMemberSource(EsTopicSpaceMember.MemberSource.MANUAL);
             memberDao.saveOrUpdate(member);
             response.sendRedirect(contextPath + "/admin/es/topic-spaces?esTopicSpaceId=" + spaceId
                     + "&memberSaved=1");
@@ -216,8 +256,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
         }
     }
 
-    private void handleRemoveMember(HttpServletRequest request, HttpServletResponse response, String contextPath)
-            throws IOException {
+    /**
+     * Remove (REMOVED) or restore (ACTIVE) a membership. Rows are never deleted, so a removal also stops
+     * auto-membership by email domain from adding the person back.
+     */
+    private void handleChangeMemberStatus(HttpServletRequest request, HttpServletResponse response,
+            String contextPath, User adminUser, EsTopicSpaceMember.MemberStatus newStatus) throws IOException {
         Long spaceId = parseId(trimToNull(request.getParameter("esTopicSpaceId")));
         Long memberId = parseId(trimToNull(request.getParameter("esTopicSpaceMemberId")));
         if (spaceId == null || memberId == null) {
@@ -237,7 +281,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             return;
         }
 
-        memberDao.deleteById(memberId);
+        if (member.getMemberStatus() != newStatus) {
+            member.setMemberStatus(newStatus);
+            member.setStatusChangedAt(LocalDateTime.now());
+            member.setStatusChangedByUserId(adminUser.getUserId());
+            memberDao.saveOrUpdate(member);
+        }
         response.sendRedirect(contextPath + "/admin/es/topic-spaces?esTopicSpaceId=" + spaceId + "&memberSaved=1");
     }
 
@@ -309,7 +358,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             String message) throws IOException {
         String contextPath = request.getContextPath();
         List<EsTopicSpaceMember> members = memberDao.findAllBySpaceId(topicSpace.getEsTopicSpaceId());
-        Map<Long, User> usersById = loadUsersByMembers(members);
+        List<EsTopicSpaceMember> removedMembers = memberDao.findRemovedBySpaceId(topicSpace.getEsTopicSpaceId());
+        List<EsTopicSpaceMember> allRows = new ArrayList<>(members);
+        allRows.addAll(removedMembers);
+        Map<Long, User> usersById = loadUsersByMembers(allRows);
+        boolean isPrivate = topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE;
+        boolean hasAutoDomains = isPrivate && trimToNull(topicSpace.getAutoMemberEmailDomains()) != null;
 
         long topicCount = topicDao.countBySpaceId(topicSpace.getEsTopicSpaceId());
         long meetingCount = meetingDao.countBySpaceId(topicSpace.getEsTopicSpaceId());
@@ -329,6 +383,12 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                     out.println("              <p><strong>Visibility:</strong> "
                             + escapeHtml(topicSpace.getVisibility() == null ? "" : topicSpace.getVisibility().name())
                             + "</p>");
+                    if (isPrivate) {
+                        out.println("              <p><strong>Automatic membership domains:</strong> "
+                                + (hasAutoDomains ? escapeHtml(topicSpace.getAutoMemberEmailDomains())
+                                        : "None (members are added one at a time)")
+                                + "</p>");
+                    }
                     out.println("              <p><strong>Description:</strong> "
                             + escapeHtml(orEmpty(topicSpace.getDescription())) + "</p>");
                     out.println("              <p><strong>Display Order:</strong> "
@@ -374,12 +434,18 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                         out.println(
                                 "            <p class=\"aira-meta\">MEMBER grants access to this Topic Space when it's private (no effect on public spaces)."
                                         + " ADMIN can manage this space's content and topics, and is notified by email about a topic's"
-                                        + " activity when that topic itself has no dedicated champion/support contact.</p>");
+                                        + " activity when that topic itself has no dedicated champion/support contact."
+                                        + (hasAutoDomains
+                                                ? " People with a verified email at an automatic membership domain are added"
+                                                        + " when they sign in. Removing someone keeps them out: they won't be"
+                                                        + " added back automatically."
+                                                : "")
+                                        + "</p>");
                         out.println("            <div class=\"aira-table-wrap\">");
                         out.println("            <table class=\"aira-table\">");
                         out.println("              <thead><tr>");
                         out.println(
-                                "                <th>Email</th><th>Name</th><th>Role</th><th>Added</th><th>Action</th>");
+                                "                <th>Email</th><th>Name</th><th>Role</th><th>Source</th><th>Added</th><th>Action</th>");
                         out.println("              </tr></thead>");
                         out.println("              <tbody>");
                         for (EsTopicSpaceMember member : members) {
@@ -392,6 +458,7 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                             out.println("                  <td>" + escapeHtml(member.getRole() == null
                                     ? ""
                                     : member.getRole().name()) + "</td>");
+                            out.println("                  <td>" + escapeHtml(sourceLabel(member)) + "</td>");
                             out.println(
                                     "                  <td>" + escapeHtml(formatDate(member.getCreatedAt())) + "</td>");
                             out.println("                  <td>");
@@ -411,11 +478,15 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                             out.println("                </tr>");
                         }
                         if (members.isEmpty()) {
-                            out.println("                <tr><td colspan=\"5\">No members added.</td></tr>");
+                            out.println("                <tr><td colspan=\"6\">No members added.</td></tr>");
                         }
                         out.println("              </tbody>");
                         out.println("            </table>");
                         out.println("            </div>");
+
+                        if (!removedMembers.isEmpty()) {
+                            renderRemovedMembers(out, contextPath, topicSpace, removedMembers, usersById);
+                        }
 
                         out.println("            <h3 class=\"aira-subsection-title\">Add Member</h3>");
                         out.println("            <form class=\"aira-form\" action=\"" + contextPath
@@ -522,6 +593,21 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
                     }
                     out.println("              </div>");
 
+                    if (creating || topicSpace.getVisibility() == EsTopicSpace.Visibility.PRIVATE) {
+                        out.println("              <div class=\"aira-field\">");
+                        out.println("                <label for=\"autoMemberEmailDomains\">Automatic membership domains"
+                                + (creating ? " (private spaces only)" : "") + "</label>");
+                        out.println("                <input class=\"aira-input\" id=\"autoMemberEmailDomains\""
+                                + " name=\"autoMemberEmailDomains\" type=\"text\""
+                                + " placeholder=\"immregistries.org, cdc.gov\" value=\""
+                                + escapeHtml(orEmpty(topicSpace.getAutoMemberEmailDomains())) + "\" />");
+                        out.println("                <p class=\"aira-meta\">Anyone with a verified email at one of these"
+                                + " domains becomes a MEMBER automatically: existing users when you save, and new users"
+                                + " when they sign in. People who were removed are never added back. Leave blank to"
+                                + " add members only by hand. Clearing this list doesn't remove anyone.</p>");
+                        out.println("              </div>");
+                    }
+
                     out.println("              <div class=\"aira-field\">");
                     out.println("                <label for=\"displayOrder\">Display Order (required)</label>");
                     out.println(
@@ -608,6 +694,54 @@ public class AdminEsTopicSpaceServlet extends HttpServlet {
             usersById.put(user.getUserId(), user);
         }
         return usersById;
+    }
+
+    private void renderRemovedMembers(java.io.PrintWriter out, String contextPath, EsTopicSpace topicSpace,
+            List<EsTopicSpaceMember> removedMembers, Map<Long, User> usersById) {
+        out.println("            <h3 class=\"aira-subsection-title\">Removed</h3>");
+        out.println("            <p class=\"aira-meta\">These people no longer have access and won't be added back"
+                + " automatically. Restore gives them access again with their previous role.</p>");
+        out.println("            <div class=\"aira-table-wrap\">");
+        out.println("            <table class=\"aira-table\">");
+        out.println("              <thead><tr>");
+        out.println("                <th>Email</th><th>Name</th><th>Role</th><th>Source</th>"
+                + "<th>Removed</th><th>Removed By</th><th>Action</th>");
+        out.println("              </tr></thead>");
+        out.println("              <tbody>");
+        for (EsTopicSpaceMember member : removedMembers) {
+            User user = usersById.get(member.getUserId());
+            User removedBy = member.getStatusChangedByUserId() == null ? null
+                    : usersById.computeIfAbsent(member.getStatusChangedByUserId(),
+                            id -> userDao.findById(id).orElse(null));
+            out.println("                <tr>");
+            out.println("                  <td>" + escapeHtml(user == null ? "" : orEmpty(user.getEmail())) + "</td>");
+            out.println("                  <td>" + escapeHtml(user == null ? "" : orEmpty(user.getFullName())) + "</td>");
+            out.println("                  <td>" + escapeHtml(member.getRole() == null ? "" : member.getRole().name())
+                    + "</td>");
+            out.println("                  <td>" + escapeHtml(sourceLabel(member)) + "</td>");
+            out.println("                  <td>" + escapeHtml(formatDate(member.getStatusChangedAt())) + "</td>");
+            out.println("                  <td>" + escapeHtml(removedBy == null ? "" : orEmpty(removedBy.getEmail()))
+                    + "</td>");
+            out.println("                  <td>");
+            out.println("                    <form method=\"post\" action=\"" + contextPath + "/admin/es/topic-spaces\">");
+            out.println("                      <input type=\"hidden\" name=\"action\" value=\"restoreMember\" />");
+            out.println("                      <input type=\"hidden\" name=\"esTopicSpaceId\" value=\""
+                    + topicSpace.getEsTopicSpaceId() + "\" />");
+            out.println("                      <input type=\"hidden\" name=\"esTopicSpaceMemberId\" value=\""
+                    + member.getEsTopicSpaceMemberId() + "\" />");
+            out.println("                      <button class=\"aira-button aira-button--secondary aira-button--small\""
+                    + " type=\"submit\">Restore</button>");
+            out.println("                    </form>");
+            out.println("                  </td>");
+            out.println("                </tr>");
+        }
+        out.println("              </tbody>");
+        out.println("            </table>");
+        out.println("            </div>");
+    }
+
+    private String sourceLabel(EsTopicSpaceMember member) {
+        return member.getMemberSource() == null ? "" : member.getMemberSource().getLabel();
     }
 
     private Long parseId(String value) {

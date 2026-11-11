@@ -21,6 +21,27 @@ public class EsTopicSpaceMember {
         ADMIN
     }
 
+    /** Only ACTIVE rows grant access. REMOVED is kept (not deleted) so auto-membership never re-adds that person. */
+    public enum MemberStatus {
+        ACTIVE,
+        REMOVED
+    }
+
+    public enum MemberSource {
+        MANUAL("Added by admin"),
+        AUTO_DOMAIN("Auto-added by email domain");
+
+        private final String label;
+
+        MemberSource(String label) {
+            this.label = label;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "es_topic_space_member_id")
@@ -35,6 +56,20 @@ public class EsTopicSpaceMember {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 16)
     private MemberRole role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "member_status", nullable = false, length = 16)
+    private MemberStatus memberStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "member_source", nullable = false, length = 16)
+    private MemberSource memberSource;
+
+    @Column(name = "status_changed_at")
+    private LocalDateTime statusChangedAt;
+
+    @Column(name = "status_changed_by_user_id")
+    private Long statusChangedByUserId;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
@@ -51,6 +86,12 @@ public class EsTopicSpaceMember {
         updatedAt = now;
         if (role == null) {
             role = MemberRole.MEMBER;
+        }
+        if (memberStatus == null) {
+            memberStatus = MemberStatus.ACTIVE;
+        }
+        if (memberSource == null) {
+            memberSource = MemberSource.MANUAL;
         }
     }
 
@@ -89,6 +130,38 @@ public class EsTopicSpaceMember {
 
     public void setRole(MemberRole role) {
         this.role = role;
+    }
+
+    public MemberStatus getMemberStatus() {
+        return memberStatus;
+    }
+
+    public void setMemberStatus(MemberStatus memberStatus) {
+        this.memberStatus = memberStatus;
+    }
+
+    public MemberSource getMemberSource() {
+        return memberSource;
+    }
+
+    public void setMemberSource(MemberSource memberSource) {
+        this.memberSource = memberSource;
+    }
+
+    public LocalDateTime getStatusChangedAt() {
+        return statusChangedAt;
+    }
+
+    public void setStatusChangedAt(LocalDateTime statusChangedAt) {
+        this.statusChangedAt = statusChangedAt;
+    }
+
+    public Long getStatusChangedByUserId() {
+        return statusChangedByUserId;
+    }
+
+    public void setStatusChangedByUserId(Long statusChangedByUserId) {
+        this.statusChangedByUserId = statusChangedByUserId;
     }
 
     public LocalDateTime getCreatedAt() {

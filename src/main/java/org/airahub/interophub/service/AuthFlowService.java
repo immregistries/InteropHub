@@ -67,6 +67,7 @@ public class AuthFlowService {
     private final AppRedirectAllowlistDao appRedirectAllowlistDao;
     private final AuthLoginCodeDao authLoginCodeDao;
     private final SecureRandom secureRandom;
+    private final TopicSpaceAutoMembershipService autoMembershipService;
 
     public AuthFlowService() {
         this.magicLinkDao = new MagicLinkDao();
@@ -77,6 +78,7 @@ public class AuthFlowService {
         this.appRedirectAllowlistDao = new AppRedirectAllowlistDao();
         this.authLoginCodeDao = new AuthLoginCodeDao();
         this.secureRandom = new SecureRandom();
+        this.autoMembershipService = new TopicSpaceAutoMembershipService();
     }
 
     public String issueMagicLink(User user, HttpServletRequest request) {
@@ -134,6 +136,9 @@ public class AuthFlowService {
             user.setEmailVerified(Boolean.TRUE);
             userDao.saveOrUpdate(user);
         }
+
+        // The email is proven at this point, so private Topic Spaces open to its domain can add this person.
+        autoMembershipService.applyForUser(user);
 
         String rawSessionToken = generateToken();
         Session session = new Session();

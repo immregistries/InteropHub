@@ -327,9 +327,11 @@ public class TopicSpaceAccessService {
         }
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return new LinkedHashSet<>(session.createQuery(
-                    "select distinct m.esTopicSpaceId from EsTopicSpaceMember m where m.userId = :userId",
+                    "select distinct m.esTopicSpaceId from EsTopicSpaceMember m"
+                            + " where m.userId = :userId and m.memberStatus = :status",
                     Long.class)
                     .setParameter("userId", userId)
+                    .setParameter("status", EsTopicSpaceMember.MemberStatus.ACTIVE)
                     .getResultList());
         }
     }
@@ -341,10 +343,11 @@ public class TopicSpaceAccessService {
         try (org.hibernate.Session session = HibernateUtil.getSessionFactory().openSession()) {
             return new LinkedHashSet<>(session.createQuery(
                     "select distinct m.esTopicSpaceId from EsTopicSpaceMember m"
-                            + " where m.userId = :userId and m.role = :role",
+                            + " where m.userId = :userId and m.role = :role and m.memberStatus = :status",
                     Long.class)
                     .setParameter("userId", userId)
                     .setParameter("role", EsTopicSpaceMember.MemberRole.ADMIN)
+                    .setParameter("status", EsTopicSpaceMember.MemberStatus.ACTIVE)
                     .getResultList());
         }
     }

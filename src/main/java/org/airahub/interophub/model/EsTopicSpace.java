@@ -55,6 +55,14 @@ public class EsTopicSpace {
     @Column(name = "visibility", nullable = false, length = 16)
     private Visibility visibility;
 
+    /**
+     * Comma-separated email domains (e.g. {@code immregistries.org, cdc.gov}). For a PRIVATE space, any
+     * active user with a verified email at one of these domains is added as a MEMBER automatically,
+     * unless they already have a membership row. See TopicSpaceAutoMembershipService.
+     */
+    @Column(name = "auto_member_email_domains", length = 500)
+    private String autoMemberEmailDomains;
+
     @Column(name = "display_order", nullable = false)
     private Integer displayOrder;
 
@@ -144,6 +152,14 @@ public class EsTopicSpace {
 
     public void setVisibility(Visibility visibility) {
         this.visibility = visibility;
+    }
+
+    public String getAutoMemberEmailDomains() {
+        return autoMemberEmailDomains;
+    }
+
+    public void setAutoMemberEmailDomains(String autoMemberEmailDomains) {
+        this.autoMemberEmailDomains = autoMemberEmailDomains;
     }
 
     public Integer getDisplayOrder() {
