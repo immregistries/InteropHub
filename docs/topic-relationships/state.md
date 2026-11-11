@@ -22,6 +22,11 @@ files, not here.
   this writing — check `db/v0.5_*.sql` once it exists to see if it has
   shipped).
 
+- **Round 2** — 2026-11-11. Focused review of the immunization CDS cluster
+  (topics 1, 7, 13, 137, 140, 141), not a full diff: 2 added, 1 removed,
+  applied to `db/unapplied_updates.sql`. The watermark below is unchanged,
+  because the rest of the topic space was not reviewed.
+
 ## Watermark for the next round
 
 Next round should treat a topic in Topic Space #1 as **needing review** if

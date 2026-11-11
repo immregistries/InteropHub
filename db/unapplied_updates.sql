@@ -45,3 +45,30 @@ WHERE s.space_code = 'aira-opportunity-nursery'
     SELECT 1 FROM es_topic_space_member m
     WHERE m.es_topic_space_id = s.es_topic_space_id AND m.user_id = u.user_id
   );
+
+-- Topic relationship review round 2 (2026-11-11): Immunization CDS cluster.
+-- See docs/topic-relationships/rounds/2026-11-11-round-2-immunization-cds-cluster.md
+INSERT INTO es_topic_relationship
+  (from_topic_id, to_topic_id, relationship_type, display_order, created_by_user_id, created_at)
+SELECT ft.es_topic_id, tt.es_topic_id, x.rel_type, 0, 2, UTC_TIMESTAMP(6)
+FROM (
+  VALUES
+    ROW('CDS-Contextual-Conditions', 'hl7-v2-contextual-conditions-exchange', 'FEEDS_INTO'),
+    ROW('Immunization-CDS', 'hl7-v2-contextual-conditions-exchange', 'RELATED_TO')
+) AS x (from_code, to_code, rel_type)
+JOIN es_topic ft ON ft.topic_code = x.from_code
+JOIN es_topic tt ON tt.topic_code = x.to_code
+WHERE NOT EXISTS (
+  SELECT 1 FROM es_topic_relationship r
+  WHERE r.from_topic_id = ft.es_topic_id
+    AND r.to_topic_id = tt.es_topic_id
+    AND r.relationship_type = x.rel_type
+);
+
+-- ImmDS 1.0.0 is frozen; Contextual Conditions reach FHIR through its successor.
+DELETE r FROM es_topic_relationship r
+JOIN es_topic ft ON ft.es_topic_id = r.from_topic_id
+JOIN es_topic tt ON tt.es_topic_id = r.to_topic_id
+WHERE ft.topic_code = 'CDS-Contextual-Conditions'
+  AND tt.topic_code = 'Immunization-Decision-Support'
+  AND r.relationship_type = 'FEEDS_INTO';

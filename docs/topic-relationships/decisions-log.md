@@ -11,6 +11,27 @@ round's file under `rounds/`.
 
 ---
 
+## 2026-11-11 — Round 2 (Immunization CDS cluster)
+
+**Scope:** Focused review of topics 1, 7, 13, 137, 140, and 141, after the
+topic 1 and topic 7 Topic References were rebaselined and the topic 1
+overview was rewritten. Not a full watermark diff.
+**Round file:** `rounds/2026-11-11-round-2-immunization-cds-cluster.md`
+**Result:** 2 relationships added, 1 removed, applied in
+`db/unapplied_updates.sql` (pending release).
+
+**Notable decisions:**
+
+- Removed *CDS Contextual Conditions* `FEEDS_INTO` *Immunization Decision
+  Support (ImmDS)*. ImmDS 1.0.0 is a frozen R4 guide; Contextual Conditions
+  reach FHIR through its successor, *Immunization CDS (ImmDS + HALO)*. This
+  reverses one round 1 link.
+- Added *CDS Contextual Conditions* `FEEDS_INTO` *HL7 v2 Contextual
+  Conditions Exchange*, matching its existing link to the FHIR side.
+- Added *Immunization CDS* `RELATED_TO` *HL7 v2 Contextual Conditions
+  Exchange* at the parent, not the queries child, as parallel FHIR and v2
+  routes to condition-aware forecasts.
+
 ## 2026-08-24 — Round 1 (initial baseline)
 
 **Scope:** All 110 active topics in Topic Space #1.
