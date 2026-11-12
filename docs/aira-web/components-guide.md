@@ -113,6 +113,7 @@ The renderer only emits the shell. Page content should use the shared `aira-` CS
 - Tables.
 - Native dialog surfaces.
 - Alerts.
+- Toast notifications.
 - Management sidebars/layouts.
 - Utilities.
 
@@ -523,6 +524,27 @@ For a bounded dialog containing an anchored type-ahead, add `aira-dialog--popove
 ```
 
 Use this opt-in only for dialogs whose content already fits in the viewport: visible overflow removes the dialog's clipping/scroll containment. Long dialogs should retain normal scrolling or use a different interaction. The contract uses an explicit modifier instead of `:has()` so behavior remains deterministic in embedded browser environments and does not depend on live descendant-selector support.
+
+### Toast Notifications
+
+Use `aira-toast-region` for brief, nonmodal confirmations that remain visible after a dialog closes or an inline action completes. Keep the live region in the page before an action occurs, then insert or reveal individual `aira-toast` elements inside it so assistive technology can announce the update reliably.
+
+```html
+<div class="aira-toast-region" role="status" aria-live="polite" aria-atomic="false">
+  <div class="aira-toast aira-toast--success" id="saved-toast" hidden>
+    <p class="aira-toast__message">Your changes were saved.</p>
+    <button class="aira-toast__dismiss" type="button" aria-label="Dismiss notice">&times;</button>
+  </div>
+</div>
+```
+
+The available semantic variants are `aira-toast--info`, `aira-toast--success`, `aira-toast--warning`, and `aira-toast--error`. Applications own the JavaScript that shows, times, and removes a toast. For confirmations, keep the notice available for 30–60 seconds, pause the timer while the pointer or keyboard focus is within the toast, and provide a dismiss button. A toast may repeat an error summary, but must never contain the only copy of an error or required action.
+
+The region forms a bottom-right stack on wider screens and moves to a nearly full-width bottom-center layout on narrow screens. It is above normal and sticky page content but remains below a modal native dialog, which the browser places in the top layer. Toasts are excluded from print.
+
+### Hidden State
+
+Use the native `hidden` attribute to remove any AIRA component from layout. The shared stylesheet guarantees that ordinary `hidden` wins over component `display` rules, including flex and grid components such as `aira-stack`, `aira-cluster`, and `aira-form-actions`. `hidden="until-found"` remains available for browser find-in-page disclosure behavior and is intentionally not forced to `display: none`.
 
 ### Badges and Status Guidance
 

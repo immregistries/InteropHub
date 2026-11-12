@@ -18,6 +18,64 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.12 | 2026-09-15 | [`aira-css-changes-revision-12.md`](aira-css-changes-revision-12.md) | Fixed `.aira-badge-count` invisible white-on-white text on `primary`/`danger`/`success` button variants |
 | 0.1.13 | 2026-10-24 | [`aira-css-changes-revision-13.md`](aira-css-changes-revision-13.md) | Natural-width direct-child buttons in `aira-form`/`aira-stack`; `aira-form--inline`, `aira-field--grow`, `aira-form--narrow`; Forms section in the guide — requested in [`aira-css-request-13.md`](aira-css-request-13.md) |
 | 0.1.14 | 2026-10-30 | [`aira-css-changes-revision-14.md`](aira-css-changes-revision-14.md) | `aira-table--compact`; dialog popover contract (`aira-dialog--popover-visible` + `aira-dialog-search`); body row headers styled as data cells — requested in [`aira-css-request-14.md`](aira-css-request-14.md) |
+| 0.1.15 | 2026-11-12 | [`aira-css-changes-revision-15.md`](aira-css-changes-revision-15.md) | Page notice that hides itself (`aira-toast-region`, `aira-toast`); global `[hidden]` rule so the attribute wins over component `display` — requested in [`aira-css-request-15.md`](aira-css-request-15.md) |
+| 0.1.16 | 2026-11-12 | [`aira-css-changes-revision-16.md`](aira-css-changes-revision-16.md) | `AiraPage` versions stylesheet URLs (`aira.css?v={AIRA Web version}`, local stylesheets `?v={applicationVersion}`) so browsers don't keep a stale cached copy after an upgrade |
+
+---
+
+## Proposal: Page notice that hides itself (`aira-toast`)
+
+**Status:** Available in this project
+**Found during:** "Send info / question" dialog on the topic page (`EsTopicDetailServlet`). A contractor reported no visible confirmation after sending. The dialog now shows an `aira-alert--success` result, and closing it leaves a short page notice that hides itself after 45 seconds.
+**Date:** 2026-11-12
+
+### Problem
+
+`aira-alert` is an in-flow block. There is no shared way to float a brief, dismissible notice over the page (bottom corner, above content, below modal dialogs) after an action finishes and its dialog has closed.
+
+### Current local workaround
+
+`src/main/webapp/css/hub-toast.css`, loaded by `EsTopicDetailServlet`. The class is `hub-toast`, composed with `aira-alert aira-alert--success`. Delete it when `aira-toast` ships.
+
+### Proposed shared interface
+
+See `aira-css-request-15.md`, change 1.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Any AIRA application that saves something from a dialog or inline action wants the same "done" notice.
+
+### Compatibility and migration impact
+
+Additive. InteropHub swaps `hub-toast` for `aira-toast` and deletes `css/hub-toast.css`.
+
+### Resolution
+
+Shipped in 0.1.15 as `aira-toast-region` + `aira-toast` (`--info`/`--success`/`--warning`/`--error`, `__message`, `__dismiss`). It uses `--aira-shadow-elevated` instead of the dialog shadow. The topic page now uses it, and `css/hub-toast.css` has been deleted.
+
+---
+
+## Proposal: Make the `hidden` attribute win over `aira-*` display rules
+
+**Status:** Available in this project
+**Found during:** The same dialog. `<div class="aira-form-actions" hidden>` stays visible because `.aira-form-actions { display: flex }` overrides the browser's `[hidden]` style.
+**Date:** 2026-11-12
+
+### Problem
+
+Several components (`aira-stack`, `aira-cluster`, `aira-form-actions`, …) set `display`. Only `aira-search-popover[hidden]` restores hiding. Applications toggling `hidden` on these get a silent no-op.
+
+### Current local workaround
+
+Plain wrapper `<div hidden>` elements around the `aira-*` blocks in the topic page dialog. No local CSS.
+
+### Proposed shared interface
+
+See `aira-css-request-15.md`, change 2.
+
+### Resolution
+
+Shipped in 0.1.15 as a global `[hidden]:not([hidden="until-found" i]) { display: none !important; }` rule. The topic page dialog's wrapper divs were removed; `hidden` now sits directly on the `aira-*` blocks.
 
 ---
 

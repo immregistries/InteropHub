@@ -1,4 +1,4 @@
-> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.14`.
+> Mirrored from the `aira-web` project's `docs/adoption-guide.md`, current as of aira-web `0.1.16`.
 > Refresh this copy from the source project on every version bump — see `docs/aira-web/README.md`.
 
 # AIRA Web Adoption Guide
@@ -51,15 +51,25 @@ When the JAR is in `WEB-INF/lib`, request:
 Load application CSS after the shared theme:
 
 ```html
-<link rel="stylesheet" href="{contextPath}/aira/css/aira.css">
-<link rel="stylesheet" href="{contextPath}/css/application.css">
+<link rel="stylesheet" href="{contextPath}/aira/css/aira.css?v={airaWebVersion}">
+<link rel="stylesheet" href="{contextPath}/css/application.css?v={applicationVersion}">
 ```
+
+### Stylesheet versioning
+
+The stylesheet path itself never changes between releases, so browsers may keep using a cached copy after an upgrade. They guess how long to keep it, because no `Cache-Control` header is sent. Since 0.1.16, `AiraPage` adds a `v` query parameter to every same-origin stylesheet link, so each release gets a new URL:
+
+- The shared `aira.css` gets the AIRA Web release version, which Maven stamps into the components jar at build time (`AiraWebVersion.get()`).
+- Each `addLocalStylesheet(...)` path gets the application's `applicationVersion(...)`. An existing query string is kept, and `&v=` is appended to it.
+- Absolute `http://` and `https://` stylesheet URLs are left unchanged.
+
+Bump `applicationVersion` whenever you deploy changed application CSS. Applications that write their own `<link>` instead of using `AiraPage` should append `?v=` themselves, using `AiraWebVersion.get()` for the shared stylesheet.
 
 ## Canonical Resource Paths
 
 | Resource | Request path | Public contract |
 |---|---|---|
-| Shared stylesheet | `{contextPath}/aira/css/aira.css` | Stable first-release path. In Java, use `AiraDefaults.STYLESHEET_PATH`. |
+| Shared stylesheet | `{contextPath}/aira/css/aira.css` | Stable first-release path. In Java, use `AiraDefaults.STYLESHEET_PATH`. `AiraPage` appends `?v={AIRA Web version}` (see Stylesheet versioning). |
 | Default horizontal AIRA logo | `{contextPath}/aira/images/AIRA_2018Logo_BlueGreen_Hor.png` | Stable first-release path for the packaged default logo. In Java, use `AiraDefaults.DEFAULT_LOGO_PATH`. |
 
 Other files under `/aira/` should be treated as internal unless the documentation explicitly lists them as public.

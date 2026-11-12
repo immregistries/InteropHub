@@ -907,25 +907,40 @@ public class EsTopicDetailServlet extends HttpServlet {
                         out.println("        </aside>");
                         out.println("      </div>");
                         if (canInteract) {
-                                out.println("      <dialog id=\"topic-question-modal\">");
-                                out.println("        <form method=\"dialog\" class=\"aira-stack\" style=\"min-width:22rem; max-width:36rem;\">");
-                                out.println("          <h2>Send info / question</h2>");
+                                out.println("      <dialog id=\"topic-question-modal\" class=\"aira-dialog\" aria-labelledby=\"topic-question-title\">");
+                                out.println("        <form method=\"dialog\" class=\"aira-stack aira-stack--compact\">");
+                                out.println("          <h2 class=\"aira-dialog__title\" id=\"topic-question-title\">Send info / question</h2>");
+                                out.println("          <div id=\"topic-question-compose\" class=\"aira-stack aira-stack--compact\">");
                                 if (canReview) {
-                                        out.println("          <p class=\"aira-meta\">Your note will be saved to this topic's review comments.</p>");
+                                        out.println("            <p class=\"aira-meta\">Your message will be saved to this topic's review comments and sent to the topic's contacts.</p>");
                                 } else {
-                                        out.println("          <p class=\"aira-meta\">Questions are not available right now because no active campaign is open.</p>");
+                                        out.println("            <p class=\"aira-meta\">Messages are not available right now because no active campaign is open.</p>");
                                 }
-                                out.println("          <label for=\"topic-question-input\">Question</label>");
+                                out.println("            <div class=\"aira-field\">");
+                                out.println("              <label for=\"topic-question-input\">Message</label>");
                                 out.println(
-                                                "          <textarea id=\"topic-question-input\" rows=\"5\" maxlength=\"2000\" placeholder=\"Add a question or context for this topic\"></textarea>");
-                                out.println("          <p id=\"topic-question-status\" class=\"aira-meta\" hidden></p>");
-                                out.println("          <div class=\"aira-cluster\">");
+                                                "              <textarea id=\"topic-question-input\" class=\"aira-textarea\" rows=\"5\" maxlength=\"2000\" placeholder=\"Add a question or context for this topic\"></textarea>");
+                                out.println("            </div>");
+                                out.println("          </div>");
+                                out.println("          <div id=\"topic-question-status\" role=\"status\" aria-live=\"polite\"></div>");
+                                out.println("          <div id=\"topic-question-compose-actions\" class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\">");
+                                out.println("            <button type=\"button\" id=\"topic-question-cancel\" class=\"aira-button aira-button--ghost\">Cancel</button>");
                                 out.println("            <button type=\"button\" id=\"topic-question-submit\" class=\"aira-button aira-button--primary\""
                                                 + (canReview ? "" : " disabled") + ">Send</button>");
-                                out.println("            <button type=\"button\" id=\"topic-question-cancel\" class=\"aira-button aira-button--tertiary\">Cancel</button>");
+                                out.println("          </div>");
+                                out.println("          <div id=\"topic-question-sent-actions\" class=\"aira-dialog__actions aira-form-actions aira-form-actions--end\" hidden>");
+                                out.println("            <button type=\"button\" id=\"topic-question-another\" class=\"aira-button aira-button--secondary\">Send another</button>");
+                                out.println("            <button type=\"button\" id=\"topic-question-close\" class=\"aira-button aira-button--primary\">Close</button>");
                                 out.println("          </div>");
                                 out.println("        </form>");
                                 out.println("      </dialog>");
+                                // Page notice shown after the dialog closes (aira-toast, AIRA Web 0.1.15).
+                                out.println("      <div class=\"aira-toast-region\" role=\"status\" aria-live=\"polite\" aria-atomic=\"false\">");
+                                out.println("        <div id=\"topic-question-toast\" class=\"aira-toast aira-toast--success\" hidden>");
+                                out.println("          <p id=\"topic-question-toast-text\" class=\"aira-toast__message\"></p>");
+                                out.println("          <button type=\"button\" id=\"topic-question-toast-dismiss\" class=\"aira-toast__dismiss\" aria-label=\"Dismiss notice\">&times;</button>");
+                                out.println("        </div>");
+                                out.println("      </div>");
                         }
                         out.println("    </div>");
 
@@ -942,6 +957,14 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("        var questionSubmit = document.getElementById('topic-question-submit');");
                                 out.println("        var questionCancel = document.getElementById('topic-question-cancel');");
                                 out.println("        var questionStatus = document.getElementById('topic-question-status');");
+                                out.println("        var questionCompose = document.getElementById('topic-question-compose');");
+                                out.println("        var questionComposeActions = document.getElementById('topic-question-compose-actions');");
+                                out.println("        var questionSentActions = document.getElementById('topic-question-sent-actions');");
+                                out.println("        var questionAnother = document.getElementById('topic-question-another');");
+                                out.println("        var questionClose = document.getElementById('topic-question-close');");
+                                out.println("        var questionToast = document.getElementById('topic-question-toast');");
+                                out.println("        var questionToastText = document.getElementById('topic-question-toast-text');");
+                                out.println("        var questionToastDismiss = document.getElementById('topic-question-toast-dismiss');");
 
                                 out.println("        var followStatusBadge = document.getElementById('topic-follow-status');");
                                 out.println("        function setFollowButtonState(isFollowed) {");
@@ -1021,67 +1044,154 @@ public class EsTopicDetailServlet extends HttpServlet {
                                 out.println("          });");
                                 out.println("        }");
 
+                                // Send info / question dialog: compose view, then a clear "sent" view with
+                                // Close / Send another. Closing after a send shows a page notice that hides itself.
+                                out.println("        var questionSentCount = 0;");
+                                out.println("        var questionToastTimer = null;");
+                                out.println("        var QUESTION_TOAST_MS = 45000;");
+
+                                out.println("        function showQuestionAlert(variant, title, message) {");
+                                out.println("          if (!questionStatus) { return; }");
+                                out.println("          questionStatus.textContent = '';");
+                                out.println("          var box = document.createElement('div');");
+                                out.println("          box.className = 'aira-alert aira-alert--' + variant;");
+                                out.println("          if (title) {");
+                                out.println("            var heading = document.createElement('p');");
+                                out.println("            heading.className = 'aira-alert__title';");
+                                out.println("            heading.textContent = title;");
+                                out.println("            box.appendChild(heading);");
+                                out.println("          }");
+                                out.println("          var body = document.createElement('p');");
+                                out.println("          body.textContent = message;");
+                                out.println("          box.appendChild(body);");
+                                out.println("          questionStatus.appendChild(box);");
+                                out.println("        }");
+
+                                out.println("        function clearQuestionAlert() {");
+                                out.println("          if (questionStatus) { questionStatus.textContent = ''; }");
+                                out.println("        }");
+
+                                out.println("        function showQuestionCompose() {");
+                                out.println("          clearQuestionAlert();");
+                                out.println("          if (questionInput) { questionInput.value = ''; }");
+                                out.println("          if (questionCompose) { questionCompose.hidden = false; }");
+                                out.println("          if (questionComposeActions) { questionComposeActions.hidden = false; }");
+                                out.println("          if (questionSentActions) { questionSentActions.hidden = true; }");
+                                out.println("          if (questionSubmit) { questionSubmit.textContent = 'Send'; }");
+                                out.println("          if (questionInput) { questionInput.focus(); }");
+                                out.println("        }");
+
+                                out.println("        function showQuestionSent() {");
+                                out.println("          if (questionCompose) { questionCompose.hidden = true; }");
+                                out.println("          if (questionComposeActions) { questionComposeActions.hidden = true; }");
+                                out.println("          if (questionSentActions) { questionSentActions.hidden = false; }");
+                                out.println("          showQuestionAlert('success', '\\u2713 Message sent',");
+                                out.println("              'It has been saved to this topic\\u2019s review comments, and the topic\\u2019s contacts will be notified by email.');");
+                                out.println("          if (questionClose) { questionClose.focus(); }");
+                                out.println("        }");
+
+                                out.println("        function hideQuestionToast() {");
+                                out.println("          if (questionToastTimer) { clearTimeout(questionToastTimer); questionToastTimer = null; }");
+                                out.println("          if (questionToast) { questionToast.hidden = true; }");
+                                out.println("        }");
+
+                                out.println("        function startQuestionToastTimer() {");
+                                out.println("          if (questionToastTimer) { clearTimeout(questionToastTimer); }");
+                                out.println("          questionToastTimer = setTimeout(hideQuestionToast, QUESTION_TOAST_MS);");
+                                out.println("        }");
+
+                                out.println("        function showQuestionToast(count) {");
+                                out.println("          if (!questionToast || !questionToastText) { return; }");
+                                out.println("          questionToastText.textContent = count === 1");
+                                out.println("              ? '\\u2713 Your message was sent to this topic\\u2019s contacts.'");
+                                out.println("              : '\\u2713 Your ' + count + ' messages were sent to this topic\\u2019s contacts.';");
+                                out.println("          questionToast.hidden = false;");
+                                out.println("          startQuestionToastTimer();");
+                                out.println("        }");
+
+                                out.println("        if (questionToast) {");
+                                // Pause the countdown while the reader is pointing at or focused on the notice.
+                                out.println("          questionToast.addEventListener('mouseenter', function() {");
+                                out.println("            if (questionToastTimer) { clearTimeout(questionToastTimer); questionToastTimer = null; }");
+                                out.println("          });");
+                                out.println("          questionToast.addEventListener('mouseleave', function() {");
+                                out.println("            if (!questionToast.hidden) { startQuestionToastTimer(); }");
+                                out.println("          });");
+                                out.println("          questionToast.addEventListener('focusin', function() {");
+                                out.println("            if (questionToastTimer) { clearTimeout(questionToastTimer); questionToastTimer = null; }");
+                                out.println("          });");
+                                out.println("          questionToast.addEventListener('focusout', function() {");
+                                out.println("            if (!questionToast.hidden) { startQuestionToastTimer(); }");
+                                out.println("          });");
+                                out.println("        }");
+                                out.println("        if (questionToastDismiss) {");
+                                out.println("          questionToastDismiss.addEventListener('click', hideQuestionToast);");
+                                out.println("        }");
+
                                 out.println("        if (questionOpen && questionModal) {");
                                 out.println("          questionOpen.addEventListener('click', function() {");
-                                out.println("            if (questionStatus) {");
-                                out.println("              questionStatus.hidden = true;");
-                                out.println("              questionStatus.textContent = ''; ");
-                                out.println("            }");
-                                out.println("            if (questionInput) { questionInput.value = ''; }");
+                                out.println("            hideQuestionToast();");
+                                out.println("            questionSentCount = 0;");
                                 out.println("            questionModal.showModal();");
+                                out.println("            showQuestionCompose();");
+                                out.println("          });");
+                                // Any close (Close, Cancel, Esc) after a successful send shows the page notice.
+                                out.println("          questionModal.addEventListener('close', function() {");
+                                out.println("            if (questionSentCount > 0) {");
+                                out.println("              showQuestionToast(questionSentCount);");
+                                out.println("              questionSentCount = 0;");
+                                out.println("            }");
                                 out.println("          });");
                                 out.println("        }");
 
                                 out.println("        if (questionCancel && questionModal) {");
                                 out.println("          questionCancel.addEventListener('click', function() { questionModal.close(); });");
                                 out.println("        }");
+                                out.println("        if (questionClose && questionModal) {");
+                                out.println("          questionClose.addEventListener('click', function() { questionModal.close(); });");
+                                out.println("        }");
+                                out.println("        if (questionAnother) {");
+                                out.println("          questionAnother.addEventListener('click', showQuestionCompose);");
+                                out.println("        }");
 
                                 out.println("        if (questionSubmit) {");
                                 out.println("          questionSubmit.addEventListener('click', function() {");
                                 out.println("            if (!canReview || !campaignCode) {");
-                                out.println("              if (questionStatus) {");
-                                out.println("                questionStatus.hidden = false;");
-                                out.println("                questionStatus.textContent = 'Questions are unavailable right now.';");
-                                out.println("              }");
+                                out.println("              showQuestionAlert('error', null, 'Messages are unavailable right now.');");
                                 out.println("              return;");
                                 out.println("            }");
                                 out.println("            var text = (questionInput && questionInput.value ? questionInput.value.trim() : '');");
                                 out.println("            if (!text) {");
-                                out.println("              if (questionStatus) {");
-                                out.println("                questionStatus.hidden = false;");
-                                out.println("                questionStatus.textContent = 'Enter a question before sending.';");
-                                out.println("              }");
+                                out.println("              showQuestionAlert('warning', null, 'Enter a message before sending.');");
+                                out.println("              if (questionInput) { questionInput.focus(); }");
                                 out.println("              return;");
                                 out.println("            }");
                                 out.println("            var params = new URLSearchParams();");
                                 out.println("            params.set('campaignCode', campaignCode);");
                                 out.println("            params.set('topicId', String(topicId));");
                                 out.println("            params.set('commentText', text);");
+                                out.println("            clearQuestionAlert();");
                                 out.println("            questionSubmit.disabled = true;");
+                                out.println("            questionSubmit.textContent = 'Sending\\u2026';");
                                 out.println("            fetch('" + contextPath + "/es/review/comment', {");
                                 out.println("              method: 'POST',");
                                 out.println("              headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },");
                                 out.println("              body: params.toString()");
                                 out.println("            }).then(function(res) { return res.json(); }).then(function(json) {");
                                 out.println("              if (!json || !json.ok) {");
-                                out.println("                if (questionStatus) {");
-                                out.println("                  questionStatus.hidden = false;");
-                                out.println("                  questionStatus.textContent = (json && json.error) ? json.error : 'Unable to send question.';");
-                                out.println("                }");
+                                out.println("                showQuestionAlert('error', 'Not sent',");
+                                out.println("                    ((json && json.error) ? json.error : 'Unable to send your message.') + ' Your text is still here; try again.');");
                                 out.println("                return;");
                                 out.println("              }");
-                                out.println("              if (questionStatus) {");
-                                out.println("                questionStatus.hidden = false;");
-                                out.println("                questionStatus.textContent = 'Question sent.';");
-                                out.println("              }");
+                                out.println("              questionSentCount++;");
                                 out.println("              if (questionInput) { questionInput.value = ''; }");
+                                out.println("              showQuestionSent();");
                                 out.println("            }).catch(function() {");
-                                out.println("              if (questionStatus) {");
-                                out.println("                questionStatus.hidden = false;");
-                                out.println("                questionStatus.textContent = 'Unable to send question.';");
-                                out.println("              }");
+                                out.println("              showQuestionAlert('error', 'Not sent',");
+                                out.println("                  'Unable to send your message. Your text is still here; try again.');");
                                 out.println("            }).finally(function() {");
                                 out.println("              questionSubmit.disabled = false;");
+                                out.println("              questionSubmit.textContent = 'Send';");
                                 out.println("            });");
                                 out.println("          });");
                                 out.println("        }");

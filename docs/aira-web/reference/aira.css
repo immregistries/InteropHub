@@ -99,6 +99,10 @@
   box-sizing: border-box;
 }
 
+[hidden]:not([hidden="until-found" i]) {
+  display: none !important;
+}
+
 html {
   font-family: var(--aira-font-sans);
   color: var(--aira-text);
@@ -2257,6 +2261,80 @@ mark,
   border-color: var(--aira-danger);
 }
 
+/* 15. Toasts */
+.aira-toast-region {
+  position: fixed;
+  right: var(--aira-space-4);
+  bottom: var(--aira-space-4);
+  z-index: var(--aira-z-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--aira-space-2);
+  width: min(28rem, calc(100vw - 2 * var(--aira-space-4)));
+  pointer-events: none;
+}
+
+.aira-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--aira-space-3);
+  padding: var(--aira-panel-padding);
+  border-left: 4px solid;
+  border-radius: var(--aira-radius-control);
+  background: var(--aira-surface-elevated);
+  box-shadow: var(--aira-shadow-elevated);
+  pointer-events: auto;
+}
+
+.aira-toast__message {
+  flex: 1 1 auto;
+  align-self: center;
+  margin: 0;
+}
+
+.aira-toast__dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--aira-touch-target);
+  min-height: var(--aira-touch-target);
+  margin: calc(-1 * var(--aira-space-2));
+  padding: 0;
+  border: 0;
+  border-radius: var(--aira-radius-control);
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.aira-toast__dismiss:hover {
+  background: rgba(28, 60, 80, 0.08);
+}
+
+.aira-toast--info {
+  border-color: var(--aira-focus);
+  background: var(--aira-info-surface);
+}
+
+.aira-toast--success {
+  border-color: var(--aira-success);
+  background: var(--aira-success-surface);
+}
+
+.aira-toast--warning {
+  border-color: var(--aira-yellow);
+  background: var(--aira-warning-surface);
+  color: var(--aira-warning-text);
+}
+
+.aira-toast--error {
+  border-color: var(--aira-danger);
+  background: var(--aira-error-surface);
+}
+
 /* 16. Management Layouts */
 .aira-management-shell {
   display: grid;
@@ -2444,6 +2522,13 @@ mark,
 }
 
 @media (max-width: 36rem) {
+  .aira-toast-region {
+    right: 50%;
+    bottom: var(--aira-space-4);
+    width: calc(100vw - 2 * var(--aira-space-4));
+    transform: translateX(50%);
+  }
+
   .aira-choice-row,
   .aira-outcome-row,
   .aira-meeting-row,
@@ -2474,7 +2559,8 @@ mark,
   .aira-global-header,
   .aira-context-header,
   .aira-sticky-actions,
-  .aira-right-rail {
+  .aira-right-rail,
+  .aira-toast-region {
     display: none !important;
   }
 
