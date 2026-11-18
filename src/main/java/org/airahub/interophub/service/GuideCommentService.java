@@ -355,6 +355,9 @@ public class GuideCommentService {
         }
         json.put("sourceNote", parent.sourceNote == null ? JSONObject.NULL : parent.sourceNote);
         json.put("author", GuideResponses.person(people.get(parent.userId)));
+        // Whether the signed-in reader wrote it, for the guide's "Mine" filter.
+        // Unlike canEdit/canWithdraw, it does not lapse when the edit window closes.
+        json.put("mine", sameUser(parent.userId, user));
         json.put("createdAt", ApiTime.format(parent.createdAt));
         json.put("editedAt", time(parent.editedAt));
         json.put("editableUntil", time(parent.createdAt.plusDays(EDIT_WINDOW_DAYS)));
@@ -387,6 +390,7 @@ public class GuideCommentService {
         json.put("parentId", row.parentId);
         json.put("text", row.withdrawn() ? JSONObject.NULL : row.text);
         json.put("author", GuideResponses.person(people.get(row.userId)));
+        json.put("mine", sameUser(row.userId, user));
         json.put("createdAt", ApiTime.format(row.createdAt));
         json.put("editedAt", time(row.editedAt));
         json.put("editableUntil", time(row.createdAt.plusDays(EDIT_WINDOW_DAYS)));

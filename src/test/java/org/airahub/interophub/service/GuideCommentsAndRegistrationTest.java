@@ -170,6 +170,32 @@ class GuideCommentsAndRegistrationTest {
     }
 
     @Test
+    void mineMarksTheReadersOwnCommentsAndOutlastsTheEditWindow() {
+        MemoryComments comments = new MemoryComments();
+        comments.addTopic(7, "CONTEXTUAL-CONDITIONS", "PUBLIC");
+        comments.addDocument("contextual-conditions", 7, true);
+        User reader = user(2, false);
+        User other = user(3, false);
+        comments.view(2, 7);
+        comments.view(3, 7);
+        long id = comments.service.post(reader, 9L, "contextual-conditions", comment("mine")).id();
+        comments.service.post(other, 10L, "contextual-conditions",
+                new JSONObject().put("parentCommentId", id).put("text", "theirs"));
+
+        JSONObject asReader = find(comments.service.list(reader, "contextual-conditions", null, null, null), id);
+        assertTrue(asReader.getBoolean("mine"));
+        assertFalse(asReader.getJSONArray("replies").getJSONObject(0).getBoolean("mine"));
+        JSONObject asOther = find(comments.service.list(other, "contextual-conditions", null, null, null), id);
+        assertFalse(asOther.getBoolean("mine"));
+        assertTrue(asOther.getJSONArray("replies").getJSONObject(0).getBoolean("mine"));
+
+        comments.row(id).createdAt = LocalDateTime.now().minusDays(15);
+        JSONObject late = find(comments.service.list(reader, "contextual-conditions", null, null, null), id);
+        assertFalse(late.getJSONObject("permissions").getBoolean("canWithdraw"));
+        assertTrue(late.getBoolean("mine"));
+    }
+
+    @Test
     void registrationUrlRulesAllowlistAndDryRun() {
         MemoryRegistration registration = new MemoryRegistration();
         registration.prefixes.add("https://immregistries.github.io/");

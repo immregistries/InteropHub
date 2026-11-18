@@ -304,6 +304,7 @@ Comments are always returned as threads: a top-level comment with its replies.
   "changeNote": "Language updated to point to the trust framework instead of naming authorities.",
   "sourceNote": null,
   "author": { "userId": 123, "displayName": "Jane Doe", "organization": "Example Health Department" },
+  "mine": false,
   "createdAt": "2026-11-02T15:04:05.123Z",
   "editedAt": null,
   "editableUntil": "2026-11-16T15:04:05.123Z",
@@ -328,6 +329,7 @@ Comments are always returned as threads: a top-level comment with its replies.
       "parentId": 482,
       "text": "Agreed, the framework already lists them.",
       "author": { "userId": 77, "displayName": "Lee Reader", "organization": "Example IIS" },
+      "mine": true,
       "createdAt": "2026-11-03T10:00:00.000Z",
       "editedAt": null,
       "editableUntil": "2026-11-17T10:00:00.000Z",
@@ -346,6 +348,7 @@ Rules:
 - `updatedAt` on a thread is the latest change to the comment **or any of its replies**. It drives `since`.
 - **Withdrawn** comments and replies keep their place but return `text: null`. The guide shows "Withdrawn by the commenter."
 - **Deleted** comments and replies are never returned by a normal listing. In a `since` listing (5.3) they appear as tombstones so the guide can remove them: `{ "id": 482, "deleted": true, "updatedAt": "…" }` for a thread, and the same shape inside `replies` for a reply. The row stays in the database, with its text, for the audit record; no API returns it.
+- `mine` (threads and replies) is true when the caller wrote it. It drives the guide's "Mine" filter. Unlike `canEdit` and `canWithdraw`, it does not lapse when the edit window closes. Added in the release that introduced guide build status; older guides ignore it.
 - `permissions` are computed for the caller, so the guide shows only controls that will work. The server checks again on every write. `canClose` covers both closing and reopening (5.6 `state`): for an author it is true on `OPEN`, `DISPOSED`, and `CLOSED`, and false on `WITHDRAWN`.
 - Replies are ordered by `createdAt`. Threads are ordered by `createdAt` of the top-level comment.
 
