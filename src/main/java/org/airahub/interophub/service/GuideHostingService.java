@@ -50,7 +50,7 @@ public class GuideHostingService {
         }
         TopicRow topic = store.topicById(document.topicId);
         if (topic == null || !store.canEdit(user, topic)) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(topic != null && store.canView(user, topic) ? topic.name : null);
         }
         if (!document.active) {
             throw GuideApiException.documentInactive();

@@ -182,7 +182,7 @@ public class GuideCommentService {
                 }
             }
         } else if (hasAuthorField(body) && !loaded.canEdit) {
-            throw GuideApiException.forbidden("Only an author can change that.");
+            throw GuideApiException.notEditor("Only an author can change that.", topicName(loaded));
         }
         PatchPlan plan = readPatch(body, parent == null);
         validatePatch(plan, row, parent, user);
@@ -204,7 +204,7 @@ public class GuideCommentService {
         CommentRow thread = parent == null ? row : parent;
         Loaded loaded = requireComment(user, thread);
         if (!loaded.canEdit) {
-            throw GuideApiException.forbidden("Only an author can delete a comment.");
+            throw GuideApiException.notEditor("Only an author can delete a comment.", topicName(loaded));
         }
         LocalDateTime now = LocalDateTime.now();
         List<CommentRow> targets = new ArrayList<>();
@@ -245,7 +245,7 @@ public class GuideCommentService {
         refuseUnknown(body, Set.of("anchor", "note", "pageUrl"));
         Loaded loaded = requireComment(user, documentKey);
         if (!loaded.canEdit) {
-            throw GuideApiException.forbidden("Only an author can flag an area for review.");
+            throw GuideApiException.notEditor("Only an author can flag an area for review.", topicName(loaded));
         }
         String anchor = requiredAnchor(body);
         String note = requiredNote(body);
@@ -275,7 +275,7 @@ public class GuideCommentService {
     public void clearFlag(User user, String documentKey, long id) {
         Loaded loaded = requireComment(user, documentKey);
         if (!loaded.canEdit) {
-            throw GuideApiException.forbidden("Only an author can clear a review flag.");
+            throw GuideApiException.notEditor("Only an author can clear a review flag.", topicName(loaded));
         }
         FlagRow row = store.flag(id);
         if (row == null || row.documentId != loaded.document.id) {
@@ -945,6 +945,11 @@ public class GuideCommentService {
             throw GuideApiException.forbidden("You cannot view comments on this guide.");
         }
         return loaded;
+    }
+
+    /** The topic name for a refusal message; the caller has passed {@code canView}. */
+    private static String topicName(Loaded loaded) {
+        return loaded.canView && loaded.topic != null ? loaded.topic.name : null;
     }
 
     private Loaded access(User user, DocumentRow document) {

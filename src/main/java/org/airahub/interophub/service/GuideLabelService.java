@@ -97,7 +97,7 @@ public class GuideLabelService {
         }
         Loaded loaded = load(user, documentKey);
         if (!loaded.canView || !loaded.canEdit) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(loaded.canView && loaded.topic != null ? loaded.topic.name : null);
         }
         if (display != null && !GuideLabels.DISPLAY_STATES.contains(display)) {
             throw GuideApiException.invalidField("display",

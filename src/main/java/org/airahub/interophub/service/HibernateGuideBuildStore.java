@@ -50,6 +50,12 @@ final class HibernateGuideBuildStore implements GuideBuildService.Store {
     }
 
     @Override
+    public boolean canView(User user, TopicRow topic) {
+        EsTopic entity = topic == null ? null : topicDao.findById(topic.id).orElse(null);
+        return accessService.canViewTopic(user, entity);
+    }
+
+    @Override
     public void save(BuildRow row) {
         Transaction transaction = null;
         try (Session session = open()) {

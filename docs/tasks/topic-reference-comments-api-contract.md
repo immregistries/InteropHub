@@ -2,6 +2,7 @@
 
 **Status:** Approved by the product owner 2026-10-30 (Gate 0). Section 8 and the refinements in 3.1 and 3.3 were added by G the same day from the H0 result. 3.4 step 4 corrected the same day: a disallowed origin is refused with `403` before the code checks (found by T2).
 **Amended 2026-11-18** for version display and comment modes (`docs/tasks/topic-reference-version-display-and-comment-modes.md`, decisions V1 to V12): `pageUrl` and `madeOnLabel` (5.2, 5.4, 6), `comments_closed` (2), label-filtered reads with `labelPolicy` and `inScope` (5.3), and the label endpoints (7.5). A client that sends none of the new fields gets exactly the earlier behavior, apart from the added `madeOnLabel` field in responses.
+**Amended 2026-11-18** for author onboarding (`docs/tasks/topic-reference-author-onboarding.md`, decisions A1 to A7): the `help` field on every error (2), the public help page and its anchors (2.1), `GET /api/token` (3.7), and the account and guide settings page notes (3.8). All additive; existing fields are unchanged.
 **Implements:** `docs/topic-reference-comments-design.md`, Sections 4 and 9
 **Primary purpose:** The single agreement between the guide (`guide.js` in `content-publishing-templates`) and InteropHub. Both sides are built against this document and tested against it. A change here is recorded in the workstreams Decisions Log and announced to both streams.
 
@@ -45,11 +46,17 @@ Every error response uses one shape:
 {
   "error": "invalid_field",
   "field": "changeNote",
-  "message": "A change note is required when setting a disposition."
+  "message": "A change note is required when setting a disposition.",
+  "help": "https://<host>/hub/help/topic-reference-authors#troubleshooting-invalid_field"
 }
 ```
 
 `field` is present only where one applies. `message` is for people; clients branch on `error`.
+
+`help` (string, always present) links to the error's entry on the public help page (2.1): `{hub}/help/topic-reference-authors#troubleshooting-<error>`, with `<error>` exactly as in the table below, underscores included (for example `#troubleshooting-invalid_token`). A code with no entry links to `#troubleshooting`. `{hub}` comes from `hub_settings.external_base_url`. `help` is additive: every other field keeps its meaning. It is also on the bearer filter's `401`, whose body is still the same for every cause.
+
+- `forbidden` for a topic action by someone who is not an editor says so in `message`, and names the topic when the caller may view it: "Your account must be an editor of the topic "…" to do this."
+- `insufficient_scope` names the needed scope in `message` as well as in `requiredScope`.
 
 | Status | `error` | When |
 |---|---|---|
@@ -67,6 +74,23 @@ Every error response uses one shape:
 | 409 | `duplicate` | Registering a `documentKey` or URL that is already registered |
 | 400 | `url_not_approved` | A guide URL outside the approved prefixes, by a caller who is not a global admin |
 | 500 | `server_error` | Anything else. No stack traces in the body. |
+
+### 2.1 The help page
+
+`GET {hub}/help/topic-reference-authors` is a public HTML page (no sign-in) for authors and their agents. Its anchors are part of this contract; the templates project and the error `help` links point to them.
+
+| Anchor | Content |
+|---|---|
+| `#who-can-author` | Who counts as an author (`canEditTopic`), and how to ask to become one |
+| `#create-a-token` | Creating a personal access token: the Author preset, the scopes, the lifetimes, shown once |
+| `#where-the-token-goes` | `INTEROPHUB_TOKEN` (PowerShell and bash), the `INTEROPHUB_TOKEN` repository secret (`gh secret set`), and the never-rules |
+| `#what-an-agent-can-do` | Each action with its endpoint and scope, and `publish_guide_to_hub.py` |
+| `#if-you-are-an-agent` | The order to work in, with the exact words to pass on to the author |
+| `#troubleshooting` | All error entries |
+| `#troubleshooting-<error>` | One per Section 2 code: `invalid_token`, `insufficient_scope`, `forbidden`, `not_found`, `document_inactive`, `comments_closed`, `invalid_request`, `invalid_field`, `invalid_state`, `edit_window_closed`, `conflict`, `duplicate`, `url_not_approved`, `server_error` |
+| `#troubleshooting-html-response` | An HTML answer instead of JSON: a firewall in front of InteropHub. Report the status, the time in UTC, and the endpoint. |
+
+The page holds no token, no internal address beyond the public hub, and no person's name.
 
 ## 3. Authentication
 
@@ -95,7 +119,7 @@ A scope only narrows what the user may already do. Each endpoint below names its
 
 ### 3.3 The bearer-token filter
 
-One filter serves `/api/guide/*`, `/api/guides`, `/api/topic-spaces/*`, `/api/topics/*`, and `/mcp`. It does authentication only:
+One filter serves `/api/guide/*`, `/api/guides`, `/api/token`, `/api/topic-spaces/*`, `/api/topics/*`, and `/mcp`. It does authentication only:
 
 1. Requires exactly one `Authorization: Bearer <token>` header (scheme compared ignoring case). Never reads a token from the query string or body.
 2. Hashes the token and finds an `app_user_token` row of the `topic-reference` or `interophub-api` app that is not revoked and not expired, whose user is active.
@@ -221,9 +245,51 @@ GET {hub}/guide/open?doc=<documentKey>[&anchor=<anchor> | &comment=<id>][&label=
 - The guide, on load, sees `interophub=signin`: if it holds an unexpired token it removes the marker with `history.replaceState` and does nothing else; otherwise it starts Step 1 at once.
 - The link never carries a token or code.
 
+### 3.7 `GET /api/token`
+
+Describes the calling token, so an agent's first call can confirm who it acts as, what it may do, and when the token expires.
+
+- **Access:** any valid bearer token, guide or personal, with no particular scope. It sits behind the bearer filter (3.3), so the Section 4 rules apply as for `/api/guide/*`; it is not meant to be called from a guide page. `GET` only; any other method gets `405`, `Allow: GET`, and an `invalid_request` body.
+- **Errors:** a missing, unknown, expired, or revoked token gets the usual `401 invalid_token` (Section 2), with `help`.
+- **Response** `200`, `Cache-Control: no-store`:
+
+```json
+{
+  "user": { "userId": 123, "displayName": "Jane Doe" },
+  "kind": "personal",
+  "label": "laptop agent",
+  "scopes": ["comments", "topics:write"],
+  "expiresAt": "2027-02-16T15:04:05.000Z",
+  "expiresInDays": 90,
+  "guides": [
+    { "documentKey": "immunization-cds", "title": "…", "topicId": 1, "topicName": "…",
+      "hosting": "EXTERNAL", "active": true, "canPublish": true }
+  ],
+  "help": "https://<host>/hub/help/topic-reference-authors#if-you-are-an-agent"
+}
+```
+
+- `kind` is `personal` or `guide`. `label` is the token's label (guide tokens: `Guide sign-in: <origin>`).
+- `scopes` are in the order `comments`, `topics:read`, `topics:write`.
+- `expiresInDays` is the whole days left, rounded up (a new 90-day token reports `90`), and `0` once expired.
+- `guides` is every **active** registered guide on a topic where the user passes `canEditTopic`, ordered by `documentKey`. It is `[]`, never absent, for a reader. `active` is therefore always `true`; it is kept so the object reads the same as other guide lists.
+- `canPublish` is true when the token has `topics:write` (the same value on every guide).
+- The response never carries the user's email, the token's hash, or the token.
+
+### 3.8 Personal access tokens on the account page
+
+`{hub}/account`, Access tokens (decisions A4 and A7):
+
+- Each scope checkbox has a one-line description: `comments`, read and answer comments on guides; `topics:read`, read topic and guide information; `topics:write`, publish and manage guides on topics you edit.
+- An **Author (publish guides and manage comments)** preset ticks `comments` and `topics:write`. The form posts `preset=author` and the server adds those two scopes, so it works without script.
+- Right after a token is created, below the one-time copy box, a **How to use this token** panel shows: `INTEROPHUB_TOKEN`; PowerShell (`$env:` and `setx`) and bash lines with a placeholder, never the token; `gh secret set INTEROPHUB_TOKEN --repo <owner>/<repo>`; the guides the account can publish to (as `guides` in 3.7); the expiry; a link to the help page; and "If an agent asked you to make this token, set it as INTEROPHUB_TOKEN yourself; don't paste it into the chat." The panel appears only with the one-time reveal and never repeats the token.
+- The token list shows each token's expiry, with an **Expires soon** badge within 14 days and **Expired** after.
+
+The guide settings page (`{hub}/es/topic-guide/{topicId}`) shows editors a **Publish from your agent** box for each registered guide: its document key, the hub, its hosting, the `publish_guide_to_hub.py` command for that hosting (`--label vX.Y.Z --label latest` for `HUB`, `--manifest-only --label vX.Y.Z` for `EXTERNAL`), and the `PATCH …/labels/{label}` example for making a release Current.
+
 ## 4. CORS
 
-Applies to every `/api/guide/*` and `/api/guides` endpoint. `/mcp` and the topic endpoints send no CORS headers.
+Applies to every `/api/guide/*` and `/api/guides` endpoint, and to `/api/token` (3.7), which shares the filter. `/mcp` and the topic endpoints send no CORS headers.
 
 - **Allowed origins** are the scheme, host, and port of every enabled `app_redirect_allowlist.base_url` for the `topic-reference` app. All guides share one list; a page on any registered origin may call the API for any document, and authorization still comes from the token's user.
 - Requests with an allowed `Origin` get:
@@ -764,5 +830,6 @@ The contract needs these on top of design Section 8. H1 to H3 own the schema.
 | 5.3.1, 5.4.1, `madeOnLabel`, 7.5 (version display and comment modes) | InteropHub, 2026-11-18 | Templates v0.22.0 |
 | 5.6 author fields, 5.8, 6 | H3 | T3 |
 | 8 | H4, E2 | none |
+| 2 `help`, 2.1, 3.7, 3.8 (author onboarding) | InteropHub, 2026-11-18 | Templates v0.22.0 (links to the anchors, calls `GET /api/token`) |
 
 T2 builds against a mock server in the templates repository that follows this document. The mock is generic and contains no InteropHub URLs or names.

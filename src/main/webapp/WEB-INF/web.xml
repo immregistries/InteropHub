@@ -18,6 +18,10 @@
     <filter-name>GuideBearerTokenFilter</filter-name>
     <url-pattern>/api/guides</url-pattern>
   </filter-mapping>
+  <filter-mapping>
+    <filter-name>GuideBearerTokenFilter</filter-name>
+    <url-pattern>/api/token</url-pattern>
+  </filter-mapping>
 
   <servlet>
     <servlet-name>HomeServlet</servlet-name>
@@ -265,6 +269,24 @@
   <servlet-mapping>
     <servlet-name>GuideTokenServlet</servlet-name>
     <url-pattern>/api/guide/token</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>GuideTokenInfoServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.GuideTokenInfoServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>GuideTokenInfoServlet</servlet-name>
+    <url-pattern>/api/token</url-pattern>
+  </servlet-mapping>
+
+  <servlet>
+    <servlet-name>TopicReferenceHelpServlet</servlet-name>
+    <servlet-class>org.airahub.interophub.servlet.TopicReferenceHelpServlet</servlet-class>
+  </servlet>
+  <servlet-mapping>
+    <servlet-name>TopicReferenceHelpServlet</servlet-name>
+    <url-pattern>/help/topic-reference-authors</url-pattern>
   </servlet-mapping>
 
   <servlet>

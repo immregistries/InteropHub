@@ -20,11 +20,12 @@ import org.airahub.interophub.service.GuideAllowlistOrigins;
 import org.airahub.interophub.service.GuideApiErrors;
 import org.airahub.interophub.service.GuideBearerAuthenticator;
 import org.airahub.interophub.service.GuideCors;
+import org.airahub.interophub.service.GuideHelp;
 import org.airahub.interophub.service.GuideRequestAuth;
 import org.airahub.interophub.service.GuideTokenLookup;
 
 /**
- * Authentication for {@code /api/guide/*} and {@code /api/guides}. Scope checks stay in each servlet.
+ * Authentication for {@code /api/guide/*}, {@code /api/guides}, and {@code /api/token}. Scope checks stay in each servlet.
  * {@code OPTIONS} and {@code POST /api/guide/token} do not require a bearer token.
  */
 public class GuideBearerTokenFilter implements Filter {
@@ -44,7 +45,9 @@ public class GuideBearerTokenFilter implements Filter {
 
     @Override
     public void init(FilterConfig filterConfig) {
-        // No setup. Origins are read per request so a new allowlist row is visible immediately.
+        // Origins are read per request so a new allowlist row is visible immediately.
+        // Error bodies link to the help page on this hub's external base URL.
+        GuideHelp.useHubSettings();
     }
 
     @Override

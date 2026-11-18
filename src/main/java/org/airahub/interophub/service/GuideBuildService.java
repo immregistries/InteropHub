@@ -50,7 +50,7 @@ public class GuideBuildService {
         }
         TopicRow topic = store.topicById(document.topicId);
         if (topic == null || !store.canEdit(user, topic)) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(topic != null && store.canView(user, topic) ? topic.name : null);
         }
         if (!document.active) {
             throw GuideApiException.documentInactive();
@@ -94,7 +94,7 @@ public class GuideBuildService {
         }
         TopicRow topic = store.topicById(document.topicId);
         if (topic == null || !store.canEdit(user, topic)) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(topic != null && store.canView(user, topic) ? topic.name : null);
         }
         JSONArray builds = new JSONArray();
         for (BuildRow row : store.builds(document.id)) {
@@ -524,6 +524,11 @@ public class GuideBuildService {
         TopicRow topicById(long id);
 
         boolean canEdit(User user, TopicRow topic);
+
+        /** Whether the caller may see the topic, so a refusal can name it. */
+        default boolean canView(User user, TopicRow topic) {
+            return false;
+        }
 
         /** Persists the row and sets {@code row.id}. */
         void save(BuildRow row);

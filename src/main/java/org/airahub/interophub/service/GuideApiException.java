@@ -27,6 +27,31 @@ public final class GuideApiException extends RuntimeException {
         return new GuideApiException(403, "forbidden", null, message, null);
     }
 
+    /**
+     * {@code 403 forbidden} for a topic action by someone who is not an editor of the topic.
+     * {@code topicName} is named only when the caller may view the topic; pass null otherwise.
+     */
+    public static GuideApiException notEditor(String topicName) {
+        return notEditor(null, topicName);
+    }
+
+    /** As {@link #notEditor(String)}, after a leading sentence such as "Only an author can delete a comment." */
+    public static GuideApiException notEditor(String lead, String topicName) {
+        StringBuilder message = new StringBuilder();
+        if (lead != null && !lead.isBlank()) {
+            message.append(lead.trim()).append(' ');
+        }
+        if (topicName != null && !topicName.isBlank()) {
+            message.append("Your account must be an editor of the topic \"").append(topicName.trim())
+                    .append("\" to do this.");
+        } else {
+            message.append("Your account must be an editor of this guide's topic to do this.");
+        }
+        message.append(" Topic editors are the topic's champions and support subscribers, and the admins of its"
+                + " Topic Space.");
+        return new GuideApiException(403, "forbidden", null, message.toString(), null);
+    }
+
     public static GuideApiException editWindowClosed() {
         return new GuideApiException(403, "edit_window_closed", null,
                 "The 14-day edit window has closed.", null);

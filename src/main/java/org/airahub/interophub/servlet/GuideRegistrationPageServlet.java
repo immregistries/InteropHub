@@ -16,6 +16,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.GuideApiException;
 import org.airahub.interophub.service.GuideDisplayDates;
+import org.airahub.interophub.service.GuideHelp;
 import org.airahub.interophub.service.GuideHostingService;
 import org.airahub.interophub.service.GuideHtmlRules;
 import org.airahub.interophub.service.GuideLabelService;
@@ -37,6 +38,11 @@ public class GuideRegistrationPageServlet extends HttpServlet {
     private final GuideRegistrationService registration = new GuideRegistrationService();
     private final GuideHostingService hosting = new GuideHostingService();
     private final GuideLabelService labels = new GuideLabelService();
+
+    @Override
+    public void init() {
+        GuideHelp.useHubSettings();
+    }
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -222,6 +228,7 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             if (!creating && editing != null && GuideHtmlRules.HUB.equals(editing.hosting)) {
                 versions(out, request, action, editing.documentKey, viewer);
             }
+            GuidePublishBox.render(out, documents, GuideHelp.base());
             out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/es/topic-manage/"
                     + viewer.topic.id + "/followers\">Back to topic management</a></p>");
             out.println("    </div>");

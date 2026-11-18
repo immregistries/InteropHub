@@ -191,7 +191,7 @@ class GuideSignInFoundationTest {
         String two = filter(exchange("GET", "/api/guide/comments", null, List.of("Bearer one", "Bearer two"), null)).body;
         String rejected = filter(exchange("GET", "/api/guide/comments", null, List.of("Bearer ihg_tok"),
                 raw -> BearerDecision.reject())).body;
-        assertEquals(GuideApiErrors.INVALID_TOKEN_BODY, missing);
+        assertEquals(GuideApiErrors.invalidTokenBody(), missing);
         assertEquals(missing, basic);
         assertEquals(missing, two);
         assertEquals(missing, rejected);
@@ -209,7 +209,7 @@ class GuideSignInFoundationTest {
             assertNull(GuideRequestAuth.requireUser(request, response));
         }, Map.of());
         assertEquals(401, missingUser.status);
-        assertEquals(GuideApiErrors.INVALID_TOKEN_BODY, missingUser.body);
+        assertEquals(GuideApiErrors.invalidTokenBody(), missingUser.body);
 
         HttpResult refused = call((request, response) -> {
             request.setAttribute(GuideRequestAuth.USER, user);

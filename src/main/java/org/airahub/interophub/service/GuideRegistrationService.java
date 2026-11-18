@@ -53,7 +53,7 @@ public class GuideRegistrationService {
             throw GuideApiException.invalidField("topicCode", "Topic was not found.");
         }
         if (!store.canEdit(user, topic)) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(store.canView(user, topic) ? topic.name : null);
         }
         String normalizedTitle = GuideUrlRules.title(title);
         String repository = GuideUrlRules.repositoryUrl(repositoryUrl);
@@ -113,7 +113,7 @@ public class GuideRegistrationService {
         }
         TopicRow topic = store.topicById(current.topicId);
         if (topic == null || !store.canEdit(user, topic)) {
-            throw GuideApiException.forbidden("You cannot edit this topic.");
+            throw GuideApiException.notEditor(topic != null && store.canView(user, topic) ? topic.name : null);
         }
         DocumentRow next = copy(current);
         if (hasTitle) {
