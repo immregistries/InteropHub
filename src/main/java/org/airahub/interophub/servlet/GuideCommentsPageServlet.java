@@ -15,6 +15,7 @@ import org.airahub.interophub.service.ApiTime;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.GuideApiException;
 import org.airahub.interophub.service.GuideCommentService;
+import org.airahub.interophub.service.GuideLabelService;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.TopicRow;
@@ -29,6 +30,7 @@ public class GuideCommentsPageServlet extends HttpServlet {
     private final AuthFlowService authFlowService = new AuthFlowService();
     private final GuideRegistrationService registration = new GuideRegistrationService();
     private final GuideCommentService comments = new GuideCommentService();
+    private final GuideLabelService labels = new GuideLabelService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -98,6 +100,7 @@ public class GuideCommentsPageServlet extends HttpServlet {
         String contextPath = request.getContextPath();
         String action = contextPath + "/es/topic-guide-comments/" + viewer.topic.id;
         String show = showFilter(request.getParameter("show"));
+        String labelFilter = trim(request.getParameter("label"));
         DocumentRow document = selected(viewer.documents, trim(request.getParameter("document")));
         AiraPage page = InteropAiraPageFactory.base(request, "Topic Reference comments - InteropHub")
                 .applicationSubtitle("Topic management")
@@ -146,6 +149,20 @@ public class GuideCommentsPageServlet extends HttpServlet {
                 option(out, "CLOSED", "Closed", show);
                 option(out, "WITHDRAWN", "Withdrawn", show);
                 out.println("        </select>");
+                JSONArray known = labelList(viewer.user, document.documentKey);
+                if (!known.isEmpty()) {
+                    out.println("        <label class=\"aira-label\" for=\"label\">Version</label>");
+                    out.println("        <select class=\"aira-select\" id=\"label\" name=\"label\">");
+                    out.println("          <option value=\"\"" + (labelFilter == null ? " selected" : "")
+                            + ">All versions</option>");
+                    for (int i = 0; i < known.length(); i++) {
+                        String name = known.getJSONObject(i).getString("label");
+                        out.println("          <option value=\"" + escape(name) + "\""
+                                + (name.equals(labelFilter) ? " selected" : "") + ">In scope for " + escape(name)
+                                + "</option>");
+                    }
+                    out.println("        </select>");
+                }
                 out.println("        <button class=\"aira-button aira-button--secondary\" type=\"submit\">Apply</button>");
                 out.println("      </form>");
                 out.println("      <p><a class=\"aira-inline-link\" href=\"" + contextPath + "/guide/open?doc="
@@ -153,6 +170,20 @@ public class GuideCommentsPageServlet extends HttpServlet {
                 JSONObject catalog = comments.document(viewer.user, document.documentKey);
                 JSONObject listed = comments.list(viewer.user, document.documentKey, stateQuery(show), null, null);
                 JSONArray threads = listed.getJSONArray("comments");
+                java.util.Set<Long> scoped = labelFilter == null ? null
+                        : comments.threadsInScope(viewer.user, document.documentKey, labelFilter);
+                if (labelFilter != null) {
+                    JSONArray kept = new JSONArray();
+                    for (int i = 0; i < threads.length(); i++) {
+                        if (scoped != null && scoped.contains(threads.getJSONObject(i).getLong("id"))) {
+                            kept.put(threads.getJSONObject(i));
+                        }
+                    }
+                    threads = kept;
+                    out.println("      <p class=\"aira-meta\">Comments in scope for " + escape(labelFilter)
+                            + ": written on it, or before it was published. Its comment mode does not hide"
+                            + " anything on this page.</p>");
+                }
                 if (threads.isEmpty()) {
                     out.println("      <p class=\"aira-meta\">No comments in this view.</p>");
                 }
@@ -184,6 +215,8 @@ public class GuideCommentsPageServlet extends HttpServlet {
                 + " · " + escape(date(thread.optString("createdAt", null)))
                 + " · " + escape(state)
                 + (thread.isNull("anchor") ? "" : " · " + escape(thread.optString("anchor", "")))
+                + " · " + (thread.isNull("madeOnLabel") ? "version not recorded"
+                        : "written on " + escape(thread.optString("madeOnLabel", "")))
                 + "</p>");
         if (!thread.isNull("disposition")) {
             String note = thread.isNull("changeNote") ? "" : thread.optString("changeNote", "");
@@ -331,6 +364,14 @@ public class GuideCommentsPageServlet extends HttpServlet {
             return null;
         }
         return new Viewer(user, topic, registration.documentsForTopic(topicId));
+    }
+
+    private JSONArray labelList(User user, String documentKey) {
+        try {
+            return labels.list(user, documentKey).getJSONArray("labels");
+        } catch (GuideApiException ex) {
+            return new JSONArray();
+        }
     }
 
     private static DocumentRow selected(List<DocumentRow> documents, String requested) {

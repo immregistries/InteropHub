@@ -101,3 +101,31 @@ CREATE TABLE es_guide_build (
   CONSTRAINT fk_es_guide_build_user FOREIGN KEY (received_by_user_id) REFERENCES auth_user (user_id),
   CONSTRAINT chk_es_guide_build_source CHECK (source IN ('UPLOAD', 'MANIFEST'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Topic Reference version display and comment modes.
+-- One row per label of a guide that an author has configured. A label with no
+-- row behaves as UNLISTED / OPEN. "At most one CURRENT per guide" is enforced
+-- in the service, in one transaction, not by a constraint.
+-- See docs/tasks/topic-reference-version-display-and-comment-modes.md, Section 4.
+CREATE TABLE es_guide_label (
+  guide_label_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_document_id BIGINT NOT NULL,
+  label VARCHAR(64) NOT NULL,
+  display_state VARCHAR(16) NOT NULL DEFAULT 'UNLISTED',
+  comment_mode VARCHAR(16) NOT NULL DEFAULT 'OPEN',
+  comment_mode_set_at DATETIME(6) NULL,
+  updated_by_user_id BIGINT NOT NULL,
+  updated_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (guide_label_id),
+  UNIQUE KEY uq_es_guide_label (guide_document_id, label),
+  KEY fk_es_guide_label_user (updated_by_user_id),
+  CONSTRAINT fk_es_guide_label_document FOREIGN KEY (guide_document_id) REFERENCES es_guide_document (guide_document_id),
+  CONSTRAINT fk_es_guide_label_user FOREIGN KEY (updated_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT chk_es_guide_label_display CHECK (display_state IN ('CURRENT', 'LISTED', 'UNLISTED', 'AUTHORS_ONLY', 'RETIRED')),
+  CONSTRAINT chk_es_guide_label_mode CHECK (comment_mode IN ('OPEN', 'RELEASE', 'CLOSED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- The label each new comment, reply, or review flag was written on, resolved
+-- from the guide's pageUrl. NULL for older rows and older guides (no backfill).
+ALTER TABLE es_guide_comment ADD COLUMN made_on_label VARCHAR(64) NULL;
+ALTER TABLE es_guide_review_flag ADD COLUMN made_on_label VARCHAR(64) NULL;

@@ -47,6 +47,17 @@ class GuideStatusRendererTest {
     }
 
     @Test
+    void statusTableShowsEachGuidesCurrentLabel() {
+        StatusReport report = report();
+        report.guides.stream().filter(g -> g.documentKey.equals("hub-current")).findFirst().get().currentLabel = "v0.2.0";
+        String html = render(report, null, null);
+        assertTrue(html.contains("<th>Hosting</th><th>Current</th>"));
+        assertTrue(html.contains("<td>v0.2.0</td>"));
+        assertEquals(4, count(html, "<span class=\"aira-muted\">None</span>"));
+        assertTrue(html.contains("colspan=\"12\"") || !html.contains("No guides match."));
+    }
+
+    @Test
     void filtersApply() {
         StatusReport report = report();
         assertEquals(List.of("never"), keys(GuideStatusRenderer.filtered(report, "no-status", null)));

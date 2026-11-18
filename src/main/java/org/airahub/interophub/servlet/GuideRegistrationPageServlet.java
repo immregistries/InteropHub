@@ -18,6 +18,8 @@ import org.airahub.interophub.service.GuideApiException;
 import org.airahub.interophub.service.GuideDisplayDates;
 import org.airahub.interophub.service.GuideHostingService;
 import org.airahub.interophub.service.GuideHtmlRules;
+import org.airahub.interophub.service.GuideLabelService;
+import org.airahub.interophub.service.GuideLabels;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRegistrationService.UrlInput;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
@@ -34,6 +36,7 @@ public class GuideRegistrationPageServlet extends HttpServlet {
     private final AuthFlowService authFlowService = new AuthFlowService();
     private final GuideRegistrationService registration = new GuideRegistrationService();
     private final GuideHostingService hosting = new GuideHostingService();
+    private final GuideLabelService labels = new GuideLabelService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -49,6 +52,10 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         }
         if ("upload".equals(request.getParameter("intent"))) {
             upload(request, response);
+            return;
+        }
+        if ("label".equals(request.getParameter("intent"))) {
+            saveLabel(request, response);
             return;
         }
         Viewer viewer = viewer(request, response);
@@ -104,6 +111,12 @@ public class GuideRegistrationPageServlet extends HttpServlet {
                 notice = "Uploaded. The new label is ready to open.";
             } else if ("replaced".equals(request.getParameter("uploaded"))) {
                 notice = "Replaced that label. The earlier upload is still listed.";
+            } else if (trim(request.getParameter("labelSaved")) != null) {
+                notice = "Saved " + request.getParameter("labelSaved") + ".";
+                String demoted = trim(request.getParameter("demoted"));
+                if (demoted != null) {
+                    notice += " " + demoted + " was Current and is now Listed.";
+                }
             }
         }
         render(request, response, viewer, documents, editing, posted, notice, error);
@@ -203,6 +216,9 @@ public class GuideRegistrationPageServlet extends HttpServlet {
             out.println("          <button class=\"aira-button aira-button--primary\" type=\"submit\" name=\"intent\" value=\"save\">Save</button>");
             out.println("        </p>");
             out.println("      </form>");
+            if (!creating && editing != null) {
+                labelTable(out, request, action, editing.documentKey, viewer);
+            }
             if (!creating && editing != null && GuideHtmlRules.HUB.equals(editing.hosting)) {
                 versions(out, request, action, editing.documentKey, viewer);
             }
@@ -283,6 +299,126 @@ public class GuideRegistrationPageServlet extends HttpServlet {
         } catch (GuideApiException ex) {
             out.println("      <div class=\"aira-alert aira-alert--error\"><p>" + escape(ex.getMessage()) + "</p></div>");
         }
+    }
+
+    /**
+     * Plan Section 6: one row per known label with its display state, comment mode,
+     * publication time, and open-in-scope count. The count is information only.
+     */
+    private void labelTable(PrintWriter out, HttpServletRequest request, String action, String documentKey,
+            Viewer viewer) {
+        out.println("      <h2 class=\"aira-section-title\" id=\"labels\">Versions and comments</h2>");
+        out.println("      <p class=\"aira-field-help\">Readers see the Current version as the main link on the topic page"
+                + " and Listed versions under Other versions. Unlisted versions open only with their link. Authors only"
+                + " versions are hidden from readers, and a hosted one refuses them. Retired versions are hidden from"
+                + " readers. Comments: Open shows every comment; Release shows a reader only the comments that belong"
+                + " to that version; Closed shows no comments to anyone and refuses new ones there.</p>");
+        JSONArray rows;
+        try {
+            rows = labels.list(viewer.user, documentKey).getJSONArray("labels");
+        } catch (GuideApiException ex) {
+            out.println("      <div class=\"aira-alert aira-alert--error\"><p>" + escape(ex.getMessage()) + "</p></div>");
+            return;
+        }
+        if (rows.isEmpty()) {
+            out.println("      <p class=\"aira-meta\">No versions yet. Register a URL, upload a version, or report a build first.</p>");
+            return;
+        }
+        String contextPath = request.getContextPath();
+        String csrf = CsrfTokenSupport.getOrCreateToken(request);
+        out.println("      <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\" id=\"guide-label-table\">");
+        out.println("        <thead><tr><th>Version</th><th>Display</th><th>Comments</th><th>Published</th>"
+                + "<th>Open in scope</th><th>Change</th></tr></thead><tbody>");
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject row = rows.getJSONObject(i);
+            String label = row.getString("label");
+            String display = row.optString("display", "unlisted").toUpperCase(Locale.ROOT);
+            String mode = row.optString("commentMode", "open").toUpperCase(Locale.ROOT);
+            String formId = "label-form-" + i;
+            out.println("          <tr data-label=\"" + escape(label) + "\">");
+            out.println("            <td class=\"aira-table__cell--primary\">" + escape(label) + "</td>");
+            out.println("            <td><select class=\"aira-select\" id=\"" + formId + "-display\" name=\"display\""
+                    + " form=\"" + formId + "\" aria-label=\"Display for " + escape(label) + "\">");
+            for (String state : GuideLabels.DISPLAY_STATES) {
+                out.println("              <option value=\"" + state + "\"" + (state.equals(display) ? " selected" : "")
+                        + ">" + escape(GuideLabels.displayName(state)) + "</option>");
+            }
+            out.println("            </select></td>");
+            out.println("            <td><select class=\"aira-select\" id=\"" + formId + "-mode\" name=\"commentMode\""
+                    + " form=\"" + formId + "\" aria-label=\"Comments for " + escape(label) + "\">");
+            for (String value : GuideLabels.COMMENT_MODES) {
+                out.println("              <option value=\"" + value + "\"" + (value.equals(mode) ? " selected" : "")
+                        + ">" + escape(GuideLabels.modeName(value)) + "</option>");
+            }
+            out.println("            </select>");
+            if (!GuideLabels.CURRENT.equals(display)) {
+                out.println("              <label class=\"aira-field-help\"><input type=\"checkbox\" name=\"suggestRelease\""
+                        + " value=\"true\" form=\"" + formId + "\" checked> If made Current, switch comments to Release</label>");
+            }
+            out.println("            </td>");
+            String published = row.isNull("publishedAt") ? "—"
+                    : escape(GuideDisplayDates.dayTime(row.optString("publishedAt", "")));
+            out.println("            <td class=\"aira-table__cell--date\">" + published + "</td>");
+            int open = row.optInt("openInScope", 0);
+            String countHref = contextPath + "/es/topic-guide-comments/" + viewer.topic.id + "?document="
+                    + encode(documentKey) + "&amp;label=" + encode(label) + "&amp;show=OPEN";
+            out.println("            <td class=\"aira-table__cell--numeric\"><a class=\"aira-inline-link\" href=\""
+                    + countHref + "\">" + open + "</a></td>");
+            out.println("            <td class=\"aira-table__cell--actions\"><form id=\"" + formId + "\" method=\"post\""
+                    + " action=\"" + action + "\">");
+            out.println("              <input type=\"hidden\" name=\"csrfToken\" value=\"" + escape(csrf) + "\">");
+            out.println("              <input type=\"hidden\" name=\"documentKey\" value=\"" + escape(documentKey) + "\">");
+            out.println("              <input type=\"hidden\" name=\"label\" value=\"" + escape(label) + "\">");
+            out.println("              <input type=\"hidden\" name=\"previousDisplay\" value=\"" + display + "\">");
+            out.println("              <input type=\"hidden\" name=\"previousMode\" value=\"" + mode + "\">");
+            out.println("              <button class=\"aira-button aira-button--secondary aira-button--small\" type=\"submit\""
+                    + " name=\"intent\" value=\"label\">Save</button>");
+            out.println("            </form></td>");
+            out.println("          </tr>");
+        }
+        out.println("        </tbody></table></div>");
+        out.println("      <p class=\"aira-field-help\">Open in scope counts the open comments a reader would see on that"
+                + " version. It is for information only: closing a version with open comments is allowed, and those"
+                + " comments stay on the other versions and on the comments page.</p>");
+    }
+
+    private void saveLabel(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        Viewer viewer = viewer(request, response);
+        if (viewer == null) {
+            return;
+        }
+        String documentKey = trim(request.getParameter("documentKey"));
+        String label = trim(request.getParameter("label"));
+        String display = trim(request.getParameter("display"));
+        String mode = trim(request.getParameter("commentMode"));
+        String previousDisplay = trim(request.getParameter("previousDisplay"));
+        String previousMode = trim(request.getParameter("previousMode"));
+        try {
+            String storedDisplay = display == null ? null : GuideLabels.display(display);
+            String storedMode = mode == null ? null : GuideLabels.commentMode(mode);
+            // Making a label Current offers Release in the same form (plan Section 6),
+            // unless the author also chose a comment mode in this save.
+            if (GuideLabels.CURRENT.equals(storedDisplay) && !GuideLabels.CURRENT.equals(previousDisplay)
+                    && request.getParameter("suggestRelease") != null
+                    && (storedMode == null || storedMode.equals(previousMode))) {
+                storedMode = GuideLabels.RELEASE;
+            }
+            JSONObject saved = labels.set(viewer.user, null, "WEB", documentKey, label, storedDisplay, storedMode);
+            String summary = label + ": " + GuideLabels.displayName(GuideLabels.display(saved.getString("display")))
+                    + ", comments " + GuideLabels.modeName(GuideLabels.commentMode(saved.getString("commentMode")));
+            String target = request.getContextPath() + "/es/topic-guide/" + viewer.topic.id + "?document="
+                    + encode(documentKey) + "&labelSaved=" + encode(summary);
+            if (!saved.isNull("demoted")) {
+                target += "&demoted=" + encode(saved.getJSONObject("demoted").getString("label"));
+            }
+            response.sendRedirect(target + "#labels");
+        } catch (GuideApiException ex) {
+            show(request, response, null, null, ex.getMessage());
+        }
+    }
+
+    private static String encode(String value) {
+        return java.net.URLEncoder.encode(value == null ? "" : value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private void upload(HttpServletRequest request, HttpServletResponse response) throws IOException {

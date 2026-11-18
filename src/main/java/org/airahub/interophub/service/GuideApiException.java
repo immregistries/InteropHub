@@ -32,6 +32,12 @@ public final class GuideApiException extends RuntimeException {
                 "The 14-day edit window has closed.", null);
     }
 
+    /** The label the guide page belongs to is Closed: no comments, replies, or flags there. */
+    public static GuideApiException commentsClosed() {
+        return new GuideApiException(403, "comments_closed", null,
+                "Comments are closed on this version of the guide.", null);
+    }
+
     public static GuideApiException notFound(String message) {
         return new GuideApiException(404, "not_found", null, message, null);
     }

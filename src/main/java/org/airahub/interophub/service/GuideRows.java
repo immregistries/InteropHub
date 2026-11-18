@@ -45,7 +45,7 @@ public final class GuideRows {
         UrlBinding() {
         }
 
-        UrlBinding(String url, String label) {
+        public UrlBinding(String url, String label) {
             this.url = url;
             this.label = label;
         }
@@ -101,6 +101,8 @@ public final class GuideRows {
         Long disposedByUserId;
         LocalDateTime closedAt;
         Long closedByUserId;
+        /** The label it was written on, or null when the guide did not say or the address was not recognized. */
+        String madeOnLabel;
 
         boolean deleted() {
             return deletedAt != null;
@@ -131,10 +133,23 @@ public final class GuideRows {
         LocalDateTime updatedAt;
         LocalDateTime clearedAt;
         Long clearedByUserId;
+        String madeOnLabel;
 
         boolean cleared() {
             return clearedAt != null;
         }
+    }
+
+    /** One es_guide_label row: an author's display state and comment mode for a label. */
+    public static final class LabelRow {
+        public Long id;
+        public long documentId;
+        public String label;
+        public String display = GuideLabels.UNLISTED;
+        public String commentMode = GuideLabels.OPEN;
+        public LocalDateTime commentModeSetAt;
+        public Long updatedByUserId;
+        public LocalDateTime updatedAt;
     }
 
     /** One hosted upload. {@code storedFileId} stays inside the service. */

@@ -244,6 +244,82 @@ class TopicReferenceAuthorPagesTest {
         }
     }
 
+    @Test
+    void readersSeeTheSectionWithoutTheEditorsOnlyBadgeOnceALabelIsListed() {
+        List<TopicReferenceSectionData.LabelChoice> labels = List.of(
+                new TopicReferenceSectionData.LabelChoice("v0.3.0", "CURRENT", "RELEASE", "/hub/guide/view/g/v0.3.0/", null),
+                new TopicReferenceSectionData.LabelChoice("v0.2.0", "LISTED", "OPEN", "/hub/guide/view/g/v0.2.0/", null),
+                new TopicReferenceSectionData.LabelChoice("main", "UNLISTED", "OPEN", "/hub/guide/view/g/main/", null),
+                new TopicReferenceSectionData.LabelChoice("v0.0.9", "AUTHORS_ONLY", "OPEN", "/hub/guide/view/g/v0.0.9/", null),
+                new TopicReferenceSectionData.LabelChoice("v0.1.0", "RETIRED", "OPEN", "/hub/guide/view/g/v0.1.0/", null));
+        TopicReferenceDigest digest = new TopicReferenceDigest(1, 0, 0, LocalDateTime.of(2026, 11, 9, 12, 0),
+                List.of(new OpenThread(4L, "in scope", "Ada", LocalDateTime.of(2026, 11, 9, 12, 0), 0)), List.of(), 0);
+        String reader = html(TopicReferenceSectionData.view(189L, false, "/hub", List.of(
+                TopicReferenceSectionData.presentLabels("/hub", 189L, "g", "Guide", "HUB", true, labels, digest, false,
+                        true)), 0, true));
+        assertFalse(reader.contains("Editors only"));
+        assertTrue(reader.contains(">Read the guide</a>"));
+        assertTrue(reader.contains("/hub/guide/open?doc=g&amp;label=v0.3.0"));
+        assertTrue(reader.contains("Other versions"));
+        assertTrue(reader.contains("/hub/guide/view/g/v0.2.0/"));
+        assertFalse(reader.contains("/hub/guide/view/g/main/"));
+        assertFalse(reader.contains("v0.0.9"));
+        assertFalse(reader.contains("v0.1.0"));
+        assertFalse(reader.contains("Retired"));
+        assertFalse(reader.contains("Manage comments"));
+        assertFalse(reader.contains("/es/topic-guide-comments/"));
+        assertTrue(reader.contains("Open comments"));
+        assertTrue(reader.contains("/hub/guide/open?doc=g&amp;label=v0.3.0&amp;comment=4"));
+
+        String editor = html(TopicReferenceSectionData.view(189L, true, "/hub", List.of(
+                TopicReferenceSectionData.presentLabels("/hub", 189L, "g", "Guide", "HUB", true, labels, digest, true,
+                        true)), 0, true));
+        assertFalse(editor.contains(">Editors only<"));
+        assertTrue(editor.contains(">v0.3.0</a> <span class=\"aira-badge aira-badge--success\">Current</span>"));
+        assertTrue(editor.contains("main <span class=\"aira-badge aira-badge--outline\">Unlisted</span>"));
+        assertTrue(editor.contains("v0.0.9 <span class=\"aira-badge aira-badge--outline\">Authors only</span>"));
+        assertTrue(editor.contains("<p class=\"aira-meta\">Retired</p>"));
+        assertTrue(editor.contains("/hub/guide/view/g/v0.1.0/"));
+        assertTrue(editor.contains("Needs attention"));
+        assertTrue(editor.contains("Manage comments"));
+
+        String closed = html(TopicReferenceSectionData.view(189L, false, "/hub", List.of(
+                TopicReferenceSectionData.presentLabels("/hub", 189L, "g", "Guide", "HUB", true, List.of(
+                        new TopicReferenceSectionData.LabelChoice("v0.3.0", "CURRENT", "CLOSED", "/x/", null)),
+                        TopicReferenceDigest.empty(), false, true)), 0, true));
+        assertTrue(closed.contains("Comments are closed on this version."));
+        assertFalse(closed.contains("topic-reference-stat__value"));
+
+        String editorsOnly = html(TopicReferenceSectionData.view(189L, true, "/hub", List.of(
+                TopicReferenceSectionData.presentLabels("/hub", 189L, "g", "Guide", "HUB", true, List.of(
+                        new TopicReferenceSectionData.LabelChoice("main", "UNLISTED", "OPEN", "/hub/guide/view/g/main/", null),
+                        new TopicReferenceSectionData.LabelChoice("v0.0.9", "AUTHORS_ONLY", "OPEN", "/y/", null)),
+                        TopicReferenceDigest.empty(), true, false)), 0, false));
+        assertTrue(editorsOnly.contains(">Editors only<"));
+        assertFalse(editorsOnly.contains(">Unlisted<"));
+        assertTrue(editorsOnly.contains(">Authors only<"));
+
+        Guide hidden = TopicReferenceSectionData.presentLabels("/hub", 189L, "h", "Hidden guide", "EXTERNAL", true,
+                List.of(), TopicReferenceDigest.empty(), true, false).asEditorsOnly();
+        String mixed = html(TopicReferenceSectionData.view(189L, true, "/hub", List.of(hidden), 0, true));
+        assertTrue(mixed.contains("Published externally</span>"));
+        assertTrue(mixed.contains(">Editors only</span>"));
+    }
+
+    @Test
+    void guideOpenReachesAnyHostedLabel() {
+        org.airahub.interophub.service.GuideRows.DocumentRow hosted = new org.airahub.interophub.service.GuideRows.DocumentRow();
+        hosted.documentKey = "guide-hosted-test";
+        hosted.hosting = "HUB";
+        hosted.urls.add(new org.airahub.interophub.service.GuideRows.UrlBinding(
+                "http://localhost:8080/hub/guide/view/guide-hosted-test/latest/", "latest"));
+        assertEquals("http://localhost:8080/hub/guide/view/guide-hosted-test/v0.2.0/",
+                GuideOpenServlet.hostedLabelUrl(hosted, "v0.2.0"));
+        assertEquals(null, GuideOpenServlet.hostedLabelUrl(hosted, "../admin"));
+        hosted.hosting = "EXTERNAL";
+        assertEquals(null, GuideOpenServlet.hostedLabelUrl(hosted, "v0.2.0"));
+    }
+
     private static String html(View view) {
         var writer = new StringWriter();
         TopicReferenceSection.write(new PrintWriter(writer), view);

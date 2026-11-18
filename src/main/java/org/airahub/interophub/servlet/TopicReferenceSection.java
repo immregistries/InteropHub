@@ -49,7 +49,9 @@ final class TopicReferenceSection {
         out.println("            <div class=\"aira-section-card__header\">");
         out.println("              <div class=\"aira-cluster\">");
         out.println("                <h2 class=\"aira-section-card__title\" id=\"topic-reference-title\">Topic Reference</h2>");
-        out.println("                <span class=\"aira-badge aira-badge--subtle\">Editors only</span>");
+        if (!view.readersSee()) {
+            out.println("                <span class=\"aira-badge aira-badge--subtle\">Editors only</span>");
+        }
         out.println("              </div>");
         if (view.editor()) {
             out.println("              <div class=\"aira-cluster\">");
@@ -81,20 +83,29 @@ final class TopicReferenceSection {
         out.println("                      <h3 class=\"aira-subsection-title\">" + escape(guide.title()) + "</h3>");
         out.println("                      <span class=\"aira-badge aira-badge--subtle\">" + escape(guide.hostingBadge())
                 + "</span>");
-        out.println("                    </div>");
-        out.println("                    <div class=\"aira-chip-list\">");
-        for (Link link : guide.links()) {
-            String css = link.primary()
-                    ? "aira-button aira-button--primary aira-button--small"
-                    : "aira-chip";
-            out.println("                      <a class=\"" + css + "\" href=\"" + escape(link.href()) + "\">"
-                    + escape(link.label()) + "</a>");
+        if (guide.editorsOnly()) {
+            out.println("                      <span class=\"aira-badge aira-badge--subtle\">Editors only</span>");
         }
         out.println("                    </div>");
+        chips(out, guide.links());
+        if (!guide.otherVersions().isEmpty()) {
+            out.println("                    <p class=\"aira-meta\">Other versions</p>");
+            chips(out, guide.otherVersions());
+        }
+        if (!guide.retired().isEmpty()) {
+            out.println("                    <p class=\"aira-meta\">Retired</p>");
+            chips(out, guide.retired());
+        }
         if (guide.externalOnPrivate()) {
             out.println("                    <p class=\"aira-meta\">This topic is private and this guide is published externally. Host it on InteropHub instead.</p>");
         }
         out.println("                  </div>");
+        if (guide.commentsHidden()) {
+            out.println("                  <p class=\"aira-meta\">Comments are closed on this version.</p>");
+            out.println("                </div>");
+            out.println("              </div>");
+            return;
+        }
         out.println("                  <div class=\"aira-stack aira-stack--compact topic-reference-stats\">");
         out.println("                    <div class=\"aira-cluster topic-reference-stats__row\">");
         stat(out, guide.open());
@@ -109,7 +120,8 @@ final class TopicReferenceSection {
         out.println("                </div>");
         if (!guide.needsAttention().isEmpty()) {
         out.println("                <div class=\"aira-stack aira-stack--compact\">");
-        out.println("                  <h3 class=\"aira-subsection-title\">Needs attention</h3>");
+        out.println("                  <h3 class=\"aira-subsection-title\">" + (guide.reader() ? "Open comments" : "Needs attention")
+                + "</h3>");
         for (Attention attention : guide.needsAttention()) {
             out.println("                  <a class=\"aira-recent-topic\" href=\"" + escape(attention.href()) + "\">");
             out.println("                    <span class=\"aira-recent-topic__title\">" + escape(attention.excerpt())
@@ -143,6 +155,28 @@ final class TopicReferenceSection {
             out.println("                </div>");
         }
         out.println("              </div>");
+    }
+
+    private static void chips(PrintWriter out, java.util.List<Link> links) {
+        out.println("                    <div class=\"aira-chip-list\">");
+        for (Link link : links) {
+            String css = link.primary()
+                    ? "aira-button aira-button--primary aira-button--small"
+                    : "aira-chip";
+            if (link.primary()) {
+                // A badge inside the filled button would be unreadable, so it sits beside it.
+                String badge = link.badge() == null ? ""
+                        : " <span class=\"aira-badge aira-badge--success\">" + escape(link.badge()) + "</span>";
+                out.println("                      <a class=\"" + css + "\" href=\"" + escape(link.href()) + "\">"
+                        + escape(link.label()) + "</a>" + badge);
+                continue;
+            }
+            String badge = link.badge() == null ? ""
+                    : " <span class=\"aira-badge aira-badge--outline\">" + escape(link.badge()) + "</span>";
+            out.println("                      <a class=\"" + css + "\" href=\"" + escape(link.href()) + "\">"
+                    + escape(link.label()) + badge + "</a>");
+        }
+        out.println("                    </div>");
     }
 
     private static void stat(PrintWriter out, Count count) {

@@ -21,7 +21,9 @@ import org.airahub.interophub.service.TopicReferenceDigest.OpenThread;
 import org.hibernate.Session;
 
 /**
- * The Topic Reference block on the topic page. At most two active guides, with capped links and lists.
+ * The Topic Reference block on the topic page. At most two guides, with capped links and lists.
+ * Editors see every guide and label. Readers who can view the topic see a guide only when it
+ * has a Current or Listed label (plan 3.1), and its counts follow the Current label's comment mode.
  */
 public final class TopicReferenceSectionData {
     static final int EXCERPT_LIMIT = 100;
@@ -32,66 +34,177 @@ public final class TopicReferenceSectionData {
     }
 
     /**
-     * Who sees the section. Editors only for now. Widen this to canViewTopic when readers should see it.
+     * Whether the viewer sees the section whatever the labels say: topic editors.
+     * Readers see it only for guides with a Current or Listed label ({@link #load}).
      * Management links stay behind canEditTopic either way.
      */
     public static boolean visibleTo(User viewer, EsTopic topic, boolean canEditTopic) {
         return viewer != null && topic != null && topic.getEsTopicId() != null && canEditTopic;
     }
 
-    /** Null when the viewer should not see the section, or the topic has no active guide. */
+    /** Null when the viewer should not see the section, or no guide is shown to them. */
     public static View load(User viewer, EsTopic topic, EsTopicSpace space, String contextPath) {
-        if (!visibleTo(viewer, topic, true)) {
+        if (viewer == null || topic == null || topic.getEsTopicId() == null) {
             return null;
         }
-        boolean editor = new TopicSpaceAccessService().canEditTopic(viewer, topic);
-        if (!visibleTo(viewer, topic, editor)) {
+        TopicSpaceAccessService access = new TopicSpaceAccessService();
+        boolean editor = access.canEditTopic(viewer, topic);
+        if (!editor && !access.canViewTopic(viewer, topic)) {
             return null;
         }
-        List<DocumentRow> active = new ArrayList<>();
+        GuideCommentService comments = new GuideCommentService();
+        List<Candidate> candidates = new ArrayList<>();
         for (DocumentRow document : new GuideRegistrationService().documentsForTopic(topic.getEsTopicId())) {
-            if (document != null && document.active && document.id != null) {
-                active.add(document);
+            if (document == null || !document.active || document.id == null) {
+                continue;
             }
+            boolean hub = GuideHtmlRules.HUB.equals(document.hosting);
+            List<VersionChoice> uploads = hub ? versions(document.id) : List.of();
+            GuideLabels.Facts facts = comments.labelFacts(document.id);
+            List<LabelChoice> labels = labelChoices(contextPath, document, facts, uploads);
+            boolean forReaders = labels.stream().anyMatch(choice -> GuideLabels.readerListed(choice.display()));
+            if (!editor && !forReaders) {
+                continue;
+            }
+            candidates.add(new Candidate(document, uploads, labels, forReaders, facts));
         }
-        if (active.isEmpty()) {
+        if (candidates.isEmpty()) {
             return null;
         }
         boolean privateSpace = space != null && space.getVisibility() == EsTopicSpace.Visibility.PRIVATE;
-        GuideCommentService comments = new GuideCommentService();
-        int shown = Math.min(2, active.size());
+        int shown = Math.min(2, candidates.size());
+        boolean readersSee = false;
         List<Guide> guides = new ArrayList<>();
         for (int i = 0; i < shown; i++) {
-            DocumentRow document = active.get(i);
-            boolean hub = GuideHtmlRules.HUB.equals(document.hosting);
-            List<ExternalUrl> urls = new ArrayList<>();
-            for (UrlBinding binding : document.urls) {
-                urls.add(new ExternalUrl(binding.label, binding.url));
+            Candidate candidate = candidates.get(i);
+            DocumentRow document = candidate.document;
+            readersSee |= candidate.forReaders;
+            GuideLabels.Facts facts = candidate.facts;
+            String current = facts.current();
+            TopicReferenceDigest digest = editor
+                    ? comments.digest(document.id)
+                    : comments.digestFor(document.id, current == null ? null : facts.policy(current));
+            if (!editor || hasSettings(candidate.labels)) {
+                guides.add(presentLabels(contextPath, topic.getEsTopicId(), document.documentKey, document.title,
+                        document.hosting, privateSpace, candidate.labels, digest, editor, candidate.forReaders));
+            } else {
+                List<ExternalUrl> urls = new ArrayList<>();
+                for (UrlBinding binding : document.urls) {
+                    urls.add(new ExternalUrl(binding.label, binding.url));
+                }
+                guides.add(present(contextPath, topic.getEsTopicId(), document.documentKey, document.title,
+                        document.hosting, privateSpace, urls, candidate.uploads, digest));
             }
-            guides.add(present(contextPath, topic.getEsTopicId(), document.documentKey, document.title, document.hosting,
-                    privateSpace, urls, hub ? versions(document.id) : List.of(), comments.digest(document.id)));
         }
-        return view(topic.getEsTopicId(), editor, contextPath, guides, active.size() - shown);
+        if (readersSee) {
+            for (int i = 0; i < guides.size(); i++) {
+                if (!candidates.get(i).forReaders) {
+                    guides.set(i, guides.get(i).asEditorsOnly());
+                }
+            }
+        }
+        return view(topic.getEsTopicId(), editor, contextPath, guides, candidates.size() - shown, readersSee);
     }
 
     public static View view(long topicId, boolean editor, String contextPath, List<Guide> guides, int extraGuides) {
-        String context = context(contextPath);
-        return new View(topicId, editor, context + "/es/topic-guide-comments/" + topicId,
-                context + "/es/topic-guide/" + topicId, guides, extraGuides);
+        return view(topicId, editor, contextPath, guides, extraGuides, false);
     }
 
+    public static View view(long topicId, boolean editor, String contextPath, List<Guide> guides, int extraGuides,
+            boolean readersSee) {
+        String context = context(contextPath);
+        return new View(topicId, editor, context + "/es/topic-guide-comments/" + topicId,
+                context + "/es/topic-guide/" + topicId, guides, extraGuides, readersSee);
+    }
+
+    /** Editors' view of a guide whose labels have no settings: every label as it was before labels had states. */
     public static Guide present(String contextPath, long topicId, String documentKey, String title, String hosting,
             boolean privateSpace, List<ExternalUrl> urls, List<VersionChoice> versions, TopicReferenceDigest digest) {
-        TopicReferenceDigest stats = digest == null ? TopicReferenceDigest.empty() : digest;
         boolean hub = GuideHtmlRules.HUB.equals(hosting);
         List<Link> links = hub
                 ? hubLinks(contextPath, topicId, documentKey, versions)
                 : externalLinks(contextPath, topicId, documentKey, urls);
+        return guide(contextPath, topicId, documentKey, title, hosting, privateSpace, links, List.of(), List.of(),
+                digest, true, null, false);
+    }
+
+    /**
+     * A guide with label states. Readers get the Current label as "Read the guide" and Listed
+     * labels under "Other versions"; Unlisted, Authors only, and Retired labels are left out.
+     * Editors get every label: Current first, then the rest with badges, and Retired labels
+     * in their own group. {@code readersSee} says whether readers see this guide at all; when
+     * they do not, the section's "Editors only" badge covers it and Unlisted labels carry no badge.
+     */
+    public static Guide presentLabels(String contextPath, long topicId, String documentKey, String title,
+            String hosting, boolean privateSpace, List<LabelChoice> labels, TopicReferenceDigest digest,
+            boolean editor, boolean readersSee) {
+        List<LabelChoice> all = labels == null ? List.of() : labels;
+        LabelChoice current = null;
+        for (LabelChoice choice : all) {
+            if (GuideLabels.CURRENT.equals(choice.display())) {
+                current = choice;
+                break;
+            }
+        }
         String open = openHref(contextPath, documentKey);
+        List<Link> main = new ArrayList<>();
+        List<Link> others = new ArrayList<>();
+        List<Link> retired = new ArrayList<>();
+        if (current != null) {
+            String href = open + "&label=" + encode(current.label());
+            main.add(editor
+                    ? new Link(current.label(), href, true, "Current")
+                    : new Link("Read the guide", href, true, null));
+        }
+        for (LabelChoice choice : all) {
+            if (choice == current) {
+                continue;
+            }
+            String display = choice.display();
+            if (!editor) {
+                if (GuideLabels.LISTED.equals(display)) {
+                    others.add(new Link(choice.label(), choice.href(), false, null));
+                }
+                continue;
+            }
+            if (GuideLabels.RETIRED.equals(display)) {
+                retired.add(new Link(choice.label(), choice.href(), false, null));
+                continue;
+            }
+            String badge = switch (display) {
+                case GuideLabels.AUTHORS_ONLY -> "Authors only";
+                case GuideLabels.UNLISTED -> readersSee ? "Unlisted" : null;
+                default -> null;
+            };
+            others.add(new Link(choice.label(), choice.href(), false, badge));
+        }
+        if (editor && main.isEmpty() && !others.isEmpty()) {
+            Link first = others.remove(0);
+            main.add(new Link(first.label(), open + "&label=" + encode(first.label()), true, first.badge()));
+        }
+        if (editor && main.isEmpty()) {
+            main.add(new Link("Open the guide", open, true, null));
+        }
+        String readerLabel = current == null ? null : current.label();
+        boolean commentsShown = editor || current == null || !GuideLabels.CLOSED.equals(current.commentMode());
+        return guide(contextPath, topicId, documentKey, title, hosting, privateSpace, main, others, retired, digest,
+                editor, readerLabel, !commentsShown);
+    }
+
+    private static Guide guide(String contextPath, long topicId, String documentKey, String title, String hosting,
+            boolean privateSpace, List<Link> links, List<Link> otherVersions, List<Link> retired,
+            TopicReferenceDigest digest, boolean editor, String readerLabel, boolean commentsHidden) {
+        TopicReferenceDigest stats = digest == null ? TopicReferenceDigest.empty() : digest;
+        boolean hub = GuideHtmlRules.HUB.equals(hosting);
+        String open = openHref(contextPath, documentKey);
+        if (!editor && readerLabel != null) {
+            open = open + "&label=" + encode(readerLabel);
+        }
         String manage = manageHref(contextPath, topicId, documentKey, null);
+        String readerTarget = open;
         String flagsHref = stats.flagCount() > 0 && stats.firstAnchor() != null
                 ? open + "&anchor=" + encode(stats.firstAnchor())
-                : manage;
+                : (editor ? manage : readerTarget);
         List<OpenThread> threads = stats.openThreads();
         if (threads.size() > TopicReferenceDigest.LIST_LIMIT) {
             threads = threads.subList(0, TopicReferenceDigest.LIST_LIMIT);
@@ -111,17 +224,66 @@ public final class TopicReferenceSectionData {
             String anchor = note.anchor() == null ? "" : note.anchor();
             String date = GuideDisplayDates.day(note.at());
             String meta = anchor.isBlank() ? date : anchor + " · " + date;
-            String href = anchor.isBlank() ? manage : open + "&anchor=" + encode(anchor);
+            String href = anchor.isBlank() ? (editor ? manage : readerTarget) : open + "&anchor=" + encode(anchor);
             flagged.add(new FlagLine(href, excerpt(note.note()), meta));
         }
+        String openCount = editor ? manageHref(contextPath, topicId, documentKey, "OPEN") : readerTarget;
+        String disposedCount = editor ? manageHref(contextPath, topicId, documentKey, "DISPOSED") : readerTarget;
+        String closedCount = editor ? manageHref(contextPath, topicId, documentKey, "CLOSED") : readerTarget;
         return new Guide(title == null || title.isBlank() ? documentKey : title,
                 hub ? "Hosted on InteropHub" : "Published externally",
                 privateSpace && !hub, links,
-                new Count("Open", stats.open(), manageHref(contextPath, topicId, documentKey, "OPEN")),
-                new Count("Disposed", stats.disposed(), manageHref(contextPath, topicId, documentKey, "DISPOSED")),
-                new Count("Closed", stats.closed(), manageHref(contextPath, topicId, documentKey, "CLOSED")),
+                new Count("Open", stats.open(), openCount),
+                new Count("Disposed", stats.disposed(), disposedCount),
+                new Count("Closed", stats.closed(), closedCount),
                 new Count("Flags", stats.flagCount(), flagsHref),
-                activity(stats), needsAttention, stats.open(), flagged, stats.flagCount(), manage);
+                activity(stats), needsAttention, stats.open(), flagged, stats.flagCount(),
+                editor ? manage : readerTarget, otherVersions, retired, !editor, commentsHidden, false);
+    }
+
+    /**
+     * The labels a guide can link to, with their display state and comment mode: a hosted
+     * guide's uploaded labels (newest first after latest and main), or an external guide's
+     * registered URLs in registration order. Labels without a page (build-only) are left out.
+     */
+    static List<LabelChoice> labelChoices(String contextPath, DocumentRow document, GuideLabels.Facts facts,
+            List<VersionChoice> uploads) {
+        List<LabelChoice> choices = new ArrayList<>();
+        if (GuideHtmlRules.HUB.equals(document.hosting)) {
+            Map<String, LocalDateTime> newest = new LinkedHashMap<>();
+            for (VersionChoice upload : uploads) {
+                if (upload != null && upload.label() != null) {
+                    newest.merge(upload.label(), uploadedAt(upload), (left, right) -> left.isAfter(right) ? left : right);
+                }
+            }
+            List<String> labels = new ArrayList<>(newest.keySet());
+            labels.sort(Comparator.comparingInt(GuideLabels::rank)
+                    .thenComparing((String label) -> newest.get(label), Comparator.reverseOrder())
+                    .thenComparing(Comparator.naturalOrder()));
+            for (String label : labels) {
+                var setting = facts.setting(label);
+                choices.add(new LabelChoice(label, setting.display, setting.commentMode,
+                        viewHref(contextPath, document.documentKey, label), newest.get(label)));
+            }
+        } else {
+            for (UrlBinding binding : document.urls) {
+                if (binding == null || binding.label == null || binding.url == null) {
+                    continue;
+                }
+                var setting = facts.setting(binding.label);
+                choices.add(new LabelChoice(binding.label, setting.display, setting.commentMode, binding.url, null));
+            }
+        }
+        return choices;
+    }
+
+    private static boolean hasSettings(List<LabelChoice> labels) {
+        for (LabelChoice choice : labels) {
+            if (!GuideLabels.UNLISTED.equals(choice.display())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Newest label first: latest, then main, then three version tags, then "+N earlier". */
@@ -234,7 +396,7 @@ public final class TopicReferenceSectionData {
         return context(contextPath) + "/guide/open?doc=" + encode(documentKey);
     }
 
-    private static String viewHref(String contextPath, String documentKey, String label) {
+    static String viewHref(String contextPath, String documentKey, String label) {
         return context(contextPath) + "/guide/view/" + encode(documentKey) + "/" + encode(label) + "/";
     }
 
@@ -255,13 +417,32 @@ public final class TopicReferenceSectionData {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 
+    private record Candidate(DocumentRow document, List<VersionChoice> uploads, List<LabelChoice> labels,
+            boolean forReaders, GuideLabels.Facts facts) {
+    }
+
     public record VersionChoice(String label, LocalDateTime uploadedAt) {
     }
 
     public record ExternalUrl(String label, String url) {
     }
 
-    public record Link(String label, String href, boolean primary) {
+    /**
+     * One label of a guide on the topic page. {@code href} is the label's own page: a
+     * context-relative hosted view path, or an external URL.
+     */
+    public record LabelChoice(String label, String display, String commentMode, String href, LocalDateTime at) {
+        public LabelChoice {
+            display = display == null ? GuideLabels.UNLISTED : display;
+            commentMode = commentMode == null ? GuideLabels.OPEN : commentMode;
+        }
+    }
+
+    /** {@code badge} marks a label readers cannot see ("Unlisted", "Authors only") or the Current one for editors. */
+    public record Link(String label, String href, boolean primary, String badge) {
+        public Link(String label, String href, boolean primary) {
+            this(label, href, primary, null);
+        }
     }
 
     public record Count(String label, int value, String href) {
@@ -273,18 +454,34 @@ public final class TopicReferenceSectionData {
     public record FlagLine(String href, String note, String meta) {
     }
 
+    /**
+     * {@code reader} is true for a viewer who cannot edit the topic: counts and lists link
+     * into the guide instead of the comments page. {@code commentsHidden} is true when the
+     * reader's Current label is Closed: no counts or lists at all.
+     */
     public record Guide(String title, String hostingBadge, boolean externalOnPrivate, List<Link> links, Count open,
             Count disposed, Count closed, Count flags, String activity, List<Attention> needsAttention, int openTotal,
-            List<FlagLine> flagged, int flagTotal, String manageHref) {
+            List<FlagLine> flagged, int flagTotal, String manageHref, List<Link> otherVersions, List<Link> retired,
+            boolean reader, boolean commentsHidden, boolean editorsOnly) {
         public Guide {
             links = List.copyOf(links == null ? List.of() : links);
             needsAttention = List.copyOf(needsAttention == null ? List.of() : needsAttention);
             flagged = List.copyOf(flagged == null ? List.of() : flagged);
+            otherVersions = List.copyOf(otherVersions == null ? List.of() : otherVersions);
+            retired = List.copyOf(retired == null ? List.of() : retired);
+        }
+
+        /** The same guide marked as one readers cannot see while the section is open to them. */
+        public Guide asEditorsOnly() {
+            return new Guide(title, hostingBadge, externalOnPrivate, links, open, disposed, closed, flags, activity,
+                    needsAttention, openTotal, flagged, flagTotal, manageHref, otherVersions, retired, reader,
+                    commentsHidden, true);
         }
     }
 
+    /** {@code readersSee}: readers who can view the topic see at least one guide, so "Editors only" marks items, not the section. */
     public record View(long topicId, boolean editor, String commentsHref, String settingsHref, List<Guide> guides,
-            int extraGuides) {
+            int extraGuides, boolean readersSee) {
         public View {
             guides = List.copyOf(guides == null ? List.of() : guides);
             commentsHref = commentsHref == null ? "" : commentsHref;

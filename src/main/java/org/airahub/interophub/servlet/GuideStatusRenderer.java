@@ -118,12 +118,12 @@ final class GuideStatusRenderer {
         out.println("            <div class=\"aira-section-card__body\">");
         out.println("              <div class=\"aira-table-wrap\"><table class=\"aira-table aira-table--compact\""
                 + " id=\"guide-status-table\">");
-        out.println("                <thead><tr><th>Guide and topic</th><th>Hosting</th><th>Process version</th>"
+        out.println("                <thead><tr><th>Guide and topic</th><th>Hosting</th><th>Current</th><th>Process version</th>"
                 + "<th>Upgrade impact</th><th>Document version</th><th>Last build</th><th>Last publish</th>"
                 + "<th>Warnings</th><th>Open comments</th><th>Open review flags</th><th>Feedback markers</th>"
                 + "</tr></thead><tbody>");
         if (guides.isEmpty()) {
-            out.println("                  <tr><td class=\"aira-table__empty\" colspan=\"11\">No guides match.</td></tr>");
+            out.println("                  <tr><td class=\"aira-table__empty\" colspan=\"12\">No guides match.</td></tr>");
         }
         for (GuideStatus guide : guides) {
             row(out, contextPath, guide, report);
@@ -190,6 +190,8 @@ final class GuideStatusRenderer {
         }
         html.append("</td>");
         html.append("<td>").append(escape(guide.hosting)).append("</td>");
+        html.append("<td>").append(guide.currentLabel == null
+                ? "<span class=\"aira-muted\">None</span>" : escape(guide.currentLabel)).append("</td>");
         switch (guide.state) {
             case NO_STATUS -> html.append("<td colspan=\"4\"><span class=\"aira-badge aira-badge--subtle\">")
                     .append("No status reported</span></td>");

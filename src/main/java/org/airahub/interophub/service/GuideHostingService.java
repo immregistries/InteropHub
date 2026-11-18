@@ -12,6 +12,7 @@ import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.GuideRows.BuildRow;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.HostedVersion;
+import org.airahub.interophub.service.GuideRows.LabelRow;
 import org.airahub.interophub.service.GuideRows.TopicRow;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -123,6 +124,17 @@ public class GuideHostingService {
      * hosted, unknown document, or unknown label.
      */
     public byte[] open(User user, String documentKey, String label) {
+        Viewed viewed = view(user, documentKey, label);
+        return viewed == null ? null : viewed.html();
+    }
+
+    /**
+     * What the viewer serves, or null for the private-topic refusal. Display states
+     * (plan 3.1): an Authors only label is refused to non-editors; a Retired label
+     * gives non-editors the retired page ({@code html} null, {@code retired} true),
+     * with the Current label when it has an upload. Editors open every label.
+     */
+    public Viewed view(User user, String documentKey, String label) {
         String key;
         String versionLabel;
         try {
@@ -139,21 +151,49 @@ public class GuideHostingService {
         if (topic == null || !store.canView(user, topic)) {
             return null;
         }
-        HostedVersion current = null;
-        for (HostedVersion version : store.versions(document.id)) {
-            if (versionLabel.equals(version.label) && (current == null || newer(version, current))) {
-                current = version;
-            }
-        }
+        List<HostedVersion> versions = store.versions(document.id);
+        HostedVersion current = newest(versions, versionLabel);
         if (current == null) {
             return null;
         }
+        List<LabelRow> settings = store.labels(document.id);
+        String display = GuideLabels.UNLISTED;
+        String currentLabel = null;
+        for (LabelRow row : settings) {
+            if (versionLabel.equals(row.label) && row.display != null) {
+                display = row.display;
+            }
+            if (GuideLabels.CURRENT.equals(row.display) && newest(versions, row.label) != null) {
+                currentLabel = row.label;
+            }
+        }
+        boolean restricted = GuideLabels.AUTHORS_ONLY.equals(display) || GuideLabels.RETIRED.equals(display);
+        if (restricted && !store.canEdit(user, topic)) {
+            if (GuideLabels.AUTHORS_ONLY.equals(display)) {
+                return null;
+            }
+            return new Viewed(null, true, key, versionLabel, versionLabel.equals(currentLabel) ? null : currentLabel);
+        }
         try {
-            return files.read(current.storedFileId);
+            return new Viewed(files.read(current.storedFileId), false, key, versionLabel, currentLabel);
         } catch (IOException ex) {
             LOGGER.log(Level.SEVERE, "Hosted guide could not be read", ex);
             throw new IllegalStateException("The guide could not be read.");
         }
+    }
+
+    private static HostedVersion newest(List<HostedVersion> versions, String label) {
+        HostedVersion current = null;
+        for (HostedVersion version : versions) {
+            if (label.equals(version.label) && (current == null || newer(version, current))) {
+                current = version;
+            }
+        }
+        return current;
+    }
+
+    /** {@code html} is null when {@code retired} is true. */
+    public record Viewed(byte[] html, boolean retired, String documentKey, String label, String currentLabel) {
     }
 
     private JSONArray versionList(String documentKey, List<HostedVersion> versions) {
@@ -256,5 +296,10 @@ public class GuideHostingService {
          */
         void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId, String source,
                 BuildRow build);
+
+        /** Author label settings. A store without them reports none (every label Unlisted). */
+        default List<LabelRow> labels(long documentId) {
+            return List.of();
+        }
     }
 }

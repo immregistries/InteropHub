@@ -80,6 +80,10 @@ public class EsGuideComment {
     @Column(name = "closed_by_user_id")
     private Long closedByUserId;
 
+    /** The label the item was written on, resolved from the guide's pageUrl. Null when unknown. */
+    @Column(name = "made_on_label", length = 64)
+    private String madeOnLabel;
+
     public Long getGuideCommentId() {
         return guideCommentId;
     }
@@ -254,5 +258,13 @@ public class EsGuideComment {
 
     public void setClosedByUserId(Long closedByUserId) {
         this.closedByUserId = closedByUserId;
+    }
+
+    public String getMadeOnLabel() {
+        return madeOnLabel;
+    }
+
+    public void setMadeOnLabel(String madeOnLabel) {
+        this.madeOnLabel = madeOnLabel;
     }
 }

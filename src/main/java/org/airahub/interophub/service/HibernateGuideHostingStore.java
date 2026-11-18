@@ -133,6 +133,14 @@ final class HibernateGuideHostingStore implements GuideHostingService.Store {
         }
     }
 
+    @Override
+    public List<GuideRows.LabelRow> labels(long documentId) {
+        try (Session session = open()) {
+            return new org.airahub.interophub.dao.EsGuideLabelDao().findByDocumentId(session, documentId).stream()
+                    .map(HibernateGuideLabelFacts::toRow).toList();
+        }
+    }
+
     private Map<Long, String> names(List<EsGuideHostedVersion> rows) {
         List<Long> ids = rows.stream().map(EsGuideHostedVersion::getUploadedByUserId).distinct().toList();
         Map<Long, String> names = new HashMap<>();

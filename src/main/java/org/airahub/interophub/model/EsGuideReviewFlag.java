@@ -41,6 +41,10 @@ public class EsGuideReviewFlag {
     @Column(name = "cleared_by_user_id")
     private Long clearedByUserId;
 
+    /** The label the item was written on, resolved from the guide's pageUrl. Null when unknown. */
+    @Column(name = "made_on_label", length = 64)
+    private String madeOnLabel;
+
     public Long getReviewFlagId() {
         return reviewFlagId;
     }
@@ -111,5 +115,13 @@ public class EsGuideReviewFlag {
 
     public void setClearedByUserId(Long clearedByUserId) {
         this.clearedByUserId = clearedByUserId;
+    }
+
+    public String getMadeOnLabel() {
+        return madeOnLabel;
+    }
+
+    public void setMadeOnLabel(String madeOnLabel) {
+        this.madeOnLabel = madeOnLabel;
     }
 }

@@ -1,6 +1,7 @@
 # Topic Reference Comments: API Contract
 
 **Status:** Approved by the product owner 2026-10-30 (Gate 0). Section 8 and the refinements in 3.1 and 3.3 were added by G the same day from the H0 result. 3.4 step 4 corrected the same day: a disallowed origin is refused with `403` before the code checks (found by T2).
+**Amended 2026-11-18** for version display and comment modes (`docs/tasks/topic-reference-version-display-and-comment-modes.md`, decisions V1 to V12): `pageUrl` and `madeOnLabel` (5.2, 5.4, 6), `comments_closed` (2), label-filtered reads with `labelPolicy` and `inScope` (5.3), and the label endpoints (7.5). A client that sends none of the new fields gets exactly the earlier behavior, apart from the added `madeOnLabel` field in responses.
 **Implements:** `docs/topic-reference-comments-design.md`, Sections 4 and 9
 **Primary purpose:** The single agreement between the guide (`guide.js` in `content-publishing-templates`) and InteropHub. Both sides are built against this document and tested against it. A change here is recorded in the workstreams Decisions Log and announced to both streams.
 
@@ -58,6 +59,7 @@ Every error response uses one shape:
 | 403 | `insufficient_scope` | Token lacks the scope. Adds `"requiredScope": "comments"`. `WWW-Authenticate: Bearer realm="interophub", error="insufficient_scope", scope="comments"`. |
 | 403 | `forbidden` | The user may not do this (not an author, not the commenter, cannot view the topic) |
 | 403 | `edit_window_closed` | Commenter edit or withdraw after the 14-day window |
+| 403 | `comments_closed` | Posting a comment, reply, or review flag whose `pageUrl` belongs to a label whose comment mode is Closed (7.5) |
 | 404 | `not_found` | Unknown document key, comment, or flag, or a comment that is deleted |
 | 409 | `conflict` | `expectedUpdatedAt` did not match. Adds `"current": <thread>`. |
 | 409 | `invalid_state` | The action does not fit the comment's state, for example replying to a closed thread or disposing a withdrawn comment |
@@ -85,9 +87,9 @@ Every error response uses one shape:
 
 | Scope | Allows |
 |---|---|
-| `comments` | Section 5 and Section 6 endpoints, `GET /api/guide/{documentKey}`, and `GET /api/guide/{documentKey}/versions` |
-| `topics:read` | `GET /api/guide/{documentKey}`, `GET /api/guide/{documentKey}/versions`, and the topic read endpoints in `docs/tasks/topic-mcp-tools.md` |
-| `topics:write` | Section 7 endpoints and the topic write endpoints. Implies `topics:read`. |
+| `comments` | Section 5 and Section 6 endpoints, `GET /api/guide/{documentKey}`, `GET /api/guide/{documentKey}/versions`, and `GET /api/guide/{documentKey}/labels` |
+| `topics:read` | `GET /api/guide/{documentKey}`, `GET /api/guide/{documentKey}/versions`, `GET /api/guide/{documentKey}/labels`, and the topic read endpoints in `docs/tasks/topic-mcp-tools.md` |
+| `topics:write` | Section 7 endpoints (including `PATCH /api/guide/{documentKey}/labels/{label}`) and the topic write endpoints. Implies `topics:read`. |
 
 A scope only narrows what the user may already do. Each endpoint below names its required scope; a token with any one of the listed scopes is accepted.
 
@@ -214,7 +216,7 @@ GET {hub}/guide/open?doc=<documentKey>[&anchor=<anchor> | &comment=<id>][&label=
 ```
 
 - No sign-in needed to follow the link.
-- InteropHub picks the document's URL whose label matches `label`, or else its first URL in registration order, and redirects (`302`) to `<url>?interophub=signin#<anchor>` or `#comment-<id>`.
+- InteropHub picks the document's URL whose label matches `label`, or else its first URL in registration order, and redirects (`302`) to `<url>?interophub=signin#<anchor>` or `#comment-<id>`. For a hosted (`HUB`) document, `label` may also name any hosted label (for example a Current `v0.2.0`, which has no registered URL); the redirect then goes to that label's view URL (7.4), and the viewer applies the label's display state.
 - Unknown, inactive, or URL-less documents show InteropHub's normal not-found page.
 - The guide, on load, sees `interophub=signin`: if it holds an unexpired token it removes the marker with `history.replaceState` and does nothing else; otherwise it starts Step 1 at once.
 - The link never carries a token or code.
@@ -314,6 +316,7 @@ Comments are always returned as threads: a top-level comment with its replies.
   "closedAt": null,
   "closedBy": null,
   "deleted": false,
+  "madeOnLabel": "v0.2.0",
   "permissions": {
     "canEdit": false,
     "canWithdraw": false,
@@ -336,6 +339,7 @@ Comments are always returned as threads: a top-level comment with its replies.
       "updatedAt": "2026-11-03T10:00:00.000Z",
       "withdrawn": false,
       "deleted": false,
+      "madeOnLabel": "main",
       "permissions": { "canEdit": true, "canWithdraw": true, "canDelete": true }
     }
   ]
@@ -351,6 +355,8 @@ Rules:
 - `mine` (threads and replies) is true when the caller wrote it. It drives the guide's "Mine" filter. Unlike `canEdit` and `canWithdraw`, it does not lapse when the edit window closes. Added in the release that introduced guide build status; older guides ignore it.
 - `permissions` are computed for the caller, so the guide shows only controls that will work. The server checks again on every write. `canClose` covers both closing and reopening (5.6 `state`): for an author it is true on `OPEN`, `DISPOSED`, and `CLOSED`, and false on `WITHDRAWN`.
 - Replies are ordered by `createdAt`. Threads are ordered by `createdAt` of the top-level comment.
+- `madeOnLabel` (threads and replies; string or `null`) is the label the item was written on, resolved from the `pageUrl` sent when it was created (5.4). `null` for items written before this field existed, by a guide that sent no `pageUrl`, or from an address InteropHub did not recognize. It is context only; it never splits the conversation (V6).
+- `inScope` (top-level threads only, boolean) appears only in a 5.3 listing that named a known label. See 5.3.
 
 ### 5.3 `GET /api/guide/{documentKey}/comments`
 
@@ -361,6 +367,8 @@ Scope: `comments`. Requires `canView`.
 | `state` | Comma-separated states. Default `OPEN,DISPOSED`. `all` means every state. |
 | `anchor` | Only threads on this anchor. |
 | `since` | A `serverTime` from an earlier response. Returns every thread whose `updatedAt` is **at or after** `since`, in any state, including tombstones. `state` is ignored when `since` is given. |
+| `label` | Optional. The label the guide page belongs to, such as `v0.2.0` or `main` (at most 64 characters). Filters per 5.3.1. |
+| `pageUrl` | Optional. The guide page's address (at most 2,000 characters), resolved to a label as in 5.4.1. Ignored when `label` is given. |
 
 ```json
 {
@@ -373,6 +381,44 @@ Scope: `comments`. Requires `canView`.
 - The guide passes the last response's `serverTime` as the next `since`, and merges threads by `id`, so an item seen twice at the boundary is harmless.
 - `reviewFlags` is always the full list of active flags for the document (6.1), so one poll refreshes both. It is small.
 - No paging. If a document passes 1,000 threads this is revisited.
+
+#### 5.3.1 Filtering by label
+
+**Without `label` or `pageUrl`:** the listing is unfiltered, exactly as before, and the response has **no** `labelPolicy` key and no `inScope` fields.
+
+**With either:** the response gains `labelPolicy`:
+
+```json
+{
+  "serverTime": "…",
+  "comments": [ { "…thread…": "", "inScope": true } ],
+  "reviewFlags": [ { "…flag…": "", "inScope": false } ],
+  "labelPolicy": {
+    "label": "v0.2.0",
+    "display": "current",
+    "commentMode": "release",
+    "publishedAt": "2026-11-18T12:43:53.621Z"
+  }
+}
+```
+
+- `labelPolicy` is `null` when the label is unknown (not a known label, 7.5, or a `pageUrl` that does not resolve). The listing is then unfiltered, as for an Open label, and carries no `inScope`.
+- `display` is `current`, `listed`, `unlisted`, `authors_only`, or `retired`. `commentMode` is `open`, `release`, or `closed`. `publishedAt` is the label's publication time (below), or `null`.
+- **Publication time:** the label's newest hosted upload; otherwise the `received_at` of its newest build report; otherwise, while its mode is Release, the time the mode was last changed.
+- **Scope:** a top-level comment or a review flag is in scope for label L when it was written on L (`madeOnLabel = L`) or was created before L's publication time. Items with no `madeOnLabel` count by creation time. Replies follow their thread: a reply is shown wherever its top-level comment is shown, whatever label the reply was written on.
+
+| `commentMode` | Readers get | Authors (`isAuthor`) get |
+|---|---|---|
+| `open` | Everything; every `inScope` is `true` | Everything; every `inScope` is `true` |
+| `release` | Only in-scope threads and flags; every `inScope` is `true` | Everything; out-of-scope items have `inScope: false` |
+| `closed` | `comments: []`, `reviewFlags: []` | `comments: []`, `reviewFlags: []` |
+
+- The same filter applies to `since` listings, tombstones included: a thread hidden on the label is never sent, not even as a tombstone.
+- `inScope` is on top-level threads and on flags, never on replies or tombstones.
+- The display state does not filter comments. An Authors only or Retired label still answers with its `labelPolicy` (the guide can show a banner); only the comment mode filters.
+- Closing a label hides its comments only there. The same comments still appear on other labels, in unfiltered listings, and on InteropHub's comments page.
+
+**Guide use:** pass `pageUrl` (or `label`) on every load and poll; show a banner from `labelPolicy`; hide the comment and flag controls when `commentMode` is `closed`; for authors, mark items with `inScope: false`.
 
 The guide's refresh timing is in design 9.2; it is a client rule and not part of this contract.
 
@@ -397,12 +443,24 @@ Reply:
 ```json
 {
   "parentCommentId": 482,
-  "text": "Agreed, the framework already lists them."
+  "text": "Agreed, the framework already lists them.",
+  "pageUrl": "https://<org>.github.io/contextual-conditions/main/"
 }
 ```
 
+Both forms accept an optional `pageUrl`: the address of the guide page the reader is on (the guide sends `location.href`). Text, at most 2,000 characters after trimming; otherwise `400 invalid_field`, `field: pageUrl`.
+
+#### 5.4.1 Resolving `pageUrl` to a label
+
+1. The query and fragment are ignored. Scheme and host compare without case; the path compares exactly.
+2. **Hosted:** `{hub}/guide/view/{documentKey}/{label}/…` gives `{label}` when it is a valid hosted label (7.4).
+3. **External:** otherwise, the longest registered guide URL of the document that the address starts with gives that URL's label. An address equal to a registered URL without its trailing slash also matches.
+4. Anything else, or no `pageUrl`: no label. The comment is accepted with `madeOnLabel: null` and treated as Open. Older guides send no `pageUrl` and keep working.
+
+If the resolved label's comment mode is `closed`, the write is refused with `403 comments_closed`. A reply is checked against its own `pageUrl`, not its thread's label. The resolved label is stored as `madeOnLabel`.
+
 - `anchor`, `blockIndex`, and `text` are required for a top-level comment; `snippet` is optional (agents may not have one); `sourceNote` is optional.
-- For a reply, only `parentCommentId` and `text` are read; other fields are ignored.
+- For a reply, only `parentCommentId`, `text`, and `pageUrl` are read; other fields are ignored.
 - Replying to a reply: `400 invalid_field`, `field: parentCommentId`.
 - Replying to a thread that is `CLOSED`, `WITHDRAWN`, or deleted: `409 invalid_state`.
 - The comment is attributed to the token's user.
@@ -452,16 +510,19 @@ Scope: `comments`. Authors only. Deleting a top-level comment deletes its replie
   "createdAt": "2026-11-05T14:00:00.000Z",
   "updatedAt": "2026-11-05T14:00:00.000Z",
   "clearedAt": null,
-  "clearedBy": null
+  "clearedBy": null,
+  "madeOnLabel": "v0.3.0"
 }
 ```
+
+`madeOnLabel` is as in 5.2. `inScope` is added only in a 5.3 listing that named a known label.
 
 ### 6.2 Endpoints
 
 | Method and path | Scope | Who | Result |
 |---|---|---|---|
 | `GET /api/guide/{documentKey}/review-flags?includeCleared=false` | `comments` | `canView` | `200 {"serverTime": …, "reviewFlags": [ … ]}` |
-| `POST /api/guide/{documentKey}/review-flags` with `{"anchor": …, "note": …}` | `comments` | Authors | `201` with the flag. If the anchor already has an active flag, its note is replaced and `200` is returned with it, so the call is safe to repeat. |
+| `POST /api/guide/{documentKey}/review-flags` with `{"anchor": …, "note": …, "pageUrl"?: …}` | `comments` | Authors | `201` with the flag. If the anchor already has an active flag, its note is replaced and `200` is returned with it, so the call is safe to repeat; that flag keeps the `madeOnLabel` it was created with. `pageUrl` resolves as in 5.4.1; on a Closed label: `403 comments_closed`. |
 | `DELETE /api/guide/{documentKey}/review-flags/{id}` | `comments` | Authors | Clears the flag (sets `clearedAt`, `clearedBy`). `204`. Already cleared: `204`. |
 
 At most one active flag per anchor per document.
@@ -589,6 +650,72 @@ One object per label, the newest upload, plus `historyCount` (every upload of th
 
 Errors use Section 2. `400 invalid_field` names `label`, `type`, or `size`. `403 forbidden` when the caller cannot edit (upload) or view (list). `403 insufficient_scope` when the token lacks the scope. `404 not_found` for an unknown document key. `409 document_inactive` when uploading to an inactive document. `409 invalid_state` when uploading to a document that is not `HUB`. Each upload is recorded in `es_topic_change`.
 
+### 7.5 Labels: display state and comment mode
+
+A guide's **known labels** are: a hosted guide's uploaded labels, the labels of its registered guide URLs (for a hosted guide, `latest` and `main`), labels named in its build reports, and labels that already have a setting. A known label with no setting is `unlisted` / `open`.
+
+| Display | Topic page, readers | Hosted viewer, readers |
+|---|---|---|
+| `current` (at most one) | Main link, "Read the guide" | Opens |
+| `listed` | Under "Other versions" | Opens |
+| `unlisted` (default) | Not shown | Opens with the link |
+| `authors_only` | Not shown | Refused (the private-topic page) |
+| `retired` | Not shown | "This version has been retired", linking to the Current label if it has an upload |
+
+Topic editors see and open every label. Comment modes (`open`, default; `release`; `closed`) are applied as in 5.3.1.
+
+```http
+GET {hub}/api/guide/{documentKey}/labels
+```
+
+Scope: `comments` or `topics:read`. Requires `canView` (`403 forbidden` otherwise; `404 not_found` for an unknown key). `200`:
+
+```json
+{
+  "documentKey": "contextual-conditions",
+  "labels": [
+    { "label": "latest", "display": "unlisted", "commentMode": "open", "publishedAt": null, "openInScope": 8 },
+    { "label": "v0.2.0", "display": "current", "commentMode": "release",
+      "publishedAt": "2026-11-18T12:43:53.621Z", "openInScope": 6 }
+  ]
+}
+```
+
+- Order: `latest`, `main`, then the newest `publishedAt` first, then by name.
+- Readers (not `isAuthor`) do not get `authors_only` or `retired` labels, and get no `openInScope`.
+- `openInScope` (authors only, information only): open, live, top-level comments a reader would see on the label: every open comment on an `open` label; otherwise those in scope (5.3.1), whatever the mode. It never blocks a change.
+
+```http
+PATCH {hub}/api/guide/{documentKey}/labels/{label}
+Authorization: Bearer ihp_…
+Content-Type: application/json
+
+{ "display": "current", "commentMode": "release" }
+```
+
+- Scope `topics:write`, and the caller must satisfy `canEditTopic` (`403 forbidden` otherwise, for example a reader).
+- `{label}` is the label as listed, percent-encoded in the path when needed.
+- Body: `display` and/or `commentMode`, values as listed above; case is ignored. At least one is required (`400 invalid_request` for an empty body). Any other field, `null`, or an unknown value: `400 invalid_field` naming the field.
+- Unknown label: `404 not_found`.
+- Setting `current` turns the previous Current label into `listed` in the same transaction.
+- Setting `closed` always succeeds, even with open comments in scope (decision V9). Those comments disappear on that label only.
+- Changing the comment mode records the time (it becomes the publication time of a Release label that has no upload or build).
+- `200` with the label object (as in `GET /labels`, with `openInScope`) plus `demoted`: the label object of the previous Current label, or `null`.
+- A request that changes nothing returns `200` and records nothing. Each change is recorded in `es_topic_change` (`change_type` `GUIDE`, `{"label": {"documentKey", "label", "display": {"from", "to"}, "commentMode": {"from", "to"}, "demoted": {…}}}`, values in API spelling).
+- `PATCH` already passes production Apache (AART #3962). The same settings are on the guide settings page.
+
+```json
+{
+  "label": "v0.3.0",
+  "display": "current",
+  "commentMode": "release",
+  "publishedAt": "2026-11-18T12:43:50.923Z",
+  "openInScope": 4,
+  "demoted": { "label": "v0.2.0", "display": "listed", "commentMode": "release",
+               "publishedAt": "2026-11-18T12:43:53.621Z", "openInScope": 6 }
+}
+```
+
 ## 8. MCP
 
 Endpoint: `{hub}/mcp`, `Authorization: Bearer <personal access token>`. Guide tokens are refused (`403 forbidden`), since they belong to a browser.
@@ -634,6 +761,7 @@ The contract needs these on top of design Section 8. H1 to H3 own the schema.
 | 3.6 `/guide/open`, approved URL prefixes | H2 (they need the guide registration tables) | T2 |
 | 5.1, 5.3, 5.4, 5.5, `text` in 5.6, 5.7 | H2 | T2 |
 | 7 | H2 (HTTP and registration page) | T4 (setup tooling) |
+| 5.3.1, 5.4.1, `madeOnLabel`, 7.5 (version display and comment modes) | InteropHub, 2026-11-18 | Templates v0.22.0 |
 | 5.6 author fields, 5.8, 6 | H3 | T3 |
 | 8 | H4, E2 | none |
 

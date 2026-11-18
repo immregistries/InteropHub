@@ -210,6 +210,7 @@ public class GuideBuildService {
             }
             guide.openComments = inputs.openComments.getOrDefault(document.id, 0L);
             guide.openFlags = inputs.openFlags.getOrDefault(document.id, 0L);
+            guide.currentLabel = inputs.currentLabels.get(document.id);
             BuildRow build = inputs.latestBuilds.get(document.id);
             guide.latestBuild = build;
             LocalDateTime hosted = inputs.lastHostedUploads.get(document.id);
@@ -431,6 +432,8 @@ public class GuideBuildService {
         public TreeSet<String> warningCodes = new TreeSet<>();
         public long openComments;
         public long openFlags;
+        /** The guide's Current label, or null (plan Section 6). */
+        public String currentLabel;
         public Integer feedbackMarkers;
         public String error;
         public BuildRow latestBuild;
@@ -478,6 +481,7 @@ public class GuideBuildService {
         public Map<Long, Long> openFlags = new LinkedHashMap<>();
         public Map<Long, LocalDateTime> lastHostedUploads = new LinkedHashMap<>();
         public Map<Long, String> guideUrls = new LinkedHashMap<>();
+        public Map<Long, String> currentLabels = new LinkedHashMap<>();
     }
 
     /** A process version label such as {@code v0.21.0} or {@code v1.2.0-rc1}. */

@@ -185,6 +185,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
             entity.setCreatedByUserId(row.createdByUserId);
             entity.setCreatedAt(row.createdAt);
             entity.setUpdatedAt(row.updatedAt);
+            entity.setMadeOnLabel(row.madeOnLabel);
             session.persist(entity);
             session.flush();
             row.id = entity.getReviewFlagId();
@@ -285,6 +286,19 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
     }
 
     @Override
+    public GuideLabels.Facts labelFacts(long documentId) {
+        try (Session session = open()) {
+            return HibernateGuideLabelFacts.load(session, documentId);
+        }
+    }
+
+    @Override
+    public String publicBaseUrl() {
+        String base = publicUrlService.resolveExternalUrl("/");
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    }
+
+    @Override
     public String topicUrl(long topicId) {
         return publicUrlService.resolveExternalUrl("/es/topic/" + topicId);
     }
@@ -297,6 +311,8 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         row.title = entity.getTitle();
         row.repositoryUrl = entity.getRepositoryUrl();
         row.active = Boolean.TRUE.equals(entity.getActive());
+        row.hosting = entity.getHosting() == null || entity.getHosting().isBlank()
+                ? GuideHtmlRules.EXTERNAL : entity.getHosting();
         row.createdByUserId = entity.getCreatedByUserId();
         row.createdAt = entity.getCreatedAt();
         row.updatedAt = entity.getUpdatedAt();
@@ -340,6 +356,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         entity.setDisposedByUserId(row.disposedByUserId);
         entity.setClosedAt(row.closedAt);
         entity.setClosedByUserId(row.closedByUserId);
+        entity.setMadeOnLabel(row.madeOnLabel);
     }
 
     private static void touchParent(Session session, CommentRow parent) {
@@ -366,7 +383,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         }
     }
 
-    private static CommentRow toComment(EsGuideComment entity) {
+    static CommentRow toComment(EsGuideComment entity) {
         CommentRow row = new CommentRow();
         row.id = entity.getGuideCommentId();
         row.documentId = entity.getGuideDocumentId();
@@ -390,6 +407,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         row.disposedByUserId = entity.getDisposedByUserId();
         row.closedAt = entity.getClosedAt();
         row.closedByUserId = entity.getClosedByUserId();
+        row.madeOnLabel = entity.getMadeOnLabel();
         return row;
     }
 
@@ -404,6 +422,7 @@ final class HibernateGuideCommentStore implements GuideCommentService.Store {
         row.updatedAt = entity.getUpdatedAt();
         row.clearedAt = entity.getClearedAt();
         row.clearedByUserId = entity.getClearedByUserId();
+        row.madeOnLabel = entity.getMadeOnLabel();
         return row;
     }
 

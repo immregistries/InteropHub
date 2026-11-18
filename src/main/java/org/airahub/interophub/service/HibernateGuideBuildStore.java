@@ -143,6 +143,9 @@ final class HibernateGuideBuildStore implements GuideBuildService.Store {
                 }
             }
             guideUrls(session, inputs);
+            for (var label : new org.airahub.interophub.dao.EsGuideLabelDao().findCurrent(session)) {
+                inputs.currentLabels.put(label.getGuideDocumentId(), label.getLabel());
+            }
         }
         return inputs;
     }

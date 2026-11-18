@@ -18,6 +18,7 @@ import org.airahub.interophub.service.GuideBuildService;
 import org.airahub.interophub.service.GuideCommentService;
 import org.airahub.interophub.service.GuideHostingService;
 import org.airahub.interophub.service.GuideHtmlRules;
+import org.airahub.interophub.service.GuideLabelService;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRegistrationService.UrlInput;
 import org.airahub.interophub.service.GuideRequestAuth;
@@ -39,10 +40,11 @@ public class GuideApiServlet extends HttpServlet {
     private final PublicUrlService publicUrls;
     private final GuideHostingService hosting;
     private final GuideBuildService builds;
+    private final GuideLabelService labels;
 
     public GuideApiServlet() {
         this(new GuideCommentService(), new GuideRegistrationService(), new PublicUrlService(), new GuideHostingService(),
-                new GuideBuildService());
+                new GuideBuildService(), new GuideLabelService());
     }
 
     public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration, PublicUrlService publicUrls) {
@@ -56,6 +58,13 @@ public class GuideApiServlet extends HttpServlet {
 
     public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration,
             PublicUrlService publicUrls, GuideHostingService hosting, GuideBuildService builds) {
+        this(comments, registration, publicUrls, hosting, builds, null);
+    }
+
+    public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration,
+            PublicUrlService publicUrls, GuideHostingService hosting, GuideBuildService builds,
+            GuideLabelService labels) {
+        this.labels = labels;
         this.comments = comments;
         this.registration = registration;
         this.publicUrls = publicUrls;
@@ -120,7 +129,15 @@ public class GuideApiServlet extends HttpServlet {
                 return;
             }
             write(response, HttpServletResponse.SC_OK, comments.list(user(request), parts[3],
-                    request.getParameter("state"), request.getParameter("anchor"), request.getParameter("since")));
+                    request.getParameter("state"), request.getParameter("anchor"), request.getParameter("since"),
+                    request.getParameter("label"), request.getParameter("pageUrl")));
+            return;
+        }
+        if (parts.length == 5 && "labels".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS, GuideScopes.TOPICS_READ)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_OK, labels.list(user(request), parts[3]));
             return;
         }
         if (parts.length == 5 && "comments".equals(parts[3])) {
@@ -264,6 +281,14 @@ public class GuideApiServlet extends HttpServlet {
             write(response, HttpServletResponse.SC_OK, result);
             return;
         }
+        if (parts.length == 6 && "labels".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.TOPICS_WRITE)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_OK, labels.patch(user(request), tokenId(request), "API", parts[3],
+                    pathSegment(parts[5]), jsonBody(request)));
+            return;
+        }
         if (parts.length == 5 && "comments".equals(parts[3])) {
             if (!GuideRequestAuth.requireScope(request, response, GuideScopes.COMMENTS)) {
                 return;
@@ -356,6 +381,15 @@ public class GuideApiServlet extends HttpServlet {
             return true;
         }
         throw GuideApiException.invalidRequest("dryRun must be true or false.");
+    }
+
+    /** A label in the path may be percent-encoded (external labels can hold spaces). */
+    private static String pathSegment(String raw) {
+        try {
+            return java.net.URLDecoder.decode(raw.replace("+", "%2B"), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            throw GuideApiException.notFound("That label was not found.");
+        }
     }
 
     private static long positiveId(String raw, String missing) {

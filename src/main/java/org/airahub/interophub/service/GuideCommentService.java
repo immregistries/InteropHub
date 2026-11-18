@@ -61,7 +61,21 @@ public class GuideCommentService {
     }
 
     public JSONObject list(User user, String documentKey, String state, String anchor, String since) {
+        return list(user, documentKey, state, anchor, since, null, null);
+    }
+
+    /**
+     * Contract 5.3 with the label rules of plan 3.2. Without {@code label} or
+     * {@code pageUrl} the listing is unfiltered and has no {@code labelPolicy}, as
+     * before. With one, an unknown label gives {@code labelPolicy: null} and an
+     * unfiltered listing; a known label filters for readers (Release: in scope only;
+     * Closed: nothing for anyone) and marks each top-level item with {@code inScope}.
+     */
+    public JSONObject list(User user, String documentKey, String state, String anchor, String since, String label,
+            String pageUrl) {
         Loaded loaded = requireView(user, documentKey);
+        boolean labelRequested = (label != null && !label.isBlank()) || (pageUrl != null && !pageUrl.isBlank());
+        GuideLabels.Policy policy = labelRequested ? readPolicy(loaded, label, pageUrl) : null;
         LocalDateTime now = ApiTime.now();
         boolean sinceMode = since != null;
         if (sinceMode) {
@@ -73,10 +87,14 @@ public class GuideCommentService {
         Set<String> states = sinceMode ? STATES : parseStates(state);
         String anchorFilter = anchor == null || anchor.isBlank() ? null : anchor.trim();
         List<CommentRow> rows = store.comments(loaded.document.id);
-        Map<Long, Person> people = store.people(userIds(rows, store.activeFlags(loaded.document.id)));
+        List<FlagRow> activeFlags = store.activeFlags(loaded.document.id);
+        Map<Long, Person> people = store.people(userIds(rows, activeFlags));
         JSONArray comments = new JSONArray();
         for (CommentRow parent : parents(rows)) {
             if (anchorFilter != null && !anchorFilter.equals(parent.anchor)) {
+                continue;
+            }
+            if (policy != null && !policy.shows(loaded.canEdit, parent.madeOnLabel, parent.createdAt)) {
                 continue;
             }
             if (sinceMode) {
@@ -85,15 +103,24 @@ public class GuideCommentService {
                 }
                 comments.put(parent.deleted()
                         ? tombstone(parent)
-                        : thread(parent, replies(rows, parent.id), user, loaded, people, true));
+                        : thread(parent, replies(rows, parent.id), user, loaded, people, true, policy));
             } else if (!parent.deleted() && states.contains(parent.state)) {
-                comments.put(thread(parent, replies(rows, parent.id), user, loaded, people, false));
+                comments.put(thread(parent, replies(rows, parent.id), user, loaded, people, false, policy));
+            }
+        }
+        List<FlagRow> shownFlags = new ArrayList<>();
+        for (FlagRow flag : activeFlags) {
+            if (policy == null || policy.shows(loaded.canEdit, flag.madeOnLabel, flag.createdAt)) {
+                shownFlags.add(flag);
             }
         }
         JSONObject json = new JSONObject();
         json.put("serverTime", ApiTime.format(now));
         json.put("comments", comments);
-        json.put("reviewFlags", flags(store.activeFlags(loaded.document.id), loaded.document.documentKey, people));
+        json.put("reviewFlags", flags(shownFlags, loaded.document.documentKey, people, policy));
+        if (labelRequested) {
+            json.put("labelPolicy", policy == null ? JSONObject.NULL : policy.json());
+        }
         return json;
     }
 
@@ -108,7 +135,9 @@ public class GuideCommentService {
         String text = requiredText(body);
         String snippet = optionalSnippet(body);
         String sourceNote = optionalSourceNote(body);
+        String madeOnLabel = writeLabel(loaded, body);
         CommentRow row = new CommentRow();
+        row.madeOnLabel = madeOnLabel;
         row.documentId = loaded.document.id;
         row.anchor = anchor;
         row.blockIndex = blockIndex;
@@ -208,18 +237,19 @@ public class GuideCommentService {
         Map<Long, Person> people = store.people(userIds(List.of(), rows));
         JSONObject json = new JSONObject();
         json.put("serverTime", ApiTime.format(ApiTime.now()));
-        json.put("reviewFlags", flags(rows, loaded.document.documentKey, people));
+        json.put("reviewFlags", flags(rows, loaded.document.documentKey, people, null));
         return json;
     }
 
     public FlagResult flag(User user, String documentKey, JSONObject body) {
-        refuseUnknown(body, Set.of("anchor", "note"));
+        refuseUnknown(body, Set.of("anchor", "note", "pageUrl"));
         Loaded loaded = requireComment(user, documentKey);
         if (!loaded.canEdit) {
             throw GuideApiException.forbidden("Only an author can flag an area for review.");
         }
         String anchor = requiredAnchor(body);
         String note = requiredNote(body);
+        String madeOnLabel = writeLabel(loaded, body);
         LocalDateTime now = LocalDateTime.now();
         FlagRow existing = store.activeFlag(loaded.document.id, anchor);
         if (existing != null) {
@@ -237,6 +267,7 @@ public class GuideCommentService {
         row.createdByUserId = user.getUserId();
         row.createdAt = now;
         row.updatedAt = now;
+        row.madeOnLabel = madeOnLabel;
         store.insertFlag(row);
         return new FlagResult(201, flagJson(row, loaded.document.documentKey, user));
     }
@@ -304,7 +335,9 @@ public class GuideCommentService {
             throw GuideApiException.invalidState("Replies are closed on this comment.");
         }
         String text = requiredText(body);
+        String madeOnLabel = writeLabel(loaded, body);
         CommentRow row = new CommentRow();
+        row.madeOnLabel = madeOnLabel;
         row.documentId = loaded.document.id;
         row.parentId = parent.id;
         row.text = text;
@@ -330,11 +363,11 @@ public class GuideCommentService {
             throw GuideApiException.notFound("That comment was not found.");
         }
         Map<Long, Person> people = store.people(userIds(rows, List.of()));
-        return thread(parent, replies(rows, parent.id), user, loaded, people, false);
+        return thread(parent, replies(rows, parent.id), user, loaded, people, false, null);
     }
 
     private JSONObject thread(CommentRow parent, List<CommentRow> replies, User user, Loaded loaded,
-            Map<Long, Person> people, boolean sinceMode) {
+            Map<Long, Person> people, boolean sinceMode, GuideLabels.Policy policy) {
         JSONObject json = new JSONObject();
         json.put("id", parent.id);
         json.put("documentKey", loaded.document.documentKey);
@@ -369,6 +402,10 @@ public class GuideCommentService {
         json.put("closedBy", parent.closedByUserId == null
                 ? JSONObject.NULL : GuideResponses.person(people.get(parent.closedByUserId)));
         json.put("deleted", false);
+        json.put("madeOnLabel", parent.madeOnLabel == null ? JSONObject.NULL : parent.madeOnLabel);
+        if (policy != null) {
+            json.put("inScope", policy.reportedInScope(parent.madeOnLabel, parent.createdAt));
+        }
         json.put("permissions", threadPermissions(parent, user, loaded));
         JSONArray replyJson = new JSONArray();
         for (CommentRow reply : replies) {
@@ -397,6 +434,7 @@ public class GuideCommentService {
         json.put("updatedAt", time(row.updatedAt));
         json.put("withdrawn", row.withdrawn());
         json.put("deleted", false);
+        json.put("madeOnLabel", row.madeOnLabel == null ? JSONObject.NULL : row.madeOnLabel);
         JSONObject permissions = new JSONObject();
         boolean ownWindow = sameUser(row.userId, user) && withinWindow(row.createdAt, LocalDateTime.now())
                 && !row.withdrawn();
@@ -431,7 +469,8 @@ public class GuideCommentService {
         return json;
     }
 
-    private JSONArray flags(List<FlagRow> flags, String documentKey, Map<Long, Person> people) {
+    private JSONArray flags(List<FlagRow> flags, String documentKey, Map<Long, Person> people,
+            GuideLabels.Policy policy) {
         JSONArray array = new JSONArray();
         for (FlagRow flag : flags) {
             JSONObject json = new JSONObject();
@@ -445,6 +484,10 @@ public class GuideCommentService {
             json.put("clearedAt", time(flag.clearedAt));
             json.put("clearedBy", flag.clearedByUserId == null
                     ? JSONObject.NULL : GuideResponses.person(people.get(flag.clearedByUserId)));
+            json.put("madeOnLabel", flag.madeOnLabel == null ? JSONObject.NULL : flag.madeOnLabel);
+            if (policy != null) {
+                json.put("inScope", policy.reportedInScope(flag.madeOnLabel, flag.createdAt));
+            }
             array.put(json);
         }
         return array;
@@ -661,7 +704,7 @@ public class GuideCommentService {
                 people.put(actor.getUserId(), person);
             }
         }
-        return flags(List.of(flag), documentKey, people).getJSONObject(0);
+        return flags(List.of(flag), documentKey, people, null).getJSONObject(0);
     }
 
     private String dispositionCode(JSONObject body) {
@@ -740,6 +783,125 @@ public class GuideCommentService {
                 throw GuideApiException.invalidField(key, "That field is not accepted on this request.");
             }
         }
+    }
+
+    /**
+     * The label a write belongs to (plan 3.3), or null. Refuses with
+     * {@code comments_closed} when that label is Closed (decision V8).
+     */
+    private String writeLabel(Loaded loaded, JSONObject body) {
+        String pageUrl = optionalPageUrl(body);
+        if (pageUrl == null) {
+            return null;
+        }
+        String label = GuideLabels.resolve(pageUrl, loaded.document.documentKey, store.publicBaseUrl(),
+                loaded.document.urls);
+        if (label == null) {
+            return null;
+        }
+        GuideLabels.Policy policy = store.labelFacts(loaded.document.id).policy(label);
+        if (policy != null && policy.closed()) {
+            throw GuideApiException.commentsClosed();
+        }
+        return label;
+    }
+
+    /** The policy for a read: {@code label} wins over {@code pageUrl}. Null for an unknown label. */
+    private GuideLabels.Policy readPolicy(Loaded loaded, String label, String pageUrl) {
+        String name;
+        if (label != null && !label.isBlank()) {
+            name = label.trim();
+            if (name.length() > GuideLabels.MAX_LABEL) {
+                throw GuideApiException.invalidField("label", "Label must be at most 64 characters.");
+            }
+        } else {
+            String address = pageUrl.trim();
+            if (address.length() > GuideLabels.MAX_PAGE_URL) {
+                throw GuideApiException.invalidField("pageUrl", "pageUrl must be at most 2,000 characters.");
+            }
+            name = GuideLabels.resolve(address, loaded.document.documentKey, store.publicBaseUrl(),
+                    loaded.document.urls);
+        }
+        return name == null ? null : store.labelFacts(loaded.document.id).policy(name);
+    }
+
+    /**
+     * Topic page totals as a reader of one label sees them: unfiltered for an Open
+     * or unknown label, in-scope threads only for Release, and nothing for Closed.
+     */
+    public TopicReferenceDigest digestFor(long documentId, GuideLabels.Policy policy) {
+        if (policy == null || GuideLabels.OPEN.equals(policy.commentMode())) {
+            return store.digest(documentId);
+        }
+        if (policy.closed()) {
+            return TopicReferenceDigest.empty();
+        }
+        List<CommentRow> rows = store.comments(documentId);
+        Set<Long> shown = new java.util.HashSet<>();
+        List<CommentRow> kept = new ArrayList<>();
+        for (CommentRow row : rows) {
+            if (row.parentId == null && policy.shows(false, row.madeOnLabel, row.createdAt)) {
+                shown.add(row.id);
+                kept.add(row);
+            }
+        }
+        for (CommentRow row : rows) {
+            if (row.parentId != null && shown.contains(row.parentId)) {
+                kept.add(row);
+            }
+        }
+        List<FlagRow> flags = new ArrayList<>();
+        for (FlagRow flag : store.activeFlags(documentId)) {
+            if (policy.shows(false, flag.madeOnLabel, flag.createdAt)) {
+                flags.add(flag);
+            }
+        }
+        Map<Long, String> names = new java.util.LinkedHashMap<>();
+        for (Map.Entry<Long, Person> entry : store.people(userIds(kept, List.of())).entrySet()) {
+            names.put(entry.getKey(), entry.getValue() == null ? null : entry.getValue().displayName);
+        }
+        return TopicReferenceDigest.of(kept, flags, names);
+    }
+
+    /**
+     * Top-level comment ids in scope for a label, by the rule behind {@code openInScope}
+     * (every comment on an Open label; otherwise plan 3.2's scope, whatever the mode).
+     * Null when the label is unknown. For the comments page's label filter; the mode
+     * does not hide anything there (decision V9).
+     */
+    public Set<Long> threadsInScope(User user, String documentKey, String label) {
+        Loaded loaded = requireView(user, documentKey);
+        GuideLabels.Policy policy = label == null ? null : store.labelFacts(loaded.document.id).policy(label);
+        if (policy == null) {
+            return null;
+        }
+        Set<Long> ids = new java.util.HashSet<>();
+        for (CommentRow row : store.comments(loaded.document.id)) {
+            if (row.parentId == null && (GuideLabels.OPEN.equals(policy.commentMode())
+                    || policy.inScope(row.madeOnLabel, row.createdAt))) {
+                ids.add(row.id);
+            }
+        }
+        return ids;
+    }
+
+    /** Label facts for a guide, for the topic page and the comments page. */
+    public GuideLabels.Facts labelFacts(long documentId) {
+        return store.labelFacts(documentId);
+    }
+
+    private static String optionalPageUrl(JSONObject body) {
+        if (!body.has("pageUrl") || body.isNull("pageUrl")) {
+            return null;
+        }
+        if (!(body.get("pageUrl") instanceof String raw)) {
+            throw GuideApiException.invalidField("pageUrl", "pageUrl must be text.");
+        }
+        String value = raw.trim();
+        if (value.length() > GuideLabels.MAX_PAGE_URL) {
+            throw GuideApiException.invalidField("pageUrl", "pageUrl must be at most 2,000 characters.");
+        }
+        return value.isEmpty() ? null : value;
     }
 
     private Loaded requireComment(User user, String documentKey) {
@@ -1072,5 +1234,15 @@ public class GuideCommentService {
         void updateComments(List<CommentRow> rows, List<AuditRow> audits);
 
         String topicUrl(long topicId);
+
+        /** Labels of the guide. A store without labels reports none, so every label is unknown (Open). */
+        default GuideLabels.Facts labelFacts(long documentId) {
+            return GuideLabels.Facts.empty();
+        }
+
+        /** InteropHub's external base URL with its context path and no trailing slash. */
+        default String publicBaseUrl() {
+            return null;
+        }
     }
 }

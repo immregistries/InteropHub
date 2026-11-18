@@ -6,6 +6,8 @@ import java.util.regex.Pattern;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.airahub.interophub.service.GuideApiException;
+import org.airahub.interophub.service.GuideHtmlRules;
 import org.airahub.interophub.service.GuideRegistrationService;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.UrlBinding;
@@ -34,17 +36,26 @@ public class GuideOpenServlet extends HttpServlet {
         }
         String label = trim(request.getParameter("label"));
         UrlBinding chosen = document.urls.get(0);
+        String chosenUrl = chosen.url;
         if (label != null) {
+            boolean matched = false;
             for (UrlBinding binding : document.urls) {
                 if (label.equals(binding.label)) {
-                    chosen = binding;
+                    chosenUrl = binding.url;
+                    matched = true;
                     break;
+                }
+            }
+            if (!matched) {
+                String hosted = hostedLabelUrl(document, label);
+                if (hosted != null) {
+                    chosenUrl = hosted;
                 }
             }
         }
         String comment = trim(request.getParameter("comment"));
         String anchor = trim(request.getParameter("anchor"));
-        String target = chosen.url + "?interophub=signin";
+        String target = chosenUrl + "?interophub=signin";
         if (comment != null) {
             if (!comment.matches("[1-9][0-9]*")) {
                 notFound(request, response);
@@ -77,6 +88,31 @@ public class GuideOpenServlet extends HttpServlet {
             out.println("    </div>");
             page.writeEnd(out);
         }
+    }
+
+    /**
+     * A hosted guide registers only its latest and main view URLs, but every
+     * uploaded label has a view URL (for example a Current {@code v0.2.0}). Built
+     * from the registered view URL so it stays on the same hub base. The viewer
+     * itself decides whether the reader may open that label.
+     */
+    static String hostedLabelUrl(DocumentRow document, String label) {
+        if (!GuideHtmlRules.HUB.equals(document.hosting)) {
+            return null;
+        }
+        try {
+            GuideHtmlRules.label(label);
+        } catch (GuideApiException ex) {
+            return null;
+        }
+        String marker = "/guide/view/" + document.documentKey + "/";
+        for (UrlBinding binding : document.urls) {
+            int at = binding.url == null ? -1 : binding.url.indexOf(marker);
+            if (at >= 0) {
+                return binding.url.substring(0, at + marker.length()) + label + "/";
+            }
+        }
+        return null;
     }
 
     private static String trim(String value) {

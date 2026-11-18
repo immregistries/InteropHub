@@ -127,5 +127,6 @@
     <mapping class="org.airahub.interophub.model.EsGuideComment"/>
     <mapping class="org.airahub.interophub.model.EsGuideCommentAudit"/>
     <mapping class="org.airahub.interophub.model.EsGuideReviewFlag"/>
+    <mapping class="org.airahub.interophub.model.EsGuideLabel"/>
   </session-factory>
 </hibernate-configuration>
