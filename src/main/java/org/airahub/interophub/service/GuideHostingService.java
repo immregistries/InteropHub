@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.GuideRows.BuildRow;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.HostedVersion;
 import org.airahub.interophub.service.GuideRows.TopicRow;
@@ -85,7 +86,18 @@ public class GuideHostingService {
         upload.put("sizeBytes", html.length);
         upload.put("replaced", replaced);
         changes.put("upload", upload);
-        store.save(version, changes.toString(), topic.id, user.getUserId(), tokenId, source);
+        BuildRow build = GuideBuildManifest.uploadRow(html);
+        build.documentId = document.id;
+        build.label = versionLabel;
+        build.receivedByUserId = user.getUserId();
+        build.receivedAt = version.uploadedAt;
+        if (build.processVersion != null) {
+            upload.put("processVersion", build.processVersion);
+        }
+        if (build.manifestError != null) {
+            LOGGER.info("Guide " + key + " uploaded with an unreadable build manifest: " + build.manifestError);
+        }
+        store.save(version, changes.toString(), topic.id, user.getUserId(), tokenId, source, build);
         return new UploadResult(replaced ? 200 : 201,
                 versionJson(version, GuideUrlRules.viewUrl(store.publicBaseUrl(), key, versionLabel), false));
     }
@@ -238,6 +250,11 @@ public class GuideHostingService {
 
         List<HostedVersion> versions(long documentId);
 
-        void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId, String source);
+        /**
+         * Saves the upload, its change record, and its build row in one
+         * transaction. Sets {@code version.id}, {@code build.hostedVersionId}, and {@code build.id}.
+         */
+        void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId, String source,
+                BuildRow build);
     }
 }

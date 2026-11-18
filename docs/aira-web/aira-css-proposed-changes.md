@@ -20,6 +20,39 @@ Entries below the revision history are the **active queue** — proposals not ye
 | 0.1.14 | 2026-10-30 | [`aira-css-changes-revision-14.md`](aira-css-changes-revision-14.md) | `aira-table--compact`; dialog popover contract (`aira-dialog--popover-visible` + `aira-dialog-search`); body row headers styled as data cells — requested in [`aira-css-request-14.md`](aira-css-request-14.md) |
 | 0.1.15 | 2026-11-12 | [`aira-css-changes-revision-15.md`](aira-css-changes-revision-15.md) | Page notice that hides itself (`aira-toast-region`, `aira-toast`); global `[hidden]` rule so the attribute wins over component `display` — requested in [`aira-css-request-15.md`](aira-css-request-15.md) |
 | 0.1.16 | 2026-11-12 | [`aira-css-changes-revision-16.md`](aira-css-changes-revision-16.md) | `AiraPage` versions stylesheet URLs (`aira.css?v={AIRA Web version}`, local stylesheets `?v={applicationVersion}`) so browsers don't keep a stale cached copy after an upgrade |
+| 0.1.17 | 2026-11-17 | [`aira-css-changes-revision-17.md`](aira-css-changes-revision-17.md) | Preformatted code / JSON block (`aira-code-block`, `aira-code-block--wrap`) |
+
+---
+
+## Proposal: Preformatted code / JSON block (`aira-code-block`)
+
+**Status:** Available in this project
+**Found during:** Guide status detail view on `/admin/es/guides?view=status&guide=…` (`GuideStatusRenderer`), which shows a guide's raw build manifest as pretty-printed JSON.
+**Date:** 2026-11-17
+
+### Problem
+
+`aira.css` has no style for `<pre>` or a block of code. A long JSON document either overflows the right-rail layout horizontally or, with no max height, pushes everything below it far down the page.
+
+### Current local workaround
+
+An inline `style="white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40rem; overflow: auto;"` on the one `<pre id="guide-build-manifest-raw">` in `GuideStatusRenderer.renderDetail`. No local stylesheet. Remove the inline style when `aira-code-block` ships.
+
+### Proposed shared interface
+
+`<pre class="aira-code-block">…</pre>`: monospace, the subtle surface and border used by `aira-table-panel`, panel padding, `overflow: auto`, and a bounded height (`max-height` around 40rem). An optional `aira-code-block--wrap` modifier sets `white-space: pre-wrap; overflow-wrap: anywhere` for content where wrapping reads better than horizontal scrolling.
+
+### Why this belongs in `aira.css` / `aira-web-components`
+
+Any AIRA application that shows a raw payload (HL7 messages, JSON, API responses, logs) needs the same block.
+
+### Compatibility and migration impact
+
+Additive. InteropHub swaps the inline style for the class.
+
+### Resolution
+
+Shipped in 0.1.17 as `aira-code-block` with the `aira-code-block--wrap` modifier. It uses `contain: inline-size` so a long line never widens its container, and removes the height limit when printing. The raw manifest block in `GuideStatusRenderer.renderDetail` now uses `class="aira-code-block aira-code-block--wrap"` with `tabindex="0"` and an `aria-label`, and the inline style is gone.
 
 ---
 

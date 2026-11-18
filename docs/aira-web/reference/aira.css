@@ -2176,6 +2176,38 @@ mark,
   text-underline-offset: 0.15em;
 }
 
+/* 14b. Code Blocks */
+.aira-code-block {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 40rem;
+  margin: 0;
+  padding: var(--aira-panel-padding);
+  overflow: auto;
+  /* Keep long unwrapped lines from widening grid/flex ancestors (section cards, right-rail layouts). */
+  contain: inline-size;
+  border: 1px solid var(--aira-border);
+  border-radius: var(--aira-radius-panel);
+  background: var(--aira-surface);
+  color: var(--aira-text);
+  font-family: var(--aira-font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.aira-code-block code {
+  font: inherit;
+  color: inherit;
+}
+
+.aira-code-block--wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* 15. Dialogs */
 .aira-dialog {
   width: min(90vw, 40rem);
@@ -2586,6 +2618,13 @@ mark,
   .aira-table-wrap {
     max-height: none;
     overflow: visible;
+  }
+
+  .aira-code-block {
+    max-height: none;
+    overflow: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .aira-table--sticky-header thead th {

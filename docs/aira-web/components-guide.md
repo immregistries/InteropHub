@@ -111,6 +111,7 @@ The renderer only emits the shell. Page content should use the shared `aira-` CS
 - Event lists.
 - Right-rail layouts and compact topic-page patterns.
 - Tables.
+- Preformatted code blocks.
 - Native dialog surfaces.
 - Alerts.
 - Toast notifications.
@@ -309,6 +310,30 @@ Sortable headings are presentational only; applications own sorting behavior. Pu
 ```
 
 Use `aira-table-scroll` with `aira-table--sticky-header` only when a constrained table region is intentional. Empty tables should render one cell with the correct `colspan`.
+
+### Preformatted Code Blocks
+
+Use `aira-code-block` on a `<pre>` to show a raw payload such as pretty-printed JSON, an HL7 message, an API response, or a log excerpt. The block uses the monospace font, the same surface, border, and radius as `aira-table-panel`, panel padding, and a bounded height (`max-height: 40rem`). Content that is taller or wider than the block scrolls inside it.
+
+```html
+<pre class="aira-code-block" tabindex="0" aria-label="Build manifest JSON"><code>{
+  "guide": "example-guide",
+  "status": "built"
+}</code></pre>
+```
+
+Add `aira-code-block--wrap` when wrapped lines read better than horizontal scrolling, such as long JSON string values, URLs, or log lines. It sets `white-space: pre-wrap` and `overflow-wrap: anywhere`, so even unbroken tokens wrap and the block only scrolls vertically.
+
+```html
+<pre class="aira-code-block aira-code-block--wrap" tabindex="0" aria-label="Raw manifest">…</pre>
+```
+
+- HTML-escape the content. The class adds no escaping or syntax highlighting.
+- The block can be placed directly inside `aira-section-card__body`, `aira-panel`, or either column of `aira-right-rail-layout`. It always fills the width of its container and never widens it, so a long unwrapped line scrolls inside the block instead of making the page scroll horizontally.
+- A scrolling `<pre>` should be reachable by keyboard: add `tabindex="0"` and an `aria-label` (or `aria-labelledby`) so keyboard users can focus and scroll it. The shared focus ring applies.
+- An inner `<code>` element is optional and inherits the block's font and color.
+- Colors come only from theme tokens (`--aira-surface`, `--aira-border`, `--aira-text`), so the block follows any theme that redefines them.
+- In print, the height limit is removed and lines wrap so the whole payload prints.
 
 ### Matrix Tables and Entity Cards
 

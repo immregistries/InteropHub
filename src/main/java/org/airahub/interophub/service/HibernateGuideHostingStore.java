@@ -16,6 +16,7 @@ import org.airahub.interophub.model.EsTopic;
 import org.airahub.interophub.model.EsTopicChange;
 import org.airahub.interophub.model.StoredFile;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.GuideRows.BuildRow;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.HostedVersion;
 import org.airahub.interophub.service.GuideRows.TopicRow;
@@ -90,7 +91,8 @@ final class HibernateGuideHostingStore implements GuideHostingService.Store {
     }
 
     @Override
-    public void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId, String source) {
+    public void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId, String source,
+            BuildRow build) {
         Transaction transaction = null;
         try (Session session = open()) {
             transaction = session.beginTransaction();
@@ -103,6 +105,10 @@ final class HibernateGuideHostingStore implements GuideHostingService.Store {
             session.persist(entity);
             session.flush();
             version.id = entity.getGuideHostedVersionId();
+            if (build != null) {
+                build.hostedVersionId = version.id;
+                HibernateGuideBuildStore.persist(session, build);
+            }
             if (changesJson != null) {
                 EsTopicChange change = new EsTopicChange();
                 change.setEsTopicId(topicId);
@@ -144,7 +150,7 @@ final class HibernateGuideHostingStore implements GuideHostingService.Store {
         return topic == null ? null : topicDao.findById(topic.id).orElse(null);
     }
 
-    private static DocumentRow toDocument(EsGuideDocument entity) {
+    static DocumentRow toDocument(EsGuideDocument entity) {
         DocumentRow row = new DocumentRow();
         row.id = entity.getGuideDocumentId();
         row.documentKey = entity.getDocumentKey();
@@ -156,7 +162,7 @@ final class HibernateGuideHostingStore implements GuideHostingService.Store {
         return row;
     }
 
-    private static TopicRow toTopic(EsTopic topic) {
+    static TopicRow toTopic(EsTopic topic) {
         TopicRow row = new TopicRow();
         row.id = topic.getEsTopicId();
         row.code = topic.getTopicCode();

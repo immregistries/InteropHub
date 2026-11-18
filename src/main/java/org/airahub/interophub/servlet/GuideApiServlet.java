@@ -14,6 +14,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.GuideApiErrors;
 import org.airahub.interophub.service.GuideApiException;
+import org.airahub.interophub.service.GuideBuildService;
 import org.airahub.interophub.service.GuideCommentService;
 import org.airahub.interophub.service.GuideHostingService;
 import org.airahub.interophub.service.GuideHtmlRules;
@@ -37,9 +38,11 @@ public class GuideApiServlet extends HttpServlet {
     private final GuideRegistrationService registration;
     private final PublicUrlService publicUrls;
     private final GuideHostingService hosting;
+    private final GuideBuildService builds;
 
     public GuideApiServlet() {
-        this(new GuideCommentService(), new GuideRegistrationService(), new PublicUrlService(), new GuideHostingService());
+        this(new GuideCommentService(), new GuideRegistrationService(), new PublicUrlService(), new GuideHostingService(),
+                new GuideBuildService());
     }
 
     public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration, PublicUrlService publicUrls) {
@@ -48,10 +51,16 @@ public class GuideApiServlet extends HttpServlet {
 
     public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration,
             PublicUrlService publicUrls, GuideHostingService hosting) {
+        this(comments, registration, publicUrls, hosting, null);
+    }
+
+    public GuideApiServlet(GuideCommentService comments, GuideRegistrationService registration,
+            PublicUrlService publicUrls, GuideHostingService hosting, GuideBuildService builds) {
         this.comments = comments;
         this.registration = registration;
         this.publicUrls = publicUrls;
         this.hosting = hosting;
+        this.builds = builds;
     }
 
     @Override
@@ -136,6 +145,13 @@ public class GuideApiServlet extends HttpServlet {
             write(response, HttpServletResponse.SC_OK, hosting.list(user(request), parts[3]));
             return;
         }
+        if (parts.length == 5 && "builds".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.TOPICS_READ)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_OK, builds.history(user(request), parts[3]));
+            return;
+        }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));
     }
 
@@ -193,6 +209,13 @@ public class GuideApiServlet extends HttpServlet {
             GuideHostingService.UploadResult uploaded = hosting.upload(user(request), tokenId(request), "API",
                     parts[3], parts[5], html, request.getContentType());
             write(response, uploaded.status(), uploaded.version());
+            return;
+        }
+        if (parts.length == 5 && "builds".equals(parts[4])) {
+            if (!GuideRequestAuth.requireScope(request, response, GuideScopes.TOPICS_WRITE)) {
+                return;
+            }
+            write(response, HttpServletResponse.SC_CREATED, builds.report(user(request), parts[3], jsonBody(request)));
             return;
         }
         GuideApiErrors.write(response, GuideApiException.notFound("That guide was not found."));

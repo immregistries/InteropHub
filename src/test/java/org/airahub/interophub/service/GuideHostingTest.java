@@ -33,6 +33,7 @@ import org.airahub.interophub.config.ArtifactStorageConfig;
 import org.airahub.interophub.dao.StoredFileDao;
 import org.airahub.interophub.model.StoredFile;
 import org.airahub.interophub.model.User;
+import org.airahub.interophub.service.GuideRows.BuildRow;
 import org.airahub.interophub.service.GuideRows.DocumentRow;
 import org.airahub.interophub.service.GuideRows.HostedVersion;
 import org.airahub.interophub.service.GuideRows.TopicRow;
@@ -235,6 +236,109 @@ class GuideHostingTest {
         assertFalse(allowed.body().contains("public_id"));
     }
 
+    @Test
+    void uploadWithAManifestRecordsABuildLinkedToTheVersion() {
+        Memory memory = hosted();
+        String manifest = "{\"schema\":1,\"generator\":\"content-publishing-templates\",\"processVersion\":\"v0.21.0\","
+                + "\"processReleases\":[{\"version\":\"v0.21.0\",\"date\":\"2026-11-24\",\"upgradeImpact\":\"rebuild\","
+                + "\"summary\":\"Manifest \\u003cscript\\u003e safe\"}],"
+                + "\"document\":{\"id\":\"guide-hosted-test\",\"version\":\"v0.5.0\",\"status\":\"Draft\"},"
+                + "\"build\":{\"builtAt\":\"2026-11-24T18:03:11Z\",\"sourceCommit\":\"a1b2c3d\",\"sourceDirty\":false},"
+                + "\"checks\":{\"confirmOpen\":0,\"warnings\":[{\"code\":\"CHAPTER_COUNT\",\"message\":\"8 chapters\"}]}}";
+        GuideHostingService.UploadResult uploaded = memory.service.upload(user(5), 9L, "API", "guide-hosted-test",
+                "v0.5.0", guide(manifest), "text/html");
+        assertEquals(201, uploaded.status());
+        assertEquals(1, memory.builds.size());
+        BuildRow build = memory.builds.get(0);
+        assertEquals("UPLOAD", build.source);
+        assertEquals(memory.versions.get(0).id, build.hostedVersionId);
+        assertEquals(3L, build.documentId);
+        assertEquals("v0.5.0", build.label);
+        assertEquals(1, build.manifestSchema);
+        assertEquals("v0.21.0", build.processVersion);
+        assertEquals("v0.5.0", build.documentVersion);
+        assertEquals("Draft", build.documentStatus);
+        assertEquals("a1b2c3d", build.sourceCommit);
+        assertEquals(1, build.warningCount);
+        assertEquals(ApiTime.parse("2026-11-24T18:03:11Z"), build.builtAt);
+        assertNull(build.manifestError);
+        assertTrue(new JSONObject(build.manifestJson).getJSONArray("processReleases").getJSONObject(0)
+                .getString("summary").contains("<script>"));
+        assertTrue(memory.changes.get(0).contains("\"processVersion\":\"v0.21.0\""));
+        assertEquals(Set.of("label", "sizeBytes", "uploadedBy", "uploadedAt", "viewUrl"), uploaded.version().keySet());
+    }
+
+    @Test
+    void uploadWithoutAManifestRecordsABuildWithNoProcessVersion() {
+        Memory memory = hosted();
+        memory.service.upload(user(5), 9L, "API", "guide-hosted-test", "latest", FIRST, "text/html");
+        assertEquals(1, memory.builds.size());
+        BuildRow build = memory.builds.get(0);
+        assertNull(build.processVersion);
+        assertNull(build.manifestJson);
+        assertNull(build.manifestError);
+        assertNull(build.manifestSchema);
+        assertEquals(memory.versions.get(0).id, build.hostedVersionId);
+    }
+
+    @Test
+    void aMalformedOrUnknownManifestIsRecordedAndTheUploadStillSucceeds() {
+        Memory memory = hosted();
+        GuideHostingService.UploadResult malformed = memory.service.upload(user(5), 9L, "API", "guide-hosted-test",
+                "latest", guide("{\"schema\":1, not json"), "text/html");
+        assertEquals(201, malformed.status());
+        assertEquals("The build manifest is not valid JSON.", memory.builds.get(0).manifestError);
+        assertNull(memory.builds.get(0).manifestJson);
+        assertNull(memory.builds.get(0).processVersion);
+
+        memory.service.upload(user(5), 9L, "API", "guide-hosted-test", "latest",
+                guide("{\"schema\":2,\"processVersion\":\"v9.0.0\"}"), "text/html");
+        BuildRow unknown = memory.builds.get(1);
+        assertEquals("Unknown build manifest schema: 2.", unknown.manifestError);
+        assertEquals(2, unknown.manifestSchema);
+        assertNull(unknown.processVersion);
+        assertEquals(2, new JSONObject(unknown.manifestJson).getInt("schema"));
+
+        memory.service.upload(user(5), 9L, "API", "guide-hosted-test", "latest",
+                guide("{\"schema\":1}"), "text/html");
+        assertEquals("The build manifest has no processVersion.", memory.builds.get(2).manifestError);
+
+        String wrongType = "<!DOCTYPE html><html><head><script type=\"text/javascript\" id=\"guide-build-manifest\">"
+                + "{}</script></head><body>x</body></html>";
+        memory.service.upload(user(5), 9L, "API", "guide-hosted-test", "latest",
+                wrongType.getBytes(StandardCharsets.UTF_8), "text/html");
+        assertEquals("The build manifest element is not type application/json.", memory.builds.get(3).manifestError);
+        assertEquals(4, memory.versions.size());
+    }
+
+    @Test
+    void aManifestOverTheSizeCapIsNotStoredAndTheUploadStillSucceeds() {
+        Memory memory = hosted();
+        String padding = "x".repeat(GuideBuildManifest.MAX_BYTES);
+        String manifest = "{\"schema\":1,\"processVersion\":\"v0.21.0\",\"pad\":\"" + padding + "\"}";
+        GuideHostingService.UploadResult uploaded = memory.service.upload(user(5), 9L, "API", "guide-hosted-test",
+                "latest", guide(manifest), "text/html");
+        assertEquals(201, uploaded.status());
+        BuildRow build = memory.builds.get(0);
+        assertEquals("The build manifest is larger than 64 KB.", build.manifestError);
+        assertNull(build.manifestJson);
+        assertNull(build.processVersion);
+    }
+
+    @Test
+    void manifestElementIsFoundAmongOtherScriptsWithEitherQuoteStyle() throws Exception {
+        String html = "<!DOCTYPE html><html><head><script>var a = 1;</script>"
+                + "<script id='guide-build-manifest' type='application/json'>{\"schema\":1}</script></head></html>";
+        assertEquals("{\"schema\":1}", GuideBuildManifest.extract(html.getBytes(StandardCharsets.UTF_8)));
+        assertNull(GuideBuildManifest.extract(FIRST));
+    }
+
+    private static byte[] guide(String manifestJson) {
+        return ("<!DOCTYPE html><html><head><title>Guide</title>"
+                + "<script type=\"application/json\" id=\"guide-build-manifest\">" + manifestJson + "</script>"
+                + "</head><body>guide</body></html>").getBytes(StandardCharsets.UTF_8);
+    }
+
     private static void assertField(String field, org.junit.jupiter.api.function.Executable action) {
         GuideApiException ex = assertThrows(GuideApiException.class, action);
         assertEquals("invalid_field", ex.getError());
@@ -402,6 +506,7 @@ class GuideHostingTest {
         final Set<String> viewers = new HashSet<>();
         final Set<String> editors = new HashSet<>();
         final List<String> changes = new ArrayList<>();
+        final List<BuildRow> builds = new ArrayList<>();
         int stores;
         long nextFile = 1;
         long nextVersion = 1;
@@ -464,10 +569,13 @@ class GuideHostingTest {
 
         @Override
         public void save(HostedVersion version, String changesJson, long topicId, long userId, Long tokenId,
-                String source) {
+                String source, BuildRow build) {
             version.id = nextVersion++;
             versions.add(version);
             changes.add(changesJson);
+            build.hostedVersionId = version.id;
+            build.id = (long) builds.size() + 1;
+            builds.add(build);
         }
     }
 }

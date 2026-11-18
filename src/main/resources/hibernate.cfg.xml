@@ -123,6 +123,7 @@
     <mapping class="org.airahub.interophub.model.EsGuideDocument"/>
     <mapping class="org.airahub.interophub.model.EsGuideDocumentUrl"/>
     <mapping class="org.airahub.interophub.model.EsGuideHostedVersion"/>
+    <mapping class="org.airahub.interophub.model.EsGuideBuild"/>
     <mapping class="org.airahub.interophub.model.EsGuideComment"/>
     <mapping class="org.airahub.interophub.model.EsGuideCommentAudit"/>
     <mapping class="org.airahub.interophub.model.EsGuideReviewFlag"/>

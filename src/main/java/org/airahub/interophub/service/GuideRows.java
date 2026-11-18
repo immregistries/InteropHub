@@ -149,6 +149,27 @@ public final class GuideRows {
         public LocalDateTime uploadedAt;
     }
 
+    /** One es_guide_build row. {@code manifestJson} is null when no usable JSON was received. */
+    public static final class BuildRow {
+        public Long id;
+        public long documentId;
+        public Long hostedVersionId;
+        public String source;
+        public String label;
+        public Integer manifestSchema;
+        public String processVersion;
+        public String documentVersion;
+        public String documentStatus;
+        public LocalDateTime builtAt;
+        public String sourceCommit;
+        public Integer warningCount;
+        public String manifestJson;
+        public String manifestError;
+        public long receivedByUserId;
+        public String receivedByName;
+        public LocalDateTime receivedAt;
+    }
+
     public static final class AllowInsert {
         final String url;
         final boolean enabled;

@@ -72,3 +72,32 @@ JOIN es_topic tt ON tt.es_topic_id = r.to_topic_id
 WHERE ft.topic_code = 'CDS-Contextual-Conditions'
   AND tt.topic_code = 'Immunization-Decision-Support'
   AND r.relationship_type = 'FEEDS_INTO';
+
+-- Build records for Topic Reference guides. One row per hosted upload, plus
+-- one per manifest-only report from an externally hosted guide. The manifest
+-- is kept whole; the columns are copies of its fields used for listing and filtering.
+-- See docs/tasks/topic-reference-summary-annotations-and-guide-status.md, Workstream B.
+CREATE TABLE es_guide_build (
+  guide_build_id BIGINT NOT NULL AUTO_INCREMENT,
+  guide_document_id BIGINT NOT NULL,
+  guide_hosted_version_id BIGINT NULL,
+  source VARCHAR(16) NOT NULL COMMENT 'UPLOAD or MANIFEST',
+  label VARCHAR(64) NULL,
+  manifest_schema INT NULL,
+  process_version VARCHAR(32) NULL,
+  document_version VARCHAR(64) NULL,
+  document_status VARCHAR(40) NULL,
+  built_at DATETIME(6) NULL,
+  source_commit VARCHAR(64) NULL,
+  warning_count INT NULL,
+  manifest_json JSON NULL,
+  manifest_error VARCHAR(300) NULL,
+  received_by_user_id BIGINT NOT NULL,
+  received_at DATETIME(6) NOT NULL,
+  PRIMARY KEY (guide_build_id),
+  KEY ix_es_guide_build_document (guide_document_id, received_at),
+  CONSTRAINT fk_es_guide_build_document FOREIGN KEY (guide_document_id) REFERENCES es_guide_document (guide_document_id),
+  CONSTRAINT fk_es_guide_build_version FOREIGN KEY (guide_hosted_version_id) REFERENCES es_guide_hosted_version (guide_hosted_version_id),
+  CONSTRAINT fk_es_guide_build_user FOREIGN KEY (received_by_user_id) REFERENCES auth_user (user_id),
+  CONSTRAINT chk_es_guide_build_source CHECK (source IN ('UPLOAD', 'MANIFEST'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
