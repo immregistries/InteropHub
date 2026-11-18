@@ -187,3 +187,115 @@ Full text: `templates/guide/README.md`, "Change markers".
 - **Touch:** comment and flag buttons are always visible below 64rem, as before. The count pills on phones sit above the block.
 - **Local-mode "Mine"** relies on the name the reader typed; loaded files from people with the same name count as theirs.
 - **Changes tab order:** markers are listed by section in document order. D4's "feedback first" ordering is for the generated list, not the tab.
+
+## Version display and comment modes
+
+**Date:** 2026-11-18
+**Built to:** `topic-reference-comments-api-contract.md` as amended 2026-11-18 (2, 5.2–5.4, 6, 7.5), and section 4 of `topic-reference-version-display-report.md`.
+**State:** In the `content-publishing-templates` working tree, uncommitted. `VERSION`, `CHANGELOG.md`, and `process-releases.json` are untouched.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `templates/guide/guide.js` | **Sends `pageUrl`** (`location.href`) on every new comment, reply, and flag, and on every comments read and poll. An address longer than 2,000 characters is not sent (the page is then treated as having no label). **Keeps `labelPolicy`** from each read and applies it: Closed, Release, or unknown (below). **Authors:** threads and flags with `inScope: false` get "From another version (label)" and a dashed card. They are listed but left out of the strip and tab counts. Cards in scope show "Written on label". **`403 comments_closed`** on a write keeps the form, its text, and the saved draft, and says "Comments are closed on this version. Your text is still here and saved in this browser." The page then switches to its closed state. **A changed mode** reported by a poll triggers a full reload (decision 4 below). |
+| `templates/guide/guide.css` | The Comments-tab mode line; Closed hides the comment buttons, flag buttons, count pills, and forms (except a refused one); the "From another version" marking and "Written on" text; author tool rows now wrap in the panel (they overflowed with five or more tools). |
+| `tools/build_guide.py` | One element: the mode line (`#guide-label-note`, `role="status"`) at the top of the Comments tab. |
+| `tools/publish_guide_to_hub.py` | **Label pattern** now matches InteropHub's `GuideHtmlRules`: after the suffix's first character, only letters, digits, and dots (`[0-9]` rather than `\d`). The error message gives examples. **`--display`** and **`--comment-mode`** call `PATCH /api/guide/{key}/labels/{label}` for the **first** `--label`, after a successful upload or `--manifest-only` (so the label is known). The tool prints the result and any demoted Current label. If the publish step fails, no settings are sent. `--dry-run` describes the settings it would send. |
+| `tests/mock_hub.py` | Follows the amended contract: known labels (uploads, build reports, settings, registered URLs); `pageUrl` resolution (hosted path, longest registered prefix, query and fragment ignored, scheme and host without case); publication time; scope; Open, Release, and Closed filtering for readers and authors, including `since` listings; `labelPolicy`, `inScope`, and `madeOnLabel`; `400 invalid_field` for a long `pageUrl`; `403 comments_closed` on comments, replies, and flags; `GET /labels`, and `PATCH /labels/{label}` with demotion, its validation errors, and a scope check. Its upload label pattern now matches InteropHub's. `seed_demo(state, site)` adds three versions (`main` Open, `v0.2.0` Current and Release, `v0.1.0` Retired and Closed). `/test/label` changes a mode directly. |
+| `tests/test_annotations_data.py` | +6 tests: the mock's Open, Release (with `since`), and Closed behavior; writes recording labels; no `pageUrl` and an unknown one; `GET` and `PATCH /labels`. |
+| `tests/test_publish_guide_to_hub.py` | +4 tests: the label pattern (valid and invalid examples); publishing a release and making it Current in Release mode, then demoting it with the next release; `--manifest-only` with settings; errors (no label, a failed upload sends no settings, a token without `topics:write`, dry run, a bad choice). `setUp` now clears uploads and labels so tests don't depend on order. |
+| `tests/browser_check.py` | A new comment-modes section against the mock, with copies of the guide served as Release and Closed versions (section "Test results"). |
+| `templates/guide/README.md`, `tests/README.md` | A "Versions and comment modes" section; the mock's labels and `--site`. |
+
+### Decisions
+
+1. **Comments-tab line.**
+   - Release: "This tab shows comments for this release and earlier." Authors also see "Comments from other versions are marked."
+   - Closed: "Comments are closed on this version."
+   - Open, and `labelPolicy` null or absent: no line.
+2. **Closed state:**
+   - The Comments count shows "–" (not 0, which would suggest nobody commented), with the title "Comments are closed on this version".
+   - The Open/All/Mine filters are hidden.
+   - The Review tab keeps the source's feedback-wanted change markers: they belong to the document, not to comments. Its count is just those.
+3. **Out-of-scope items with no `madeOnLabel`** (untagged, created after publication) read "From another version", with no label in brackets.
+4. **Mode changes while a page is open.** Since-listings never send tombstones for threads a new mode hides, and never resend threads it reveals. So when a poll's `labelPolicy.commentMode` differs from the previous one, the guide re-reads the whole list. Without this, a reader would keep seeing the old set until a reload.
+5. **A refused write switches the page to Closed at once.** A form in the text stays, with its message and draft. A reply form in the panel stays until the next refresh, when the list empties; its text is still saved in the browser.
+6. **Cleared flags** (Review tab, All) come from `GET /review-flags?includeCleared=true`, which takes no label (see the next section). In Release mode the guide applies the scope rule itself: readers don't get cleared flags from other versions, and authors see them marked. In Closed mode cleared flags are not fetched.
+7. **`--display` and `--comment-mode` apply to the first `--label` only.** The common call is `--label v0.4.0 --label latest --display current --comment-mode release`, and only one label can be Current. An explicit per-label form seemed unnecessary.
+8. **Display state is not shown in the guide** (no "Retired" or "Authors only" banner). The task asked only for comment modes, and the hosted viewer already shows readers the retired page. See "Known gaps".
+
+### Test results
+
+- **`validate.ps1`:** exit 0, "Repository validation passed." `Ran 119 tests … OK` (109 before, plus 10).
+- **Browser check:** passed, including the full 65-second refresh test. Run with `--quick` it passed again after each change. New checks against the mock:
+  - **Release, as a reader:**
+    - the line is shown, without the authors' sentence;
+    - another version's comments are absent, and the count matches the list;
+    - a comment posted there is stored with `madeOnLabel: v0.2.0`.
+  - **Release, as an author:**
+    - two comments are marked "From another version (main)", and their cards are dashed;
+    - "Written on v0.2.0" appears on the in-scope cards;
+    - the comment count excludes the other versions;
+    - a flag from `main` is marked, and the Review count excludes it.
+  - **Closed, author and reader:**
+    - the line is shown, the count is "–", and the filters are hidden;
+    - there are no threads, flag markers, comment or flag buttons, or flag cards;
+    - the Review count is just the 2 source markers.
+  - **Mode switched under an open page:** Release → Open reveals the hidden thread at the next refresh, and back to Release restores the line.
+  - **Refused write:**
+    - the author types, the mock closes `v0.2.0`, and the author saves;
+    - the form stays with its text and message, the draft is in local storage, the buttons are hidden, the count is "–", and the flags are gone.
+- **Local InteropHub** (`guide-hosted-test`, the real Immunization CDS build):
+  - Published with the updated tool to three new labels of mine:
+    - `v0.2.0-modesopen`
+    - `v0.2.0-modesrelease` with `--comment-mode release`
+    - `v0.2.0-modesclosed` with `--comment-mode closed`
+  - The tool printed "display unlisted, comments release." and "…comments closed." The pattern refused `v0.2.0-modes-bad` locally.
+  - Then 14 checks through the guide UI in headless Chrome, as `reader.guide-test@example.invalid` and the admin (an author): **14 passed, 0 failed**, on the first build and again after republishing the final build.
+    - **Open label:** no line.
+    - **Release, reader:** the line; a comment written on the Open label after publication is hidden; earlier comments are shown; the count matches the list (11).
+    - **Release, author:** that comment is marked "From another version (v0.2.0-modesopen)"; "Written on v0.2.0-modesrelease" on the new one; the count is 12 with 1 marked and excluded.
+    - **Closed, both people:** the line, no comments, flags, or buttons, and "–".
+    - **Refused write:** a real `PATCH` to Closed while the reader was writing gave `403 comments_closed`; the text and draft were kept; the label was set back to Release afterwards.
+  - **Database:** comment 94 has `made_on_label` `v0.2.0-modesopen` and 95 has `v0.2.0-modesrelease`; the refused comment was not stored.
+  - **Left unchanged:** a before/after comparison of `es_guide_label` shows the existing `main`, `v0.1.0`, `v0.2.0`, and `v0.3.0` settings unchanged, and no other uploads touched. `immunization-cds` `git status` is clean.
+  - **Tokens:** two temporary personal tokens (49 and 52), created on /hub/account, revoked (the API returns 401 for them), and deleted locally.
+- **Failures found and fixed along the way:**
+  - The mock's first version reported real scope on Open labels instead of `inScope: true`; the browser check caught it, and a unit test now covers it.
+  - The refused-write path first left the old flag list and counts showing until the next refresh.
+  - The author's tool row overflowed the panel.
+  - One test of my own wrongly expected a re-set Release mode to hide a thread (see the next section).
+
+### Contract points that didn't fit cleanly
+
+1. **`GET /review-flags?includeCleared=true` takes no `label` or `pageUrl`**, so cleared flags arrive unfiltered and without `inScope`. The guide applies 5.3.1's scope rule itself, using `madeOnLabel`, `createdAt`, and `labelPolicy.publishedAt` (decision 6). Passing `pageUrl` to that endpoint too would be simpler and keep the rule in one place.
+2. **Since-listings and mode changes:** the contract says a hidden thread is never sent, not even as a tombstone. That is right for privacy, but the guide can only learn of a mode change from `labelPolicy`, so it re-reads everything when the mode changes (decision 4). Worth stating in 5.3.1 as client guidance.
+3. **Re-setting Release moves the publication time** of a label with no upload or build (5.3.1, third fallback). Switching such a label Release → Open → Release brings every earlier comment into scope. This follows the contract, and found my test's wrong expectation, but authors may not expect it. Hosted and build-reported labels aren't affected.
+4. **The `inScope: false` count rule** isn't in the contract. "Keep them out of the reader-facing counts" was applied to the strip and tab counts. The in-text count pills still include them for authors, because they match what the panel lists.
+5. **Label pattern:** the publish tool now matches InteropHub's `GuideHtmlRules`. The contract's 7.4 describes hosted labels in words; it could quote the pattern, so the two can't drift again.
+
+### Screenshots
+
+In `C:\dev\writing\content-publishing-templates\output\annotations-prototype\`:
+
+| File | Shows |
+|---|---|
+| `modes-1-release-reader.png` | Mock, Release version, reader |
+| `modes-2-release-author.png` | Mock, Release version, author: "From another version (main)" and "Written on v0.2.0" |
+| `modes-3-closed-author.png` | Mock, Closed version, author |
+| `modes-4-refused-closed.png` | Mock, a save refused because the version closed; text kept |
+| `hub-modes-1-release-reader.png` | Local InteropHub, `v0.2.0-modesrelease`, reader |
+| `hub-modes-2-release-author.png` | Local InteropHub, the same label, author: "From another version (v0.2.0-modesopen)" |
+| `hub-modes-3-closed-author.png` | Local InteropHub, `v0.2.0-modesclosed`, author |
+| `hub-modes-4-refused.png` | Local InteropHub, the refused save |
+
+### Known gaps
+
+- **No display-state banner.** Authors viewing a Retired or Authors only label get no notice in the guide; `labelPolicy.display` is available for one.
+- **Tab label wraps.** On the 340 px panel a two-digit count wraps the "Comments" tab label onto two lines. It is readable, but a tighter tab style would help.
+- **Local test data left in the database:**
+  - the uploads `v0.2.0-modesopen`, `v0.2.0-modesrelease`, and `v0.2.0-modesclosed`, with their two settings rows (Release and Closed);
+  - comments 94–97, the `[modes]` comments from both runs.
+- **Guidance not updated:** `guidance/TopicReference.md` and `Process.md` don't mention `--display` and `--comment-mode` yet. The tool's own help and docstring do.
+- **No CHANGELOG entry**, as instructed. v0.22.0 needs one, covering `pageUrl`, the comment modes, and the new publish options.

@@ -149,6 +149,13 @@ Update `topic-reference-comments-api-contract.md` with all of the following. Exi
 - **PATCH permissions:** `topics:write` and `canEditTopic`; a reader gets `403`.
 - **Browser check** on local Tomcat: a reader and an editor on a hosted guide with a Current label in Release mode, a Unlisted `main`, an Authors only label, and a Retired label.
 
+## 7.1 Follow-ups for 0.12.1
+
+Found by the guide-side work (templates, 2026-11-18). Neither blocks 0.12.0; the guide works around both.
+
+- **Cleared flags ignore the label.** `GET …/review-flags?includeCleared=true` takes no `label` or `pageUrl`, so the guide applies the scope rule to cleared flags itself. Accept `label`/`pageUrl` there, filtered like the comments read, so the rule lives in one place.
+- **Re-entering Release moves the publication time** of a label with no upload or build: `comment_mode_set_at` is updated on every mode change, so Release → Open → Release brings every earlier comment into scope. Set it only when the label first enters Release (or keep the first value).
+
 ## 8. Not in this plan
 
 - **Guide side, in templates v0.22.0:**

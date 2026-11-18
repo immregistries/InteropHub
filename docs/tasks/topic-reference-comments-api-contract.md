@@ -484,7 +484,7 @@ Scope: `comments`. Requires `canView`.
 - The display state does not filter comments. An Authors only or Retired label still answers with its `labelPolicy` (the guide can show a banner); only the comment mode filters.
 - Closing a label hides its comments only there. The same comments still appear on other labels, in unfiltered listings, and on InteropHub's comments page.
 
-**Guide use:** pass `pageUrl` (or `label`) on every load and poll; show a banner from `labelPolicy`; hide the comment and flag controls when `commentMode` is `closed`; for authors, mark items with `inScope: false`.
+**Guide use:** pass `pageUrl` (or `label`) on every load and poll; show a banner from `labelPolicy`; hide the comment and flag controls when `commentMode` is `closed`; for authors, mark items with `inScope: false`. When `labelPolicy.commentMode` differs from the last response, re-read the whole list without `since`: a `since` poll never returns the threads a new mode reveals or hides.
 
 The guide's refresh timing is in design 9.2; it is a client rule and not part of this contract.
 
