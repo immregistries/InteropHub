@@ -48,6 +48,18 @@ public class EsMeetingTopicNoteStreamServlet extends HttpServlet {
         }, 20, 20, TimeUnit.SECONDS);
     }
 
+    /** Stops the keepalive thread when Tomcat takes the servlet out of service (undeploy or redeploy). */
+    @Override
+    public void destroy() {
+        KEEPALIVE.shutdownNow();
+        CONNECTIONS.clear();
+        super.destroy();
+    }
+
+    static boolean keepaliveStopped() {
+        return KEEPALIVE.isShutdown();
+    }
+
     private final AuthFlowService authFlowService;
     private final TopicSpaceAccessService topicSpaceAccessService;
     private final EsTopicNoteDao topicNoteDao;

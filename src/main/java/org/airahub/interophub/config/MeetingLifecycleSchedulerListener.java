@@ -41,7 +41,7 @@ public class MeetingLifecycleSchedulerListener implements ServletContextListener
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
         if (scheduler != null) {
-            scheduler.shutdownNow();
+            ExecutorShutdown.stop(scheduler, "Meeting lifecycle scheduler", LOGGER);
             LOGGER.info("Meeting lifecycle scheduler stopped.");
         }
     }

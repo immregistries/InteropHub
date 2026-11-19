@@ -51,7 +51,7 @@ public class MeetingCommunicationSchedulerListener implements ServletContextList
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
         if (scheduler != null) {
-            scheduler.shutdownNow();
+            ExecutorShutdown.stop(scheduler, "Meeting communication scheduler", LOGGER);
             LOGGER.info("Meeting communication scheduler stopped.");
         }
     }
