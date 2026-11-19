@@ -2,12 +2,14 @@ package org.airahub.interophub.servlet;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.airahub.interophub.model.User;
 import org.airahub.interophub.service.AuthFlowService;
 import org.airahub.interophub.service.GuideHostingService;
+import org.airahub.interophub.service.PublicUrlService;
 import org.immregistries.aira.web.AiraPage;
 
 /**
@@ -20,14 +22,26 @@ import org.immregistries.aira.web.AiraPage;
 public class GuideViewServlet extends HttpServlet {
     private final GuideHostingService hosting;
     private final AuthFlowService authFlowService;
+    private final BooleanSupplier localhostMode;
 
     public GuideViewServlet() {
         this(new GuideHostingService(), new AuthFlowService());
     }
 
     public GuideViewServlet(GuideHostingService hosting, AuthFlowService authFlowService) {
+        this(hosting, authFlowService, new PublicUrlService()::isLocalhostMode);
+    }
+
+    /**
+     * @param localhostMode whether the refusal page shows the "Local" environment badge. Production
+     *     reads it from {@code hub_settings} through {@link PublicUrlService}; tests pass a constant
+     *     so the servlet can run without a database.
+     */
+    public GuideViewServlet(GuideHostingService hosting, AuthFlowService authFlowService,
+            BooleanSupplier localhostMode) {
         this.hosting = hosting;
         this.authFlowService = authFlowService;
+        this.localhostMode = localhostMode;
     }
 
     @Override
@@ -142,10 +156,10 @@ public class GuideViewServlet extends HttpServlet {
     }
 
     /** The same page a private topic shows. It does not name the guide. */
-    private static void refuse(HttpServletRequest request, HttpServletResponse response) throws IOException {
+    private void refuse(HttpServletRequest request, HttpServletResponse response) throws IOException {
         response.setStatus(HttpServletResponse.SC_NOT_FOUND);
         response.setContentType("text/html;charset=UTF-8");
-        AiraPage page = InteropAiraPageFactory.base(request, "Topic Not Found - InteropHub")
+        AiraPage page = InteropAiraPageFactory.base(request, "Topic Not Found - InteropHub", localhostMode.getAsBoolean())
                 .applicationSubtitle("Topic display")
                 .pageHeading("Topic Not Found")
                 .mainClass("aira-main")
