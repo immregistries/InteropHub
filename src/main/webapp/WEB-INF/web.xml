@@ -1207,6 +1207,11 @@
     <url-pattern>/search/suggest</url-pattern>
   </servlet-mapping>
 
+  <!-- First listener, so it is destroyed last: releases the JDBC driver, Hibernate pool and library threads on undeploy. -->
+  <listener>
+    <listener-class>org.airahub.interophub.config.AppShutdownListener</listener-class>
+  </listener>
+
   <listener>
     <listener-class>org.airahub.interophub.config.MeetingCommunicationSchedulerListener</listener-class>
   </listener>

@@ -48,7 +48,7 @@ public class DailyDigestSchedulerListener implements ServletContextListener {
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
         if (scheduler != null) {
-            scheduler.shutdownNow();
+            ExecutorShutdown.stop(scheduler, "Daily digest scheduler", LOGGER);
             LOGGER.info("Daily digest scheduler stopped.");
         }
     }

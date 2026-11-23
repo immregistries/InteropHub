@@ -15,7 +15,13 @@ public final class HibernateUtil {
     private static final String ENV_PASSWORD = "INTEROPHUB_PASSWORD";
 
     private static final Logger LOGGER = Logger.getLogger(HibernateUtil.class.getName());
-    private static final SessionFactory SESSION_FACTORY = buildSessionFactory();
+    /** Set once the SessionFactory has been built, so shutdown never builds one just to close it. */
+    private static volatile boolean built;
+
+    /** Built on first use, exactly as the old static field was (a failed build is not retried). */
+    private static final class Holder {
+        private static final SessionFactory SESSION_FACTORY = buildSessionFactory();
+    }
 
     private HibernateUtil() {
     }
@@ -26,6 +32,7 @@ public final class HibernateUtil {
             applyDatabaseOverrides(configuration);
             SessionFactory sessionFactory = configuration.buildSessionFactory();
             LOGGER.info("Hibernate SessionFactory initialized successfully.");
+            built = true;
             return sessionFactory;
         } catch (Exception ex) {
             LOGGER.log(Level.SEVERE, "Failed to initialize Hibernate SessionFactory.", ex);
@@ -107,11 +114,30 @@ public final class HibernateUtil {
     }
 
     public static SessionFactory getSessionFactory() {
-        return SESSION_FACTORY;
+        return Holder.SESSION_FACTORY;
     }
 
     public static void shutdown() {
         LOGGER.info("Shutting down Hibernate SessionFactory.");
         getSessionFactory().close();
+    }
+
+    /** True once a SessionFactory has been built in this class loader. */
+    public static boolean isInitialized() {
+        return built;
+    }
+
+    /**
+     * Closes the SessionFactory (and with it Hibernate's connection pool and its
+     * "Hibernate Connection Pool Validation Thread") if one was built. Never builds one.
+     */
+    public static void shutdownIfInitialized() {
+        if (!built) {
+            return;
+        }
+        SessionFactory sessionFactory = Holder.SESSION_FACTORY;
+        if (!sessionFactory.isClosed()) {
+            shutdown();
+        }
     }
 }
