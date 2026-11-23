@@ -64,6 +64,12 @@ final class InteropAiraPageFactory {
         return base(request, documentTitle, authenticatedUser, PUBLIC_URL_SERVICE.isLocalhostMode());
     }
 
+    /** Like {@link #base(HttpServletRequest, String)}, with the localhost-mode flag supplied by the caller (no database read). */
+    static AiraPage.Builder base(HttpServletRequest request, String documentTitle, boolean localhostMode) {
+        Optional<User> authenticatedUser = AUTH_FLOW_SERVICE.findAuthenticatedUser(request);
+        return base(request, documentTitle, authenticatedUser, localhostMode);
+    }
+
     static AiraPage.Builder base(HttpServletRequest request, String documentTitle, Optional<User> authenticatedUser,
             boolean localhostMode) {
         PAGE_REQUEST.set(request);

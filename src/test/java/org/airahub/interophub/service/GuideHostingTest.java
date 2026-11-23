@@ -188,12 +188,29 @@ class GuideHostingTest {
     }
 
     @Test
+    void refusalPageRendersWithoutDatabaseSettings() throws Exception {
+        // The refusal page used to read hub_settings (localhost mode) through
+        // HibernateUtil, so this class failed without INTEROPHUB_DB_* env vars. The flag is now injected.
+        Memory memory = hosted();
+        FakeAuth auth = new FakeAuth();
+        boolean[] asked = new boolean[1];
+        GuideViewServlet servlet = new GuideViewServlet(memory.service, auth, () -> {
+            asked[0] = true;
+            return true;
+        });
+        Captured refused = exchange(servlet, "/", auth);
+        assertEquals(404, refused.status);
+        assertTrue(refused.body().contains("could not be found"));
+        assertTrue(asked[0], "refusal page must take localhost mode from the injected supplier");
+    }
+
+    @Test
     void servingRedirectsSignsInAndRefusesWithoutRevealingTheGuide() throws Exception {
         Memory memory = hosted();
         User author = user(5);
         memory.service.upload(author, 1L, "API", "guide-hosted-test", "latest", FIRST, "text/html");
         FakeAuth auth = new FakeAuth();
-        GuideViewServlet servlet = new GuideViewServlet(memory.service, auth);
+        GuideViewServlet servlet = new GuideViewServlet(memory.service, auth, () -> false);
 
         Captured slash = exchange(servlet, "/guide-hosted-test/latest", auth);
         assertEquals(302, slash.status);
